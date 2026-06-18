@@ -58,7 +58,7 @@ export function AppShell({ name, subtitle, children }: AppShellProps) {
         </div>
       </header>
 
-      <main className="flex-1">
+      <main className="flex-1 bg-surface">
         <div className="px-6 py-8 lg:px-10">{children}</div>
       </main>
     </div>

@@ -26,8 +26,8 @@ export function WeeklyOverview({
     .join(' · ');
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-card">
-      {/* Card header: context + week nav + view toggle */}
+    <div>
+      {/* Header: context + week nav + view toggle */}
       <div className="flex flex-wrap items-center justify-between gap-5 border-b border-neutral-100 p-5">
         <div className="min-w-0">
           <div className="text-[16px] font-semibold">This week</div>

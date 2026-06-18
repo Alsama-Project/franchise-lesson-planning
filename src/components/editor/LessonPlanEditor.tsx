@@ -89,7 +89,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
   const activities = selectedBlock ? activitiesByBlock[selectedBlock.type] ?? [] : [];
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-card">
+    <div>
       <EditorHeader
         classContext={classContext}
         curriculum={curriculum}

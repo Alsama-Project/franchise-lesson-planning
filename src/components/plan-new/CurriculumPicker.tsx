@@ -77,7 +77,7 @@ export function CurriculumPicker({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-card">
+    <div>
       {/* Header: what you're planning + a way back */}
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-100 p-5">
         <div className="min-w-0">

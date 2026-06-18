@@ -352,15 +352,24 @@ editor panel restructure beyond what's described.
   viewing/editing. The planned blocks (Check homework → Homework) remain the
   prominent, individually selectable cards. The routines' default durations/phases
   and the 50-minute timing meter are untouched.
-- **Full-width in-app pages** (`src/components/app-shell/AppShell.tsx`) — removed
-  the `mx-auto max-w-[1240px]` centered-card framing from the shell's header and
-  `<main>`; both now fill the browser window with `px-6 lg:px-10` gutters. Every
-  page rendered inside `AppShell` — the Weekly Overview, the editor, the
-  `/plan/new` curriculum picker, and `/whoami` — now spans the full width at
-  every size (the editor's `lg:grid-cols-[360px_1fr]` and the picker's
-  `lg:grid-cols-[260px_1fr]` panels widen accordingly), with no large sandy
-  side-margins. The brand palette (cream/pink/teal surfaces) and the login's own
-  full-screen two-pane layout are unchanged.
+- **Full-width in-app pages** — done in two steps:
+  1. Removed the `mx-auto max-w-[1240px]` centered framing from `AppShell`'s
+     header and `<main>` so the chrome fills the window with `px-6 lg:px-10`
+     gutters.
+  2. Removed the **page-level card-on-sand wrapper** that still floated each
+     page's content as a rounded white card on the sandy backdrop. `AppShell`'s
+     `<main>` now carries `bg-surface` (continuous with the white header, filling
+     the window), and the three page components dropped their outer
+     `overflow-hidden rounded-lg border bg-surface shadow-card` wrapper:
+     `WeeklyOverview` (`src/components/weekly-overview/WeeklyOverview.tsx`), the
+     editor (`src/components/editor/LessonPlanEditor.tsx`), and the `/plan/new`
+     picker (`src/components/plan-new/CurriculumPicker.tsx`). The content area now
+     spans the full window with no sandy side-margins at any width.
+  Inner component styling is untouched — the pink SMARTT box, the block/activity
+  cards, the timing meter, and the overview grid cells keep their own surfaces
+  and tints (the off-white `bg-surface-subtle` sidebar, the cream "today" column,
+  etc.). The brand palette and the login's own full-screen two-pane layout are
+  unchanged.
 
 ### Verified
 

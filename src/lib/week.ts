@@ -110,6 +110,22 @@ export function formatWeekRange(monday: string): string {
   return `${startDay} ${startMonth} – ${endDay} ${endMonth} ${year}`;
 }
 
+/** True when `iso` is a real `YYYY-MM-DD` calendar date (rejects malformed/impossible dates). */
+export function isValidISODate(iso: string): boolean {
+  return parseISO(iso) !== null;
+}
+
+/** Human label for a single date, e.g. "Tuesday 17 June 2026". Falls back to the raw string. */
+export function formatLongDate(iso: string): string {
+  const date = parseISO(iso);
+  if (!date) return iso;
+  const weekdayNames = [
+    'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+  ];
+  const weekday = weekdayNames[date.getUTCDay()];
+  return `${weekday} ${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
 /** Which weekday a `YYYY-MM-DD` date falls on, or null for weekends. */
 export function weekdayOf(iso: string): Weekday | null {
   const date = parseISO(iso);

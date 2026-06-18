@@ -295,6 +295,35 @@ activity bank. No new screens, no editor restructure — refinements + data.
   already lists activities for the cfu + exit_ticket blocks with their
   literate/illiterate variants.
 
+## Phase 5 — Layout refinements ✅ (this phase)
+
+Goal: two UI/layout-only refinements. No data, schema, or behaviour changes; no
+editor panel restructure beyond what's described.
+
+### Done
+
+- **Bundled standard routines** (`src/components/editor/BlockList.tsx`) — the
+  three fixed routines (Anthem, Warm-up, Cool down) are no longer three separate
+  top-level cards under a static "Standard routines · 3 min · auto" header. They
+  are now one **collapsible group**, collapsed by default, that expands (chevron
+  toggle, `aria-expanded`) to reveal the three routine `BlockRow`s for
+  viewing/editing. The planned blocks (Check homework → Homework) remain the
+  prominent, individually selectable cards. The routines' default durations/phases
+  and the 50-minute timing meter are untouched.
+- **Full-width in-app pages** (`src/components/app-shell/AppShell.tsx`) — removed
+  the `mx-auto max-w-[1240px]` centered-card framing from the shell's header and
+  `<main>`; both now fill the browser window with `px-6 lg:px-10` gutters. Since
+  the Weekly Overview, the editor, and `/whoami` all render inside `AppShell`,
+  they now span the full width at every size (the editor's `lg:grid-cols-[360px_1fr]`
+  panels widen accordingly), with no large sandy side-margins. The brand palette
+  (cream/pink/teal surfaces) and the login's own full-screen two-pane layout are
+  unchanged. (The `/plan/new` picker named in the brief is still a future slice;
+  built inside `AppShell` it will inherit the full-width frame automatically.)
+
+### Verified
+
+- `npm run build` passes (Next 16.2.9); `npm run lint` clean. Route map unchanged.
+
 ## Next slice (not started)
 
 1. **Bridge** — the plan-creation flow + curriculum picker, wiring the Weekly

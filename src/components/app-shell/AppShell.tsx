@@ -28,7 +28,7 @@ export function AppShell({ name, subtitle, children }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-4 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 lg:px-10">
           {/* Brand — links home to the Weekly Overview */}
           <div className="flex items-center gap-3">
             <Link href="/" aria-label="Alsama — Weekly Overview" className="rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal">
@@ -59,7 +59,7 @@ export function AppShell({ name, subtitle, children }: AppShellProps) {
       </header>
 
       <main className="flex-1">
-        <div className="mx-auto max-w-[1240px] px-6 py-8">{children}</div>
+        <div className="px-6 py-8 lg:px-10">{children}</div>
       </main>
     </div>
   );

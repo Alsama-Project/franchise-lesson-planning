@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Block, LessonBlockType } from '@/types/lesson';
 import { IN_SESSION_TARGET_MINUTES, inSessionMinutes } from '@/lib/blocks';
 import { phaseTag } from '@/lib/editor/phase';
@@ -85,6 +86,8 @@ function BlockRow({
 }
 
 export function BlockList({ blocks, selected, onSelect }: BlockListProps) {
+  // The three fixed routines are bundled into one group, collapsed by default.
+  const [routinesOpen, setRoutinesOpen] = useState(false);
   const total = inSessionMinutes(blocks);
   const over = total > IN_SESSION_TARGET_MINUTES;
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
@@ -104,24 +107,48 @@ export function BlockList({ blocks, selected, onSelect }: BlockListProps) {
         Lesson blocks · {IN_SESSION_TARGET_MINUTES} min
       </div>
 
-      {/* Standard routines — lightweight, still selectable */}
-      <div className="mb-3 rounded-md border border-dashed border-border-strong bg-cream/60 px-3 py-[9px]">
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-medium text-neutral-700">Standard routines</span>
+      {/* Standard routines — the three fixed routines bundled into one
+          collapsible group; collapsed by default, expands to view/edit them. */}
+      <div className="mb-3 rounded-md border border-dashed border-border-strong bg-cream/60">
+        <button
+          type="button"
+          onClick={() => setRoutinesOpen((open) => !open)}
+          aria-expanded={routinesOpen}
+          className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-[9px] text-left"
+        >
+          <span className="flex items-center gap-1.5">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={cn('text-neutral-500 transition-transform', routinesOpen && 'rotate-90')}
+              aria-hidden
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+            <span className="text-[13px] font-medium text-neutral-700">Standard routines</span>
+          </span>
           <span className="text-[12px] text-neutral-400">{routineMinutes} min · auto</span>
-        </div>
-      </div>
-      <div className="mb-3 flex flex-col gap-2">
-        {routines.map(({ block, index }) => (
-          <BlockRow
-            key={block.type}
-            block={block}
-            index={index}
-            active={selected === index}
-            compact
-            onSelect={onSelect}
-          />
-        ))}
+        </button>
+        {routinesOpen ? (
+          <div className="flex flex-col gap-2 px-2 pb-2">
+            {routines.map(({ block, index }) => (
+              <BlockRow
+                key={block.type}
+                block={block}
+                index={index}
+                active={selected === index}
+                compact
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Main blocks */}

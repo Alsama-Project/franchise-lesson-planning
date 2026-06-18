@@ -7,7 +7,8 @@ import type { ClassWeek, WeekSlot } from '@/types/weekly-overview';
 /**
  * Variant A — the week matrix: sessions down, weekdays across. Each cell shows
  * the curriculum target headline (or "Not started") plus a status chip. Cells
- * with a plan link to the editor; empty cells are inert in this slice.
+ * with a plan link to the editor; empty cells start the creation flow at
+ * /plan/new for that class + date.
  */
 export function CalendarView({ classes }: { classes: ClassWeek[] }) {
   // Which weekday (if any) is today, so we can tint that whole column.
@@ -44,7 +45,12 @@ export function CalendarView({ classes }: { classes: ClassWeek[] }) {
                 <div className="text-[11.5px] text-text-faint">{c.subjectName}</div>
               </div>
               {c.slots.map((slot) => (
-                <SlotCell key={slot.weekday} slot={slot} last={last} />
+                <SlotCell
+                  key={slot.weekday}
+                  slot={slot}
+                  classId={c.classId}
+                  last={last}
+                />
               ))}
             </div>
           );
@@ -69,7 +75,15 @@ function HeaderCell({ label, isToday }: { label: string; isToday: boolean }) {
   );
 }
 
-function SlotCell({ slot, last }: { slot: WeekSlot; last: boolean }) {
+function SlotCell({
+  slot,
+  classId,
+  last,
+}: {
+  slot: WeekSlot;
+  classId: string;
+  last: boolean;
+}) {
   const headline = slot.target?.dailyLO || (slot.plan ? 'Lesson plan' : 'Not started');
 
   const body = (
@@ -90,16 +104,15 @@ function SlotCell({ slot, last }: { slot: WeekSlot; last: boolean }) {
     slot.isToday && 'bg-surface-subtle',
   );
 
-  if (slot.plan) {
-    return (
-      <Link
-        href={`/plan/${slot.plan.id}`}
-        className={cn(base, 'block transition-colors hover:bg-cream')}
-      >
-        {body}
-      </Link>
-    );
-  }
+  // A planned slot opens its editor; an empty slot starts the creation flow for
+  // this class + date.
+  const href = slot.plan
+    ? `/plan/${slot.plan.id}`
+    : `/plan/new?classId=${classId}&date=${slot.date}`;
 
-  return <div className={base}>{body}</div>;
+  return (
+    <Link href={href} className={cn(base, 'block transition-colors hover:bg-cream')}>
+      {body}
+    </Link>
+  );
 }

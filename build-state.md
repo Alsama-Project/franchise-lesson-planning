@@ -295,14 +295,54 @@ activity bank. No new screens, no editor restructure — refinements + data.
   already lists activities for the cfu + exit_ticket blocks with their
   literate/illiterate variants.
 
+## Phase 5 — Plan-creation bridge ✅ (this phase)
+
+Goal: complete the core loop — Weekly Overview → create a plan → editor. The
+Overview's empty slots now start a curriculum picker that creates the plan and
+hands off to the existing editor. **No standalone curriculum browser, no
+date/class picker (slot-click is the only entry), no AI/export.**
+
+### Done
+
+- **Route `app/plan/new`** (`src/app/plan/new/page.tsx`, force-dynamic) — reads
+  `classId` + `date` search params (Next 16 Promise form). Redirects to `/` when
+  either is missing/malformed (uuid + ISO-date checks) or the class isn't
+  readable. If a plan already exists for `(class_id, lesson_date)`, redirects
+  straight to `/plan/{id}`. Otherwise loads the class (year + school/subject
+  context) via the auth'd client (RLS) and renders the picker scoped to the
+  class's year.
+- **Curriculum picker** (`src/components/plan-new/CurriculumPicker.tsx`, client)
+  — progressive disclosure month → week → period rows. Months/weeks come from
+  `getMonthsWithWeeks` (resolved server-side in the page); a week's lessons load
+  on demand via the existing `fetchLessonsForWeek` server action. Each period row
+  shows the daily LO, focus area / linguistic skill, and theme. Selecting one +
+  "Create plan" calls the action below.
+- **`createPlan` action** (`src/lib/actions/create-plan.ts`, `'use server'`) —
+  inserts a `lesson_plans` row through the auth'd client (RLS enforces ownership
+  and `created_by = auth.uid()`): `status 'in_progress'`, `blocks =
+  DEFAULT_BLOCKS`, empty objective, plus `class_id`, `curriculum_lesson_id`,
+  `lesson_date`, `period` (the selected lesson's `periodNum`). Handles the
+  `(class_id, lesson_date)` unique violation gracefully (fetch existing →
+  redirect). Redirects to `/plan/{newId}` on success.
+- **Overview wiring** — `CalendarView` empty "Not started" slots now link to
+  `/plan/new?classId=…&date=…` (the slot's ISO date); planned slots still open
+  `/plan/{id}`. Status view unchanged (it has no empty slots).
+- **Shared helpers** — added `isValidISODate` + `formatLongDate` to `src/lib/week.ts`.
+
+### Verified
+
+- `npm run build` passes (Next 16.2.9); `npm run lint` clean. Route map adds
+  `/plan/new` (dynamic). No globals.css/AppShell/shared-type changes.
+- Not applied to a live DB in this workspace (no Docker/Supabase CLI). To test:
+  apply migrations + seed, provision a teacher, open the overview, click an empty
+  slot, pick a lesson, and confirm it lands in the editor.
+
 ## Next slice (not started)
 
-1. **Bridge** — the plan-creation flow + curriculum picker, wiring the Weekly
-   Overview's empty "Not started" slots to create plans the editor then opens.
-2. **Curriculum browser.**
-3. **AI assistance** — objective check (wire the existing affordance) + activity
+1. **Curriculum browser.**
+2. **AI assistance** — objective check (wire the existing affordance) + activity
    suggestions.
-4. **Word (.docx) export**, **coordinator review UI**.
-5. **Guidance content** (block-guidance beyond the current set).
-6. **Multi-subject curriculum** — populate `subject`, ingestion script (the old
+3. **Word (.docx) export**, **coordinator review UI**.
+4. **Guidance content** (block-guidance beyond the current set).
+5. **Multi-subject curriculum** — populate `subject`, ingestion script (the old
    spreadsheet→JSON generator was never in the repo and must be rebuilt).

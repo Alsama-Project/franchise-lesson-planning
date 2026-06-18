@@ -1,47 +1,46 @@
-import { AppShell } from "@/components/app-shell/AppShell";
-import { Card } from "@/components/ui/Card";
-import { createClient } from "@/lib/supabase/server";
+import Link from 'next/link';
+import { AppShell } from '@/components/app-shell/AppShell';
+import { WeeklyOverview } from '@/components/weekly-overview/WeeklyOverview';
+import { getWeeklyOverview } from '@/lib/weekly-overview';
+import { currentMonday, resolveWeekStart } from '@/lib/week';
 
-// Authenticated landing. Rendered per-request so it reflects the live session.
-export const dynamic = "force-dynamic";
+// Rendered per-request so it reflects the live session and selected week.
+export const dynamic = 'force-dynamic';
+
+type SearchParams = { week?: string; view?: string };
 
 /**
- * Authenticated landing — the app shell wrapping a placeholder body. The real
- * Weekly Overview content fills this in the next slice. The proxy redirects
- * signed-out users to /login, so reaching here means there is a session.
+ * The authenticated home screen — the Weekly Overview inside the app shell. The
+ * selected week and view are driven by URL search params (`?week=YYYY-MM-DD`,
+ * `?view=calendar|status`) so the page is server-rendered and linkable. The
+ * proxy redirects signed-out users to /login, so reaching here means a session.
  */
-export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const { week, view: viewParam } = await searchParams;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user?.id ?? "")
-    .maybeSingle();
+  const weekStart = resolveWeekStart(week);
+  const view = viewParam === 'status' ? 'status' : 'calendar';
+  const thisMonday = currentMonday();
 
-  const name = profile?.full_name ?? user?.email ?? "there";
+  const data = await getWeeklyOverview(weekStart);
 
   return (
-    <AppShell name={name}>
-      <Card className="p-8">
-        <h1 className="text-[22px] font-semibold">Signed in as {name}</h1>
-        <p className="mt-2 text-[15px] text-text-muted">
-          Your weekly overview is coming next.
-        </p>
+    <AppShell name={data.teacherName} subtitle={data.context ?? undefined}>
+      <WeeklyOverview data={data} view={view} thisMonday={thisMonday} />
 
-        {/* Temporary: surfaces the auth uid so you can run the teacher
-            assignment helper in supabase/admin/. Remove once provisioning
-            moves into the app. */}
-        <p className="mt-6 text-[12.5px] text-text-faint">
-          Your user id (for supabase/admin setup):{" "}
-          <code className="rounded-badge bg-surface-subtle px-1.5 py-0.5 font-mono text-text-muted">
-            {user?.id ?? "(none)"}
-          </code>
-        </p>
-      </Card>
+      {/* Temporary dev aid: a quiet link to your auth uid, still needed to run
+          the supabase/admin provisioning + sample-plan seed. Remove once
+          provisioning moves into the app. */}
+      <p className="mt-6 text-[12px] text-text-faint">
+        Setup helper:{' '}
+        <Link href="/whoami" className="underline underline-offset-2 hover:text-text-muted">
+          view your user id
+        </Link>
+      </p>
     </AppShell>
   );
 }

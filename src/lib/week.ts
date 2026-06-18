@@ -1,0 +1,120 @@
+// Week-date helpers for the Weekly Overview. Everything works in UTC on
+// `YYYY-MM-DD` strings so the rendered week is stable regardless of the server's
+// timezone. The Alsama school week is Monday–Friday.
+
+/** The five school weekdays, in order, as stable keys. */
+export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
+/** Short header labels for the weekday columns. */
+export const WEEKDAY_LABELS: Record<Weekday, string> = {
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** Parse a `YYYY-MM-DD` string to a UTC-midnight Date, or null if malformed. */
+function parseISO(iso: string): Date | null {
+  if (!ISO_DATE.test(iso)) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  // Reject impossible dates (e.g. 2026-02-31 would roll over).
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== m - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/** Format a UTC Date back to `YYYY-MM-DD`. */
+function toISO(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/** Today's date as `YYYY-MM-DD` (UTC). */
+export function todayISO(): string {
+  return toISO(new Date());
+}
+
+/** Add `days` to a `YYYY-MM-DD` string, returning a new `YYYY-MM-DD` string. */
+export function addDays(iso: string, days: number): string {
+  const date = parseISO(iso) ?? new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return toISO(date);
+}
+
+/** The Monday (`YYYY-MM-DD`) of the week containing `iso`. */
+export function mondayOf(iso: string): string {
+  const date = parseISO(iso);
+  if (!date) return mondayOf(todayISO());
+  const day = date.getUTCDay(); // 0 = Sun … 6 = Sat
+  const offset = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + offset);
+  return toISO(date);
+}
+
+/** The Monday of the current week. */
+export function currentMonday(): string {
+  return mondayOf(todayISO());
+}
+
+/**
+ * Resolve the `?week=` search param to a valid Monday. Any value is snapped to
+ * the Monday of its week; a missing or malformed value falls back to this week.
+ */
+export function resolveWeekStart(weekParam: string | undefined): string {
+  if (!weekParam || !parseISO(weekParam)) return currentMonday();
+  return mondayOf(weekParam);
+}
+
+/** The five Mon–Fri dates (`YYYY-MM-DD`) for a given Monday, keyed by weekday. */
+export function weekdayDates(monday: string): Record<Weekday, string> {
+  return {
+    mon: monday,
+    tue: addDays(monday, 1),
+    wed: addDays(monday, 2),
+    thu: addDays(monday, 3),
+    fri: addDays(monday, 4),
+  };
+}
+
+/**
+ * Human label for a week's Mon–Fri span, e.g. "15 – 19 June 2026" or, when the
+ * span crosses a month boundary, "29 June – 3 July 2026".
+ */
+export function formatWeekRange(monday: string): string {
+  const start = parseISO(monday) ?? new Date();
+  const end = parseISO(addDays(monday, 4)) ?? start;
+
+  const startDay = start.getUTCDate();
+  const endDay = end.getUTCDate();
+  const startMonth = MONTHS[start.getUTCMonth()];
+  const endMonth = MONTHS[end.getUTCMonth()];
+  const year = end.getUTCFullYear();
+
+  if (startMonth === endMonth) {
+    return `${startDay} – ${endDay} ${endMonth} ${year}`;
+  }
+  return `${startDay} ${startMonth} – ${endDay} ${endMonth} ${year}`;
+}
+
+/** Which weekday a `YYYY-MM-DD` date falls on, or null for weekends. */
+export function weekdayOf(iso: string): Weekday | null {
+  const date = parseISO(iso);
+  if (!date) return null;
+  const day = date.getUTCDay();
+  if (day < 1 || day > 5) return null;
+  return WEEKDAYS[day - 1];
+}

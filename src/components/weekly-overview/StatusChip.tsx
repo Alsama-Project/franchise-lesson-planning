@@ -1,0 +1,22 @@
+import { cn } from '@/lib/cn';
+import { STATUS_META } from '@/components/weekly-overview/status';
+import type { SlotStatus } from '@/types/weekly-overview';
+
+/**
+ * The small pill that carries a slot's status at a glance — glyph + label in the
+ * status colour tokens. Used in the Calendar matrix cells.
+ */
+export function StatusChip({ status }: { status: SlotStatus }) {
+  const meta = STATUS_META[status];
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-badge border px-[7px] py-[2px] text-[11px] font-semibold',
+        meta.chip,
+      )}
+    >
+      <span aria-hidden>{meta.glyph}</span>
+      {meta.label}
+    </span>
+  );
+}

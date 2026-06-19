@@ -459,6 +459,41 @@ a `vercel.json` `{ "regions": ["<id>"] }` hint can pin it.
   overview/editor/`/plan/new` show instant skeletons; buttons/links show the
   lighter-fill + spinner pending state; loaders issue independent queries together.
 
+## Phase 7 — `/plan/new` removed pending design ✅ (this phase)
+
+Goal: pull the plan-creation bridge out of the app until it has a proper design
+reference. The screen (Phase 5) was built without one and must not ship in the
+meantime.
+
+### Done
+
+- **Deleted the route** — removed `src/app/plan/new/` entirely (`page.tsx` +
+  `loading.tsx`). `/plan/new` now falls through to the `/plan/[id]` dynamic route
+  with `id="new"`; the uuid column rejects `"new"`, `loadPlanForEditor` returns
+  `null`, and the page 404s.
+- **Deleted the picker** — removed `src/components/plan-new/CurriculumPicker.tsx`
+  (and the now-empty `plan-new/` dir); it existed only for `/plan/new`.
+- **Removed the `createPlan` action** — deleted `src/lib/actions/create-plan.ts`
+  (the action lived in its own file, so the whole file went). `lesson-plan.ts`
+  (`saveLessonPlan`, `unsubmitLessonPlan`, `submitLessonPlan`) is untouched.
+- **Overview slots non-interactive again** — `CalendarView` empty "Not started"
+  slots no longer link to `/plan/new`; they render as plain, non-interactive
+  cells. Planned slots still open `/plan/{id}`. The `classId` prop, only used to
+  build the creation href, was dropped from `SlotCell`.
+- **No other changes** — editor, Weekly Overview reads, app shell, activity bank,
+  auth all untouched. `isValidISODate`/`formatLongDate` in `src/lib/week.ts` stay
+  (used elsewhere); curriculum query API unchanged.
+
+### Verified
+
+- `npm run build` passes (Next 16.2.9); `npm run lint` clean, no orphaned imports.
+- Route map drops `/plan/new`; `/plan/[id]` remains. `/plan/new` → 404.
+
+### When this comes back
+
+Re-introduce the plan-creation flow only against a design reference. The Phase 5
+notes above describe the removed implementation for reference.
+
 ## Next slice (not started)
 
 1. **Curriculum browser.**

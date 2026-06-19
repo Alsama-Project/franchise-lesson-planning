@@ -8,8 +8,8 @@ import type { ClassWeek, WeekSlot } from '@/types/weekly-overview';
 /**
  * Variant A — the week matrix: sessions down, weekdays across. Each cell shows
  * the curriculum target headline (or "Not started") plus a status chip. Cells
- * with a plan link to the editor; empty cells start the creation flow at
- * /plan/new for that class + date.
+ * with a plan link to the editor; empty cells are plain, non-interactive cells
+ * (the creation flow is not wired up — pending design).
  */
 export function CalendarView({ classes }: { classes: ClassWeek[] }) {
   // Which weekday (if any) is today, so we can tint that whole column.
@@ -46,12 +46,7 @@ export function CalendarView({ classes }: { classes: ClassWeek[] }) {
                 <div className="text-[11.5px] text-text-faint">{c.subjectName}</div>
               </div>
               {c.slots.map((slot) => (
-                <SlotCell
-                  key={slot.weekday}
-                  slot={slot}
-                  classId={c.classId}
-                  last={last}
-                />
+                <SlotCell key={slot.weekday} slot={slot} last={last} />
               ))}
             </div>
           );
@@ -78,11 +73,9 @@ function HeaderCell({ label, isToday }: { label: string; isToday: boolean }) {
 
 function SlotCell({
   slot,
-  classId,
   last,
 }: {
   slot: WeekSlot;
-  classId: string;
   last: boolean;
 }) {
   const headline = slot.target?.dailyLO || (slot.plan ? 'Lesson plan' : 'Not started');
@@ -105,15 +98,19 @@ function SlotCell({
     slot.isToday && 'bg-surface-subtle',
   );
 
-  // A planned slot opens its editor; an empty slot starts the creation flow for
-  // this class + date.
-  const href = slot.plan
-    ? `/plan/${slot.plan.id}`
-    : `/plan/new?classId=${classId}&date=${slot.date}`;
+  // An empty slot is a plain, non-interactive cell — the creation flow is not
+  // wired up (pending design).
+  if (!slot.plan) {
+    return <div className={base}>{body}</div>;
+  }
 
+  // A planned slot opens its editor.
   return (
-    <Link href={href} className={cn(base, 'relative block transition-colors hover:bg-cream')}>
-      {/* Inline pending feedback while the editor / creation flow loads. */}
+    <Link
+      href={`/plan/${slot.plan.id}`}
+      className={cn(base, 'relative block transition-colors hover:bg-cream')}
+    >
+      {/* Inline pending feedback while the editor loads. */}
       <LinkPending size={13} className="absolute right-[7px] top-[7px] text-teal" />
       {body}
     </Link>

@@ -2,6 +2,59 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
+## Lesson Plan editor rebuild — Part 1 ✅ (this phase)
+
+Goal: rebuild `/plan/[id]` to the approved 5-step wizard design. This phase
+delivers the **wizard frame + steps 1 (Objective), 4 (Link it), 5 (Review)**.
+Steps 2/3 bodies, the embedded resource panel, and the worksheet are **Part 2**.
+
+### Done
+
+- **Wizard frame** (`LessonPlanEditor.tsx`, full-bleed inside `AppShell`):
+  - `EditorSubHeader` — "‹ This week" link, class context (year · group · subject
+    · date · centre · literacy pill), live `X / 50 min` total (green at 50, amber
+    otherwise), plus a **Download** action (`/api/pdf/plan/[id]`) and save state.
+  - `Stepper` — five clickable steps (done = teal ✓, current = pink halo, upcoming
+    muted; teal connectors) with the Back + Next/Submit group pinned right
+    ("Review lesson →" on step 4, "Submit for approval" on step 5). `step` is local
+    state; circles/groups navigate, clamped 1–5.
+  - `CurriculumBand` — Focus tag top-right + three tinted cells (daily outcome /
+    grammar & vocabulary / theme) sourced from the curriculum lesson (no theme tag).
+  - Objective is persistent: full editor on step 1, collapsed `ObjectiveBanner`
+    (text only) on every later step.
+- **Step 1 (Objective)** — `ObjectiveStep`: fixed stem + textarea, six SMARTT
+  pills, "Check my objective" → `POST /api/check-objective` with the curriculum
+  context. The result drives the pills' strong/needs-work state and a quiet
+  feedback note (suggestions + rewrite); it is persisted to `smartt_check`.
+- **Step 4 (Link it)** — `LinkItStep`: two bordered halves (CFU · Exit ticket),
+  each a single-select list from `activity_bank` (`cfu` / `exit_ticket`); the
+  selected technique expands a 1–2 line note and surfaces class-literacy
+  instructions. Selection + note + minutes persist on the cfu / exit_ticket block.
+- **Step 5 (Review)** — `ReviewStep`: collapsed objective banner; editable
+  Required materials chips (pre-filled from blocks); lesson-parts table (part ·
+  phase · time) with click-to-expand rows, read-only phase, time steppers for
+  editable blocks; routines fixed (3 min), homework (30 min) shown separately and
+  excluded from the 50.
+- **Steps 2/3 placeholders** — `PlaceholderStep` with a working header phase
+  dropdown + time stepper and a "coming next" body (no writing area / panel /
+  worksheet).
+- **Persistence** — `saveLessonPlan` / `submitLessonPlan` extended to write
+  `smartt_check` + `required_materials` (`buildPatch`); `load-plan` reads them and
+  the grammar/vocab curriculum context. Per-block phase + `minutes` + note +
+  selected-activity ref persist via the existing autosave. Submit/unsubmit + status
+  unchanged. `inSessionMinutes` / new `blockMinutes` now reflect editable `minutes`.
+- **Removed** the old single-screen editor (`EditorHeader`, `SmarttObjectiveBox`,
+  `BlockList`, `BlockPanel`, `ActivityCard`) — replaced by the wizard.
+
+### Verified
+
+- `npm run build` passes (Next 16.2.9, TypeScript strict); `npm run lint` clean.
+
+### Part 2 (next)
+
+Steps 2/3 two-pane writing area, the embedded Resource Bank panel, and the
+student-worksheet builder (`worksheet` + `resourceIds`).
+
 ## Phase 1 — Foundation ✅ (this phase)
 
 Goal: a correct, deployable foundation. Scaffold + locked schema/migrations +

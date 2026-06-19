@@ -35,6 +35,8 @@ export interface EditorCurriculumContext {
   /** Focus area = the curriculum's linguistic skill (e.g. "Reading"). */
   focusArea: string;
   theme: string;
+  /** Combined grammar + vocabulary focus shown in the cream context cell. */
+  grammarVocab: string;
 }
 
 /** Everything the client editor needs, fully serializable. */
@@ -67,6 +69,7 @@ interface RawPlanRow {
   smartt_objective: string | null;
   smartt_check: LessonPlan['smartt_check'];
   blocks: unknown;
+  required_materials: unknown;
   created_by: string;
   submitted_at: string | null;
   reviewed_at: string | null;
@@ -103,8 +106,8 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
       .from('lesson_plans')
       .select(
         `id, class_id, curriculum_lesson_id, lesson_date, period, status,
-         smartt_objective, smartt_check, blocks, created_by, submitted_at,
-         reviewed_at, review_note, created_at, updated_at,
+         smartt_objective, smartt_check, blocks, required_materials, created_by,
+         submitted_at, reviewed_at, review_note, created_at, updated_at,
          class:classes (
            id, year, group_label, literacy,
            school:schools ( name ),
@@ -143,8 +146,16 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
   // Resolve the locked curriculum context from the flat-file curriculum.
   const lookup = getLessonById(row.curriculum_lesson_id);
   const lesson = Array.isArray(lookup) ? lookup[0] : lookup;
+  const grammarVocab = lesson
+    ? [lesson.vocabFocus, lesson.grammarFocus].filter((s) => s && s.trim()).join(' · ')
+    : '';
   const curriculum: EditorCurriculumContext | null = lesson
-    ? { dailyLO: lesson.dailyLO, focusArea: lesson.linguisticSkill, theme: lesson.theme }
+    ? {
+        dailyLO: lesson.dailyLO,
+        focusArea: lesson.linguisticSkill,
+        theme: lesson.theme,
+        grammarVocab,
+      }
     : null;
 
   // Group the pre-fetched activity bank by block type.
@@ -157,6 +168,10 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
     Array.isArray(row.blocks) && row.blocks.length > 0
       ? (row.blocks as Block[])
       : DEFAULT_BLOCKS;
+
+  const requiredMaterials = Array.isArray(row.required_materials)
+    ? (row.required_materials as unknown[])
+    : undefined;
 
   const plan: LessonPlan = {
     id: row.id,
@@ -174,6 +189,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
     review_note: row.review_note,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    requiredMaterials,
   };
 
   return { plan, classContext, curriculum, activitiesByBlock };

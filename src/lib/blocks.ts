@@ -1,4 +1,4 @@
-import type { Block } from '@/types/lesson';
+import type { Block, LessonBlockType } from '@/types/lesson';
 
 /**
  * The canonical, ordered lesson scaffold a new plan starts from. Durations and
@@ -26,9 +26,28 @@ export const DEFAULT_BLOCKS: Block[] = [
  */
 export const IN_SESSION_TARGET_MINUTES = 50;
 
+/**
+ * The editable minutes for a block. The editor adjusts `minutes`; it falls back
+ * to the format's fixed `duration_minutes` default for older plans that predate
+ * the field. This is the single source of truth for a block's planned time.
+ */
+export function blockMinutes(block: Block): number {
+  return block.minutes ?? block.duration_minutes;
+}
+
+/**
+ * The three opening routines (anthem · warm-up · cool down) are a fixed 3-minute
+ * block in the editor — their time is not adjustable.
+ */
+export const ROUTINE_BLOCK_TYPES: ReadonlySet<LessonBlockType> = new Set([
+  'anthem',
+  'warm_up',
+  'cool_down',
+]);
+
 /** Sum the in-session minutes of a set of blocks (everything except 'homework'). */
 export function inSessionMinutes(blocks: Block[]): number {
   return blocks
     .filter((b) => b.type !== 'homework')
-    .reduce((total, b) => total + b.duration_minutes, 0);
+    .reduce((total, b) => total + blockMinutes(b), 0);
 }

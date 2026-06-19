@@ -9,6 +9,25 @@ export interface SavePlanInput {
   /** The full objective string, stem included (use composeObjective on the client). */
   smartt_objective: string | null;
   blocks: Block[];
+  /**
+   * The AI objective-check result (an `ObjectiveCheckResult`). Optional: only
+   * sent when the teacher has run a check. Stored verbatim in the unenforced
+   * `smartt_check` JSONB column.
+   */
+  smartt_check?: unknown;
+  /** Required-materials chips. Optional; persisted to `required_materials`. */
+  required_materials?: string[];
+}
+
+/** Build the column patch, including the optional JSONB columns only when sent. */
+function buildPatch(input: SavePlanInput): Record<string, unknown> {
+  const patch: Record<string, unknown> = {
+    smartt_objective: input.smartt_objective || null,
+    blocks: input.blocks,
+  };
+  if (input.smartt_check !== undefined) patch.smartt_check = input.smartt_check;
+  if (input.required_materials !== undefined) patch.required_materials = input.required_materials;
+  return patch;
 }
 
 export interface ActionResult {
@@ -28,10 +47,7 @@ export async function saveLessonPlan(input: SavePlanInput): Promise<ActionResult
 
   const { data, error } = await supabase
     .from('lesson_plans')
-    .update({
-      smartt_objective: input.smartt_objective || null,
-      blocks: input.blocks,
-    })
+    .update(buildPatch(input))
     .eq('id', input.id)
     .select('updated_at')
     .maybeSingle();
@@ -79,8 +95,7 @@ export async function submitLessonPlan(input: SavePlanInput): Promise<ActionResu
   const { data, error } = await supabase
     .from('lesson_plans')
     .update({
-      smartt_objective: input.smartt_objective || null,
-      blocks: input.blocks,
+      ...buildPatch(input),
       status: 'submitted',
       submitted_at: new Date().toISOString(),
     })

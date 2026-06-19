@@ -4,15 +4,15 @@ import type { SlotStatus } from '@/types/weekly-overview';
 
 /**
  * The small pill that carries a slot's status at a glance — glyph + label in the
- * status colour tokens. Used in the Calendar matrix cells.
+ * status colour tokens. Flat (tint fill, no border, 6px radius) per the design.
  */
 export function StatusChip({ status }: { status: SlotStatus }) {
   const meta = STATUS_META[status];
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-badge border px-[7px] py-[2px] text-[11px] font-semibold',
-        meta.chip,
+        'inline-flex items-center gap-[5px] rounded-badge px-[8px] py-[3px] text-[10.5px] font-semibold',
+        meta.badge,
       )}
     >
       <span aria-hidden>{meta.glyph}</span>

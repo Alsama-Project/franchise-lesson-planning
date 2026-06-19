@@ -1,14 +1,15 @@
 import { cn } from "@/lib/cn";
 
 type WordmarkProps = {
-  /** Visual size. `lg` is the login brand-panel scale; `md` the top-bar scale. */
-  size?: "md" | "lg";
+  /** Visual size. `lg` is the login brand-panel scale; `md`/`sm` the top-bar scale. */
+  size?: "sm" | "md" | "lg";
   /** Colour tone. `brand` is pink (on light); `cream` is for dark panels. */
   tone?: "brand" | "cream";
   className?: string;
 };
 
 const SIZES: Record<NonNullable<WordmarkProps["size"]>, string> = {
+  sm: "text-[30px]",
   md: "text-[40px]",
   lg: "text-[60px]",
 };

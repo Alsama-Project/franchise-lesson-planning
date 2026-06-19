@@ -17,7 +17,7 @@ export function ViewToggle({
   onChange: (next: View) => void;
 }) {
   return (
-    <div className="inline-flex rounded-sm border border-border-strong bg-cream p-[2px] text-[13px] font-medium">
+    <div className="inline-flex rounded-[9px] border border-border bg-surface p-[3px] text-[13px] font-medium">
       <Segment value="calendar" current={view} label="Calendar" onChange={onChange} />
       <Segment value="status" current={view} label="Status" onChange={onChange} />
     </div>
@@ -43,7 +43,7 @@ function Segment({
       aria-pressed={active}
       className={cn(
         'cursor-pointer rounded-[7px] px-[14px] py-[6px] transition-colors',
-        active ? 'bg-teal text-white' : 'text-neutral-600 hover:text-ink',
+        active ? 'bg-teal text-white' : 'text-neutral-700 hover:text-ink',
       )}
     >
       {label}

@@ -1,118 +1,80 @@
-import Link from 'next/link';
 import { cn } from '@/lib/cn';
-import { WEEKDAYS, WEEKDAY_LABELS, type Weekday } from '@/lib/week';
+import { WEEKDAYS, WEEKDAY_LABELS } from '@/lib/week';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
-import { LinkPending } from '@/components/ui/LinkPending';
-import type { ClassWeek, WeekSlot } from '@/types/weekly-overview';
+import { CardShell } from '@/components/weekly-overview/CardShell';
+import { cardsForWeekday, timeLabel, type LessonCard } from '@/components/weekly-overview/cards';
+import type { ClassWeek } from '@/types/weekly-overview';
 
 /**
- * Variant A — the week matrix: sessions down, weekdays across. Each cell shows
- * the curriculum target headline (or "Not started") plus a status chip. Cells
- * with a plan link to the editor; empty cells are plain, non-interactive cells
- * (the creation flow is not wired up — pending design).
+ * Calendar view — a column per weekday (Mon–Fri). Each column has a day + date
+ * header (today marked with a teal "TODAY" pill and a teal underline) and its
+ * lesson cards stacked by time of day. Each card carries its time line, class and
+ * status badge; planned cards open the editor, "Not started" cards are inert.
  */
 export function CalendarView({ classes }: { classes: ClassWeek[] }) {
-  // Which weekday (if any) is today, so we can tint that whole column.
-  const todayWeekday: Weekday | null =
-    classes[0]?.slots.find((s) => s.isToday)?.weekday ?? null;
+  // The five weekdays carry the same date for every class, so read each day's
+  // date/today flag off the first class's slot.
+  const sample = classes[0];
+
+  const days = WEEKDAYS.map((weekday) => {
+    const slot = sample.slots.find((s) => s.weekday === weekday);
+    return {
+      weekday,
+      dayName: WEEKDAY_LABELS[weekday],
+      dateNum: slot ? Number(slot.date.slice(8, 10)) : null,
+      isToday: slot?.isToday ?? false,
+      cards: cardsForWeekday(classes, weekday),
+    };
+  });
 
   return (
-    <div className="overflow-x-auto">
-      <div className="grid min-w-[900px] grid-cols-[150px_repeat(5,1fr)]">
-        {/* Header row: "Sessions" corner label + weekday labels */}
-        <div className="border-b border-neutral-100 bg-surface-subtle px-[14px] py-[11px] text-[12px] font-semibold uppercase tracking-[0.04em] text-text-faint">
-          Sessions
-        </div>
-        {WEEKDAYS.map((wd) => (
-          <HeaderCell
-            key={wd}
-            label={WEEKDAY_LABELS[wd]}
-            isToday={wd === todayWeekday}
-          />
-        ))}
-
-        {/* One row per class */}
-        {classes.map((c, rowIdx) => {
-          const last = rowIdx === classes.length - 1;
-          return (
-            <div key={c.classId} className="contents">
-              <div
+    <div>
+      <div className="grid grid-cols-5 items-start gap-[14px]">
+        {days.map((day) => (
+          <div key={day.weekday} className="flex flex-col gap-[11px]">
+            <div
+              className={cn(
+                'flex items-baseline gap-[7px] border-b-2 px-[2px] pb-[10px]',
+                day.isToday ? 'border-teal' : 'border-neutral-200',
+              )}
+            >
+              <span
                 className={cn(
-                  'flex flex-col justify-center p-[14px]',
-                  !last && 'border-b border-neutral-100',
+                  'text-[14px] font-bold',
+                  day.isToday ? 'text-status-submitted' : 'text-ink',
                 )}
               >
-                <div className="text-[13.5px] font-semibold">{c.label}</div>
-                <div className="text-[11.5px] text-text-faint">{c.subjectName}</div>
-              </div>
-              {c.slots.map((slot) => (
-                <SlotCell key={slot.weekday} slot={slot} last={last} />
-              ))}
+                {day.dayName} {day.dateNum}
+              </span>
+              {day.isToday ? (
+                <span className="rounded-[5px] bg-status-submitted-bg px-[7px] py-[2px] text-[10px] font-bold uppercase tracking-[0.04em] text-teal">
+                  Today
+                </span>
+              ) : null}
             </div>
-          );
-        })}
+
+            {day.cards.length === 0 ? (
+              <div className="py-[14px] text-center text-[12px] text-text-faint">
+                No sessions
+              </div>
+            ) : (
+              day.cards.map((card) => <CalendarCard key={card.key} card={card} />)
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function HeaderCell({ label, isToday }: { label: string; isToday: boolean }) {
+function CalendarCard({ card }: { card: LessonCard }) {
   return (
-    <div
-      className={cn(
-        'border-b border-l px-[14px] py-[11px] text-[12px] font-semibold',
-        isToday
-          ? 'border-neutral-150 bg-surface-cream text-ink'
-          : 'border-neutral-100 bg-surface-subtle text-text-muted',
-      )}
-    >
-      {isToday ? `${label} · today` : label}
-    </div>
-  );
-}
-
-function SlotCell({
-  slot,
-  last,
-}: {
-  slot: WeekSlot;
-  last: boolean;
-}) {
-  const headline = slot.target?.dailyLO || (slot.plan ? 'Lesson plan' : 'Not started');
-
-  const body = (
-    <>
-      <div
-        className="mb-2 line-clamp-2 text-[12.5px] leading-[1.35] text-neutral-900"
-        title={slot.target?.dailyLO || undefined}
-      >
-        {headline}
+    <CardShell planId={card.planId}>
+      <div className="text-[11.5px] font-semibold text-text-faint">
+        {timeLabel(card.period)}
       </div>
-      <StatusChip status={slot.status} />
-    </>
-  );
-
-  const base = cn(
-    'border-l border-neutral-100 p-[11px]',
-    !last && 'border-b border-neutral-100',
-    slot.isToday && 'bg-surface-subtle',
-  );
-
-  // An empty slot is a plain, non-interactive cell — the creation flow is not
-  // wired up (pending design).
-  if (!slot.plan) {
-    return <div className={base}>{body}</div>;
-  }
-
-  // A planned slot opens its editor.
-  return (
-    <Link
-      href={`/plan/${slot.plan.id}`}
-      className={cn(base, 'relative block transition-colors hover:bg-cream')}
-    >
-      {/* Inline pending feedback while the editor loads. */}
-      <LinkPending size={13} className="absolute right-[7px] top-[7px] text-teal" />
-      {body}
-    </Link>
+      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">{card.classLabel}</div>
+      <StatusChip status={card.status} />
+    </CardShell>
   );
 }

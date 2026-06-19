@@ -23,6 +23,12 @@ export interface CurriculumTarget {
 export interface SlotPlan {
   id: string;
   status: PlanStatus;
+  /**
+   * Day-of-week period (1–5) the lesson sits in. Used to order cards within a
+   * day and shown as the card's "time" line — the schema has no clock time yet.
+   * May be null on older rows.
+   */
+  period: number | null;
   /** Coordinator note when returned (`needs_review`); null otherwise. */
   reviewNote: string | null;
 }

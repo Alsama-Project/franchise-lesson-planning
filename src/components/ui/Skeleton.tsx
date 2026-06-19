@@ -21,20 +21,21 @@ export function AppShellSkeleton({ children }: { children: ReactNode }) {
       aria-busy="true"
       aria-label="Loading"
     >
-      <header className="border-b border-border bg-surface">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 lg:px-10">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-[26px] w-[96px]" />
-            <span className="h-[26px] w-px bg-neutral-300" />
-            <Skeleton className="h-[14px] w-[120px]" />
-          </div>
-          <div className="flex items-center gap-3">
-            <Skeleton className="size-[42px] rounded-full" />
-            <div className="flex flex-col gap-1.5">
-              <Skeleton className="h-[14px] w-[120px]" />
-              <Skeleton className="h-[11px] w-[80px]" />
-            </div>
-          </div>
+      <header className="sticky top-0 z-50 flex h-16 items-center gap-6 border-b border-border bg-surface px-[30px]">
+        <div className="flex items-center gap-[11px]">
+          <Skeleton className="h-[26px] w-[80px]" />
+          <span className="h-[22px] w-px bg-neutral-200" />
+          <Skeleton className="h-[14px] w-[110px]" />
+        </div>
+        <div className="hidden items-center gap-1 md:flex">
+          <Skeleton className="h-[34px] w-[110px] rounded-[9px]" />
+          <Skeleton className="h-[34px] w-[88px] rounded-[9px]" />
+          <Skeleton className="h-[34px] w-[84px] rounded-[9px]" />
+        </div>
+        <div className="ml-auto flex items-center gap-[10px]">
+          <Skeleton className="hidden h-[36px] w-[170px] rounded-[9px] sm:block" />
+          <Skeleton className="size-[38px] rounded-[9px]" />
+          <Skeleton className="h-[40px] w-[150px] rounded-full" />
         </div>
       </header>
       <main className="flex-1 bg-surface">

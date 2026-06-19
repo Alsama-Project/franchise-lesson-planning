@@ -18,6 +18,9 @@
   /* ── Brand ─────────────────────────────────────────────────────────────── */
   --color-pink: #b62a5c;
   --color-teal: #1f7a6c;
+  --color-teal-deep: #186155; /* deep teal text — active nav, headings */
+  --color-teal-tint: #e4f0ed; /* pale-teal pill / accent fill */
+  --color-teal-tint-border: #cfe6e0;
   --color-cream: #f5ede5;
 
   /* ── Neutral ramp (warm, sampled from the design) ──────────────────────── */
@@ -56,7 +59,7 @@
   --color-status-progress-bg: #f6ecda;
   --color-status-progress-border: #ecd9be;
 
-  --color-status-submitted: #1f7a6c;
+  --color-status-submitted: #186155;
   --color-status-submitted-bg: #e4f0ed;
   --color-status-submitted-border: #cfe6e0;
 

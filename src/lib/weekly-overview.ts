@@ -39,6 +39,7 @@ interface PlanRow {
   class_id: string;
   curriculum_lesson_id: string;
   lesson_date: string;
+  period: number | null;
   status: PlanStatus;
   review_note: string | null;
 }
@@ -122,7 +123,7 @@ export async function getWeeklyOverview(weekStart: string): Promise<WeeklyOvervi
   if (classRows.length > 0) {
     const { data: plans } = await supabase
       .from('lesson_plans')
-      .select('id, class_id, curriculum_lesson_id, lesson_date, status, review_note')
+      .select('id, class_id, curriculum_lesson_id, lesson_date, period, status, review_note')
       .in('class_id', classRows.map((c) => c.id))
       .gte('lesson_date', dates.mon)
       .lte('lesson_date', dates.fri);
@@ -142,7 +143,12 @@ export async function getWeeklyOverview(weekStart: string): Promise<WeeklyOvervi
       const date = dates[weekday];
       const plan = planByCell.get(`${c.id}:${weekday}`);
       const slotPlan: SlotPlan | null = plan
-        ? { id: plan.id, status: plan.status, reviewNote: plan.review_note }
+        ? {
+            id: plan.id,
+            status: plan.status,
+            period: plan.period,
+            reviewNote: plan.review_note,
+          }
         : null;
       return {
         weekday,

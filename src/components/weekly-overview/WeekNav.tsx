@@ -34,7 +34,7 @@ export function WeekNav({
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-[6px]">
         <NavButton href={href(prev, view)} label="Previous week" dir="left" />
-        <span className="min-w-[168px] text-center text-[14px] font-semibold">
+        <span className="min-w-[150px] text-center text-[14px] font-semibold">
           {weekLabel}
         </span>
         <NavButton href={href(next, view)} label="Next week" dir="right" />
@@ -42,7 +42,7 @@ export function WeekNav({
       {!isThisWeek ? (
         <Link
           href={href(thisMonday, view)}
-          className="inline-flex items-center gap-2 rounded-sm border border-border-strong bg-surface px-[11px] py-[6px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
+          className="inline-flex items-center gap-2 rounded-[8px] border border-border bg-surface px-[11px] py-[6px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
         >
           This week
           <LinkPending size={13} />
@@ -65,7 +65,7 @@ function NavButton({
     <Link
       href={href}
       aria-label={label}
-      className="relative inline-flex size-8 items-center justify-center rounded-sm border border-border-strong bg-surface transition-colors hover:bg-surface-subtle"
+      className="relative inline-flex size-8 items-center justify-center rounded-[8px] border border-border bg-surface transition-colors hover:bg-surface-subtle"
     >
       {/* Spinner overlays the arrow while the week navigation is pending. */}
       <LinkPending size={15} className="absolute inset-0 items-center justify-center" />

@@ -1,7 +1,8 @@
 // Presentation metadata for the five slot statuses — the single place copy,
 // glyph and colour-token classes live, shared by the Calendar and Status views.
 // Copy is the approved wording: "Needs Review" (not "Returned"), "Not started"
-// for the derived empty state. Colours use the status-* tokens from globals.css.
+// for the derived empty state. Colours use the status-* tokens from globals.css,
+// which mirror the design handoff exactly (see README "Status colours").
 
 import type { SlotStatus } from '@/types/weekly-overview';
 
@@ -10,49 +11,49 @@ export interface StatusMeta {
   label: string;
   /** Leading glyph — filled for real statuses, hollow ring for "Not started". */
   glyph: '●' | '○';
-  /** Chip classes: text / background / border tokens. */
-  chip: string;
+  /** Badge classes: status fg text + status tint background (flat, no border). */
+  badge: string;
   /** Just the foreground text-colour class (for column headings, etc.). */
   text: string;
-  /** Card border class for the Status board. */
-  cardBorder: string;
+  /** Border-colour class in the status tint — the 2px column bottom rule. */
+  rule: string;
 }
 
 export const STATUS_META: Record<SlotStatus, StatusMeta> = {
   not_started: {
     label: 'Not started',
     glyph: '○',
-    chip: 'text-status-idle bg-status-idle-bg border-status-idle-border',
+    badge: 'text-status-idle bg-status-idle-bg',
     text: 'text-status-idle',
-    cardBorder: 'border-border',
+    rule: 'border-status-idle-bg',
   },
   in_progress: {
     label: 'In progress',
     glyph: '●',
-    chip: 'text-status-progress bg-status-progress-bg border-status-progress-border',
+    badge: 'text-status-progress bg-status-progress-bg',
     text: 'text-status-progress',
-    cardBorder: 'border-status-progress-border',
+    rule: 'border-status-progress-bg',
   },
   submitted: {
     label: 'Submitted',
     glyph: '●',
-    chip: 'text-status-submitted bg-status-submitted-bg border-status-submitted-border',
+    badge: 'text-status-submitted bg-status-submitted-bg',
     text: 'text-status-submitted',
-    cardBorder: 'border-status-submitted-border',
+    rule: 'border-status-submitted-bg',
   },
   needs_review: {
     label: 'Needs Review',
     glyph: '●',
-    chip: 'text-status-review bg-status-review-bg border-status-review-border',
+    badge: 'text-status-review bg-status-review-bg',
     text: 'text-status-review',
-    cardBorder: 'border-status-review-border',
+    rule: 'border-status-review-bg',
   },
   approved: {
     label: 'Approved',
     glyph: '●',
-    chip: 'text-status-approved bg-status-approved-bg border-status-approved-border',
+    badge: 'text-status-approved bg-status-approved-bg',
     text: 'text-status-approved',
-    cardBorder: 'border-status-approved-border',
+    rule: 'border-status-approved-bg',
   },
 };
 

@@ -48,6 +48,16 @@ export interface Block {
   phase: TeachingPhase | null;
   /** Planned duration of the block in minutes. */
   duration_minutes: number;
+  /**
+   * Editable per-block time in minutes. Distinct from `duration_minutes` (the
+   * format's fixed default); the editor lets teachers adjust this. Optional so
+   * existing plans/code keep working.
+   */
+  minutes?: number;
+  /** The short CFU "what I'll do" line. */
+  note?: string;
+  /** Ids of resources attached to this block. */
+  resourceIds?: string[];
 }
 
 /**
@@ -97,4 +107,17 @@ export interface LessonPlan {
   review_note: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Student worksheet as a rich-text (tiptap) document. Stored in the
+   * `lesson_plans.worksheet` JSONB column. Tiptap's JSON shape is unenforced
+   * here; the editor defines the concrete document type when it wires
+   * persistence. Optional so existing plans/code keep working.
+   */
+  worksheet?: unknown;
+  /**
+   * Required-materials list, an array of entries. Stored in the
+   * `lesson_plans.required_materials` JSONB column. The editor defines the exact
+   * entry shape later. Optional so existing plans/code keep working.
+   */
+  requiredMaterials?: unknown[];
 }

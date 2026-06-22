@@ -232,6 +232,11 @@ export function LinkItStep({
           />
         </div>
       </div>
+      {/* TODO(reskin): the mockup shows a right-hand resource bank pane on this
+          step ("two-pane bank"). It is intentionally NOT wired here: Step 4 has
+          two blocks (cfu + exit_ticket) and the attach target is undefined, so
+          adding it would be new behaviour rather than a restyle. Confirm the
+          intended target before exposing ResourcePanel on Step 4. */}
       <div className="grid grid-cols-1 lg:grid-cols-2">
         <div className="border-b border-[#EFE8DD] lg:border-b-0 lg:border-r">
           <TechniqueColumn

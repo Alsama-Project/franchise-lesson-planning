@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Wordmark } from '@/components/ui/Wordmark';
 import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
+import { isAdmin } from '@/lib/auth';
 
 type AppShellProps = {
   /** The signed-in user's display name (full_name, falling back to email). */
@@ -18,7 +19,11 @@ type AppShellProps = {
  * bell and the signed-in user), wrapping a page body. Flat and border-delineated
  * on white. Search and bell are presentational for now (no backend wired).
  */
-export function AppShell({ name, subtitle, children }: AppShellProps) {
+export async function AppShell({ name, subtitle, children }: AppShellProps) {
+  // The "Admin" nav link is shown only to global admins; the /admin route is
+  // independently gated by its layout, so this is presentation only.
+  const admin = await isAdmin();
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-16 items-center gap-6 border-b border-border bg-surface px-[30px]">
@@ -35,7 +40,7 @@ export function AppShell({ name, subtitle, children }: AppShellProps) {
           </span>
         </Link>
 
-        <TopNav />
+        <TopNav isAdmin={admin} />
 
         {/* Right cluster: search · bell · user */}
         <div className="ml-auto flex items-center gap-[10px]">

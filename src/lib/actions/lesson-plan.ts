@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { hasObjectiveContent } from '@/lib/editor/objective';
+import { isAdmin, isCoordinatorOf } from '@/lib/auth';
 import type { Block, PlanStatus } from '@/types/lesson';
 
 export interface SavePlanInput {
@@ -79,6 +80,29 @@ export async function setPlanStatus(
   status: PlanStatus,
 ): Promise<ActionResult> {
   const supabase = await createClient();
+
+  // Approval is coordinator-only. The `approved` / `needs_review` transitions are
+  // restricted to a coordinator of the plan's (centre, subject) space (or an
+  // admin). This mirrors the DB trigger `enforce_approval_role` — belt-and-braces,
+  // and it lets us return a friendly error instead of a raw DB exception. The
+  // teacher transitions (`in_progress` / `submitted`) are unrestricted here (RLS
+  // still scopes them to a plan in a space the caller belongs to).
+  if (status === 'approved' || status === 'needs_review') {
+    const { data: planRow } = await supabase
+      .from('lesson_plans')
+      .select('classes ( school_id, subject_id )')
+      .eq('id', planId)
+      .maybeSingle();
+
+    const cls = (planRow as { classes: { school_id: string; subject_id: string } | null } | null)
+      ?.classes;
+    if (!cls) return { ok: false, error: 'Plan not found or not permitted.' };
+
+    const allowed = (await isCoordinatorOf(cls.school_id, cls.subject_id)) || (await isAdmin());
+    if (!allowed) {
+      return { ok: false, error: 'Only a coordinator of this subject can change approval status.' };
+    }
+  }
 
   const { data, error } = await supabase
     .from('lesson_plans')

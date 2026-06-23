@@ -4,6 +4,7 @@ import { unstable_cache } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { CurriculumLesson } from '@/types/curriculum';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
+import type { MonthNav, PickerCell } from '@/components/create-lesson/types';
 
 // ── Supabase-backed curriculum (was: committed curriculum.json) ──────────────────
 //
@@ -280,6 +281,74 @@ export async function getKnowledgeLOsForSkill(
   return [...map.entries()]
     .map(([ref, v]) => ({ ref, lo: v.lo, count: v.count, weeks: [...v.weeks].sort((a, b) => a - b) }))
     .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+}
+
+// ── "+ Lesson" curriculum picker (filtered by subject_code) ─────────────────────
+//
+// The picker navigates curriculum content by (subject_code, year, month, week) and
+// needs the raw `lesson_key` (the value written into a new plan's
+// `curriculum_lesson_id`), which the legacy `CurriculumLesson` shape doesn't carry.
+// These read straight off the cached raw rows.
+
+/** Calendar-month order for sorting the month dropdown. */
+const MONTH_ORDER = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function monthSortIndex(month: string): number {
+  const i = MONTH_ORDER.indexOf(month);
+  return i === -1 ? MONTH_ORDER.length : i;
+}
+
+/**
+ * Months (in calendar order) with their available week numbers, for a
+ * (subject_code, year) — drives the step-2 month dropdown + week stepper. Empty
+ * when the subject/year hasn't been synced.
+ */
+export async function getCurriculumNav(
+  subjectCode: string,
+  year: number,
+): Promise<MonthNav[]> {
+  const rows = await fetchActiveRows();
+  const byMonth = new Map<string, Set<number>>();
+  for (const r of rows) {
+    if (r.subject_code !== subjectCode || r.year !== year) continue;
+    if (!byMonth.has(r.month)) byMonth.set(r.month, new Set());
+    byMonth.get(r.month)!.add(r.week);
+  }
+  return [...byMonth.entries()]
+    .map(([month, weeks]) => ({ month, weeks: [...weeks].sort((a, b) => a - b) }))
+    .sort((a, b) => monthSortIndex(a.month) - monthSortIndex(b.month));
+}
+
+/**
+ * The curriculum cells for one (subject_code, year, month, week), one per period,
+ * sorted by period. Empty when that week has no rows (the picker shows its empty
+ * state). Each cell carries the `lesson_key` the create action writes.
+ */
+export async function getCurriculumWeekCells(
+  subjectCode: string,
+  year: number,
+  month: string,
+  week: number,
+): Promise<PickerCell[]> {
+  const rows = await fetchActiveRows();
+  return rows
+    .filter(
+      (r) =>
+        r.subject_code === subjectCode &&
+        r.year === year &&
+        r.month === month &&
+        r.week === week,
+    )
+    .sort((a, b) => a.period - b.period)
+    .map((r) => ({
+      period: r.period,
+      lessonKey: r.lesson_key,
+      dailyOutcome: cleanLO(r.daily_outcome ?? ''),
+      focusArea: r.focus_area ?? r.linguistic_skill ?? '',
+    }));
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

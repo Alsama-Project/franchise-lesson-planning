@@ -19,10 +19,19 @@ export interface CurriculumTarget {
   theme: string;
 }
 
+/** The owner of a plan — for the "whose plan" avatar and the people filter. */
+export interface PlanOwner {
+  id: string;
+  name: string;
+  initials: string;
+}
+
 /** The plan occupying a slot, trimmed to what the overview needs. */
 export interface SlotPlan {
   id: string;
   status: PlanStatus;
+  /** Who created the plan (avatar + "Everyone" filter). Null on legacy rows. */
+  owner: PlanOwner | null;
   /**
    * Day-of-week period (1–5) the lesson sits in. Used to order cards within a
    * day and shown as the card's "time" line — the schema has no clock time yet.

@@ -19,7 +19,6 @@ import { ResourcePanel } from '@/components/editor/ResourcePanel';
 
 export function WritingStep({
   title,
-  subtitle,
   block,
   onPatch,
   subjectId,
@@ -32,7 +31,6 @@ export function WritingStep({
   worksheetSlot,
 }: {
   title: string;
-  subtitle: string;
   block: Block;
   onPatch: (patch: Partial<Block>) => void;
   subjectId: string | null;
@@ -57,7 +55,6 @@ export function WritingStep({
               onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
             />
           </div>
-          <div className="mt-1 text-[13.5px] text-neutral-600">{subtitle}</div>
         </div>
         <TimeStepper
           label="min"

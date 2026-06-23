@@ -264,11 +264,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
         {step === 1 ? <CurriculumBand curriculum={curriculum} /> : null}
 
-        {step > 1 ? (
-          <div className="mt-[18px]">
-            <ObjectiveBanner remainder={remainder} />
-          </div>
-        ) : null}
+        {step > 1 ? <ObjectiveBanner remainder={remainder} /> : null}
 
         {step === 1 ? (
           <ObjectiveStep
@@ -284,7 +280,6 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
         {step === 2 && newContentBlock ? (
           <WritingStep
             title="Teach the new content"
-            subtitle="Model the reading, then guide the class through it."
             block={newContentBlock}
             onPatch={(patch) => patchType('new_content', patch)}
             subjectId={resourceBank.subjectId}
@@ -300,7 +295,6 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
         {step === 3 && practiceBlock ? (
           <WritingStep
             title="Practise"
-            subtitle="Plan the practice, then build the worksheet students use."
             block={practiceBlock}
             onPatch={(patch) => patchType('independent_practice', patch)}
             subjectId={resourceBank.subjectId}

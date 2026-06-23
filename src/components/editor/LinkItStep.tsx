@@ -214,10 +214,6 @@ export function LinkItStep({
               onChange={(phase) => onCfuChange({ phase: phase as TeachingPhase | null })}
             />
           </div>
-          <div className="mt-1 text-[13.5px] text-neutral-600">
-            Pick one check for understanding, then the exit ticket — from your pre-approved
-            activities.
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-[10px]">
           <TimeStepper

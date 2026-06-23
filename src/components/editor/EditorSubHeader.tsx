@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import type { EditorClassContext, ClassLiteracy } from '@/lib/editor/load-plan';
+import type { EditorClassContext } from '@/lib/editor/load-plan';
 import { IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
 
 function formatDate(iso: string): string {
@@ -16,12 +16,6 @@ function formatDate(iso: string): string {
     timeZone: 'UTC',
   }).format(d);
 }
-
-const LITERACY_PILL: Record<ClassLiteracy, { label: string; className: string }> = {
-  mixed: { label: 'Mixed literacy', className: 'bg-[#F6ECDA] text-[#B0651E]' },
-  literate: { label: 'Literate', className: 'bg-[#E2F0E8] text-[#2E7D5B]' },
-  illiterate: { label: 'Pre-literacy', className: 'bg-[#EEEAF6] text-[#6A5AA0]' },
-};
 
 /**
  * The editor sub-header: a "‹ This week" back link to the Weekly Overview, the
@@ -43,7 +37,6 @@ export function EditorSubHeader({
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
   const totalColor = onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]';
   const totalStroke = onTarget ? '#2E7D5B' : '#B0651E';
-  const literacy = LITERACY_PILL[classContext.literacy];
 
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
@@ -69,11 +62,6 @@ export function EditorSubHeader({
           <span className="text-neutral-300">·</span>
           <span className="text-[13px] text-neutral-600">
             {formatDate(lessonDate)} · {classContext.schoolName}
-          </span>
-          <span
-            className={`rounded-badge px-[9px] py-[3px] text-[11px] font-semibold ${literacy.className}`}
-          >
-            {literacy.label}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-4">

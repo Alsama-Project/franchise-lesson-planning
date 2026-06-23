@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { WeeklyOverview } from '@/components/weekly-overview/WeeklyOverview';
 import { getWeeklyOverview } from '@/lib/weekly-overview';
+import { getCreatableClasses } from '@/lib/create-lesson';
 import { currentMonday, resolveWeekStart } from '@/lib/week';
 
 // Rendered per-request so it reflects the live session and selected week.
@@ -26,11 +27,16 @@ export default async function Home({
   const view = viewParam === 'status' ? 'status' : 'calendar';
   const thisMonday = currentMonday();
 
-  const data = await getWeeklyOverview(weekStart);
+  // The week's plans and the creatable-class list (for the "+ Lesson" dialog) are
+  // independent reads — fetch them together.
+  const [data, groups] = await Promise.all([
+    getWeeklyOverview(weekStart),
+    getCreatableClasses(),
+  ]);
 
   return (
     <AppShell name={data.teacherName} subtitle={data.context ?? undefined}>
-      <WeeklyOverview data={data} view={view} thisMonday={thisMonday} />
+      <WeeklyOverview data={data} view={view} thisMonday={thisMonday} groups={groups} />
 
       {/* Temporary dev aid: a quiet link to your auth uid, still needed to run
           the supabase/admin provisioning + sample-plan seed. Remove once

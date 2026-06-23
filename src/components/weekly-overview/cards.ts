@@ -3,17 +3,21 @@
 // slot — either a real plan or a derived "Not started" placeholder.
 
 import { WEEKDAYS, WEEKDAY_LABELS, type Weekday } from '@/lib/week';
-import type { ClassWeek, SlotStatus } from '@/types/weekly-overview';
+import type { ClassWeek, PlanOwner, SlotStatus } from '@/types/weekly-overview';
 
 export interface LessonCard {
   /** Stable key, `${classId}:${weekday}`. */
   key: string;
+  /** The class this card belongs to (used to pre-seed the create dialog). */
+  classId: string;
   /** Class label, e.g. "Year 1 · A". */
   classLabel: string;
   /** Weekday the card sits on. */
   weekday: Weekday;
   /** Short weekday label, e.g. "Mon". */
   dayLabel: string;
+  /** The card's calendar date, `YYYY-MM-DD` (used to pre-seed the create dialog). */
+  date: string;
   /** Day-of-month number for the card's date, e.g. 15. */
   dateNum: number;
   /** Lesson period (1–5), or null when there's no plan. */
@@ -24,6 +28,8 @@ export interface LessonCard {
   planId: string | null;
   /** Coordinator note for `needs_review`, else null. */
   reviewNote: string | null;
+  /** Who owns the plan, for the "whose plan" avatar. Null when not started. */
+  owner: PlanOwner | null;
 }
 
 /** Day-of-month (1–31) from a `YYYY-MM-DD` string, without timezone drift. */
@@ -69,13 +75,16 @@ function toCard(c: ClassWeek, weekday: Weekday): LessonCard | null {
   if (!slot) return null;
   return {
     key: `${c.classId}:${weekday}`,
+    classId: c.classId,
     classLabel: c.label,
     weekday,
     dayLabel: WEEKDAY_LABELS[weekday],
+    date: slot.date,
     dateNum: dayOfMonth(slot.date),
     period: slot.plan?.period ?? null,
     status: slot.status,
     planId: slot.plan?.id ?? null,
     reviewNote: slot.plan?.reviewNote ?? null,
+    owner: slot.plan?.owner ?? null,
   };
 }

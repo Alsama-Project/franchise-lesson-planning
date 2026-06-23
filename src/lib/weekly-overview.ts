@@ -14,10 +14,12 @@ import {
   weekdayDates,
   weekdayOf,
 } from '@/lib/week';
+import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { PlanStatus } from '@/types/lesson';
 import type {
   ClassWeek,
   CurriculumTarget,
+  PlanOwner,
   SlotPlan,
   WeekSlot,
   WeeklyOverview,
@@ -42,6 +44,7 @@ interface PlanRow {
   period: number | null;
   status: PlanStatus;
   review_note: string | null;
+  created_by: string;
 }
 
 // A plan row with its class embedded — the shape of the week's `lesson_plans`
@@ -112,7 +115,7 @@ export async function getWeeklyOverview(weekStart: string): Promise<WeeklyOvervi
     supabase
       .from('lesson_plans')
       .select(
-        'id, class_id, curriculum_lesson_id, lesson_date, period, status, review_note, classes ( id, year, group_label, schools ( name ), subjects ( name ) )',
+        'id, class_id, curriculum_lesson_id, lesson_date, period, status, review_note, created_by, classes ( id, year, group_label, schools ( name ), subjects ( name ) )',
       )
       .gte('lesson_date', dates.mon)
       .lte('lesson_date', dates.fri),
@@ -168,6 +171,23 @@ export async function getWeeklyOverview(weekStart: string): Promise<WeeklyOvervi
     }),
   );
 
+  // Resolve plan owners (the "whose plan" avatar + people filter). One read for
+  // the distinct creators across this week's visible plans. The co-member profiles
+  // policy (migration 0013) lets a member read a teammate's id + full_name when
+  // they share a (school, subject) space; the auth'd client keeps it RLS-scoped.
+  const ownerById = new Map<string, PlanOwner>();
+  const ownerIds = [...new Set(planRows.map((p) => p.created_by).filter(Boolean))];
+  if (ownerIds.length > 0) {
+    const { data: ownerRows } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', ownerIds);
+    for (const row of (ownerRows ?? []) as Array<{ id: string; full_name: string | null }>) {
+      const name = row.full_name ?? 'Unknown';
+      ownerById.set(row.id, { id: row.id, name, initials: initialsOf(name) });
+    }
+  }
+
   const classes: ClassWeek[] = classRows.map((c) => {
     const slots: WeekSlot[] = WEEKDAYS.map((weekday) => {
       const date = dates[weekday];
@@ -178,6 +198,7 @@ export async function getWeeklyOverview(weekStart: string): Promise<WeeklyOvervi
             status: plan.status,
             period: plan.period,
             reviewNote: plan.review_note,
+            owner: ownerById.get(plan.created_by) ?? null,
           }
         : null;
       return {

@@ -17,8 +17,10 @@ import {
   STATUS_META,
 } from '@/components/weekly-overview/status';
 import { CardShell } from '@/components/weekly-overview/CardShell';
+import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
 import { allCards, timeLabel, type LessonCard } from '@/components/weekly-overview/cards';
 import { setPlanStatus } from '@/lib/actions/lesson-plan';
+import { useCreateLesson } from '@/components/create-lesson/CreateLessonContext';
 import type { ClassWeek, SlotStatus } from '@/types/weekly-overview';
 import type { PlanStatus } from '@/types/lesson';
 
@@ -155,7 +157,7 @@ function NotStartedBody({ cards }: { cards: LessonCard[] }) {
   return (
     <div className="flex flex-col gap-2">
       {visible.map((card) => (
-        <StatusCard key={card.key} card={card} />
+        <NotStartedCard key={card.key} card={card} />
       ))}
       {hidden > 0 ? (
         <div className="py-[6px] text-center text-[11.5px] text-text-faint">
@@ -222,11 +224,45 @@ function StatusCard({ card }: { card: LessonCard }) {
   const time = card.period == null ? '' : ` · ${timeLabel(card.period)}`;
   return (
     <CardShell planId={card.planId}>
-      <div className="text-[11.5px] font-semibold text-text-faint">
-        {card.dayLabel} {card.dateNum}
-        {time}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11.5px] font-semibold text-text-faint">
+            {card.dayLabel} {card.dateNum}
+            {time}
+          </div>
+          <div className="mt-[3px] text-[14px] font-semibold">{card.classLabel}</div>
+        </div>
+        {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
       </div>
-      <div className="mt-[3px] text-[14px] font-semibold">{card.classLabel}</div>
     </CardShell>
+  );
+}
+
+/**
+ * A "Not started" card: no plan yet, so it's not a link. The whole card — and its
+ * teal "Plan" chip — opens the create dialog pre-seeded with this class + date.
+ */
+function NotStartedCard({ card }: { card: LessonCard }) {
+  const { openCreate } = useCreateLesson();
+  const open = () => openCreate({ classId: card.classId, date: card.date });
+  return (
+    <button
+      type="button"
+      onClick={open}
+      className="flex items-center justify-between gap-2 rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px] text-left transition-colors hover:bg-surface-cream"
+    >
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold text-text-faint">
+          {card.dayLabel} {card.dateNum}
+        </div>
+        <div className="mt-[2px] text-[14px] font-semibold">{card.classLabel}</div>
+      </div>
+      <span className="inline-flex flex-shrink-0 items-center gap-[4px] rounded-badge border border-teal-tint-border bg-teal-tint px-[8px] py-[4px] text-[10.5px] font-bold text-teal">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Plan
+      </span>
+    </button>
   );
 }

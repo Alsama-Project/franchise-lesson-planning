@@ -103,7 +103,7 @@ export function Stepper({
             <button
               type="button"
               onClick={onNext}
-              className="rounded-[9px] border-none bg-teal px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#1a6a5d]"
+              className="min-w-[92px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-center text-[13px] font-semibold text-white hover:bg-[#1a6a5d]"
             >
               {nextLabel}
             </button>

@@ -257,7 +257,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
         onGo={goStep}
         onBack={() => goStep(step - 1)}
         onNext={() => goStep(step + 1)}
-        nextLabel={step === 4 ? 'Review lesson →' : 'Next →'}
+        nextLabel={step === 4 ? 'Review →' : 'Next →'}
         submitSlot={submitControl}
       />
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { signOut } from '@/lib/actions/auth';
 
 /** Up-to-two-letter initials for the avatar, derived from the display name. */
@@ -49,7 +50,14 @@ export function UserMenu({ name, subtitle }: { name: string; subtitle?: string }
         <span className="inline-flex size-8 items-center justify-center rounded-full bg-teal text-[12px] font-bold text-white">
           {initials(name)}
         </span>
-        <span className="max-w-[140px] truncate text-[13px] font-semibold">{name}</span>
+        {/* Two-line identity: name on top, "Centre · Subject" beneath when the
+            user belongs to at least one space (matches the Settings design). */}
+        <span className="flex max-w-[150px] flex-col items-start leading-[1.15]">
+          <span className="max-w-[150px] truncate text-[13px] font-semibold">{name}</span>
+          {subtitle ? (
+            <span className="max-w-[150px] truncate text-[10px] text-text-faint">{subtitle}</span>
+          ) : null}
+        </span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A8178" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M6 9l6 6 6-6" />
         </svg>
@@ -66,13 +74,14 @@ export function UserMenu({ name, subtitle }: { name: string; subtitle?: string }
               <div className="mt-px text-[12px] text-neutral-600">{subtitle}</div>
             ) : null}
           </div>
-          <button
-            type="button"
+          <Link
+            href="/settings"
             role="menuitem"
-            className="w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-900 hover:bg-surface-subtle"
+            onClick={() => setOpen(false)}
+            className="block w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-900 hover:bg-surface-subtle"
           >
-            Profile &amp; settings
-          </button>
+            Settings
+          </Link>
           <form action={signOut} role="none">
             <button
               type="submit"

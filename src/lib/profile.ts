@@ -11,13 +11,17 @@ export interface HeaderProfile {
   subtitle?: string;
 }
 
-interface ProfileRow {
-  full_name: string | null;
+interface MembershipRow {
   schools: { name: string } | null;
   subjects: { name: string } | null;
 }
 
-/** Load the shell's header identity for the signed-in user. */
+/**
+ * Load the shell's header identity for the signed-in user. The "Centre · Subject"
+ * subline comes from the user's primary `subject_membership` (the earliest by
+ * created_at) — the permission model is per-space now, so the subtitle reflects
+ * the space they joined first. Omitted when they belong to no space yet.
+ */
 export async function getHeaderProfile(): Promise<HeaderProfile> {
   const supabase = await createClient();
   const {
@@ -26,17 +30,22 @@ export async function getHeaderProfile(): Promise<HeaderProfile> {
 
   if (!user) return { name: 'there' };
 
-  const { data } = await supabase
-    .from('profiles')
-    .select('full_name, schools ( name ), subjects ( name )')
-    .eq('id', user.id)
-    .maybeSingle();
+  const [{ data: profile }, { data: membership }] = await Promise.all([
+    supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle(),
+    supabase
+      .from('subject_membership')
+      .select('schools ( name ), subjects ( name )')
+      .eq('profile_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   // The embeds are many-to-one, so each resolves to a single object at runtime;
   // database.types.ts is still a placeholder, so narrow by hand.
-  const row = data as unknown as ProfileRow | null;
+  const row = membership as unknown as MembershipRow | null;
 
-  const name = row?.full_name ?? user.email ?? 'there';
+  const name = (profile as { full_name: string | null } | null)?.full_name ?? user.email ?? 'there';
   const school = row?.schools?.name;
   const subject = row?.subjects?.name;
   const subtitle =

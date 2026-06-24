@@ -13,18 +13,17 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 import { STATUS_COLUMN_ORDER, STATUS_META } from '@/components/weekly-overview/status';
-import { CardShell } from '@/components/weekly-overview/CardShell';
-import { ScopeChip } from '@/components/weekly-overview/ScopeChip';
-import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
+import {
+  StatusLessonCard,
+  NotStartedLessonCard,
+} from '@/components/weekly-overview/LessonCard';
 import {
   emptySlotCards,
-  periodLabel,
   planCardsForYears,
   type EmptySlotCard,
   type PlanCard,
 } from '@/components/weekly-overview/cards';
 import { setPlanStatus } from '@/lib/actions/lesson-plan';
-import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 import type { BoardYear, SlotStatus } from '@/types/weekly-overview';
 import type { PlanStatus } from '@/types/lesson';
 
@@ -144,7 +143,7 @@ function NotStartedColumn({ cards }: { cards: EmptySlotCard[] }) {
       <ColumnHeader status="not_started" count={cards.length} />
       <div className="flex flex-col gap-2">
         {visible.map((card) => (
-          <NotStartedCard key={card.key} card={card} />
+          <NotStartedLessonCard key={card.key} card={card} />
         ))}
         {hidden > 0 ? (
           <div className="py-[6px] text-center text-[11.5px] text-text-faint">+ {hidden} more</div>
@@ -201,59 +200,7 @@ function DraggableStatusCard({ card }: { card: PlanCard }) {
       {...listeners}
       className={cn('cursor-grab', isDragging && 'cursor-grabbing opacity-80')}
     >
-      <StatusCard card={card} />
+      <StatusLessonCard card={card} />
     </div>
-  );
-}
-
-function StatusCard({ card }: { card: PlanCard }) {
-  return (
-    <CardShell planId={card.planId} canEdit={card.canEdit}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[11.5px] font-semibold text-text-faint">
-            Year {card.year} · {periodLabel(card.period)}
-          </div>
-          <div className="mt-[5px]">
-            <ScopeChip scope={card.scope} />
-          </div>
-        </div>
-        {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
-      </div>
-    </CardShell>
-  );
-}
-
-/**
- * A "Not started" card: no plan yet, so it's not a link. The whole card — and its
- * teal "Plan" chip — opens the scope chooser for this curriculum slot.
- */
-function NotStartedCard({ card }: { card: EmptySlotCard }) {
-  const { openChooser } = useScopeChooser();
-  const open = () =>
-    openChooser({ lessonKey: card.lessonKey, year: card.year, dailyOutcome: card.dailyOutcome });
-  return (
-    <button
-      type="button"
-      onClick={open}
-      className="flex items-center justify-between gap-2 rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px] text-left transition-colors hover:bg-surface-cream"
-    >
-      <div className="min-w-0">
-        <div className="text-[11px] font-semibold text-text-faint">
-          Year {card.year} · {periodLabel(card.period)}
-        </div>
-        {card.dailyOutcome ? (
-          <div className="mt-[3px] line-clamp-1 text-[12.5px] font-medium text-neutral-700">
-            {card.dailyOutcome}
-          </div>
-        ) : null}
-      </div>
-      <span className="inline-flex flex-shrink-0 items-center gap-[4px] rounded-badge border border-teal-tint-border bg-teal-tint px-[8px] py-[4px] text-[10.5px] font-bold text-teal">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Plan
-      </span>
-    </button>
   );
 }

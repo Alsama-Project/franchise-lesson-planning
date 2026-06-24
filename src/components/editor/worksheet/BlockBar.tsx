@@ -42,13 +42,11 @@ const ACTION_STYLE = {
 } as const;
 
 export function BlockBar({
-  index,
   badge,
   onDelete,
   onDuplicate,
   dragHandleProps,
 }: {
-  index: number;
   badge: BlockBadge;
   onDelete: () => void;
   onDuplicate?: () => void;
@@ -73,7 +71,6 @@ export function BlockBar({
       >
         ⠿
       </span>
-      <span style={{ fontSize: 12.5, fontWeight: 600 }}>Exercise {index + 1}</span>
       <span
         style={
           isFree

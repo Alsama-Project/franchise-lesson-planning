@@ -3,23 +3,35 @@
 // A "Free block" exercise: the teacher's own writing surface. It opens at a
 // choice state (Write it yourself · Insert image · Generate with AI); writing and
 // generation both land in the same tiptap editor (the preserved rich-text
-// surface, restyled to the mockup's Word-like document). Image insert performs a
-// real Storage upload; Generate calls /api/generate-resource and parses the
-// markdown result into the editor. The block's document is lifted to the parent
-// on every change for autosave into lesson_plans.worksheet.
+// surface). Image insert performs a real Storage upload; Generate calls
+// /api/generate-resource and parses the markdown result into the editor.
+//
+// The block is the CONTAINER: its flowing rich text AND any floating elements
+// (text boxes / images) are owned by and clamped to this block. The floating
+// layer is rendered inside the block's content box (its positioning context), so
+// nothing renders outside the block and deleting the block deletes everything in
+// it. The block's document and elements are lifted to the parent for autosave.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/core';
-import type { WorksheetFreeBlock, WorksheetDoc } from '@/types/lesson';
+import type {
+  FloatingElement,
+  FloatingImage,
+  WorksheetFreeBlock,
+  WorksheetDoc,
+} from '@/types/lesson';
 import type { HTMLAttributes } from 'react';
 import { worksheetEditorExtensions } from './editorExtensions';
 import type { FloatImageInfo } from './resizableImage';
 import { AiComposer } from './AiComposer';
 import { BlockBar } from './BlockBar';
+import { ExerciseHeading } from './ExerciseHeading';
+import { FloatingLayer } from './FloatingLayer';
 import type { WorksheetContext } from './context';
 import { markdownToHtml, escapeHtml } from '@/lib/editor/markdown';
 import { uploadWorksheetImageAction } from '@/lib/actions/worksheet';
+import { clampGeom, newFloatingImage, newTextBox, nextZ, restackElements } from '@/lib/editor/worksheet';
 import {
   requestGeneratedResource,
   GenerateResourceRequestError,
@@ -27,12 +39,31 @@ import {
 
 type View = 'blank' | 'compose' | 'doc';
 
-/** The imperative surface a focused Free block exposes to the chrome toolbar. */
+const MIN_TEXTBOX = { w: 120, h: 56 };
+const MIN_IMAGE = { w: 48, h: 48 };
+
+/**
+ * The active context the chrome toolbar formats / inserts into. `editor` is the
+ * focused editor (a block's doc or one of its text boxes); `blockId` is the
+ * owning Free block (the insert target); `activeId` distinguishes which surface
+ * is focused so deactivation is precise.
+ */
 export interface ActiveBlock {
-  id: string;
+  activeId: string;
+  blockId: string;
   editor: Editor;
-  insertImage: () => void;
-  startGenerate: () => void;
+  insertTextBox: () => void;
+  insertFloatingImage: () => void;
+}
+
+/** Natural size of a freshly inserted floating image. */
+function loadImageSize(src: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth || 320, h: img.naturalHeight || 240 });
+    img.onerror = () => resolve({ w: 320, h: 240 });
+    img.src = src;
+  });
 }
 
 function PenIcon() {
@@ -64,30 +95,34 @@ export function FreeBlock({
   index,
   ctx,
   onChange,
+  onElementsChange,
   onDelete,
   onDuplicate,
   onActivate,
   onDeactivate,
-  onFloatImage,
+  selectedElementId,
+  onSelectElement,
   dragHandleProps,
 }: {
   block: WorksheetFreeBlock;
   index: number;
   ctx: WorksheetContext;
   onChange: (doc: WorksheetDoc, fromAI: boolean) => void;
+  /** Lift this block's floating elements for autosave. */
+  onElementsChange: (blockId: string, elements: FloatingElement[]) => void;
   onDelete: () => void;
   onDuplicate: () => void;
-  /** Register this block as the chrome toolbar's target when it gains focus. */
+  /** Register this block (or one of its text boxes) as the toolbar's target. */
   onActivate: (api: ActiveBlock) => void;
-  /** Clear the active block when this one unmounts (e.g. is deleted). */
-  onDeactivate: (id: string) => void;
-  /** Convert an inline image in this block to a free floating element. */
-  onFloatImage: (info: FloatImageInfo) => void;
+  /** Clear the active context for `activeId` when that surface unmounts. */
+  onDeactivate: (activeId: string) => void;
+  /** The currently selected element id across the worksheet (or null). */
+  selectedElementId: string | null;
+  onSelectElement: (id: string | null) => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
 }) {
-  const [view, setView] = useState<View>(block.doc ? 'doc' : 'blank');
-  // fromAI is tracked in a ref too, so the editor's onUpdate (a stable closure)
-  // always lifts the current value rather than a stale one.
+  const hasContent = Boolean(block.doc) || block.elements.length > 0;
+  const [view, setView] = useState<View>(hasContent ? 'doc' : 'blank');
   const fromAIRef = useRef(block.fromAI);
   const [fromAI, setFromAI] = useState(block.fromAI);
 
@@ -96,9 +131,90 @@ export function FreeBlock({
   const [genError, setGenError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const floatImgInputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // Latest elements, read by the stable insert / float closures captured by the
+  // editor extension and the active-block api.
+  const elementsRef = useRef(block.elements);
+  useEffect(() => {
+    elementsRef.current = block.elements;
+  }, [block.elements]);
+
+  const commitElements = useCallback(
+    (next: FloatingElement[]) => onElementsChange(block.id, next),
+    [block.id, onElementsChange],
+  );
+
+  const boxSize = useCallback(() => {
+    const b = boxRef.current;
+    return { w: b?.clientWidth || 590, h: b?.clientHeight || 372 };
+  }, []);
+
+  const cascadeGeom = useCallback(
+    (w: number, h: number, min: { w: number; h: number }) => {
+      const els = elementsRef.current;
+      const off = 24 + (els.length % 5) * 18;
+      return clampGeom({ x: off, y: off, w, h }, boxSize(), min);
+    },
+    [boxSize],
+  );
+
+  const insertTextBox = useCallback(() => {
+    const els = elementsRef.current;
+    const g = cascadeGeom(280, 120, MIN_TEXTBOX);
+    const el = { ...newTextBox(g.x, g.y, nextZ(els)), ...g };
+    setView('doc');
+    commitElements([...els, el]);
+    onSelectElement(el.id);
+  }, [cascadeGeom, commitElements, onSelectElement]);
+
+  const insertFloatingImage = useCallback(() => floatImgInputRef.current?.click(), []);
+
+  const onFloatImgPicked = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await uploadWorksheetImageAction(fd);
+      if (!res.ok || !res.url) return;
+      const natural = await loadImageSize(res.url);
+      const box = boxSize();
+      const w = Math.min(natural.w, 360, box.w);
+      const h = w * (natural.h / natural.w);
+      const els = elementsRef.current;
+      const g = clampGeom({ ...cascadeGeom(w, h, MIN_IMAGE), w, h }, box, MIN_IMAGE);
+      const el = newFloatingImage(res.url, file.name, g, nextZ(els));
+      setView('doc');
+      commitElements([...els, el]);
+      onSelectElement(el.id);
+    },
+    [boxSize, cascadeGeom, commitElements, onSelectElement],
+  );
+
+  // Convert an inline image (in this block's doc) to a free floating element in
+  // the same block. The ResizableImage NodeView deletes the inline node itself.
+  const handleFloatInline = useCallback(
+    (info: FloatImageInfo) => {
+      const box = boxSize();
+      const w = Math.min(info.w || 320, box.w);
+      const h = info.h && info.w ? w * (info.h / info.w) : w * 0.66;
+      const els = elementsRef.current;
+      const g = clampGeom({ ...cascadeGeom(w, h, MIN_IMAGE), w, h }, box, MIN_IMAGE);
+      const el = newFloatingImage(info.src, info.alt, g, nextZ(els));
+      commitElements([...els, el]);
+      onSelectElement(el.id);
+    },
+    [boxSize, cascadeGeom, commitElements, onSelectElement],
+  );
 
   const editor = useEditor({
-    extensions: worksheetEditorExtensions({ onFloatImage }),
+    // handleFloatInline only runs from a NodeView button (an event), never during
+    // render, and is stable — reading the latest elements via a ref inside it is safe.
+    // eslint-disable-next-line react-hooks/refs
+    extensions: worksheetEditorExtensions({ onFloatImage: handleFloatInline }),
     content: (block.doc as JSONContent | null) ?? '',
     immediatelyRender: false,
     editorProps: { attributes: { class: 'worksheet-doc' } },
@@ -120,7 +236,7 @@ export function FreeBlock({
   const onFilePicked = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      e.target.value = ''; // allow re-selecting the same file later
+      e.target.value = '';
       if (!file || !editor) return;
       setUploading(true);
       try {
@@ -148,7 +264,6 @@ export function FreeBlock({
       const result = await requestGeneratedResource(ctx, prompt.trim());
       const html = `<h1>${escapeHtml(result.title)}</h1>${markdownToHtml(result.body)}`;
       setFrom(true);
-      // setContent's second arg (emitUpdate) is false, so lift the doc explicitly.
       editor.commands.setContent(html, false);
       setView('doc');
       onChange(editor.getJSON() as WorksheetDoc, true);
@@ -166,21 +281,72 @@ export function FreeBlock({
     setView('compose');
   }, []);
 
-  // Register with the chrome toolbar as the active block whenever this block's
-  // editor gains focus, and clear the registration on unmount (delete).
+  // Make this block's doc editor the active toolbar target on focus.
   useEffect(() => {
     if (!editor) return;
-    const announce = () => onActivate({ id: block.id, editor, insertImage: pickImage, startGenerate: toCompose });
+    const announce = () =>
+      onActivate({ activeId: block.id, blockId: block.id, editor, insertTextBox, insertFloatingImage });
     editor.on('focus', announce);
     return () => {
       editor.off('focus', announce);
       onDeactivate(block.id);
     };
-  }, [editor, block.id, pickImage, toCompose, onActivate, onDeactivate]);
+  }, [editor, block.id, insertTextBox, insertFloatingImage, onActivate, onDeactivate]);
+
+  // Convert a floating image back to an inline image in this block's doc.
+  const makeImageInline = useCallback(
+    (el: FloatingImage) => {
+      editor
+        ?.chain()
+        .focus()
+        .insertContent({ type: 'image', attrs: { src: el.src, alt: el.alt ?? null, width: Math.round(el.w), align: 'center' } })
+        .run();
+      commitElements(elementsRef.current.filter((e) => e.id !== el.id));
+      onSelectElement(null);
+    },
+    [editor, commitElements, onSelectElement],
+  );
+
+  const elementActions = useMemo(
+    () => ({
+      onSelect: (id: string | null) => onSelectElement(id),
+      onCommit: (id: string, geom: { x: number; y: number; w: number; h: number }) =>
+        commitElements(elementsRef.current.map((e) => (e.id === id ? { ...e, ...geom } : e))),
+      onDelete: (id: string) => {
+        commitElements(elementsRef.current.filter((e) => e.id !== id));
+        onSelectElement(null);
+      },
+      onRestack: (id: string, dir: 'forward' | 'backward') =>
+        commitElements(restackElements(elementsRef.current, id, dir)),
+      onDocChange: (id: string, doc: WorksheetDoc) =>
+        commitElements(
+          elementsRef.current.map((e) => (e.id === id && e.kind === 'textbox' ? { ...e, doc } : e)),
+        ),
+      onStyleChange: (id: string, patch: { border?: boolean; fill?: 'transparent' | 'white' }) =>
+        commitElements(
+          elementsRef.current.map((e) => (e.id === id && e.kind === 'textbox' ? { ...e, ...patch } : e)),
+        ),
+      onMakeInline: (el: FloatingImage) => makeImageInline(el),
+      onActivate,
+      onDeactivate,
+    }),
+    [commitElements, onSelectElement, makeImageInline, onActivate, onDeactivate],
+  );
+
+  // Activate this block (without focusing text) when its chrome/empty area is
+  // clicked, and clear any element selection — clicking the block never spawns an
+  // element, it only makes the block the insert target.
+  const activateBlock = useCallback(() => {
+    if (editor) {
+      onActivate({ activeId: block.id, blockId: block.id, editor, insertTextBox, insertFloatingImage });
+    }
+    onSelectElement(null);
+  }, [editor, block.id, insertTextBox, insertFloatingImage, onActivate, onSelectElement]);
 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
+      onPointerDown={activateBlock}
       style={{
         border: '2px solid #B62A5C',
         borderRadius: 14,
@@ -191,7 +357,6 @@ export function FreeBlock({
       }}
     >
       <BlockBar
-        index={index}
         badge={{ text: 'Free block', variant: 'free' }}
         onDelete={onDelete}
         onDuplicate={onDuplicate}
@@ -199,28 +364,32 @@ export function FreeBlock({
       />
 
       <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFilePicked} />
+      <input ref={floatImgInputRef} type="file" accept="image/*" hidden onChange={onFloatImgPicked} />
 
-      {/* CHOICE STATE */}
+      {/* CHOICE STATE (only while the block is truly empty) */}
       {view === 'blank' ? (
-        <div style={{ background: '#fff', padding: '64px 48px', minHeight: 372, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
-          <span style={{ width: 54, height: 54, borderRadius: 14, background: '#F3ECE2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#A79E94" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 7V5h16v2M9 5v14M7 19h4" />
-            </svg>
-          </span>
-          <div style={{ fontSize: 18, fontWeight: 600, color: '#5C544E' }}>Start your exercise</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button type="button" onClick={goWrite} style={choiceBtn}>
-              <PenIcon /> Write it yourself
-            </button>
-            <button type="button" onClick={pickImage} disabled={uploading} style={choiceBtn}>
-              <ImageIcon /> {uploading ? 'Uploading…' : 'Insert image'}
-            </button>
-            <button type="button" onClick={toCompose} style={{ ...choiceBtn, color: '#fff', background: '#1F7A6C', border: 'none', boxShadow: '0 6px 16px -8px rgba(31,122,108,0.6)' }}>
-              <Sparkle /> Generate with AI
-            </button>
+        <div style={{ background: '#fff', padding: '24px 48px 64px' }}>
+          <ExerciseHeading index={index} />
+          <div style={{ minHeight: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+            <span style={{ width: 54, height: 54, borderRadius: 14, background: '#F3ECE2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#A79E94" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 7V5h16v2M9 5v14M7 19h4" />
+              </svg>
+            </span>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#5C544E' }}>Start your exercise</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button type="button" onClick={goWrite} style={choiceBtn}>
+                <PenIcon /> Write it yourself
+              </button>
+              <button type="button" onClick={pickImage} disabled={uploading} style={choiceBtn}>
+                <ImageIcon /> {uploading ? 'Uploading…' : 'Insert image'}
+              </button>
+              <button type="button" onClick={toCompose} style={{ ...choiceBtn, color: '#fff', background: '#1F7A6C', border: 'none', boxShadow: '0 6px 16px -8px rgba(31,122,108,0.6)' }}>
+                <Sparkle /> Generate with AI
+              </button>
+            </div>
+            {genError ? <div style={{ fontSize: 12.5, color: '#B62A5C' }}>{genError}</div> : null}
           </div>
-          {genError ? <div style={{ fontSize: 12.5, color: '#B62A5C' }}>{genError}</div> : null}
         </div>
       ) : null}
 
@@ -230,14 +399,17 @@ export function FreeBlock({
           prompt={prompt}
           onPromptChange={setPrompt}
           onGenerate={runGenerate}
-          onCancel={() => setView('blank')}
+          onCancel={() => setView(hasContent ? 'doc' : 'blank')}
           generating={generating}
           error={genError}
         />
       ) : null}
 
-      {/* DOCUMENT */}
-      <div style={{ background: '#fff', padding: '30px 48px 38px', minHeight: 372, display: view === 'doc' ? 'block' : 'none' }}>
+      {/* DOCUMENT + contained floating layer (the block is the positioning context) */}
+      <div
+        style={{ position: 'relative', background: '#fff', padding: '24px 48px 38px', minHeight: 372, display: view === 'doc' ? 'block' : 'none' }}
+      >
+        <ExerciseHeading index={index} />
         {fromAI ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#186155', background: '#E4F0ED', border: '1px solid #CFE6E0', borderRadius: 6, padding: '4px 9px', marginBottom: 14 }}>
             <Sparkle /> Generated with AI
@@ -247,6 +419,16 @@ export function FreeBlock({
           <div style={{ fontSize: 12.5, color: '#8A8178', marginBottom: 10 }}>Uploading image…</div>
         ) : null}
         <EditorContent editor={editor} />
+
+        <FloatingLayer
+          elements={block.elements}
+          selectedId={selectedElementId}
+          actions={elementActions}
+          boxRef={boxRef}
+          blockId={block.id}
+          insertTextBox={insertTextBox}
+          insertFloatingImage={insertFloatingImage}
+        />
       </div>
     </div>
   );

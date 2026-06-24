@@ -28,12 +28,19 @@ export function FloatingLayer({
   selectedId,
   actions,
   boxRef,
+  blockId,
+  insertTextBox,
+  insertFloatingImage,
 }: {
   elements: FloatingElement[];
   selectedId: string | null;
   actions: FloatingActions;
-  /** The coordinate-box element, owned by the builder (for insert clamping). */
+  /** The coordinate-box element (the block content box) for clamping drags. */
   boxRef: React.RefObject<HTMLDivElement | null>;
+  /** The owning block + its inserters, so a focused text box targets this block. */
+  blockId: string;
+  insertTextBox: () => void;
+  insertFloatingImage: () => void;
 }) {
   return (
     <div ref={boxRef} className="ws-float-box" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
@@ -44,6 +51,9 @@ export function FloatingLayer({
             el={el as FloatingTextBoxModel}
             selected={selectedId === el.id}
             boxRef={boxRef}
+            blockId={blockId}
+            insertTextBox={insertTextBox}
+            insertFloatingImage={insertFloatingImage}
             onSelect={() => actions.onSelect(el.id)}
             onCommit={(geom) => actions.onCommit(el.id, geom)}
             onDelete={() => actions.onDelete(el.id)}

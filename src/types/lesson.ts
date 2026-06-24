@@ -104,7 +104,10 @@ export type WorksheetDoc = { type?: string; content?: unknown[] } & Record<strin
 
 /**
  * A teacher-authored "Free block": a tiptap document (optionally produced by the
- * AI generator). `doc` is null only for a freshly inserted, never-edited block.
+ * AI generator) plus any floating elements (text boxes / images) the teacher has
+ * placed inside this block. `doc` is null only for a freshly inserted, never-edited
+ * block. `elements` are owned by and clamped to this block — there is no page-level
+ * element layer.
  */
 export interface WorksheetFreeBlock {
   id: string;
@@ -112,6 +115,8 @@ export interface WorksheetFreeBlock {
   doc: WorksheetDoc | null;
   /** True when the doc was produced by the AI generator (shows the badge). */
   fromAI: boolean;
+  /** Floating elements contained within this block (block-relative coords). */
+  elements: FloatingElement[];
 }
 
 /**
@@ -131,11 +136,11 @@ export type WorksheetBlock = WorksheetFreeBlock | WorksheetResourceBlock;
 
 /**
  * Geometry shared by every freely-positioned ("floating") element. Coordinates
- * are PAGE-RELATIVE pixels in the printable body's content-box space (the A4
- * page at natural size / zoom = 1): `x`/`y` from the body content-box top-left,
- * `w`/`h` the element size. They are always clamped to the body box so an element
- * can never sit over the locked header/objective/footer or leave the page, and
- * so they print exactly where placed. `z` orders overlapping elements.
+ * are BLOCK-RELATIVE pixels in the owning block's content box (at natural size /
+ * zoom = 1): `x`/`y` from the block content-box top-left, `w`/`h` the element
+ * size. They are always clamped to the block box so an element can never leave
+ * its block, and so they print exactly where placed. `z` orders overlapping
+ * elements within the block.
  */
 export interface FloatingBase {
   id: string;
@@ -172,14 +177,14 @@ export type FloatingElement = FloatingTextBox | FloatingImage;
  * was a single bare tiptap document; v2 is this ordered block list. The column
  * is unenforced by Postgres, so this type is the source of truth for its shape.
  *
- * `elements` (added later, still v2) is the page-relative floating layer — text
- * boxes and free images overlaid on the body. It is additive: rows saved before
- * the feature simply have no elements, and `parseWorksheet` defaults it to `[]`.
+ * Floating elements (text boxes / images) are owned by individual Free blocks
+ * (see {@link WorksheetFreeBlock.elements}), not the worksheet — there is no
+ * page-level element layer. `parseWorksheet` re-homes any legacy page-level
+ * `elements` array into the first Free block.
  */
 export interface Worksheet {
   version: 2;
   blocks: WorksheetBlock[];
-  elements: FloatingElement[];
 }
 
 /**

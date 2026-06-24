@@ -44,12 +44,9 @@ export const BODY_PAD_BOTTOM = 16;
 export function MasterFrame({
   ctx,
   children,
-  overlay,
 }: {
   ctx: WorksheetContext;
   children: ReactNode;
-  /** Page-relative floating layer, rendered absolutely over the body content box. */
-  overlay?: ReactNode;
 }) {
   const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
 
@@ -168,23 +165,6 @@ export function MasterFrame({
         }}
       >
         {children}
-        {overlay ? (
-          // Inset to the content box so floating elements share the body's
-          // coordinate space and can never overlap the locked chrome.
-          <div
-            className="ws-float-layer"
-            style={{
-              position: 'absolute',
-              top: BODY_PAD_TOP,
-              left: BODY_PAD_X,
-              right: BODY_PAD_X,
-              bottom: BODY_PAD_BOTTOM,
-              pointerEvents: 'none',
-            }}
-          >
-            {overlay}
-          </div>
-        ) : null}
       </div>
 
       {/* FOOTER (master) */}

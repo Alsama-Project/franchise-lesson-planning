@@ -7,7 +7,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { HTMLAttributes } from 'react';
-import type { WorksheetBlock, WorksheetDoc } from '@/types/lesson';
+import type { FloatingElement, WorksheetBlock, WorksheetDoc } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import { FreeBlock, type ActiveBlock } from './FreeBlock';
 import { ResourceBlock } from './ResourceBlock';
@@ -20,11 +20,13 @@ export function SortableBlock({
   resource,
   resourceLoading,
   onChangeFree,
+  onElementsChange,
   onDelete,
   onDuplicateFree,
   onActivate,
   onDeactivate,
-  onFloatImage,
+  selectedElementId,
+  onSelectElement,
 }: {
   block: WorksheetBlock;
   index: number;
@@ -32,11 +34,13 @@ export function SortableBlock({
   resource: ResourceWithTags | null;
   resourceLoading?: boolean;
   onChangeFree: (id: string, doc: WorksheetDoc, fromAI: boolean) => void;
+  onElementsChange: (blockId: string, elements: FloatingElement[]) => void;
   onDelete: (id: string) => void;
   onDuplicateFree: (id: string) => void;
   onActivate: (api: ActiveBlock) => void;
   onDeactivate: (id: string) => void;
-  onFloatImage: (info: import('./resizableImage').FloatImageInfo) => void;
+  selectedElementId: string | null;
+  onSelectElement: (id: string | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
@@ -61,11 +65,13 @@ export function SortableBlock({
           index={index}
           ctx={ctx}
           onChange={(doc, fromAI) => onChangeFree(block.id, doc, fromAI)}
+          onElementsChange={onElementsChange}
           onDelete={() => onDelete(block.id)}
           onDuplicate={() => onDuplicateFree(block.id)}
           onActivate={onActivate}
           onDeactivate={onDeactivate}
-          onFloatImage={onFloatImage}
+          selectedElementId={selectedElementId}
+          onSelectElement={onSelectElement}
           dragHandleProps={dragHandleProps}
         />
       ) : (

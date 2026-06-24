@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import type { ResourceWithTags } from '@/types/resource';
 import { BlockBar } from './BlockBar';
+import { ExerciseHeading } from './ExerciseHeading';
 import { resourceFormat, formatColors } from './resourceFormat';
 import { getDownloadUrlAction } from '@/lib/actions/resources';
 
@@ -66,13 +67,13 @@ export function ResourceBlock({
     >
       {chromeless ? null : (
         <BlockBar
-          index={index}
           badge={{ text: badgeText, variant: 'bank' }}
           onDelete={onDelete}
           dragHandleProps={dragHandleProps}
         />
       )}
       <div style={{ padding: chromeless ? 0 : '20px 24px' }}>
+        <ExerciseHeading index={index} />
         {!resource ? (
           <div style={{ fontSize: 14, color: '#8A8178' }}>
             {loading ? 'Loading resource…' : 'This resource is no longer available.'}

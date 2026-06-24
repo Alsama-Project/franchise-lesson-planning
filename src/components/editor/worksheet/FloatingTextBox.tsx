@@ -5,12 +5,11 @@
 // block on focus, so Paragraph / B / I / U / colour / align / lists all apply
 // inside it. Minimal style: a border on/off toggle and a transparent/white fill.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/core';
 import type { FloatingTextBox as FloatingTextBoxModel, WorksheetDoc } from '@/types/lesson';
 import { worksheetEditorExtensions } from './editorExtensions';
-import { uploadWorksheetImageAction } from '@/lib/actions/worksheet';
 import { FloatingElementView, type Geom } from './FloatingElementView';
 import type { ActiveBlock } from './FreeBlock';
 
@@ -18,6 +17,9 @@ export function FloatingTextBox({
   el,
   selected,
   boxRef,
+  blockId,
+  insertTextBox,
+  insertFloatingImage,
   onSelect,
   onCommit,
   onDelete,
@@ -30,6 +32,10 @@ export function FloatingTextBox({
   el: FloatingTextBoxModel;
   selected: boolean;
   boxRef: React.RefObject<HTMLDivElement | null>;
+  /** The owning block + its inserters, so the toolbar targets the parent block. */
+  blockId: string;
+  insertTextBox: () => void;
+  insertFloatingImage: () => void;
   onSelect: () => void;
   onCommit: (geom: Geom) => void;
   onDelete: () => void;
@@ -39,8 +45,6 @@ export function FloatingTextBox({
   onActivate: (api: ActiveBlock) => void;
   onDeactivate: (id: string) => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const editor = useEditor({
     extensions: worksheetEditorExtensions(),
     content: (el.doc as JSONContent | null) ?? '',
@@ -49,34 +53,18 @@ export function FloatingTextBox({
     onUpdate: ({ editor }) => onDocChange(editor.getJSON() as WorksheetDoc),
   });
 
-  const pickImage = useCallback(() => fileInputRef.current?.click(), []);
-
-  const onFilePicked = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!file || !editor) return;
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await uploadWorksheetImageAction(fd);
-      if (res.ok && res.url) {
-        editor.chain().focus().setImage({ src: res.url, alt: file.name }).run();
-      }
-    },
-    [editor],
-  );
-
-  // Register with the chrome toolbar when the box gains focus.
+  // Register as the toolbar's active context when focused: formatting targets this
+  // box's editor, while inserts target the parent block.
   useEffect(() => {
     if (!editor) return;
     const announce = () =>
-      onActivate({ id: el.id, editor: editor as Editor, insertImage: pickImage, startGenerate: () => {} });
+      onActivate({ activeId: el.id, blockId, editor: editor as Editor, insertTextBox, insertFloatingImage });
     editor.on('focus', announce);
     return () => {
       editor.off('focus', announce);
       onDeactivate(el.id);
     };
-  }, [editor, el.id, pickImage, onActivate, onDeactivate]);
+  }, [editor, el.id, blockId, insertTextBox, insertFloatingImage, onActivate, onDeactivate]);
 
   const [hover, setHover] = useState(false);
   const showOutline = selected || hover;
@@ -129,7 +117,6 @@ export function FloatingTextBox({
           borderRadius: 6,
         }}
       >
-        <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFilePicked} />
         <div
           className="ws-tb-edit"
           onPointerDown={(e) => {

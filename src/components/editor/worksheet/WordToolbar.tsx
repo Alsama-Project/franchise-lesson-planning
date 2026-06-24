@@ -252,14 +252,17 @@ function FontSizeDropdown({ editor }: { editor: Editor | null }) {
 
 export function WordToolbar({
   editor,
+  canInsert,
   onInsertImage,
   onInsertTextBox,
 }: {
   /** The active block's editor, or null when no block is focused. */
   editor: Editor | null;
-  /** Insert a floating image onto the page (document-level, always enabled). */
+  /** Whether a block is active to receive an inserted element. */
+  canInsert: boolean;
+  /** Insert a floating image into the active block. */
   onInsertImage: () => void;
-  /** Insert a floating text box onto the page (document-level, always enabled). */
+  /** Insert a floating text box into the active block. */
   onInsertTextBox: () => void;
 }) {
   useEditorTick(editor);
@@ -338,13 +341,13 @@ export function WordToolbar({
 
       <Divider />
 
-      {/* Insert group — document-level, always enabled */}
-      <IconButton title="Insert image" onClick={onInsertImage}>
+      {/* Insert group — adds into the active block (disabled when none active) */}
+      <IconButton title={canInsert ? 'Insert image into this exercise' : 'Select an exercise first'} inert={!canInsert} onClick={onInsertImage}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="M21 15l-5-5L5 21" />
         </svg>
       </IconButton>
-      <IconButton title="Insert text box" onClick={onInsertTextBox}>
+      <IconButton title={canInsert ? 'Insert text box into this exercise' : 'Select an exercise first'} inert={!canInsert} onClick={onInsertTextBox}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="5" width="18" height="14" rx="2" /><path d="M8 9h8M8 13h5" />
         </svg>

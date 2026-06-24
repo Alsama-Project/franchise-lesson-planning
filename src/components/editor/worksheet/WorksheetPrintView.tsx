@@ -2,19 +2,22 @@
 
 // A static, non-editable render of the worksheet used by the print-preview modal
 // (and the @media print output). It reuses the locked MasterFrame and renders
-// each block without editing chrome: Free blocks are serialised from their stored
-// tiptap doc via `generateHTML` (so the resizable-image width/align styles
-// round-trip), and From-bank blocks reuse ResourceBlock in chromeless mode.
+// each block without editing chrome: every block shows its auto-numbered
+// "Exercise N" heading; Free blocks serialise their stored tiptap doc via
+// `generateHTML` (so resizable-image width/align round-trips) and render their
+// contained floating elements (text boxes / images) at their block-relative
+// positions; From-bank blocks reuse ResourceBlock in chromeless mode.
 
 import { generateHTML, type JSONContent } from '@tiptap/core';
-import type { Worksheet } from '@/types/lesson';
+import type { FloatingElement, Worksheet, WorksheetFreeBlock } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import { MasterFrame } from './MasterFrame';
 import { ResourceBlock } from './ResourceBlock';
+import { ExerciseHeading } from './ExerciseHeading';
 import { worksheetEditorExtensions } from './editorExtensions';
 import type { WorksheetContext } from './context';
 
-function freeBlockHtml(doc: unknown): string {
+function docHtml(doc: unknown): string {
   if (!doc) return '';
   try {
     return generateHTML(doc as JSONContent, worksheetEditorExtensions());
@@ -23,10 +26,11 @@ function freeBlockHtml(doc: unknown): string {
   }
 }
 
-/** Static, non-interactive render of the floating layer for print/preview. */
-function StaticFloatingLayer({ elements }: { elements: Worksheet['elements'] }) {
+/** Static, non-interactive render of one block's contained floating elements. */
+function StaticFloatingLayer({ elements }: { elements: FloatingElement[] }) {
+  if (elements.length === 0) return null;
   return (
-    <div style={{ position: 'absolute', inset: 0 }}>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       {elements.map((el) => {
         const base: React.CSSProperties = {
           position: 'absolute',
@@ -50,7 +54,7 @@ function StaticFloatingLayer({ elements }: { elements: Worksheet['elements'] }) 
                 borderRadius: 6,
               }}
               className="worksheet-doc"
-              dangerouslySetInnerHTML={{ __html: freeBlockHtml(el.doc) }}
+              dangerouslySetInnerHTML={{ __html: docHtml(el.doc) }}
             />
           );
         }
@@ -68,6 +72,19 @@ function StaticFloatingLayer({ elements }: { elements: Worksheet['elements'] }) 
   );
 }
 
+/** One Free block in print: heading + flowing doc + contained floating layer. The
+ *  padded, relative container mirrors the editor's block content box so the
+ *  block-relative element positions print exactly where placed. */
+function PrintFreeBlock({ block, index }: { block: WorksheetFreeBlock; index: number }) {
+  return (
+    <div style={{ position: 'relative', padding: '24px 48px 38px' }}>
+      <ExerciseHeading index={index} />
+      <div className="worksheet-doc" dangerouslySetInnerHTML={{ __html: docHtml(block.doc) }} />
+      <StaticFloatingLayer elements={block.elements} />
+    </div>
+  );
+}
+
 export function WorksheetPrintView({
   ws,
   ctx,
@@ -78,19 +95,11 @@ export function WorksheetPrintView({
   resolved: Record<string, ResourceWithTags>;
 }) {
   return (
-    <MasterFrame ctx={ctx} overlay={<StaticFloatingLayer elements={ws.elements} />}>
-      {ws.blocks.map((block, i) => {
-        if (block.kind === 'free') {
-          const html = freeBlockHtml(block.doc);
-          return (
-            <div
-              key={block.id}
-              className="worksheet-doc"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          );
-        }
-        return (
+    <MasterFrame ctx={ctx}>
+      {ws.blocks.map((block, i) =>
+        block.kind === 'free' ? (
+          <PrintFreeBlock key={block.id} block={block} index={i} />
+        ) : (
           <ResourceBlock
             key={block.id}
             resource={resolved[block.resourceId] ?? null}
@@ -99,8 +108,8 @@ export function WorksheetPrintView({
             onDelete={() => {}}
             chromeless
           />
-        );
-      })}
+        ),
+      )}
     </MasterFrame>
   );
 }

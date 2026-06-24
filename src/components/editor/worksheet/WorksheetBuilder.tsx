@@ -34,29 +34,20 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { FloatingImage, Worksheet, WorksheetDoc } from '@/types/lesson';
+import type { FloatingElement, Worksheet, WorksheetDoc } from '@/types/lesson';
 import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import {
-  addElement,
   appendBlock,
-  clampGeom,
   duplicateBlock,
   isWorksheetEmpty,
   moveBlock,
-  newFloatingImage,
   newFreeBlock,
   newResourceBlock,
-  newTextBox,
-  nextZ,
   parseWorksheet,
   removeBlock,
-  removeElement,
-  restackElement,
   updateBlock,
-  updateElement,
 } from '@/lib/editor/worksheet';
 import { getResourcesByIdsAction, recordUsageAction } from '@/lib/actions/resources';
-import { uploadWorksheetImageAction } from '@/lib/actions/worksheet';
 import type { WorksheetContext } from './context';
 import { MasterFrame } from './MasterFrame';
 import { AddExerciseMenu } from './AddExerciseMenu';
@@ -64,19 +55,7 @@ import { SortableBlock } from './SortableBlock';
 import { ResourceBankModal } from './ResourceBankModal';
 import { WordToolbar } from './WordToolbar';
 import { WorksheetPrintView } from './WorksheetPrintView';
-import { FloatingLayer, type FloatingActions } from './FloatingLayer';
-import type { Geom } from './FloatingElementView';
 import type { ActiveBlock } from './FreeBlock';
-
-/** Size + aspect of a freshly inserted floating image, derived from the file. */
-function loadImageSize(src: string): Promise<{ w: number; h: number }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.naturalWidth || 320, h: img.naturalHeight || 240 });
-    img.onerror = () => resolve({ w: 320, h: 240 });
-    img.src = src;
-  });
-}
 
 const PAGE_WIDTH = 794;
 const MIN_ZOOM = 0.25;
@@ -122,33 +101,30 @@ export function WorksheetBuilder({
   const shellRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
-  const floatBoxRef = useRef<HTMLDivElement | null>(null);
-  const floatFileRef = useRef<HTMLInputElement>(null);
 
   // Resolved resources for From-bank blocks. `attempted` distinguishes "still
   // loading" from "truly missing" so a block doesn't flash "unavailable".
   const [resolved, setResolved] = useState<Record<string, ResourceWithTags>>({});
   const [attempted, setAttempted] = useState<Set<string>>(new Set());
 
-  // ── Floating layer selection ──────────────────────────────────────────────
+  // ── Floating element selection (which element, across all blocks) ─────────
   const [selectedEl, setSelectedEl] = useState<string | null>(null);
-  // A live set of element ids, so focus handlers can tell a text box (keep its
-  // selection) from a Free block (clear the floating selection).
-  const elIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    elIdsRef.current = new Set(ws.elements.map((e) => e.id));
-  }, [ws.elements]);
 
-  // ── Active block for the chrome toolbar ───────────────────────────────────
+  // ── Active block context for the chrome toolbar (formatting + insert) ──────
   const [active, setActive] = useState<ActiveBlock | null>(null);
-  const onActivate = useCallback((api: ActiveBlock) => {
-    setActive(api);
-    setSelectedEl(elIdsRef.current.has(api.id) ? api.id : null);
-  }, []);
+  const onActivate = useCallback((api: ActiveBlock) => setActive(api), []);
   const onDeactivate = useCallback(
-    (id: string) => setActive((cur) => (cur && cur.id === id ? null : cur)),
+    (activeId: string) => setActive((cur) => (cur && cur.activeId === activeId ? null : cur)),
     [],
   );
+
+  // Latest worksheet, so editor-captured callbacks (a block's onUpdate / float
+  // handler are bound once by tiptap) always mutate the current state, not a
+  // stale snapshot.
+  const wsRef = useRef(ws);
+  useEffect(() => {
+    wsRef.current = ws;
+  }, [ws]);
 
   const commit = useCallback(
     (next: Worksheet) => {
@@ -314,122 +290,30 @@ export function WorksheetBuilder({
     [commit, ws, context.lessonPlanId],
   );
 
+  // changeFree + onElementsChange are bound once by each block's editor, so they
+  // read the latest worksheet via wsRef rather than a captured snapshot.
   const changeFree = useCallback(
     (id: string, doc: WorksheetDoc, fromAI: boolean) => {
-      commit(updateBlock(ws, id, (b) => (b.kind === 'free' ? { ...b, doc, fromAI } : b)));
+      commit(updateBlock(wsRef.current, id, (b) => (b.kind === 'free' ? { ...b, doc, fromAI } : b)));
     },
-    [commit, ws],
+    [commit],
   );
 
-  const deleteBlock = useCallback((id: string) => commit(removeBlock(ws, id)), [commit, ws]);
-  const duplicateFree = useCallback((id: string) => commit(duplicateBlock(ws, id)), [commit, ws]);
+  const deleteBlock = useCallback((id: string) => commit(removeBlock(wsRef.current, id)), [commit]);
+  const duplicateFree = useCallback((id: string) => commit(duplicateBlock(wsRef.current, id)), [commit]);
 
-  // ── Floating element actions ──────────────────────────────────────────────
-  // The body content box (for clamping inserts to the printable page).
-  const bodyBox = useCallback(() => {
-    const box = floatBoxRef.current;
-    return { w: box?.clientWidth ?? PAGE_WIDTH - 104, h: box?.clientHeight ?? 514 };
-  }, []);
-  // A cascading insert origin so successive inserts don't fully stack.
-  const insertGeom = useCallback(
-    (w: number, h: number): Geom => {
-      const box = bodyBox();
-      const off = 36 + (ws.elements.length % 6) * 22;
-      return clampGeom({ x: off, y: off, w, h }, box, { w: 48, h: 48 });
+  // Lift a Free block's contained floating elements (text boxes / images).
+  const onElementsChange = useCallback(
+    (blockId: string, elements: FloatingElement[]) => {
+      commit(updateBlock(wsRef.current, blockId, (b) => (b.kind === 'free' ? { ...b, elements } : b)));
     },
-    [bodyBox, ws.elements.length],
+    [commit],
   );
 
-  const insertTextBox = useCallback(() => {
-    const g = insertGeom(280, 120);
-    const box = newTextBox(g.x, g.y, nextZ(ws));
-    const placed = { ...box, ...g };
-    commit(addElement(ws, placed));
-    setSelectedEl(placed.id);
-  }, [commit, ws, insertGeom]);
-
-  const insertFloatingImage = useCallback(() => floatFileRef.current?.click(), []);
-
-  const onFloatFilePicked = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!file) return;
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await uploadWorksheetImageAction(fd);
-      if (!res.ok || !res.url) return;
-      const natural = await loadImageSize(res.url);
-      const box = bodyBox();
-      const w = Math.min(natural.w, 360, box.w);
-      const h = w * (natural.h / natural.w);
-      const g = clampGeom({ ...insertGeom(w, h), w, h }, box, { w: 48, h: 48 });
-      const img = newFloatingImage(res.url, file.name, g, nextZ(ws));
-      commit(addElement(ws, img));
-      setSelectedEl(img.id);
-    },
-    [bodyBox, commit, insertGeom, ws],
-  );
-
-  // Convert an inline image (in a Free block) to a free floating image. The Free
-  // block editor captures this once, so it is kept stable via a ref to always see
-  // the latest worksheet state.
-  const floatInlineImage = useCallback(
-    (info: { src: string; alt: string | null; w: number; h: number }) => {
-      const box = bodyBox();
-      const w = Math.min(info.w || 320, box.w);
-      const h = info.h && info.w ? w * (info.h / info.w) : w * 0.66;
-      const g = clampGeom({ ...insertGeom(w, h), w, h }, box, { w: 48, h: 48 });
-      const img = newFloatingImage(info.src, info.alt, g, nextZ(ws));
-      commit(addElement(ws, img));
-      setSelectedEl(img.id);
-    },
-    [bodyBox, commit, insertGeom, ws],
-  );
-  const floatInlineImageRef = useRef(floatInlineImage);
-  useEffect(() => {
-    floatInlineImageRef.current = floatInlineImage;
-  }, [floatInlineImage]);
-  const stableFloatInline = useCallback(
-    (info: { src: string; alt: string | null; w: number; h: number }) => floatInlineImageRef.current(info),
-    [],
-  );
-
-  // Convert a free floating image back to an inline image in a new Free block.
-  const makeImageInline = useCallback(
-    (el: FloatingImage) => {
-      const doc: WorksheetDoc = {
-        type: 'doc',
-        content: [{ type: 'image', attrs: { src: el.src, alt: el.alt ?? null, width: Math.round(el.w), align: 'center' } }],
-      };
-      const block = { ...newFreeBlock(), doc };
-      const next = removeElement(appendBlock(ws, block), el.id);
-      commit(next);
-      setSelectedEl(null);
-    },
-    [commit, ws],
-  );
-
-  const floatingActions = useMemo<FloatingActions>(
-    () => ({
-      onSelect: (id) => setSelectedEl(id),
-      onCommit: (id, geom) =>
-        commit(updateElement(ws, id, (e) => ({ ...e, x: geom.x, y: geom.y, w: geom.w, h: geom.h }))),
-      onDelete: (id) => {
-        commit(removeElement(ws, id));
-        setSelectedEl((cur) => (cur === id ? null : cur));
-      },
-      onRestack: (id, dir) => commit(restackElement(ws, id, dir)),
-      onDocChange: (id, doc) =>
-        commit(updateElement(ws, id, (e) => (e.kind === 'textbox' ? { ...e, doc } : e))),
-      onStyleChange: (id, patch) =>
-        commit(updateElement(ws, id, (e) => (e.kind === 'textbox' ? { ...e, ...patch } : e))),
-      onMakeInline: makeImageInline,
-      onActivate,
-      onDeactivate,
-    }),
-    [commit, ws, makeImageInline, onActivate, onDeactivate],
-  );
+  // Insert into the active Free block (the toolbar enables these only when one is
+  // active, so clicking the page never spawns an element).
+  const insertTextBox = useCallback(() => active?.insertTextBox(), [active]);
+  const insertFloatingImage = useCallback(() => active?.insertFloatingImage(), [active]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const onDragEnd = useCallback(
@@ -514,10 +398,11 @@ export function WorksheetBuilder({
           </div>
         </div>
 
-        {/* Shared formatting toolbar — formatting acts on the active block, the
-            insert group drops floating elements onto the page */}
+        {/* Shared formatting toolbar — everything acts on the active block; insert
+            controls add a text box / image INTO that block (disabled if none). */}
         <WordToolbar
           editor={active?.editor ?? null}
+          canInsert={!!active}
           onInsertImage={insertFloatingImage}
           onInsertTextBox={insertTextBox}
         />
@@ -529,7 +414,9 @@ export function WorksheetBuilder({
         className="ws-canvas ws-no-print"
         onClick={() => {
           if (menuOpen) setMenuOpen(false);
+          // Click-off deselects and commits the active box; it never creates one.
           setSelectedEl(null);
+          setActive(null);
         }}
         style={{
           background: fsActive ? '#2A2320' : '#E8E1D6',
@@ -550,12 +437,7 @@ export function WorksheetBuilder({
                 transformOrigin: 'top center',
               }}
             >
-              <MasterFrame
-                ctx={context}
-                overlay={
-                  <FloatingLayer elements={ws.elements} selectedId={selectedEl} actions={floatingActions} boxRef={floatBoxRef} />
-                }
-              >
+              <MasterFrame ctx={context}>
                 {empty ? (
                   <div style={{ flex: 1, minHeight: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, border: '2px dashed #D9CDBB', borderRadius: 16, background: '#FCFAF6' }}>
                     <div style={{ fontSize: 18, fontWeight: 600, color: '#5C544E' }}>This worksheet is empty</div>
@@ -581,11 +463,13 @@ export function WorksheetBuilder({
                               resource={block.kind === 'resource' ? resolved[block.resourceId] ?? null : null}
                               resourceLoading={block.kind === 'resource' && !attempted.has(block.resourceId)}
                               onChangeFree={changeFree}
+                              onElementsChange={onElementsChange}
                               onDelete={deleteBlock}
                               onDuplicateFree={duplicateFree}
                               onActivate={onActivate}
                               onDeactivate={onDeactivate}
-                              onFloatImage={stableFloatInline}
+                              selectedElementId={selectedEl}
+                              onSelectElement={setSelectedEl}
                             />
                           ))}
                         </div>
@@ -618,8 +502,6 @@ export function WorksheetBuilder({
       {printOpen ? (
         <PrintPreview ws={ws} ctx={context} resolved={resolved} onClose={() => setPrintOpen(false)} />
       ) : null}
-
-      <input ref={floatFileRef} type="file" accept="image/*" hidden onChange={onFloatFilePicked} />
     </div>
   );
 }

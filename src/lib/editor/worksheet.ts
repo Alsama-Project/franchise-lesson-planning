@@ -27,7 +27,7 @@ export function newBlockId(): string {
 
 /** An empty worksheet (no exercises yet). */
 export function emptyWorksheet(): Worksheet {
-  return { version: 2, blocks: [], elements: [] };
+  return { version: 2, blocks: [] };
 }
 
 /** True for a value that looks like a tiptap document node. */
@@ -50,6 +50,9 @@ function asBlock(value: unknown): WorksheetBlock | null {
       kind: 'free',
       doc,
       fromAI: v.fromAI === true,
+      elements: Array.isArray(v.elements)
+        ? v.elements.map(asElement).filter((e): e is FloatingElement => e !== null)
+        : [],
     };
   }
   if (v.kind === 'resource' && typeof v.resourceId === 'string') {
@@ -103,10 +106,20 @@ export function parseWorksheet(raw: unknown): Worksheet {
     const obj = raw as Record<string, unknown>;
     if (obj.version === 2 && Array.isArray(obj.blocks)) {
       const blocks = obj.blocks.map(asBlock).filter((b): b is WorksheetBlock => b !== null);
-      const elements = Array.isArray(obj.elements)
-        ? obj.elements.map(asElement).filter((e): e is FloatingElement => e !== null)
-        : [];
-      return { version: 2, blocks, elements };
+      // Backfill: a legacy page-level `elements` array (from the pre-containment
+      // shape) is re-homed into the first Free block so nothing is orphaned.
+      if (Array.isArray(obj.elements) && obj.elements.length > 0) {
+        const legacy = obj.elements.map(asElement).filter((e): e is FloatingElement => e !== null);
+        if (legacy.length > 0) {
+          let host = blocks.find((b): b is WorksheetFreeBlock => b.kind === 'free');
+          if (!host) {
+            host = newFreeBlock();
+            blocks.push(host);
+          }
+          host.elements = [...host.elements, ...legacy];
+        }
+      }
+      return { version: 2, blocks };
     }
     // Legacy v1: a single tiptap document stored directly in the column.
     if (isTiptapDoc(obj)) {
@@ -115,16 +128,17 @@ export function parseWorksheet(raw: unknown): Worksheet {
         kind: 'free',
         doc: obj,
         fromAI: false,
+        elements: [],
       };
-      return { version: 2, blocks: [block], elements: [] };
+      return { version: 2, blocks: [block] };
     }
   }
   return emptyWorksheet();
 }
 
-/** True when the worksheet has no exercises and no floating elements. */
+/** True when the worksheet has no exercises (drives the empty state). */
 export function isWorksheetEmpty(ws: Worksheet): boolean {
-  return ws.blocks.length === 0 && ws.elements.length === 0;
+  return ws.blocks.length === 0;
 }
 
 /** Append a block, returning a new worksheet. */
@@ -150,7 +164,12 @@ export function removeBlock(ws: Worksheet, id: string): Worksheet {
 export function duplicateBlock(ws: Worksheet, id: string): Worksheet {
   const index = ws.blocks.findIndex((b) => b.id === id);
   if (index === -1) return ws;
-  const copy: WorksheetBlock = { ...ws.blocks[index], id: newBlockId() };
+  const src = ws.blocks[index];
+  // Free blocks carry contained elements — give the copy fresh element ids too.
+  const copy: WorksheetBlock =
+    src.kind === 'free'
+      ? { ...src, id: newBlockId(), elements: src.elements.map((e) => ({ ...e, id: newBlockId() })) }
+      : { ...src, id: newBlockId() };
   const blocks = [...ws.blocks];
   blocks.splice(index + 1, 0, copy);
   return { ...ws, blocks };
@@ -169,7 +188,7 @@ export function moveBlock(ws: Worksheet, from: number, to: number): Worksheet {
 
 /** A new, empty Free block (the choice state shows until the teacher picks a path). */
 export function newFreeBlock(): WorksheetFreeBlock {
-  return { id: newBlockId(), kind: 'free', doc: null, fromAI: false };
+  return { id: newBlockId(), kind: 'free', doc: null, fromAI: false, elements: [] };
 }
 
 /** A new From-bank resource block referencing `resourceId`. */
@@ -180,14 +199,9 @@ export function newResourceBlock(
   return { id: newBlockId(), kind: 'resource', resourceId, uploaderName };
 }
 
-// ── Floating elements (page-relative overlay) ──────────────────────────────
+// ── Floating elements (block-owned, block-relative) ────────────────────────
 
-/** Highest z among current elements (0 when none) — new elements go on top. */
-function topZ(ws: Worksheet): number {
-  return ws.elements.reduce((max, el) => Math.max(max, el.z), 0);
-}
-
-/** A new transparent, border-less text box at the given body-relative position. */
+/** A new transparent, border-less text box at the given block-relative position. */
 export function newTextBox(x: number, y: number, z: number): FloatingTextBox {
   return { id: newBlockId(), kind: 'textbox', x, y, w: 280, h: 120, z, doc: null, border: false, fill: 'transparent' };
 }
@@ -202,38 +216,27 @@ export function newFloatingImage(
   return { id: newBlockId(), kind: 'image', src, alt, z, ...geom };
 }
 
-/** Append a floating element on top of the stack. */
-export function addElement(ws: Worksheet, el: FloatingElement): Worksheet {
-  return { ...ws, elements: [...ws.elements, el] };
+/** The next z to assign a freshly inserted element within a block. */
+export function nextZ(elements: FloatingElement[]): number {
+  return elements.reduce((max, el) => Math.max(max, el.z), 0) + 1;
 }
 
-/** Replace the element with `id` via an updater. */
-export function updateElement(
-  ws: Worksheet,
+/** Restack `id` within a block's element list (bring forward / send backward). */
+export function restackElements(
+  elements: FloatingElement[],
   id: string,
-  update: (el: FloatingElement) => FloatingElement,
-): Worksheet {
-  return { ...ws, elements: ws.elements.map((e) => (e.id === id ? update(e) : e)) };
-}
-
-/** Remove the element with `id`. */
-export function removeElement(ws: Worksheet, id: string): Worksheet {
-  return { ...ws, elements: ws.elements.filter((e) => e.id !== id) };
-}
-
-/** Restack `id` to the front (bring forward) or back (send backward). */
-export function restackElement(ws: Worksheet, id: string, dir: 'forward' | 'backward'): Worksheet {
-  const target = ws.elements.find((e) => e.id === id);
-  if (!target) return ws;
-  const zs = ws.elements.map((e) => e.z);
-  const nextZ = dir === 'forward' ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
-  return updateElement(ws, id, (e) => ({ ...e, z: nextZ }));
+  dir: 'forward' | 'backward',
+): FloatingElement[] {
+  if (elements.length === 0) return elements;
+  const zs = elements.map((e) => e.z);
+  const z = dir === 'forward' ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+  return elements.map((e) => (e.id === id ? { ...e, z } : e));
 }
 
 /**
- * Clamp an element's geometry to the printable body content box [0..boxW]×[0..boxH]
- * (with a minimum size). This is the single guard that keeps every element on the
- * page and out of the locked chrome, both on screen and in print.
+ * Clamp an element's geometry to its block's content box [0..boxW]×[0..boxH]
+ * (with a minimum size). This is the single guard that keeps every element inside
+ * its block, both on screen and in print.
  */
 export function clampGeom(
   geom: { x: number; y: number; w: number; h: number },
@@ -245,9 +248,4 @@ export function clampGeom(
   const x = Math.max(0, Math.min(geom.x, box.w - w));
   const y = Math.max(0, Math.min(geom.y, box.h - h));
   return { x, y, w, h };
-}
-
-/** The next z to assign a freshly inserted element. */
-export function nextZ(ws: Worksheet): number {
-  return topZ(ws) + 1;
 }

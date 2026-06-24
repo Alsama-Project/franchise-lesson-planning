@@ -9,6 +9,7 @@ import {
   getAllowedUids,
   impersonationEnabled,
   isTestRole,
+  mintImpersonationAccessToken,
   roleToUid,
   stashCookieOptions,
   type ImpersonationStash,
@@ -22,12 +23,15 @@ import {
  *
  * The client only ever sends a role KEY; the server maps it to a UID from
  * server-only env. An arbitrary user id from the client is never honoured. The
- * service-role client is used only to mint the target's session and never
- * leaves the server.
+ * JWT secret used to mint the target's token is server-only and never leaves the
+ * server.
  *
  * Session mechanism (matches this repo's @supabase/ssr cookie setup):
- *   - mint: service-role `generateLink({type:'magiclink'})` → cookie-bound
- *     `verifyOtp({token_hash})`, which swaps the auth cookies to the target.
+ *   - mint: sign a Supabase-compatible HS256 access token for the target with
+ *     the project's `SUPABASE_JWT_SECRET`, then write it via the cookie-bound
+ *     `setSession({access_token, refresh_token})`. This has no dependency on the
+ *     target having a confirmed email identity or an enabled email provider
+ *     (the old magic-link/OTP flow did, which 500'd on the SQL-seeded users).
  *   - return: the real session's tokens are stashed (httpOnly) before the first
  *     swap and restored with `setSession`, then the stash is cleared.
  */
@@ -105,27 +109,32 @@ export async function POST(request: NextRequest) {
     cookieStore.set(STASH_COOKIE, JSON.stringify(toStash), stashCookieOptions());
   }
 
-  // Mint a session for the target via the service-role client (server-only).
+  // Best-effort email lookup to populate the token's email claim. This is
+  // optional — `sub` is what RLS resolves on — so a failed/unavailable lookup
+  // does not abort the mint (unlike the old magic-link flow, which required it).
   const admin = createAdminClient();
-  const { data: target, error: lookupError } = await admin.auth.admin.getUserById(targetUid);
-  if (lookupError || !target?.user?.email) {
-    return NextResponse.json({ error: 'target_unavailable' }, { status: 500 });
-  }
-  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-    type: 'magiclink',
-    email: target.user.email,
-  });
-  if (linkError || !link?.properties?.hashed_token) {
+  const { data: target } = await admin.auth.admin.getUserById(targetUid);
+  const targetEmail = target?.user?.email ?? undefined;
+
+  // Sign a Supabase-compatible access token for the target (server-only secret).
+  let accessToken: string;
+  try {
+    accessToken = await mintImpersonationAccessToken({ uid: targetUid, email: targetEmail });
+  } catch {
     return NextResponse.json({ error: 'mint_failed' }, { status: 500 });
   }
 
-  // Verify on the cookie-bound client so the new session's cookies are written.
-  const { error: verifyError } = await supabase.auth.verifyOtp({
-    token_hash: link.properties.hashed_token,
-    type: 'magiclink',
+  // Write the target's session via the same cookie-bound setSession path the
+  // Return flow uses, so this stays consistent with the @supabase/ssr cookie
+  // setup. The refresh_token is a non-refreshable placeholder: a self-signed
+  // access token has no server-side refresh record, so it intentionally cannot
+  // be refreshed — when it expires the tester just clicks a role again.
+  const { error: sessionError } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: 'impersonation-no-refresh',
   });
-  if (verifyError) {
-    return NextResponse.json({ error: 'verify_failed' }, { status: 500 });
+  if (sessionError) {
+    return NextResponse.json({ error: 'mint_failed' }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, impersonating: true, role: body.role });

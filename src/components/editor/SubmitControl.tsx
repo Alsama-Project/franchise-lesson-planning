@@ -5,26 +5,25 @@ import { cn } from '@/lib/cn';
 import { Spinner } from '@/components/ui/Spinner';
 
 /**
- * The single submit control, its label/behaviour driven by the plan's status.
- * Labels are kept short so the button stays within the wizard stepper's fixed
- * action-cluster width (see min-w on each branch); the hover title carries the
- * fuller affordance text.
- *  - in_progress / needs_review → "Submit" (pink; submits for approval).
- *  - submitted → "Submitted" (reverts to in_progress; title explains).
- *  - approved → a display-only "Approved" badge.
+ * The Step 5 primary action. It reflects what the viewer can DO next, never an
+ * echo of the current status:
+ *  - in_progress → "Submit for review" (pink; the teacher submits).
+ *  - needs_review → "Resubmit" (pink; the teacher re-submits after changes).
+ *  - submitted → a non-clickable "Submitted · awaiting review" badge. The
+ *    coordinator review action (Approve / Request changes) is deferred to the
+ *    review-view slice, so no Approve button is shown to anyone here yet.
+ *  - approved → a display-only "Approved" badge (no action).
  */
 export function SubmitControl({
   status,
   canSubmit,
   submitting,
   onSubmit,
-  onUnsubmit,
 }: {
   status: PlanStatus;
   canSubmit: boolean;
   submitting: boolean;
   onSubmit: () => void;
-  onUnsubmit: () => void;
 }) {
   if (status === 'approved') {
     return (
@@ -39,27 +38,17 @@ export function SubmitControl({
 
   if (status === 'submitted') {
     return (
-      <button
-        type="button"
-        onClick={onUnsubmit}
-        disabled={submitting}
-        aria-busy={submitting || undefined}
-        title="Revert to in progress and keep editing"
-        className={cn(
-          'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border border-teal bg-teal px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-60',
-        )}
-      >
-        {submitting ? (
-          <Spinner size={15} />
-        ) : (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12l4 4 10-11" />
-          </svg>
-        )}
-        {submitting ? 'Reverting…' : 'Submitted'}
-      </button>
+      <span className="inline-flex items-center justify-center gap-[7px] rounded-[9px] border border-border-strong bg-surface-subtle px-4 py-[9px] text-[13px] font-semibold text-neutral-600">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        Submitted · awaiting review
+      </span>
     );
   }
+
+  const label = status === 'needs_review' ? 'Resubmit' : 'Submit for review';
 
   return (
     <button
@@ -73,7 +62,7 @@ export function SubmitControl({
       )}
     >
       {submitting ? <Spinner size={15} /> : null}
-      {submitting ? 'Submitting…' : 'Submit'}
+      {submitting ? 'Submitting…' : label}
     </button>
   );
 }

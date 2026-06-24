@@ -46,7 +46,7 @@ export function SettingsConsole(props: SettingsConsoleProps) {
   return (
     <div className="overflow-hidden rounded-[16px] border border-[#DCD2C4] bg-white">
       {/* Header strip */}
-      <div className="border-b border-[#F0EAE1] bg-[#FBF8F3] px-[22px] py-[16px]">
+      <div className="border-b border-[#F0EAE1] bg-white px-[22px] py-[16px]">
         <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-[#2A2422]">Settings</h1>
         <p className="mt-px text-[12.5px] text-[#A79E94]">
           {access.isAdmin
@@ -79,7 +79,7 @@ export function SettingsConsole(props: SettingsConsoleProps) {
       </div>
 
       {/* Tab body */}
-      <div className="bg-[#FBF8F3] px-[22px] py-[22px]">
+      <div className="bg-white px-[22px] py-[22px]">
         {tab === 'profile' ? <div className="mx-auto max-w-[720px]">{props.profileTab}</div> : null}
         {tab === 'centres' && props.centres ? <CentresTab centres={props.centres} /> : null}
         {tab === 'subjects' && props.subjects ? <SubjectsTab subjects={props.subjects} /> : null}

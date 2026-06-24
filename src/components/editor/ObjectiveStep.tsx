@@ -70,7 +70,7 @@ export function ObjectiveStep({
   const checkDisabled = checking || remainder.trim().length === 0;
 
   return (
-    <div className="mt-[22px]">
+    <div className="mt-1.5">
       <div className="text-[22px] font-semibold">Write the lesson objective</div>
 
       <div className="mt-[18px] flex flex-wrap gap-1.5">

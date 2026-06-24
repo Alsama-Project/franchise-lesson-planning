@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { saveSettings } from '@/lib/actions/onboarding';
 import type { Centre, ClassOption, MyClass, SpaceCounts, SubjectOption } from '@/lib/onboarding';
-import { CheckIcon, LiteracyPill, SubjectChip, subjectInitials } from '@/components/onboarding/pieces';
+import { CheckIcon, SubjectChip, subjectInitials } from '@/components/onboarding/pieces';
 
 interface MembershipView {
   id: string;
@@ -53,7 +53,6 @@ export function SettingsForm(props: SettingsFormProps) {
   );
   const [centrePickerOpen, setCentrePickerOpen] = useState(false);
   const [addSpaceOpen, setAddSpaceOpen] = useState(false);
-  const [addClassOpen, setAddClassOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -89,45 +88,36 @@ export function SettingsForm(props: SettingsFormProps) {
     [spaces, activeCentreId],
   );
 
-  // Classes currently shown: kept assignments + staged adds.
-  const shownClasses: MyClass[] = useMemo(() => {
-    const kept = props.myClasses.filter((c) => !removeClassIds.has(c.id));
-    const added = props.classes
-      .filter((c) => addClassIds.has(c.id))
-      .map((c) => ({
-        id: c.id,
-        schoolId: c.schoolId,
-        subjectId: c.subjectId,
-        subjectName: c.subjectName,
-        year: c.year,
-        groupLabel: c.groupLabel,
-        literacy: c.literacy,
-      }));
-    return [...kept, ...added];
-  }, [props.myClasses, props.classes, removeClassIds, addClassIds]);
-
+  // Every class in the user's subject space(s), grouped by Year — the full
+  // toggle list. A class never leaves this list; ticking only flips local state.
+  const spaceKeySet = useMemo(
+    () => new Set(spaces.map((s) => spaceKey(s.schoolId, s.subjectId))),
+    [spaces],
+  );
   const classGroups = useMemo(() => {
-    const byYear = new Map<number, MyClass[]>();
-    for (const c of shownClasses) {
+    const inSpaces = props.classes.filter((c) =>
+      spaceKeySet.has(spaceKey(c.schoolId, c.subjectId)),
+    );
+    const byYear = new Map<number, ClassOption[]>();
+    for (const c of inSpaces) {
       const list = byYear.get(c.year) ?? [];
       list.push(c);
       byYear.set(c.year, list);
     }
     return [...byYear.entries()].sort(([a], [b]) => a - b).map(([year, list]) => ({ year, list }));
-  }, [shownClasses]);
+  }, [props.classes, spaceKeySet]);
+
+  // The assigned baseline (existing class_teachers rows), overridden by the
+  // unsaved add/remove deltas.
+  const assignedClassIds = useMemo(
+    () => new Set(props.myClasses.map((c) => c.id)),
+    [props.myClasses],
+  );
+  const isClassTicked = (id: string) =>
+    addClassIds.has(id) || (assignedClassIds.has(id) && !removeClassIds.has(id));
 
   // Subjects available to add at the active centre (not already a space there).
   const addableSubjects = props.subjects.filter((s) => !memberSubjectIdsAtActive.has(s.id));
-
-  // Classes available to add: at the active centre, in a subject the user is a
-  // member of, not already shown.
-  const shownClassIds = new Set(shownClasses.map((c) => c.id));
-  const addableClasses = props.classes.filter(
-    (c) =>
-      c.schoolId === activeCentreId &&
-      memberSubjectIdsAtActive.has(c.subjectId) &&
-      !shownClassIds.has(c.id),
-  );
 
   const dirty =
     name.trim() !== props.fullName.trim() ||
@@ -165,20 +155,25 @@ export function SettingsForm(props: SettingsFormProps) {
     setAddSpaces((prev) => [...prev, { schoolId: activeCentreId, subjectId }]);
   }
 
-  function toggleClass(id: string, currentlyShown: boolean) {
-    if (currentlyShown) {
-      // Uncheck: stage a remove (existing) or undo a staged add.
-      if (addClassIds.has(id)) {
-        setAddClassIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      } else {
-        setRemoveClassIds((prev) => new Set(prev).add(id));
-      }
+  // Toggle a class's ticked state — local only; nothing is written until Save.
+  // We adjust the add/remove deltas against the assigned baseline so the row
+  // stays put and can be re-ticked freely.
+  function toggleClass(id: string) {
+    const assigned = assignedClassIds.has(id);
+    const dropFrom = (setter: typeof setAddClassIds) =>
+      setter((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    if (isClassTicked(id)) {
+      // Untick: stage a remove for an assigned class, or undo a staged add.
+      if (assigned) setRemoveClassIds((prev) => new Set(prev).add(id));
+      else dropFrom(setAddClassIds);
     } else {
-      setAddClassIds((prev) => new Set(prev).add(id));
+      // Tick: undo a staged remove for an assigned class, or stage an add.
+      if (assigned) dropFrom(setRemoveClassIds);
+      else setAddClassIds((prev) => new Set(prev).add(id));
     }
   }
 
@@ -191,7 +186,6 @@ export function SettingsForm(props: SettingsFormProps) {
     setError(null);
     setToast(null);
     setAddSpaceOpen(false);
-    setAddClassOpen(false);
     setCentrePickerOpen(false);
   }
 
@@ -264,7 +258,6 @@ export function SettingsForm(props: SettingsFormProps) {
                   onClick={() => {
                     setActiveCentreId(c.id);
                     setAddSpaceOpen(false);
-                    setAddClassOpen(false);
                   }}
                   className={cn(
                     'rounded-[10px] border-[1.5px] px-4 py-[9px] text-[13px] transition-colors',
@@ -361,11 +354,13 @@ export function SettingsForm(props: SettingsFormProps) {
         </div>
       ) : null}
 
-      {/* My classes */}
+      {/* My classes — every class in your subject spaces; tick the ones you teach. */}
       <SectionLabel>My classes</SectionLabel>
       <div className="mb-[26px] rounded-[13px] border border-border p-[16px_17px]">
         {classGroups.length === 0 ? (
-          <div className="text-[12.5px] text-text-faint">No classes yet.</div>
+          <div className="text-[12.5px] text-text-faint">
+            No classes in your subject spaces yet.
+          </div>
         ) : (
           <div className="flex flex-col gap-[14px]">
             {classGroups.map(({ year, list }) => (
@@ -373,63 +368,35 @@ export function SettingsForm(props: SettingsFormProps) {
                 <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.05em] text-text-faint">
                   Year {year}
                 </div>
-                {list.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleClass(c.id, true)}
-                    className="flex w-full items-center gap-[11px] py-1 text-left"
-                  >
-                    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-teal">
-                      <CheckIcon size={11} />
-                    </span>
-                    <span className="flex-1 text-[13.5px] font-semibold">
-                      Year {c.year} · {c.groupLabel}
-                    </span>
-                    <SubjectChip>{c.subjectName ?? '—'}</SubjectChip>
-                    <LiteracyPill literacy={c.literacy} />
-                  </button>
-                ))}
+                {list.map((c) => {
+                  const ticked = isClassTicked(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={ticked}
+                      onClick={() => toggleClass(c.id)}
+                      className="flex w-full items-center gap-[11px] py-1 text-left"
+                    >
+                      {ticked ? (
+                        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-teal">
+                          <CheckIcon size={11} />
+                        </span>
+                      ) : (
+                        <span className="size-5 shrink-0 rounded-[6px] border-[1.5px] border-[#D8CFC2] bg-surface" />
+                      )}
+                      <span className="flex-1 text-[13.5px] font-semibold">
+                        Year {c.year} · {c.groupLabel}
+                      </span>
+                      <SubjectChip>{c.subjectName ?? '—'}</SubjectChip>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
         )}
-
-        <button
-          type="button"
-          onClick={() => setAddClassOpen((v) => !v)}
-          className="mt-[14px] cursor-pointer text-[12.5px] font-semibold text-teal hover:text-teal-deep"
-        >
-          ＋ Add classes
-        </button>
-
-        {addClassOpen ? (
-          <div className="mt-3 border-t border-[#F0EAE1] pt-3">
-            {addableClasses.length === 0 ? (
-              <div className="text-[12.5px] text-text-faint">
-                No more classes to add for your subjects at {centreName(activeCentreId) || 'this centre'}.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {addableClasses.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleClass(c.id, false)}
-                    className="flex w-full items-center gap-[11px] py-1 text-left"
-                  >
-                    <span className="size-5 shrink-0 rounded-[6px] border-[1.5px] border-[#D8CFC2] bg-surface" />
-                    <span className="flex-1 text-[13.5px] font-semibold">
-                      Year {c.year} · {c.groupLabel}
-                    </span>
-                    <SubjectChip>{c.subjectName ?? '—'}</SubjectChip>
-                    <LiteracyPill literacy={c.literacy} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
       </div>
 
       {/* Footer */}

@@ -27,12 +27,15 @@ export function EditorSubHeader({
   lessonDate,
   total,
   actions,
+  showTotal = true,
 }: {
   classContext: EditorClassContext;
   lessonDate: string;
   total: number;
   /** Optional controls (save state, Download) rendered before the time total. */
   actions?: ReactNode;
+  /** The in-session running total badge only belongs on the Review step. */
+  showTotal?: boolean;
 }) {
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
   const totalColor = onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]';
@@ -66,15 +69,17 @@ export function EditorSubHeader({
         </div>
         <div className="flex flex-wrap items-center gap-4">
           {actions}
-          <div className="inline-flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={totalStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v5l3 2" />
-            </svg>
-            <span className={`text-[13.5px] font-bold ${totalColor}`}>
-              {total} / {IN_SESSION_TARGET_MINUTES} min
-            </span>
-          </div>
+          {showTotal ? (
+            <div className="inline-flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={totalStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              <span className={`text-[13.5px] font-bold ${totalColor}`}>
+                {total} / {IN_SESSION_TARGET_MINUTES} min
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

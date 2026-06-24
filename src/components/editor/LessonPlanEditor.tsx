@@ -14,7 +14,7 @@ import {
   ObjectiveCheckRequestError,
   type ObjectiveCheckResult,
 } from '@/lib/editor/objective-check';
-import { saveLessonPlan, submitLessonPlan, unsubmitLessonPlan } from '@/lib/actions/lesson-plan';
+import { saveLessonPlan, submitLessonPlan } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
@@ -219,22 +219,12 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
     }
   }
 
-  async function handleUnsubmit() {
-    setSubmitting(true);
-    setSubmitError(null);
-    const res = await unsubmitLessonPlan({ id: plan.id });
-    setSubmitting(false);
-    if (res.ok) setStatus('in_progress');
-    else setSubmitError(res.error ?? 'Could not revert to in progress.');
-  }
-
   const submitControl = (
     <SubmitControl
       status={status}
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={handleSubmit}
-      onUnsubmit={handleUnsubmit}
     />
   );
 
@@ -250,6 +240,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
         lessonDate={plan.lesson_date}
         total={total}
         actions={<SaveIndicator state={saveState} />}
+        showTotal={step === STEP_COUNT}
       />
 
       <Stepper

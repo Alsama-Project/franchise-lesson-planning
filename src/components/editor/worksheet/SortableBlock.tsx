@@ -21,6 +21,7 @@ export function SortableBlock({
   resourceLoading,
   onChangeFree,
   onDelete,
+  onDuplicateFree,
 }: {
   block: WorksheetBlock;
   index: number;
@@ -29,6 +30,7 @@ export function SortableBlock({
   resourceLoading?: boolean;
   onChangeFree: (id: string, doc: WorksheetDoc, fromAI: boolean) => void;
   onDelete: (id: string) => void;
+  onDuplicateFree: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
@@ -54,6 +56,7 @@ export function SortableBlock({
           ctx={ctx}
           onChange={(doc, fromAI) => onChangeFree(block.id, doc, fromAI)}
           onDelete={() => onDelete(block.id)}
+          onDuplicate={() => onDuplicateFree(block.id)}
           dragHandleProps={dragHandleProps}
         />
       ) : (

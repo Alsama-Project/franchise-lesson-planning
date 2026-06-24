@@ -24,6 +24,7 @@ import type { Worksheet, WorksheetDoc } from '@/types/lesson';
 import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import {
   appendBlock,
+  duplicateBlock,
   isWorksheetEmpty,
   moveBlock,
   newFreeBlock,
@@ -132,6 +133,8 @@ export function WorksheetBuilder({
 
   const deleteBlock = useCallback((id: string) => commit(removeBlock(ws, id)), [commit, ws]);
 
+  const duplicateFree = useCallback((id: string) => commit(duplicateBlock(ws, id)), [commit, ws]);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const onDragEnd = useCallback(
     (e: DragEndEvent) => {
@@ -234,6 +237,7 @@ export function WorksheetBuilder({
                             }
                             onChangeFree={changeFree}
                             onDelete={deleteBlock}
+                            onDuplicateFree={duplicateFree}
                           />
                         ))}
                       </div>

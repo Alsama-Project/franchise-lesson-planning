@@ -111,6 +111,16 @@ export function removeBlock(ws: Worksheet, id: string): Worksheet {
   return { ...ws, blocks: ws.blocks.filter((b) => b.id !== id) };
 }
 
+/** Duplicate the block with `id`, inserting the copy directly after it. */
+export function duplicateBlock(ws: Worksheet, id: string): Worksheet {
+  const index = ws.blocks.findIndex((b) => b.id === id);
+  if (index === -1) return ws;
+  const copy: WorksheetBlock = { ...ws.blocks[index], id: newBlockId() };
+  const blocks = [...ws.blocks];
+  blocks.splice(index + 1, 0, copy);
+  return { ...ws, blocks };
+}
+
 /** Move the block at `from` to `to`, returning a new worksheet (no-op if equal). */
 export function moveBlock(ws: Worksheet, from: number, to: number): Worksheet {
   if (from === to || from < 0 || to < 0 || from >= ws.blocks.length || to >= ws.blocks.length) {

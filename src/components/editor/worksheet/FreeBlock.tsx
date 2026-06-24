@@ -57,6 +57,7 @@ export function FreeBlock({
   ctx,
   onChange,
   onDelete,
+  onDuplicate,
   dragHandleProps,
 }: {
   block: WorksheetFreeBlock;
@@ -64,6 +65,7 @@ export function FreeBlock({
   ctx: WorksheetContext;
   onChange: (doc: WorksheetDoc, fromAI: boolean) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
 }) {
   const [view, setView] = useState<View>(block.doc ? 'doc' : 'blank');
@@ -163,6 +165,7 @@ export function FreeBlock({
         index={index}
         badge={{ text: 'Free block', variant: 'free' }}
         onDelete={onDelete}
+        onDuplicate={onDuplicate}
         dragHandleProps={dragHandleProps}
       />
 

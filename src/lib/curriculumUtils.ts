@@ -36,7 +36,7 @@ export function cleanLO(raw: string): string {
 const COLUMNS =
   'subject_code, year, month, week, period, lesson_key, daily_outcome, focus_area, ' +
   'linguistic_skill, theme, resources, taxonomy_id, monthly_knowledge_lo, ' +
-  'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo';
+  'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo, grammar_vocabulary, monthly_lo';
 
 const fetchActiveRows = unstable_cache(
   async (): Promise<CurriculumLessonRow[]> => {
@@ -85,8 +85,11 @@ function rowToLesson(row: CurriculumLessonRow): CurriculumLesson {
     // The legacy `resources` was a single string; join the structured labels so the
     // shape is unchanged. Structured resources stay available on the DB row itself.
     resources: row.resources.map((r) => r.label).filter(Boolean).join(', '),
-    vocabFocus: row.focus_area ?? '',
-    grammarFocus: '',
+    // Grammar & Vocabulary lives in its own `grammar_vocabulary` column (added by the
+    // import migration). It used to be read off `focus_area`, which is always empty for
+    // English, so the editor's Grammar & Vocabulary panel showed "—" for every lesson.
+    vocabFocus: '',
+    grammarFocus: cleanLO(row.grammar_vocabulary ?? ''),
     theme: row.theme ?? '',
     subject: row.subject_code,
   };

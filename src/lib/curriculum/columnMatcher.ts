@@ -29,6 +29,7 @@ export type CanonicalField =
   | 'resources'
   | 'topic'
   | 'focusArea'
+  | 'grammarVocabulary'
   | 'lessonIdentifier'
   | 'linguisticSkill'
   | 'theme'
@@ -54,19 +55,26 @@ export const ALIASES: Record<CanonicalField, string[]> = {
     'نتائج التعلم للسلوك',
   ],
   month: ['month', 'الشهر'],
+  // The COMBINED monthly LO (English col J). `scoreField` additionally blocks this
+  // field from binding a SPLIT skill/knowledge column (see the monthly-LO guard there),
+  // so a header naming exactly one of skill/knowledge never lands here.
   monthlyLearningOutcome: [
     'monthly learning outcome',
-    'monthly skills outcome',
+    'monthly learning outcomes',
+    'monthly lo',
     'نتائج التعلم الشهرية',
     'monthly learning outcome (skills - knowledge)',
     'monthly learning outcome (knowledge-skill)',
   ],
   monthlySkillLearningOutcome: [
     'monthly skill learning outcome',
+    'monthly skills learning outcome',
+    'monthly skills outcome',
     'نتائج التعلم الشهرية للمهارات',
   ],
   monthlyKnowledgeLearningOutcome: [
     'monthly knowledge learning outcome',
+    'monthly knowledge outcome',
     'نتائج التعلم الشهرية للمعرفة',
   ],
   week: ['week', 'الأسبوع'],
@@ -84,8 +92,20 @@ export const ALIASES: Record<CanonicalField, string[]> = {
   period: ['period #', 'period', 'رقم الحصة'],
   dailyLearningOutcome: ['daily lo', 'daily learning outcome', 'daily', 'اليومي', 'نتائج التعلم اليومية'],
   resources: ['resources', 'resource', 'الموارد'],
-  topic: ['topic', 'content', 'المحتوى', 'الموضوع الاسبوعي'],
+  // NOTE: no bare 'content' alias — English col X "Content covered within linguistic
+  // skill" must NOT land here (it is intentionally dropped → unmappedHeaders). Maths/IT
+  // use a literal "Topic" column, and Arabic uses المحتوى, for this same display slot.
+  topic: ['topic', 'المحتوى', 'الموضوع الاسبوعي'],
   focusArea: ['focus area', 'مجال التركيز', 'التركيز الموضوعي', 'المحور'],
+  // English col Y. Exact alias wins over the generic 'content covered within …' shape so
+  // col X (linguistic skill) is left unmapped rather than captured here.
+  grammarVocabulary: [
+    'content covered within grammar',
+    'grammar and vocabulary',
+    'grammar & vocabulary',
+    'grammar vocabulary',
+    'grammar',
+  ],
   lessonIdentifier: ['lesson identifier', 'lesson id', 'معرِّف الدرس'],
   // Legacy → existing columns.
   linguisticSkill: ['linguistic skill', 'linguistic'],
@@ -213,6 +233,21 @@ function jaccard(a: string[], b: string[]): number {
 
 /** Best score in [0,1] for a header against a single canonical field. */
 function scoreField(headerNorm: string, headerTokens: string[], field: CanonicalField): number {
+  // Monthly-LO family guard. The COMBINED field ("Monthly Learning Outcome") sits only
+  // ~0.8 from the SPLIT headers ("Monthly Skill/Knowledge Learning Outcome") by
+  // Levenshtein, so without this it could fuzzy-bind a split column (and rob monthly_lo
+  // of its real source). A split header names exactly ONE of skill/knowledge; a genuine
+  // combined header names NEITHER (or, spelled out, BOTH). So block the combined field
+  // iff the header names exactly one of them — leaving the split fields to claim those.
+  if (field === 'monthlyLearningOutcome') {
+    const hasSkill =
+      headerTokens.includes('skill') ||
+      headerTokens.includes('skills') ||
+      headerNorm.includes('للمهارات');
+    const hasKnowledge = headerTokens.includes('knowledge') || headerNorm.includes('للمعرفة');
+    if (hasSkill !== hasKnowledge) return 0;
+  }
+
   let best = 0;
   for (const alias of ALIASES[field]) {
     const aNorm = normalizeHeader(alias);

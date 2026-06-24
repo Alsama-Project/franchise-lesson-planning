@@ -27,6 +27,8 @@ const EN_HEADERS: CellSpec[] = [
   'Theme', // O
   'Lesson Identifier', // P
   'Skill LO # [to be hidden]', // Q — hidden helper
+  'Content covered within linguistic skill', // R — intentionally DROPPED (→ unmapped)
+  'Content covered within grammar', // S — → grammar_vocabulary
 ];
 
 function englishWorkbook(): Buffer {
@@ -35,11 +37,11 @@ function englishWorkbook(): Buffer {
     '', 'English', 'Read & write', 'Year 0', 'Annual: literacy', 'February',
     'Monthly: letters', 1, 'Skill: write letters', 'Know: alphabet', 'Period 1',
     'Write letter a', 'Alfadeca - Vowels workbook', 'Basic Literacy', 'Alphabet',
-    '1.S1.K1.H1', '#REF!',
+    '1.S1.K1.H1', '#REF!', 'Decoding CVC', 'Letter a; vowel sounds',
   ];
   const p2: CellSpec[] = [
     '', '', '', '', '', '', '', '', '', '', 'Period 2', 'Write letter b', 'Page p6',
-    'Basic Literacy', '', '1.S1.K1.H2', '#REF!',
+    'Basic Literacy', '', '1.S1.K1.H2', '#REF!', '', '',
   ];
   const baseline: CellSpec[] = [
     '', '', '', '', '#REF!', '', '', '', '', '', 'Baseline Evaluation',
@@ -59,23 +61,34 @@ test('English: sheet/header/grain detected; helper excluded; English mapping int
   assert.equal(report.headerRow, 7);
   assert.equal(report.grain, 'daily');
   assert.equal(report.needsReview, false);
-  assert.equal(report.unmappedHeaders.length, 0); // helper excluded, not unmapped
+  // The helper is excluded; col X ("Content covered within linguistic skill") is
+  // intentionally dropped → it surfaces as unmapped (visible, never silently lost).
+  assert.deepEqual(
+    report.unmappedHeaders.map((u) => u.header),
+    ['Content covered within linguistic skill'],
+  );
   assert.equal(report.rowCount, 3); // P1, P2, Baseline
 
   const daily = report.columnMap.find((m) => m.canonicalField === 'dailyLearningOutcome');
   assert.equal(daily?.column, 'L');
   assert.equal(daily?.confidence, 1);
 
-  // Down-adapted rows for the current curriculum_lesson table.
-  assert.equal(lessonRows.length, 2);
-  assert.equal(skippedLessonRows, 1); // the baseline row can't satisfy the 5-tuple
+  // "Content covered within grammar" (col S) maps to grammarVocabulary, NOT topic.
+  const grammar = report.columnMap.find((m) => m.canonicalField === 'grammarVocabulary');
+  assert.equal(grammar?.column, 'S');
+  assert.equal(grammar?.confidence, 1);
+
+  // Rows written to curriculum_lesson — P1, P2, and now the non-instructional Baseline
+  // (period NULL), since the table only needs year/month/week (period is nullable).
+  assert.equal(lessonRows.length, 3);
+  assert.equal(skippedLessonRows, 0);
   assert.deepEqual(lessonRows[0], {
     subject_code: 'english',
     year: 0,
     month: 'February',
     week: 1,
     period: 1,
-    lesson_key: 'english|Y0|February|W1|P1',
+    lesson_key: 'english|Y0|February|W1|P1', // daily key UNCHANGED — the safety gate
     daily_outcome: 'Write letter a',
     focus_area: null,
     linguistic_skill: 'Basic Literacy',
@@ -86,21 +99,32 @@ test('English: sheet/header/grain detected; helper excluded; English mapping int
     monthly_skills_lo: null,
     weekly_knowledge_lo: 'Know: alphabet',
     weekly_skills_lo: 'Skill: write letters',
+    grammar_vocabulary: 'Letter a; vowel sounds',
+    monthly_lo: 'Monthly: letters',
   });
 
-  // P2: hierarchical cells forward-filled from P1; per-row theme blank → null.
+  // P2: hierarchical cells forward-filled from P1; per-row theme/grammar blank → null.
   assert.equal(lessonRows[1].week, 1);
   assert.equal(lessonRows[1].month, 'February');
   assert.equal(lessonRows[1].weekly_skills_lo, 'Skill: write letters');
   assert.equal(lessonRows[1].theme, null);
+  assert.equal(lessonRows[1].grammar_vocabulary, null);
 
-  // Canonical record captures the richer model (incl. single monthly LO).
+  // Baseline: period NULL, daily NULL, a sentinel lesson_key that can't collide with
+  // the numeric-period keys teacher lessons link to.
+  const baselineRow = lessonRows[2];
+  assert.equal(baselineRow.period, null);
+  assert.equal(baselineRow.daily_outcome, null);
+  assert.equal(baselineRow.lesson_key, 'english|Y0|February|W1|wk:baseline-evaluation');
+
+  // Canonical record captures the richer model (incl. single monthly LO + grammar).
   const r1 = records[0];
   assert.equal(r1.subject, 'English');
   assert.equal(r1.subjectLearningOutcome, 'Read & write');
   assert.equal(r1.yearIndex, 0);
   assert.equal(r1.annualLearningOutcome, 'Annual: literacy');
   assert.equal(r1.monthlyLearningOutcome, 'Monthly: letters');
+  assert.equal(r1.grammarVocabulary, 'Letter a; vowel sounds');
   assert.equal(r1.periodNumber, 1);
   assert.equal(r1.sourceRow, 9);
 
@@ -112,7 +136,73 @@ test('English: sheet/header/grain detected; helper excluded; English mapping int
 
   assert.ok(report.warnings.some((w) => w.includes('non-instructional')));
   assert.ok(report.warnings.some((w) => w.includes('#REF!')));
-  assert.ok(report.warnings.some((w) => w.includes('curriculum_lesson')));
+});
+
+// ── Combined "Monthly Learning Outcome" → monthly_lo, forward-filled ─────────────
+//
+// English (and most subjects) carry ONE combined "Monthly Learning Outcome" merged
+// down the month (value on the first row, blank beneath). It must map to the
+// monthlyLearningOutcome field, land in the monthly_lo column, and forward-fill onto
+// EVERY row of the month — not just week-1/period-1 — while the split skill/knowledge
+// columns stay null for the combined shape.
+
+test('combined Monthly Learning Outcome maps to monthly_lo and fills every row of the month', () => {
+  const headers: CellSpec[] = [
+    '', 'Subject', 'Year', 'Month', 'Monthly Learning Outcome', 'Week', 'Period #', 'Daily Learning Outcome',
+  ];
+  const rows: CellSpec[][] = [
+    ['', 'English', 'Year 1', 'March', 'Master greetings', 1, 'Period 1', 'Say hello'],
+    ['', '', '', '', '', 1, 'Period 2', 'Say goodbye'],
+    ['', '', '', '', '', 2, 'Period 1', 'Introduce self'],
+    ['', '', '', 'April', 'Master numbers', 3, 'Period 1', 'Count to ten'],
+    ['', '', '', '', '', 3, 'Period 2', 'Count to twenty'],
+  ];
+  const wb = makeWorkbook({ 'English Curriculum': [...headerBlock(headers), ...rows] });
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'english');
+
+  // The combined column maps to monthlyLearningOutcome (NOT a split field, NOT unmapped).
+  const monthly = report.columnMap.find((m) => m.canonicalField === 'monthlyLearningOutcome');
+  assert.equal(monthly?.column, 'E');
+  assert.equal(monthly?.confidence, 1);
+  assert.equal(
+    report.unmappedHeaders.some((u) => u.header === 'Monthly Learning Outcome'),
+    false,
+  );
+
+  // monthly_lo is forward-filled onto EVERY row of each month; the split columns are
+  // null (English does not split), and the value resets on the next month's value.
+  assert.equal(lessonRows.length, 5);
+  assert.deepEqual(
+    lessonRows.map((r) => r.monthly_lo),
+    ['Master greetings', 'Master greetings', 'Master greetings', 'Master numbers', 'Master numbers'],
+  );
+  for (const r of lessonRows) {
+    assert.equal(r.monthly_skills_lo, null);
+    assert.equal(r.monthly_knowledge_lo, null);
+  }
+});
+
+// ── Split monthly LO (Prof V1 shape) stays split; combined never steals it ────────
+
+test('split Monthly Skill/Knowledge LO map to their own columns, not the combined one', () => {
+  const headers: CellSpec[] = [
+    '', 'Year', 'Month',
+    'Monthly Skill Learning Outcome', 'Monthly Knowledge Learning Outcome',
+    'Week', 'Period #', 'Daily Learning Outcome',
+  ];
+  const data: CellSpec[] = ['', 'Year 2', 'May', 'Skill: present well', 'Know: etiquette', 1, 'Period 1', 'Practice'];
+  const wb = makeWorkbook({ 'Professionalism V1': [...headerBlock(headers), data] });
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'professionalism');
+  const fields = report.columnMap.map((m) => m.canonicalField);
+  assert.ok(fields.includes('monthlySkillLearningOutcome'));
+  assert.ok(fields.includes('monthlyKnowledgeLearningOutcome'));
+  // The combined field must NOT bind either split column.
+  assert.equal(fields.includes('monthlyLearningOutcome'), false);
+  assert.equal(lessonRows[0].monthly_skills_lo, 'Skill: present well');
+  assert.equal(lessonRows[0].monthly_knowledge_lo, 'Know: etiquette');
+  assert.equal(lessonRows[0].monthly_lo, null);
 });
 
 // ── Shifted columns — position must not matter ───────────────────────────────────
@@ -154,7 +244,7 @@ test('Arabic headers with header row at sheet row 5', () => {
 
 // ── Weekly-only grain (Awareness): no period/daily column ────────────────────────
 
-test('weekly grain: one record per week, nothing written to the 5-tuple table', () => {
+test('weekly grain: one row per week, written with NULL period + sentinel key', () => {
   const headers: CellSpec[] = [
     '', 'Year', 'Month', 'Week', 'Weekly Skill Learning Outcome', 'Weekly Knowledge Learning Outcome', 'Resources',
   ];
@@ -168,8 +258,14 @@ test('weekly grain: one record per week, nothing written to the 5-tuple table', 
   assert.equal(records[0].week, 1);
   assert.equal(records[1].week, 2);
   assert.equal(records[0].periodNumber, null);
-  assert.equal(lessonRows.length, 0);
-  assert.equal(skippedLessonRows, 2);
+
+  // Weekly subjects are now imported: one row per week, period NULL, `wk` key segment.
+  assert.equal(lessonRows.length, 2);
+  assert.equal(skippedLessonRows, 0);
+  assert.equal(lessonRows[0].period, null);
+  assert.equal(lessonRows[0].lesson_key, 'awareness|Y1|October|W1|wk');
+  assert.equal(lessonRows[0].weekly_skills_lo, 'Skill one');
+  assert.equal(lessonRows[1].lesson_key, 'awareness|Y1|October|W2|wk');
   assert.ok(report.warnings.some((w) => w.includes('weekly grain')));
 });
 

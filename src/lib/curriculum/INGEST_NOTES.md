@@ -27,54 +27,70 @@ survives columns being added, renamed, reordered, or translated (English ↔ Ara
 - Endpoint: `POST /api/curriculum/import?dryRun=1` (or `dryRun` form field) returns the
   `ImportReport` with **no DB write**. Auth + the n8n contract are untouched.
 
-## Validate before any migration
+## What landed in pass 2 — all 8 subjects + the Grammar panel
+
+- **Schema:** `0015_curriculum_import_fields.sql` (applied by hand by the operator,
+  committed idempotently): `add grammar_vocabulary text`, `add monthly_lo text`,
+  `period drop not null`, and the `lesson_key` unique index. The `period between 1
+  and 6` CHECK and the 5-tuple unique are left as-is — both are NULL-safe.
+- **Mappings:** `grammar_vocabulary` ← "Content covered within grammar" (English col
+  Y); `monthly_lo` ← the single combined "Monthly Learning Outcome"; `theme` absorbs
+  "Topic"/"المحتوى". The bare `content` topic alias was removed so English col X
+  ("Content covered within linguistic skill") is **dropped → unmapped** (visible in
+  the report), not mis-captured as theme.
+- **Write path:** `sync.ts` holds the parse→upsert→reconcile core (no `server-only`,
+  so the ops script can reuse it). Upsert is now **on `lesson_key`** (the 5-tuple
+  can't key a row once `period` is nullable). `import.ts` is a thin server wrapper
+  that supplies the service-role client and revalidates the cache.
+- **All grains written:** daily-grain instructional rows (numeric period, key
+  `…|P{n}` — UNCHANGED), weekly-grain rows (Awareness, `period` NULL, key `…|wk`),
+  and non-instructional rows (Baseline/Orientation, `period` NULL, key
+  `…|wk:{slug}`). Only rows missing year/month/week are skipped (`skippedLessonRows`).
+- **App wiring:** the editor's Grammar & Vocabulary panel read `focus_area` (always
+  empty for English → "—"). `curriculumUtils` now selects `grammar_vocabulary` and
+  routes it into the panel via `grammarFocus`. Theme is unchanged (reads `theme`).
+
+## Validate / operate
 
 ```bash
 npm test                       # unit tests (synthetic xlsx fixtures, one per hazard)
+
+# 1) DRY-RUN every subject — confirm the column map, unmapped headers, warnings:
 npm run ingest:curriculum -- "<path-to.xlsx>" --subject <code> [--sheet "<name>"]
+
+# 2) WRITE (real import). Runs the lesson_key SAFETY GATE first: it aborts if any
+#    existing active lesson_key for the subject would be lost (orphaning live plans).
+#    Needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (env or .env.local).
+npm run ingest:curriculum -- "<path-to.xlsx>" --subject <code> [--sheet "<name>"] --write
+#    --force overrides a "lost keys" abort (use only if intentional).
 ```
 
-The dev script dry-runs the parser and prints the column map, unmapped headers,
-missing fields, warnings, and sample records. **Run it against all 8 real subject
-files and confirm the mappings** — new synonyms are a one-line change in `ALIASES`.
+Intended order: dry-run all 8 → confirm mappings → **English `--write` only after the
+gate reports 0 lost keys** → then the other 7. New synonyms are a one-line change in
+`ALIASES`. The same import also runs via `POST /api/curriculum/import` (n8n + UI);
+`?dryRun=1` returns the report with no write.
 
-## Proposed migration — running list (DRAFT, finalize after dry-run on all 8 files)
+## Migration that landed (`0015_curriculum_import_fields.sql`)
 
-The canonical model needs columns the locked `curriculum_lesson` lacks, **and** three
-constraints must relax for weekly-grain (Awareness) + non-instructional rows. This is
-the additive/relaxing diff to write as `00XX_curriculum_import_fields.sql` once the
-real-file mappings are confirmed. **Not additive-only** — `period`/`week`/`month`/`year`
-must become nullable and the `year`/`period` CHECKs dropped.
+Deliberately minimal — only what the eight files + the panel fix actually need. The
+operator applies it by hand; it is committed idempotently so `supabase db reset`
+reproduces it.
 
-`curriculum_lesson`:
-
-| Change | Why |
+| Statement | Why |
 |---|---|
-| `add column source_key text` + **unique index**; backfill existing rows first | new upsert + soft-archive diff key (`lesson_key`/5-tuple stays for now) |
-| `add column grain text` (`'daily'`/`'weekly'`) | weekly-grain subjects |
-| `add column period_label text` | raw `"Period 1"` / `"Baseline Evaluation"` |
-| `alter column period drop not null` + **drop CHECK (1..6)** | non-instructional / weekly rows |
-| `alter column week drop not null` | weekly merges / non-instructional |
-| `alter column month drop not null` | defensive (non-instructional) |
-| `add column year_label text`; `alter column year drop not null` + **drop CHECK (0..6)** | raw label + `Preparatory Year` already → 0, but keep null-safe |
-| `add column subject_learning_outcome text` | sheet-level Subject LO |
-| `add column annual_lo text` | annual learning outcome |
-| `add column monthly_lo text` | **single** monthly LO (distinct from existing `monthly_skills_lo`/`monthly_knowledge_lo`) |
-| `add column topic text` | distinct from existing `theme`/`focus_area` |
-| `add column resource_url text` | scalar hyperlink (existing `resources` jsonb keeps `[{label,url}]`) |
+| `add column grammar_vocabulary text` | English col Y "Content covered within grammar"; fixes the editor panel |
+| `add column monthly_lo text` | single combined "Monthly Learning Outcome" (distinct from `monthly_skills_lo`/`monthly_knowledge_lo`) |
+| `alter column period drop not null` | weekly-grain (Awareness) + non-instructional rows have no period |
+| `create unique index … (lesson_key)` | upsert key now that the 5-tuple can't key a NULL-period row |
 
-`lesson_identifier` → existing `taxonomy_id` already covers it (kept verbatim).
-
-`curriculum_sync_run`:
-
-| Change | Why |
-|---|---|
-| `add column file_name text` | provenance |
-| `add column needs_review boolean default false` | report flag for coordinator/George |
-| `add column inserted int`, `updated int`, `archived int` | richer run counts (alongside existing `rows_upserted`/`rows_deactivated`) |
-
-Once these land, `import.ts` upserts on `source_key`, writes the full canonical record,
-soft-archives by `source_key` diff, and records the richer run counts.
+Left as-is on purpose: the `period between 1 and 6` CHECK and the `(subject_code,
+year, month, week, period)` unique are both NULL-safe (a NULL CHECK is not FALSE;
+NULLs are distinct in a unique), so neither blocks weekly/non-instructional rows. The
+canonical `CurriculumRecord` still carries richer fields (subject/annual LO, topic,
+grain, resource_url) with no column yet — they remain dry-run-report-only and are
+adapted down to `ParsedCurriculumRow` on write. If a real import hits a CHECK/NOT
+NULL violation, the write path surfaces the exact constraint + row rather than
+blanket-altering anything (see the brief).
 
 ## App-side note to surface (do NOT fix here)
 

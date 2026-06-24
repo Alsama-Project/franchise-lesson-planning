@@ -2,12 +2,12 @@
 
 import type { ReactNode } from 'react';
 
-export const WIZARD_STEPS: { label: string; sub: string }[] = [
-  { label: 'Objective', sub: 'The one SMARTT target' },
-  { label: 'Teach it', sub: 'New content · I do' },
-  { label: 'Practise', sub: 'You do + worksheet' },
-  { label: 'Link it', sub: 'Checks & exit ticket' },
-  { label: 'Review', sub: 'Whole lesson · submit' },
+export const WIZARD_STEPS: { label: string }[] = [
+  { label: 'Objective' },
+  { label: 'Teach it' },
+  { label: 'Practise' },
+  { label: 'Link it' },
+  { label: 'Review' },
 ];
 
 export const STEP_COUNT = WIZARD_STEPS.length;
@@ -64,16 +64,13 @@ export function Stepper({
                 >
                   {isDone ? '✓' : no}
                 </span>
-                <span className="hidden sm:block">
-                  <span
-                    className={
-                      'block text-[13px] ' +
-                      (isCur ? 'font-semibold text-ink' : isDone ? 'font-medium text-neutral-800' : 'font-medium text-neutral-400')
-                    }
-                  >
-                    {s.label}
-                  </span>
-                  <span className="text-[11px] text-neutral-400">{s.sub}</span>
+                <span
+                  className={
+                    'hidden text-[13px] sm:block ' +
+                    (isCur ? 'font-semibold text-ink' : isDone ? 'font-medium text-neutral-800' : 'font-medium text-neutral-400')
+                  }
+                >
+                  {s.label}
                 </span>
               </button>
               {showConn ? (

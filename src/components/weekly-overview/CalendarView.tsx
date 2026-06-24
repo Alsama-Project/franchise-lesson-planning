@@ -1,7 +1,6 @@
 'use client';
 
 import { CalendarLessonCard, NotStartedLessonCard } from '@/components/weekly-overview/LessonCard';
-import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 import { WEEKDAYS, WEEKDAY_LABELS, todayISO, weekdayOf, type Weekday } from '@/lib/week';
 import type { BoardSlot, BoardYear } from '@/types/weekly-overview';
 
@@ -96,24 +95,21 @@ function EmptyDay() {
 }
 
 function PeriodCell({ slot, ownerId }: { slot: BoardSlot; ownerId: string | null }) {
-  const { openChooser } = useScopeChooser();
   const visible = ownerId ? slot.plans.filter((p) => p.owner?.id === ownerId) : slot.plans;
   const covered = slot.plans.length > 0;
 
   if (!covered) {
     return (
-      <div className="flex flex-col gap-[11px]">
-        <NotStartedLessonCard
-          card={{
-            key: slot.lessonKey,
-            lessonKey: slot.lessonKey,
-            year: slot.year,
-            period: slot.period,
-            dailyOutcome: slot.dailyOutcome,
-            focusArea: slot.focusArea,
-          }}
-        />
-      </div>
+      <NotStartedLessonCard
+        card={{
+          key: slot.lessonKey,
+          lessonKey: slot.lessonKey,
+          year: slot.year,
+          period: slot.period,
+          dailyOutcome: slot.dailyOutcome,
+          focusArea: slot.focusArea,
+        }}
+      />
     );
   }
 
@@ -135,18 +131,6 @@ function PeriodCell({ slot, ownerId }: { slot: BoardSlot; ownerId: string | null
           }}
         />
       ))}
-      <button
-        type="button"
-        onClick={() =>
-          openChooser({ lessonKey: slot.lessonKey, year: slot.year, dailyOutcome: slot.dailyOutcome })
-        }
-        className="inline-flex items-center justify-center gap-[5px] text-[11.5px] font-semibold text-teal transition-colors hover:text-teal-deep"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-        Make your own
-      </button>
     </div>
   );
 }

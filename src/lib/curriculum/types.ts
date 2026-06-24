@@ -10,7 +10,13 @@ export interface CurriculumResource {
   url?: string;
 }
 
-/** A row of `curriculum_lesson`, exactly as parsed/persisted. */
+/**
+ * A row of `curriculum_lesson` as *read* by the app (curriculumUtils → the picker,
+ * editor, weekly overview). Daily-grain subjects (English et al.) always have a
+ * numeric `period`; weekly-grain subjects (Awareness) read back null — the current
+ * picker only navigates the daily subjects, so `period` is typed numeric for them.
+ * `grammar_vocabulary` / `monthly_lo` are the columns added by the import migration.
+ */
 export interface CurriculumLessonRow {
   subject_code: string;
   year: number;
@@ -28,10 +34,37 @@ export interface CurriculumLessonRow {
   monthly_skills_lo: string | null;
   weekly_knowledge_lo: string | null;
   weekly_skills_lo: string | null;
+  grammar_vocabulary: string | null;
+  monthly_lo: string | null;
 }
 
-/** The parser's output for one workbook row (subject_code + content, no db-only fields). */
-export type ParsedCurriculumRow = CurriculumLessonRow;
+/**
+ * The parser's output for one workbook row — the shape *written* to
+ * `curriculum_lesson`. Distinct from the read shape because the import migration
+ * made `period` nullable (weekly-grain / non-instructional rows have no period) and
+ * added `grammar_vocabulary` + `monthly_lo`. `id`/`is_active`/`source`/`synced_at`
+ * are set by the write path, not the parser.
+ */
+export interface ParsedCurriculumRow {
+  subject_code: string;
+  year: number;
+  month: string;
+  week: number;
+  period: number | null;
+  lesson_key: string;
+  daily_outcome: string | null;
+  focus_area: string | null;
+  linguistic_skill: string | null;
+  theme: string | null;
+  resources: CurriculumResource[];
+  taxonomy_id: string | null;
+  monthly_knowledge_lo: string | null;
+  monthly_skills_lo: string | null;
+  weekly_knowledge_lo: string | null;
+  weekly_skills_lo: string | null;
+  grammar_vocabulary: string | null;
+  monthly_lo: string | null;
+}
 
 /** Where an import came from. */
 export type CurriculumSyncSource = 'n8n' | 'upload';
@@ -47,15 +80,38 @@ export interface CurriculumSyncResult {
   error?: string;
 }
 
-/** Build the stable lesson_key from a row's natural key. */
+/**
+ * Build the stable lesson_key from a row's natural key.
+ *
+ * SAFETY: daily-grain rows (numeric `period`) produce `…|W{week}|P{period}` exactly
+ * as the original English import did — this MUST stay byte-for-byte identical, since
+ * live lesson plans link to curriculum rows by this key (see the import brief's
+ * lesson_key gate). Rows with no numeric period — weekly-grain subjects (Awareness)
+ * and non-instructional rows (Baseline/Orientation/Evaluation) — have no existing
+ * rows to collide with, so the period segment is replaced by a sentinel: a slug of
+ * the raw period label when present (so "Baseline" and "Orientation" in the same
+ * week stay distinct), else the bare `wk` marker for pure weekly grain.
+ */
 export function buildLessonKey(
   subjectCode: string,
   year: number,
   month: string,
   week: number,
-  period: number,
+  period: number | null,
+  periodLabel?: string | null,
 ): string {
-  return `${subjectCode}|Y${year}|${month}|W${week}|P${period}`;
+  const periodPart =
+    period != null ? `P${period}` : periodLabel ? `wk:${keySlug(periodLabel)}` : 'wk';
+  return `${subjectCode}|Y${year}|${month}|W${week}|${periodPart}`;
+}
+
+/** Compact, deterministic slug for a non-instructional period label in a lesson_key. */
+function keySlug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
 }
 
 // ── Canonical curriculum model (schema-drift-resilient parser output) ─────────────
@@ -89,6 +145,7 @@ export interface CurriculumRecord {
   resourceUrl: string | null; // hyperlink target — captured even when text is "Click for Resource"
   topic: string | null;
   focusArea: string | null;
+  grammarVocabulary: string | null; // "Content covered within grammar" (English col Y)
   lessonIdentifier: string | null;
   grain: Grain;
   sourceKey: string; // deterministic id for upsert + soft-archive diff

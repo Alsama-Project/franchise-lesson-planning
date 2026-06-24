@@ -453,6 +453,7 @@ export function parseCurriculumWorkbook(
       resourceUrl,
       topic: value('topic'),
       focusArea: value('focusArea'),
+      grammarVocabulary: rawAt(r, 'grammarVocabulary'),
       lessonIdentifier: rawAt(r, 'lessonIdentifier'),
       grain,
       sourceKey,
@@ -460,23 +461,28 @@ export function parseCurriculumWorkbook(
     };
     records.set(sourceKey, record);
 
-    // Adapt down to the current curriculum_lesson 5-tuple, or skip + count.
-    if (
-      grain === 'daily' &&
-      yearIndex != null &&
-      month != null &&
-      week != null &&
-      periodNumber != null &&
-      periodNumber >= 1 &&
-      periodNumber <= 6
-    ) {
-      const lessonKey = buildLessonKey(subjectCode, yearIndex, month, week, periodNumber);
+    // Write to curriculum_lesson. The table keeps year/month/week NOT NULL (only
+    // `period` was made nullable), so a row needs full nav to be written: a valid
+    // year index (0..6), a month, and a week. Daily-grain instructional rows carry a
+    // numeric period; weekly-grain (Awareness) and non-instructional (Baseline/
+    // Orientation/Evaluation) rows are written with period = NULL and a sentinel
+    // lesson_key. Rows that can't satisfy the nav are surfaced and skipped.
+    if (yearIndex != null && yearIndex >= 0 && yearIndex <= 6 && month != null && week != null) {
+      const periodForKey = grain === 'daily' ? periodNumber : null;
+      const lessonKey = buildLessonKey(
+        subjectCode,
+        yearIndex,
+        month,
+        week,
+        periodForKey,
+        periodLabel,
+      );
       lessonRows.set(lessonKey, {
         subject_code: subjectCode,
         year: yearIndex,
         month,
         week,
-        period: periodNumber,
+        period: periodForKey,
         lesson_key: lessonKey,
         daily_outcome: rawDaily,
         focus_area: rawAt(r, 'focusArea'),
@@ -486,8 +492,12 @@ export function parseCurriculumWorkbook(
         taxonomy_id: rawAt(r, 'lessonIdentifier'),
         monthly_knowledge_lo: value('monthlyKnowledgeLearningOutcome'),
         monthly_skills_lo: value('monthlySkillLearningOutcome'),
-        weekly_knowledge_lo: value('weeklyKnowledgeLearningOutcome'),
-        weekly_skills_lo: value('weeklySkillLearningOutcome'),
+        weekly_knowledge_lo: hasWeekCol
+          ? value('weeklyKnowledgeLearningOutcome')
+          : rawWeeklyKnowledge,
+        weekly_skills_lo: hasWeekCol ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
+        grammar_vocabulary: rawAt(r, 'grammarVocabulary'),
+        monthly_lo: value('monthlyLearningOutcome'),
       });
     } else {
       skippedLessonRows++;
@@ -586,7 +596,7 @@ function buildReport(a: ReportArgs): ImportReport {
   }
   if (a.skippedLessonRows > 0) {
     warnings.push(
-      `${a.skippedLessonRows} records cannot satisfy the legacy 5-tuple (weekly-grain / non-instructional) and are not written to curriculum_lesson yet.`,
+      `${a.skippedLessonRows} records lack the year/month/week needed by curriculum_lesson (NOT NULL) and are not written.`,
     );
   }
   for (const cf of criticalFields) {

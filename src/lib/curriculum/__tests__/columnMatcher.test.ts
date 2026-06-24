@@ -87,3 +87,21 @@ test('each header maps to at most one field; leftmost wins ties', () => {
   const { byField } = matchColumns(cells(['Resources', 'Resources']));
   assert.equal(byField.get('resources')?.col, 0);
 });
+
+test('grammar vs linguistic-skill "Content covered within …" columns disambiguate', () => {
+  const { byField, unmappedHeaders } = matchColumns(
+    cells([
+      'Linguistic Skill', // 0 → linguisticSkill (exact)
+      'Content covered within linguistic skill', // 1 → DROPPED (no field; surfaces unmapped)
+      'Content covered within grammar', // 2 → grammarVocabulary (exact)
+    ]),
+  );
+  assert.equal(byField.get('linguisticSkill')?.col, 0);
+  assert.equal(byField.get('grammarVocabulary')?.col, 2);
+  assert.equal(byField.get('grammarVocabulary')?.confidence, 1);
+  // The linguistic-skill "content covered" column maps to nothing and is surfaced.
+  assert.deepEqual(
+    unmappedHeaders.map((u) => u.header),
+    ['Content covered within linguistic skill'],
+  );
+});

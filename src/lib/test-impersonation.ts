@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
+import { SignJWT } from 'jose';
 import { createClient } from '@/lib/supabase/server';
 import { TEST_ROLES, type TestRole } from '@/lib/test-roles';
 
@@ -79,6 +80,52 @@ export function uidToRole(uid: string): TestRole | null {
     if (roleToUid(role) === uid) return role;
   }
   return null;
+}
+
+/** How long a minted impersonation token is valid: 8h, so testers aren't bounced mid-session. */
+const IMPERSONATION_TOKEN_TTL_SECONDS = 60 * 60 * 8;
+
+/**
+ * Mint a Supabase-compatible HS256 access token for the target test user, signed
+ * with the project's server-only `SUPABASE_JWT_SECRET`. This replaces the old
+ * magic-link/OTP mint: it has no dependency on the target having a confirmed
+ * email identity or on the email provider being enabled — GoTrue accepts any JWT
+ * it can verify with its own secret, resolving `auth.uid()`/RLS to `sub`.
+ *
+ * The token is intentionally NOT refreshable (a self-signed access token has no
+ * server-side refresh record). That is fine for a testing tool: when it expires
+ * after {@link IMPERSONATION_TOKEN_TTL_SECONDS} the tester just clicks a role
+ * again. The secret is read here, in this `server-only` module, and never leaves
+ * the server.
+ */
+export async function mintImpersonationAccessToken(params: {
+  uid: string;
+  email?: string;
+}): Promise<string> {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) {
+    throw new Error('Missing SUPABASE_JWT_SECRET (server-only); cannot mint impersonation token.');
+  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL; cannot derive auth issuer.');
+  }
+
+  const issuer = `${url.replace(/\/+$/, '')}/auth/v1`;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expSeconds = nowSeconds + IMPERSONATION_TOKEN_TTL_SECONDS;
+
+  return new SignJWT({
+    role: 'authenticated',
+    ...(params.email ? { email: params.email } : {}),
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setSubject(params.uid)
+    .setAudience('authenticated')
+    .setIssuer(issuer)
+    .setIssuedAt(nowSeconds)
+    .setExpirationTime(expSeconds)
+    .sign(new TextEncoder().encode(secret));
 }
 
 /** Cookie options for the stash — server-set, httpOnly, never readable by JS. */

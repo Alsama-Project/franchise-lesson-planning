@@ -47,7 +47,18 @@ export function TestUserBar({ impersonating, currentRole }: TestUserBarProps) {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setError('Switch failed');
+        // The route returns { ok:false, stage, message } with a secret-free
+        // reason; surface it so failures are diagnosable. Fall back if absent.
+        let detail = 'Switch failed';
+        try {
+          const data = (await res.json()) as { stage?: unknown; message?: unknown };
+          if (typeof data?.stage === 'string' && typeof data?.message === 'string') {
+            detail = `${data.stage}: ${data.message}`;
+          }
+        } catch {
+          // Non-JSON body; keep the generic message.
+        }
+        setError(detail);
         setBusyRole(null);
         return;
       }

@@ -71,7 +71,7 @@ export function NotStartedLessonCard({ card }: { card: EmptySlotCard }) {
     <button
       type="button"
       onClick={open}
-      className="flex items-center justify-between gap-2 rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px] text-left transition-colors hover:bg-surface-cream"
+      className="flex items-center justify-between gap-2 rounded-[12px] border border-dashed border-border-strong bg-transparent px-[13px] py-[11px] text-left transition-colors hover:bg-surface-subtle"
     >
       <div className="min-w-0">
         <div className="text-[11px] font-semibold text-text-faint">{periodLabel(card.period)}</div>

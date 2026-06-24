@@ -441,6 +441,12 @@ export interface CurriculumSubjectStatus {
   name: string;
   code: string;
   latestRun: CurriculumSyncSummary | null;
+  /**
+   * `finished_at` of the most recent *successful* run, if any. Used by the error
+   * state's "Last good sync was {relative}." line — the latest run may itself be
+   * the failure, so the standing `latestRun` can't answer "when did it last work".
+   */
+  lastGoodAt: string | null;
 }
 
 /**
@@ -476,14 +482,21 @@ export async function getCurriculumStatus(
     error: string | null;
   }>;
 
-  // Rows are newest-first, so the first per code is the latest.
+  // Rows are newest-first, so the first per code is the latest, and the first
+  // `success` per code is the last good sync.
   const latestByCode = new Map<string, (typeof runRows)[number]>();
+  const lastGoodByCode = new Map<string, (typeof runRows)[number]>();
   for (const r of runRows) {
-    if (r.subject_code && !latestByCode.has(r.subject_code)) latestByCode.set(r.subject_code, r);
+    if (!r.subject_code) continue;
+    if (!latestByCode.has(r.subject_code)) latestByCode.set(r.subject_code, r);
+    if (r.status === 'success' && !lastGoodByCode.has(r.subject_code)) {
+      lastGoodByCode.set(r.subject_code, r);
+    }
   }
 
   return subjectRows.map((s) => {
     const run = latestByCode.get(s.code);
+    const lastGood = lastGoodByCode.get(s.code);
     return {
       subjectId: s.id,
       name: s.name,
@@ -499,6 +512,7 @@ export async function getCurriculumStatus(
             error: run.error,
           }
         : null,
+      lastGoodAt: lastGood?.finished_at ?? null,
     };
   });
 }

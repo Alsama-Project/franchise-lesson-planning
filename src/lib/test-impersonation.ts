@@ -1,27 +1,36 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
-import { SignJWT } from 'jose';
 import { createClient } from '@/lib/supabase/server';
-import { TEST_ROLES, type TestRole } from '@/lib/test-roles';
+import { isTestRole, type TestRole } from '@/lib/test-roles';
 
 export { TEST_ROLES, isTestRole, type TestRole } from '@/lib/test-roles';
 
 /**
- * Dev/preview-only test-user impersonation — gates, the role→UID map, and the
- * server-side "should the bar render?" check. Shared by the impersonate route
+ * Dev/preview-only test-user impersonation — gates, the role→credentials map, and
+ * the server-side "should the bar render?" check. Shared by the impersonate route
  * (`src/app/api/test-impersonate/route.ts`) and the authed shell.
  *
- * This is SECURITY-SENSITIVE: passing the gates lets a real admin mint a real
- * Supabase session for one of three pre-configured users so they can see each
- * role's true, RLS-scoped UX. Every gate below must hold; none is optional.
+ * This is SECURITY-SENSITIVE: passing the gates lets a real admin sign in as one
+ * of three pre-configured test users so they can see each role's true, RLS-scoped
+ * UX. The session is a genuine, Supabase-issued one (the route logs in with the
+ * test user's email+password); we never self-sign a token. Every gate below must
+ * hold; none is optional.
  *
  * `server-only` guarantees this module can never be bundled for the browser, so
- * the env that maps roles to real UIDs never leaks. No NEXT_PUBLIC_* here.
+ * the env that maps roles to real credentials never leaks. No NEXT_PUBLIC_* here.
  */
 
 /** httpOnly cookie holding the real admin's stashed session (for "Return"). */
 export const STASH_COOKIE = 'test-impersonation-stash';
+
+/**
+ * httpOnly cookie recording which role is currently being viewed. With genuine
+ * sign-in there is no self-minted token to read a role off of, so the route
+ * records it here on each switch and clears it on "Return"; the shell reads it to
+ * label the bar.
+ */
+export const IMPERSONATION_ROLE_COOKIE = 'test-impersonation-role';
 
 /** Shape stashed in {@link STASH_COOKIE}: the real user's id + session tokens. */
 export interface ImpersonationStash {
@@ -30,11 +39,11 @@ export interface ImpersonationStash {
   refresh_token: string;
 }
 
-/** Map each role key to the env var holding its pre-configured target UID. */
-const ROLE_UID_ENV: Record<TestRole, string> = {
-  teacher: 'TEST_USER_TEACHER_ID',
-  coordinator: 'TEST_USER_COORDINATOR_ID',
-  admin: 'TEST_USER_ADMIN_ID',
+/** Map each role key to the env vars holding its sign-in credentials. */
+const ROLE_CREDENTIALS_ENV: Record<TestRole, { email: string; password: string }> = {
+  teacher: { email: 'TEST_USER_TEACHER_EMAIL', password: 'TEST_USER_TEACHER_PASSWORD' },
+  coordinator: { email: 'TEST_USER_COORDINATOR_EMAIL', password: 'TEST_USER_COORDINATOR_PASSWORD' },
+  admin: { email: 'TEST_USER_ADMIN_EMAIL', password: 'TEST_USER_ADMIN_PASSWORD' },
 };
 
 /**
@@ -68,64 +77,21 @@ export function getAllowedUids(): string[] {
     .filter(Boolean);
 }
 
-/** Resolve a role key to its pre-configured target UID, or null if unconfigured. */
-export function roleToUid(role: TestRole): string | null {
-  const value = process.env[ROLE_UID_ENV[role]];
-  return value && value.trim() ? value.trim() : null;
-}
-
-/** Reverse the map: which role key (if any) a UID corresponds to. */
-export function uidToRole(uid: string): TestRole | null {
-  for (const role of TEST_ROLES) {
-    if (roleToUid(role) === uid) return role;
-  }
-  return null;
-}
-
-/** How long a minted impersonation token is valid: 8h, so testers aren't bounced mid-session. */
-const IMPERSONATION_TOKEN_TTL_SECONDS = 60 * 60 * 8;
-
 /**
- * Mint a Supabase-compatible HS256 access token for the target test user, signed
- * with the project's server-only `SUPABASE_JWT_SECRET`. This replaces the old
- * magic-link/OTP mint: it has no dependency on the target having a confirmed
- * email identity or on the email provider being enabled — GoTrue accepts any JWT
- * it can verify with its own secret, resolving `auth.uid()`/RLS to `sub`.
- *
- * The token is intentionally NOT refreshable (a self-signed access token has no
- * server-side refresh record). That is fine for a testing tool: when it expires
- * after {@link IMPERSONATION_TOKEN_TTL_SECONDS} the tester just clicks a role
- * again. The secret is read here, in this `server-only` module, and never leaves
- * the server.
+ * Resolve a role's sign-in credentials from server-only env. Returns the
+ * credentials, or the NAME of the first missing/empty var (never a value) so the
+ * caller can report `stage:'config'` without leaking a secret.
  */
-export async function mintImpersonationAccessToken(params: {
-  uid: string;
-  email?: string;
-}): Promise<string> {
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) {
-    throw new Error('Missing SUPABASE_JWT_SECRET (server-only); cannot mint impersonation token.');
-  }
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!url) {
-    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL; cannot derive auth issuer.');
-  }
-
-  const issuer = `${url.replace(/\/+$/, '')}/auth/v1`;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const expSeconds = nowSeconds + IMPERSONATION_TOKEN_TTL_SECONDS;
-
-  return new SignJWT({
-    role: 'authenticated',
-    ...(params.email ? { email: params.email } : {}),
-  })
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .setSubject(params.uid)
-    .setAudience('authenticated')
-    .setIssuer(issuer)
-    .setIssuedAt(nowSeconds)
-    .setExpirationTime(expSeconds)
-    .sign(new TextEncoder().encode(secret));
+export function roleToCredentials(
+  role: TestRole,
+): { ok: true; email: string; password: string } | { ok: false; missingVar: string } {
+  const vars = ROLE_CREDENTIALS_ENV[role];
+  const email = process.env[vars.email]?.trim();
+  if (!email) return { ok: false, missingVar: vars.email };
+  // Do NOT trim the password — a credential is taken verbatim.
+  const password = process.env[vars.password];
+  if (!password) return { ok: false, missingVar: vars.password };
+  return { ok: true, email, password };
 }
 
 /** Cookie options for the stash — server-set, httpOnly, never readable by JS. */
@@ -181,10 +147,11 @@ export async function getImpersonationState(): Promise<ImpersonationState> {
   if (!getAllowedUids().includes(realUid)) return INACTIVE;
 
   const impersonating = stashUid !== null;
+  const roleValue = cookieStore.get(IMPERSONATION_ROLE_COOKIE)?.value;
   return {
     active: true,
     impersonating,
-    currentRole: impersonating ? uidToRole(user.id) : null,
+    currentRole: impersonating && isTestRole(roleValue) ? roleValue : null,
   };
 }
 

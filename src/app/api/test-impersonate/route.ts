@@ -3,14 +3,13 @@ import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import {
+  IMPERSONATION_ROLE_COOKIE,
   STASH_COOKIE,
   getAllowedUids,
   impersonationEnabled,
   isTestRole,
-  mintImpersonationAccessToken,
-  roleToUid,
+  roleToCredentials,
   stashCookieOptions,
   type ImpersonationStash,
 } from '@/lib/test-impersonation';
@@ -18,44 +17,44 @@ import {
 /**
  * Dev/preview-only impersonation endpoint. POST a `{ role }` to view-as one of
  * the three pre-configured test users, or `{ action: 'return' }` to restore your
- * own account. SECURITY-SENSITIVE: it mints real Supabase sessions, so every
- * gate in `impersonationEnabled()` + the admin allowlist must hold or it refuses.
+ * own account. SECURITY-SENSITIVE: it establishes real Supabase sessions, so
+ * every gate in `impersonationEnabled()` + the admin allowlist must hold or it
+ * refuses.
  *
- * The client only ever sends a role KEY; the server maps it to a UID from
- * server-only env. An arbitrary user id from the client is never honoured. The
- * JWT secret used to mint the target's token is server-only and never leaves the
- * server.
+ * The client only ever sends a role KEY; the server maps it to that role's
+ * credentials from server-only env. An arbitrary user id or credential from the
+ * client is never honoured. The test passwords are server-only and never leave
+ * the server (not in any response, log line, or client bundle).
  *
  * Session mechanism (matches this repo's @supabase/ssr cookie setup):
- *   - mint: sign a Supabase-compatible HS256 access token for the target with
- *     the project's `SUPABASE_JWT_SECRET`, then write it via the cookie-bound
- *     `setSession({access_token, refresh_token})`. This has no dependency on the
- *     target having a confirmed email identity or an enabled email provider
- *     (the old magic-link/OTP flow did, which 500'd on the SQL-seeded users).
+ *   - switch: sign in as the test user with `signInWithPassword({email, password})`
+ *     on the cookie-bound anon client. Supabase issues a genuine, correctly-signed
+ *     session and the client writes its auth cookies; RLS then resolves to that
+ *     user. We do NOT self-sign a token (the project signs with ECC/ES256, which
+ *     we cannot reproduce — self-signed HS256 tokens are rejected as `bad_jwt`).
  *   - return: the real session's tokens are stashed (httpOnly) before the first
- *     swap and restored with `setSession`, then the stash is cleared.
+ *     swap and restored with `setSession`, then the stash is cleared. The real
+ *     session's tokens are genuine, so restoration works.
  *
  * Failures return `{ ok: false, stage, message }` with an appropriate status so
  * the bar can show exactly which step failed and why. `message` is a short,
- * human-readable reason — NEVER the JWT secret, the signed token, the
- * service-role key, or cookie contents. Every failure is also logged via
- * `console.error('[test-impersonate]', stage, message)` (same redaction).
+ * human-readable reason — NEVER a password, the service-role key, or cookie
+ * contents (the Supabase auth error TEXT is safe and is surfaced). Every failure
+ * is also logged via `console.error('[test-impersonate]', stage, message)`.
  */
 
 /** The step that failed, surfaced to the caller and the logs. */
 type Stage =
   | 'gate' // disabled / wrong env / not allowed in prod
-  | 'auth' // no current session / caller not in allowlist
+  | 'auth' // no current session / caller not in allowlist / sign-in failed
   | 'config' // a required env var is missing or empty
-  | 'resolve_user' // role→UID map miss (the target user could not be resolved)
-  | 'sign' // JWT signing threw
-  | 'set_session' // establishing/writing the impersonated session failed
+  | 'resolve_user' // invalid or missing role
   | 'restore'; // restoring the stashed real session failed
 
 /**
  * Build a non-leaking, stage-tagged error response and log it at Error level.
  * `message` must already be secret-free (a fixed string, an env var NAME, or an
- * `Error.message` from Supabase/jose — none of which carry the secret/token).
+ * `Error.message` from Supabase — none of which carry a password/secret).
  */
 function fail(stage: Stage, message: string, status: number) {
   console.error('[test-impersonate]', stage, message);
@@ -116,31 +115,22 @@ export async function POST(request: NextRequest) {
         return fail('restore', reason(error, 'failed to restore the real session'), 500);
       }
       cookieStore.delete(STASH_COOKIE);
+      cookieStore.delete(IMPERSONATION_ROLE_COOKIE);
       return NextResponse.json({ ok: true, impersonating: false });
     }
 
-    // ── Switch role: resolve the target ──────────────────────────────────────
+    // ── Switch role: validate the requested role ─────────────────────────────
     stage = 'resolve_user';
     if (!isTestRole(body?.role)) {
       return fail('resolve_user', 'invalid or missing role', 400);
     }
     const role = body.role;
-    // The target is one of exactly three server-configured UIDs.
-    const targetUid = roleToUid(role);
-    if (!targetUid) {
-      return fail('resolve_user', `role "${role}" is not configured`, 400);
-    }
 
-    // ── Config: validate required env up-front (names only, never values) ─────
+    // ── Config: resolve this role's credentials (names only, never values) ────
     stage = 'config';
-    if (!process.env.SUPABASE_JWT_SECRET?.trim()) {
-      return fail('config', 'SUPABASE_JWT_SECRET is not set', 500);
-    }
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {
-      return fail('config', 'NEXT_PUBLIC_SUPABASE_URL is not set', 500);
-    }
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
-      return fail('config', 'SUPABASE_SERVICE_ROLE_KEY is not set', 500);
+    const creds = roleToCredentials(role);
+    if (!creds.ok) {
+      return fail('config', `${creds.missingVar} is not set`, 500);
     }
 
     // Stash the real session ONCE, before the first swap, so subsequent switches
@@ -161,40 +151,22 @@ export async function POST(request: NextRequest) {
       cookieStore.set(STASH_COOKIE, JSON.stringify(toStash), stashCookieOptions());
     }
 
-    // Best-effort email lookup to populate the token's email claim. This is
-    // optional — `sub` is what RLS resolves on — so a failed/unavailable lookup
-    // does NOT abort the mint; we just log it and sign without the email claim.
-    stage = 'resolve_user';
-    let targetEmail: string | undefined;
-    try {
-      const admin = createAdminClient();
-      const { data: target } = await admin.auth.admin.getUserById(targetUid);
-      targetEmail = target?.user?.email ?? undefined;
-    } catch (err) {
-      console.error('[test-impersonate]', 'resolve_user', reason(err, 'admin user lookup failed'));
-    }
-
-    // ── Sign the impersonated access token (server-only secret) ───────────────
-    stage = 'sign';
-    let accessToken: string;
-    try {
-      accessToken = await mintImpersonationAccessToken({ uid: targetUid, email: targetEmail });
-    } catch (err) {
-      return fail('sign', reason(err, 'failed to sign the impersonation token'), 500);
-    }
-
-    // ── Establish the impersonated session via the cookie-bound client ────────
-    // Same setSession path the Return flow uses. The refresh_token is a
-    // non-refreshable placeholder: a self-signed access token has no server-side
-    // refresh record, so when it expires the tester just clicks a role again.
-    stage = 'set_session';
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: 'impersonation-no-refresh',
+    // ── Establish the impersonated session by signing in as the test user ─────
+    // The cookie-bound anon client logs in with the test user's email+password;
+    // Supabase issues a genuine, correctly-signed session and writes its auth
+    // cookies, so RLS resolves to that user on subsequent requests. No token is
+    // self-signed and no password is ever returned or logged.
+    stage = 'auth';
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: creds.email,
+      password: creds.password,
     });
-    if (sessionError) {
-      return fail('set_session', reason(sessionError, 'failed to establish the session'), 500);
+    if (signInError) {
+      return fail('auth', reason(signInError, 'failed to sign in as the test user'), 401);
     }
+
+    // Record which role is now being viewed so the shell can label the bar.
+    cookieStore.set(IMPERSONATION_ROLE_COOKIE, role, stashCookieOptions());
 
     return NextResponse.json({ ok: true, impersonating: true, role });
   } catch (err) {

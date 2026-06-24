@@ -7,6 +7,9 @@
 // helpers below keep the editor's reducer-style updates in one place.
 
 import type {
+  FloatingElement,
+  FloatingImage,
+  FloatingTextBox,
   Worksheet,
   WorksheetBlock,
   WorksheetDoc,
@@ -24,7 +27,7 @@ export function newBlockId(): string {
 
 /** An empty worksheet (no exercises yet). */
 export function emptyWorksheet(): Worksheet {
-  return { version: 2, blocks: [] };
+  return { version: 2, blocks: [], elements: [] };
 }
 
 /** True for a value that looks like a tiptap document node. */
@@ -60,6 +63,35 @@ function asBlock(value: unknown): WorksheetBlock | null {
   return null;
 }
 
+const num = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+/** Narrow an unknown array element to a valid FloatingElement, or null. */
+function asElement(value: unknown): FloatingElement | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const id = typeof v.id === 'string' ? v.id : newBlockId();
+  const geom = { id, x: num(v.x, 0), y: num(v.y, 0), w: num(v.w, 200), h: num(v.h, 120), z: num(v.z, 1) };
+  if (v.kind === 'textbox') {
+    return {
+      ...geom,
+      kind: 'textbox',
+      doc: isTiptapDoc(v.doc) ? v.doc : null,
+      border: v.border === true,
+      fill: v.fill === 'white' ? 'white' : 'transparent',
+    };
+  }
+  if (v.kind === 'image' && typeof v.src === 'string') {
+    return {
+      ...geom,
+      kind: 'image',
+      src: v.src,
+      alt: typeof v.alt === 'string' ? v.alt : null,
+    };
+  }
+  return null;
+}
+
 /**
  * Normalise the raw `worksheet` column into a `Worksheet`. Handles three cases:
  *  - the current v2 envelope → validated block-by-block;
@@ -71,7 +103,10 @@ export function parseWorksheet(raw: unknown): Worksheet {
     const obj = raw as Record<string, unknown>;
     if (obj.version === 2 && Array.isArray(obj.blocks)) {
       const blocks = obj.blocks.map(asBlock).filter((b): b is WorksheetBlock => b !== null);
-      return { version: 2, blocks };
+      const elements = Array.isArray(obj.elements)
+        ? obj.elements.map(asElement).filter((e): e is FloatingElement => e !== null)
+        : [];
+      return { version: 2, blocks, elements };
     }
     // Legacy v1: a single tiptap document stored directly in the column.
     if (isTiptapDoc(obj)) {
@@ -81,15 +116,15 @@ export function parseWorksheet(raw: unknown): Worksheet {
         doc: obj,
         fromAI: false,
       };
-      return { version: 2, blocks: [block] };
+      return { version: 2, blocks: [block], elements: [] };
     }
   }
   return emptyWorksheet();
 }
 
-/** True when the worksheet has no exercises (drives the empty state). */
+/** True when the worksheet has no exercises and no floating elements. */
 export function isWorksheetEmpty(ws: Worksheet): boolean {
-  return ws.blocks.length === 0;
+  return ws.blocks.length === 0 && ws.elements.length === 0;
 }
 
 /** Append a block, returning a new worksheet. */
@@ -143,4 +178,76 @@ export function newResourceBlock(
   uploaderName: string | null,
 ): WorksheetResourceBlock {
   return { id: newBlockId(), kind: 'resource', resourceId, uploaderName };
+}
+
+// ── Floating elements (page-relative overlay) ──────────────────────────────
+
+/** Highest z among current elements (0 when none) — new elements go on top. */
+function topZ(ws: Worksheet): number {
+  return ws.elements.reduce((max, el) => Math.max(max, el.z), 0);
+}
+
+/** A new transparent, border-less text box at the given body-relative position. */
+export function newTextBox(x: number, y: number, z: number): FloatingTextBox {
+  return { id: newBlockId(), kind: 'textbox', x, y, w: 280, h: 120, z, doc: null, border: false, fill: 'transparent' };
+}
+
+/** A new floating image element. */
+export function newFloatingImage(
+  src: string,
+  alt: string | null,
+  geom: { x: number; y: number; w: number; h: number },
+  z: number,
+): FloatingImage {
+  return { id: newBlockId(), kind: 'image', src, alt, z, ...geom };
+}
+
+/** Append a floating element on top of the stack. */
+export function addElement(ws: Worksheet, el: FloatingElement): Worksheet {
+  return { ...ws, elements: [...ws.elements, el] };
+}
+
+/** Replace the element with `id` via an updater. */
+export function updateElement(
+  ws: Worksheet,
+  id: string,
+  update: (el: FloatingElement) => FloatingElement,
+): Worksheet {
+  return { ...ws, elements: ws.elements.map((e) => (e.id === id ? update(e) : e)) };
+}
+
+/** Remove the element with `id`. */
+export function removeElement(ws: Worksheet, id: string): Worksheet {
+  return { ...ws, elements: ws.elements.filter((e) => e.id !== id) };
+}
+
+/** Restack `id` to the front (bring forward) or back (send backward). */
+export function restackElement(ws: Worksheet, id: string, dir: 'forward' | 'backward'): Worksheet {
+  const target = ws.elements.find((e) => e.id === id);
+  if (!target) return ws;
+  const zs = ws.elements.map((e) => e.z);
+  const nextZ = dir === 'forward' ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
+  return updateElement(ws, id, (e) => ({ ...e, z: nextZ }));
+}
+
+/**
+ * Clamp an element's geometry to the printable body content box [0..boxW]×[0..boxH]
+ * (with a minimum size). This is the single guard that keeps every element on the
+ * page and out of the locked chrome, both on screen and in print.
+ */
+export function clampGeom(
+  geom: { x: number; y: number; w: number; h: number },
+  box: { w: number; h: number },
+  min: { w: number; h: number },
+): { x: number; y: number; w: number; h: number } {
+  const w = Math.max(min.w, Math.min(geom.w, box.w));
+  const h = Math.max(min.h, Math.min(geom.h, box.h));
+  const x = Math.max(0, Math.min(geom.x, box.w - w));
+  const y = Math.max(0, Math.min(geom.y, box.h - h));
+  return { x, y, w, h };
+}
+
+/** The next z to assign a freshly inserted element. */
+export function nextZ(ws: Worksheet): number {
+  return topZ(ws) + 1;
 }

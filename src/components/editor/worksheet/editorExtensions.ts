@@ -9,16 +9,21 @@ import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import TextAlign from '@tiptap/extension-text-align';
 import type { AnyExtension } from '@tiptap/core';
-import { ResizableImage } from './resizableImage';
+import { ResizableImage, type FloatImageInfo } from './resizableImage';
+
+export interface WorksheetEditorOptions {
+  /** Called when the teacher converts an inline image to a free floating one. */
+  onFloatImage?: (info: FloatImageInfo) => void;
+}
 
 /** Build the extension list (a fresh array per editor instance). */
-export function worksheetEditorExtensions(): AnyExtension[] {
+export function worksheetEditorExtensions(opts: WorksheetEditorOptions = {}): AnyExtension[] {
   return [
     StarterKit,
     Underline,
     TextStyle,
     Color,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ResizableImage.configure({ inline: false, allowBase64: false }),
+    ResizableImage.configure({ inline: false, allowBase64: false, onFloatImage: opts.onFloatImage }),
   ];
 }

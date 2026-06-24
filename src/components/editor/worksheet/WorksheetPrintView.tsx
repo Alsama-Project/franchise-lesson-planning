@@ -23,6 +23,51 @@ function freeBlockHtml(doc: unknown): string {
   }
 }
 
+/** Static, non-interactive render of the floating layer for print/preview. */
+function StaticFloatingLayer({ elements }: { elements: Worksheet['elements'] }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0 }}>
+      {elements.map((el) => {
+        const base: React.CSSProperties = {
+          position: 'absolute',
+          left: el.x,
+          top: el.y,
+          width: el.w,
+          height: el.h,
+          zIndex: el.z,
+        };
+        if (el.kind === 'textbox') {
+          return (
+            <div
+              key={el.id}
+              style={{
+                ...base,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                padding: '8px 10px',
+                background: el.fill === 'white' ? '#fff' : 'transparent',
+                border: el.border ? '1.5px solid #C9B89F' : 'none',
+                borderRadius: 6,
+              }}
+              className="worksheet-doc"
+              dangerouslySetInnerHTML={{ __html: freeBlockHtml(el.doc) }}
+            />
+          );
+        }
+        return (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={el.id}
+            src={el.src}
+            alt={el.alt ?? ''}
+            style={{ ...base, objectFit: 'contain', borderRadius: 6 }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export function WorksheetPrintView({
   ws,
   ctx,
@@ -33,7 +78,7 @@ export function WorksheetPrintView({
   resolved: Record<string, ResourceWithTags>;
 }) {
   return (
-    <MasterFrame ctx={ctx}>
+    <MasterFrame ctx={ctx} overlay={<StaticFloatingLayer elements={ws.elements} />}>
       {ws.blocks.map((block, i) => {
         if (block.kind === 'free') {
           const html = freeBlockHtml(block.doc);

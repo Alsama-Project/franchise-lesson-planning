@@ -24,6 +24,7 @@ export function SortableBlock({
   onDuplicateFree,
   onActivate,
   onDeactivate,
+  onFloatImage,
 }: {
   block: WorksheetBlock;
   index: number;
@@ -35,6 +36,7 @@ export function SortableBlock({
   onDuplicateFree: (id: string) => void;
   onActivate: (api: ActiveBlock) => void;
   onDeactivate: (id: string) => void;
+  onFloatImage: (info: import('./resizableImage').FloatImageInfo) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
@@ -63,6 +65,7 @@ export function SortableBlock({
           onDuplicate={() => onDuplicateFree(block.id)}
           onActivate={onActivate}
           onDeactivate={onDeactivate}
+          onFloatImage={onFloatImage}
           dragHandleProps={dragHandleProps}
         />
       ) : (

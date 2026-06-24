@@ -33,7 +33,22 @@ function BlankLine({ width }: { width: number }) {
   );
 }
 
-export function MasterFrame({ ctx, children }: { ctx: WorksheetContext; children: ReactNode }) {
+// The body padding — the floating overlay is inset by exactly this so its
+// coordinate space matches the editable content box (never the locked chrome).
+export const BODY_PAD_TOP = 30;
+export const BODY_PAD_X = 52;
+export const BODY_PAD_BOTTOM = 16;
+
+export function MasterFrame({
+  ctx,
+  children,
+  overlay,
+}: {
+  ctx: WorksheetContext;
+  children: ReactNode;
+  /** Page-relative floating layer, rendered absolutely over the body content box. */
+  overlay?: ReactNode;
+}) {
   const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
   const exitTicket = ctx.exitTicket.trim() || 'Write one thing you learned today:';
 
@@ -139,18 +154,36 @@ export function MasterFrame({ ctx, children }: { ctx: WorksheetContext; children
         </span>
       </div>
 
-      {/* BODY — the editable exercise area */}
+      {/* BODY — the editable exercise area (relative: anchors the floating layer) */}
       <div
         style={{
           flex: 1,
           minHeight: 560,
-          padding: '30px 52px 16px',
+          padding: `${BODY_PAD_TOP}px ${BODY_PAD_X}px ${BODY_PAD_BOTTOM}px`,
           display: 'flex',
           flexDirection: 'column',
           gap: 18,
+          position: 'relative',
         }}
       >
         {children}
+        {overlay ? (
+          // Inset to the content box so floating elements share the body's
+          // coordinate space and can never overlap the locked chrome.
+          <div
+            className="ws-float-layer"
+            style={{
+              position: 'absolute',
+              top: BODY_PAD_TOP,
+              left: BODY_PAD_X,
+              right: BODY_PAD_X,
+              bottom: BODY_PAD_BOTTOM,
+              pointerEvents: 'none',
+            }}
+          >
+            {overlay}
+          </div>
+        ) : null}
       </div>
 
       {/* EXIT TICKET (master) */}

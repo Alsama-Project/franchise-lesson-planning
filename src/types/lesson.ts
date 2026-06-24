@@ -130,14 +130,56 @@ export interface WorksheetResourceBlock {
 export type WorksheetBlock = WorksheetFreeBlock | WorksheetResourceBlock;
 
 /**
+ * Geometry shared by every freely-positioned ("floating") element. Coordinates
+ * are PAGE-RELATIVE pixels in the printable body's content-box space (the A4
+ * page at natural size / zoom = 1): `x`/`y` from the body content-box top-left,
+ * `w`/`h` the element size. They are always clamped to the body box so an element
+ * can never sit over the locked header/objective/footer or leave the page, and
+ * so they print exactly where placed. `z` orders overlapping elements.
+ */
+export interface FloatingBase {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  z: number;
+}
+
+/** A freely-positioned rich-text box (the Word-style text box). */
+export interface FloatingTextBox extends FloatingBase {
+  kind: 'textbox';
+  doc: WorksheetDoc | null;
+  /** Visible border around the box. Default false. */
+  border: boolean;
+  /** Background fill. Default 'transparent'. */
+  fill: 'transparent' | 'white';
+}
+
+/** A freely-positioned (float-over-text) image. */
+export interface FloatingImage extends FloatingBase {
+  kind: 'image';
+  src: string;
+  alt: string | null;
+}
+
+/** A freely-positioned element overlaid on the worksheet body. */
+export type FloatingElement = FloatingTextBox | FloatingImage;
+
+/**
  * The persisted student-worksheet body, stored in `lesson_plans.worksheet`
  * (JSONB, migration 0009). `version` lets the loader migrate older shapes — v1
  * was a single bare tiptap document; v2 is this ordered block list. The column
  * is unenforced by Postgres, so this type is the source of truth for its shape.
+ *
+ * `elements` (added later, still v2) is the page-relative floating layer — text
+ * boxes and free images overlaid on the body. It is additive: rows saved before
+ * the feature simply have no elements, and `parseWorksheet` defaults it to `[]`.
  */
 export interface Worksheet {
   version: 2;
   blocks: WorksheetBlock[];
+  elements: FloatingElement[];
 }
 
 /**

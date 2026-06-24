@@ -24,6 +24,14 @@ import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointer
 
 export type ImageAlign = 'left' | 'center' | 'right';
 
+/** Payload passed up when an inline image is converted to a free floating one. */
+export interface FloatImageInfo {
+  src: string;
+  alt: string | null;
+  w: number;
+  h: number;
+}
+
 const MIN_WIDTH = 60;
 const TEAL = '#1F7A6C';
 
@@ -44,12 +52,14 @@ function layoutCss(align: ImageAlign, width: number | null): string {
   return css.join(';');
 }
 
-function ImageNodeView({ node, updateAttributes, selected, editor }: NodeViewProps) {
+function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, extension }: NodeViewProps) {
   const src = node.attrs.src as string;
   const alt = (node.attrs.alt as string | null) ?? '';
   const title = (node.attrs.title as string | null) ?? undefined;
   const width = (node.attrs.width as number | null) ?? null;
   const align = ((node.attrs.align as ImageAlign | null) ?? 'center') as ImageAlign;
+
+  const onFloat = (extension.options as { onFloatImage?: (info: FloatImageInfo) => void }).onFloatImage;
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -165,6 +175,27 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: NodeViewPro
                 <AlignIcon align={a} />
               </button>
             ))}
+            {onFloat ? (
+              <>
+                <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
+                <button
+                  type="button"
+                  title="Float over text (free position)"
+                  onMouseDown={(ev) => ev.preventDefault()}
+                  onClick={() => {
+                    const img = imgRef.current;
+                    const w = width ?? img?.offsetWidth ?? 320;
+                    const natW = img?.naturalWidth || w;
+                    const natH = img?.naturalHeight || Math.round(w * 0.66);
+                    onFloat({ src, alt: alt || null, w, h: Math.round(w * (natH / natW)) });
+                    deleteNode();
+                  }}
+                  style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: '#5C544E' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" /></svg>
+                </button>
+              </>
+            ) : null}
           </div>
 
           {/* Resize handles (bottom corners) */}
@@ -233,7 +264,19 @@ function AlignIcon({ align }: { align: ImageAlign }) {
   );
 }
 
-export const ResizableImage = Image.extend({
+export const ResizableImage = Image.extend<{
+  inline: boolean;
+  allowBase64: boolean;
+  HTMLAttributes: Record<string, unknown>;
+  onFloatImage?: (info: FloatImageInfo) => void;
+}>({
+  addOptions() {
+    return {
+      ...this.parent?.(),
+      onFloatImage: undefined,
+    };
+  },
+
   addAttributes() {
     return {
       ...this.parent?.(),

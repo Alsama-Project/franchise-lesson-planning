@@ -14,6 +14,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { WorksheetFreeBlock, WorksheetDoc } from '@/types/lesson';
 import type { HTMLAttributes } from 'react';
 import { worksheetEditorExtensions } from './editorExtensions';
+import type { FloatImageInfo } from './resizableImage';
 import { AiComposer } from './AiComposer';
 import { BlockBar } from './BlockBar';
 import type { WorksheetContext } from './context';
@@ -67,6 +68,7 @@ export function FreeBlock({
   onDuplicate,
   onActivate,
   onDeactivate,
+  onFloatImage,
   dragHandleProps,
 }: {
   block: WorksheetFreeBlock;
@@ -79,6 +81,8 @@ export function FreeBlock({
   onActivate: (api: ActiveBlock) => void;
   /** Clear the active block when this one unmounts (e.g. is deleted). */
   onDeactivate: (id: string) => void;
+  /** Convert an inline image in this block to a free floating element. */
+  onFloatImage: (info: FloatImageInfo) => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
 }) {
   const [view, setView] = useState<View>(block.doc ? 'doc' : 'blank');
@@ -94,7 +98,7 @@ export function FreeBlock({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
-    extensions: worksheetEditorExtensions(),
+    extensions: worksheetEditorExtensions({ onFloatImage }),
     content: (block.doc as JSONContent | null) ?? '',
     immediatelyRender: false,
     editorProps: { attributes: { class: 'worksheet-doc' } },

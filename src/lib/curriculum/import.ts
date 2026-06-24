@@ -53,19 +53,23 @@ export async function importCurriculumWorkbook(
     };
   };
 
-  let parsed;
+  let lessonRows;
   try {
-    parsed = parseCurriculumWorkbook(buffer, subjectCode);
+    // The parser returns the full canonical model + a report; here we write the subset
+    // that satisfies the current curriculum_lesson 5-tuple key. Weekly-grain /
+    // non-instructional records are surfaced in the report and skipped on write
+    // (`skippedLessonRows`) until the schema migration adds source_key + nullable nav.
+    ({ lessonRows } = parseCurriculumWorkbook(buffer, subjectCode));
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'Failed to parse workbook.');
   }
 
-  if (parsed.length === 0) {
+  if (lessonRows.length === 0) {
     return fail('No curriculum rows were found in the workbook.');
   }
 
   // Upsert on the natural key, stamping every touched row with the run watermark.
-  const payload = parsed.map((row) => ({
+  const payload = lessonRows.map((row) => ({
     ...row,
     is_active: true,
     source,
@@ -91,9 +95,9 @@ export async function importCurriculumWorkbook(
     return fail(`Reconcile failed: ${reconcileError.message}`);
   }
 
-  const rowsUpserted = parsed.length;
+  const rowsUpserted = lessonRows.length;
   const rowsDeactivated = (deactivated ?? []).length;
-  const unresolved = parsed.filter((r) => !r.daily_outcome).length;
+  const unresolved = lessonRows.filter((r) => !r.daily_outcome).length;
 
   if (runId) {
     await supabase

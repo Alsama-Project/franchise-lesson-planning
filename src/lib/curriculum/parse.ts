@@ -1,95 +1,73 @@
-import 'server-only';
-
+import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
 import {
   buildLessonKey,
+  type CurriculumRecord,
   type CurriculumResource,
+  type Grain,
+  type ImportReport,
   type ParsedCurriculumRow,
-} from '@/lib/curriculum/types';
+  type ParseResult,
+} from './types';
+import {
+  matchColumns,
+  normalizeHeader,
+  type CanonicalField,
+  type HeaderCell,
+  type MatchResult,
+} from './columnMatcher';
 
 // ── Parsing the curriculum workbook ─────────────────────────────────────────────
 //
-// The source spreadsheet is hostile: broken `#REF!`/`#VALUE!` formulas, merged
-// Year/Month/Week cells that read blank except on the first row of a group, hidden
-// helper columns, baseline/eval section rows, and an unreliable lesson identifier.
-// So we never trust column POSITION — we locate columns by header text — and we
-// forward-fill the grouped cells. One workbook is one subject; the subject code is
-// a parameter (it must match subjects.code, e.g. 'english').
+// The source spreadsheets are hostile and they DRIFT: columns get added, renamed,
+// reordered, and translated (English ↔ Arabic). So we never trust column position —
+// we locate columns by header *meaning* (see columnMatcher) — and we report what we
+// could not place instead of dropping it silently.
+//
+// Each sheet has a 3-row header block: a "band" row, the real "Column header" row,
+// then a "Description" row, then data. The header row is usually 7 but is 5 in one
+// Arabic file, so we DETECT it. Hierarchical columns (Year, Month, Week, the LO
+// columns, Topic, Focus Area) are merged — a value appears once then blanks below
+// meaning "same as above" — so we forward-fill. The finest grain is one row per
+// period; Awareness has no period column at all, so its finest grain is the week.
+//
+// `parseCurriculumWorkbook` returns the canonical `records` + an operator `report`,
+// plus `lessonRows`: the subset adapted down to the current `curriculum_lesson`
+// 5-tuple key (so the existing English import is unchanged), and a count of records
+// that cannot satisfy that key yet.
 
 /** Spreadsheet error sentinels (and the literal "#N/A") collapse to null. */
 const ERROR_RE = /^#(REF|VALUE|N\/?A|NAME|DIV\/?0|NULL|NUM)[!?]?$/i;
 
-/** A logical column we care about, mapped from a header cell. */
-type Field =
-  | 'year'
-  | 'month'
-  | 'week'
-  | 'period'
-  | 'daily_outcome'
-  | 'resources'
-  | 'taxonomy_id'
-  | 'linguistic_skill'
-  | 'focus_area'
-  | 'theme'
-  | 'monthly_knowledge_lo'
-  | 'monthly_skills_lo'
-  | 'weekly_knowledge_lo'
-  | 'weekly_skills_lo';
+/** First non-empty cell of these rows marks a header-block meta row, not data. */
+const HEADER_MARKERS = ['column header', 'عنوان العمود'];
+const META_MARKERS = ['description', 'الوصف', 'period', 'الفترة الزمنية'];
 
-/** Columns whose value is shared across a merged group and must be filled down. */
-const FILL_DOWN: Field[] = [
+/** Canonical fields that are merged/grouped and must be forward-filled down a group. */
+const FILL_FIELDS: CanonicalField[] = [
   'year',
+  'annualLearningOutcome',
   'month',
+  'monthlyLearningOutcome',
+  'monthlySkillLearningOutcome',
+  'monthlyKnowledgeLearningOutcome',
   'week',
-  'monthly_knowledge_lo',
-  'monthly_skills_lo',
-  'weekly_knowledge_lo',
-  'weekly_skills_lo',
+  'weeklySkillLearningOutcome',
+  'weeklyKnowledgeLearningOutcome',
+  'topic',
+  'focusArea',
 ];
 
-function normalizeHeader(raw: unknown): string {
-  return String(raw ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+/** One resolved cell: formatted text + an optional hyperlink target. */
+interface Cell {
+  text: string | null;
+  url: string | null;
 }
 
-/**
- * Classify a header cell into one of our logical fields, or null if we don't care.
- * Order matters: the compound monthly/weekly outcome columns are tested before the
- * plain Month/Week navigation columns, since their headers also contain "month"/"week".
- */
-function classifyHeader(raw: unknown): Field | null {
-  const h = normalizeHeader(raw);
-  if (!h) return null;
-
-  const has = (...needles: string[]) => needles.every((n) => h.includes(n));
-
-  // Compound outcome columns first.
-  if (has('month', 'knowledge')) return 'monthly_knowledge_lo';
-  if (has('month', 'skill')) return 'monthly_skills_lo';
-  if (has('week', 'knowledge')) return 'weekly_knowledge_lo';
-  if (has('week', 'skill')) return 'weekly_skills_lo';
-
-  if (h.includes('linguistic')) return 'linguistic_skill';
-  if (h.includes('daily')) return 'daily_outcome';
-  if (h.includes('resource')) return 'resources';
-  if (h.includes('theme')) return 'theme';
-  if (h.includes('focus')) return 'focus_area';
-  if (h.includes('lesson') && (h.includes('ident') || h.includes('id') || h.includes('code')))
-    return 'taxonomy_id';
-  if (h.includes('period')) return 'period';
-
-  // Plain navigation columns last (after the compound ones are claimed).
-  if (h === 'year' || h.startsWith('year')) return 'year';
-  if (h === 'month' || h.startsWith('month')) return 'month';
-  if (h === 'week' || h.startsWith('week')) return 'week';
-
-  return null;
-}
+const EMPTY_CELL: Cell = { text: null, url: null };
 
 /** Trim a cell, collapsing spreadsheet error sentinels and blanks to null. */
-function clean(value: unknown): string | null {
+function clean(value: string | null | undefined): string | null {
   if (value == null) return null;
   const s = String(value).trim();
   if (!s) return null;
@@ -97,157 +75,539 @@ function clean(value: unknown): string | null {
   return s;
 }
 
-/** Extract the first integer from a cell (handles "Year 0", "Period 3", "1"). */
-function toInt(value: unknown): number | null {
-  const s = clean(value);
-  if (s == null) return null;
-  const m = s.match(/-?\d+/);
+/** True if a raw cell text is a spreadsheet error sentinel. */
+function isErrorText(value: string | null): boolean {
+  return value != null && ERROR_RE.test(value.trim());
+}
+
+/** Extract the first integer from a value (handles "Week 3", "3"). */
+function toInt(value: string | null): number | null {
+  if (value == null) return null;
+  const m = value.match(/-?\d+/);
   return m ? parseInt(m[0], 10) : null;
 }
 
-/** Split a resources cell into [{label, url}]. Bare page refs are label-only. */
-export function parseResources(raw: unknown): CurriculumResource[] {
-  const s = clean(raw);
-  if (s == null) return [];
-  const pieces = s
-    .split(/[\n;]+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const out: CurriculumResource[] = [];
-  for (const piece of pieces) {
-    const urlMatch = piece.match(/https?:\/\/\S+/);
-    if (urlMatch) {
-      const url = urlMatch[0].replace(/[)\].,]+$/, '');
-      const label = piece.replace(urlMatch[0], '').replace(/[-–—:|]\s*$/, '').trim() || url;
-      out.push({ label, url });
-    } else {
-      out.push({ label: piece });
-    }
-  }
-  return out;
-}
-
-/** Read a sheet as an array of rows (each a flat string array), errors as text. */
-function sheetToMatrix(sheet: XLSX.WorkSheet): unknown[][] {
-  // raw:false → formatted text; error cells become their "#REF!" text, which
-  // clean() then nulls. defval:null keeps column positions stable across rows.
-  return XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    raw: false,
-    defval: null,
-    blankrows: false,
-  });
-}
-
-/** Locate the header row + column map in a matrix, or null if it isn't a content sheet. */
-function findHeader(
-  matrix: unknown[][],
-): { headerRow: number; columns: Map<Field, number> } | null {
-  const limit = Math.min(matrix.length, 25);
-  for (let r = 0; r < limit; r++) {
-    const row = matrix[r] ?? [];
-    const columns = new Map<Field, number>();
-    for (let c = 0; c < row.length; c++) {
-      const field = classifyHeader(row[c]);
-      // First column wins for a given field (ignore duplicate/hidden helpers).
-      if (field && !columns.has(field)) columns.set(field, c);
-    }
-    // A real header row identifies the navigation key + the daily outcome.
-    if (columns.has('year') && columns.has('month') && columns.has('period')) {
-      return { headerRow: r, columns };
-    }
+/** Normalise a year label to its 0..6 index. Preparatory / reception / السنة 0 → 0. */
+function parseYearIndex(label: string | null): number | null {
+  if (!label) return null;
+  const n = normalizeHeader(label);
+  if (n.includes('preparatory') || n.includes('reception') || n.includes('تمهيد')) return 0;
+  const m = n.match(/\d+/);
+  if (m) {
+    const v = parseInt(m[0], 10);
+    if (v >= 0 && v <= 12) return v;
   }
   return null;
 }
 
+/** Period number from "Period 3"; null for non-instructional labels (no digit). */
+function parsePeriodNumber(label: string | null): number | null {
+  if (!label) return null;
+  const m = label.match(/\d+/);
+  if (!m) return null;
+  const v = parseInt(m[0], 10);
+  return v >= 1 && v <= 6 ? v : null;
+}
+
+function slug(s: string): string {
+  return normalizeHeader(s).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+}
+
+function extractUrl(text: string | null): string | null {
+  if (!text) return null;
+  const m = text.match(/https?:\/\/\S+/);
+  return m ? m[0].replace(/[)\].,]+$/, '') : null;
+}
+
+/** Split a resources cell into [{label, url}], attaching a hyperlink target if present. */
+export function parseResources(raw: string | null, url: string | null = null): CurriculumResource[] {
+  const s = clean(raw);
+  const out: CurriculumResource[] = [];
+  if (s != null) {
+    for (const piece of s.split(/[\n;]+/).map((p) => p.trim()).filter(Boolean)) {
+      const inline = piece.match(/https?:\/\/\S+/);
+      if (inline) {
+        const u = inline[0].replace(/[)\].,]+$/, '');
+        const label = piece.replace(inline[0], '').replace(/[-–—:|]\s*$/, '').trim() || u;
+        out.push({ label, url: u });
+      } else {
+        out.push({ label: piece });
+      }
+    }
+  }
+  // Attach the cell's hyperlink target (the display text is usually "Click for Resource").
+  if (url) {
+    if (out.length === 0) out.push({ label: s ?? 'Resource', url });
+    else if (!out[0].url) out[0] = { ...out[0], url };
+  }
+  return out;
+}
+
+// ── Reading a sheet into an addressable grid (text + hyperlinks) ──────────────────
+
 /**
- * Parse a curriculum workbook for one subject into `curriculum_lesson` rows.
+ * Build a grid of cells indexed by absolute sheet row/col, preserving BOTH formatted
+ * text and hyperlink targets. `sheet_to_json` drops hyperlinks, so we read cells
+ * directly. Row index `r` maps to the 1-based sheet row `r + 1`.
+ */
+function buildGrid(sheet: XLSX.WorkSheet): { grid: Cell[][]; nRows: number; nCols: number } {
+  const ref = sheet['!ref'];
+  if (!ref) return { grid: [], nRows: 0, nCols: 0 };
+  const range = XLSX.utils.decode_range(ref);
+  const grid: Cell[][] = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row: Cell[] = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined;
+      if (!cell) {
+        row[c] = EMPTY_CELL;
+        continue;
+      }
+      const text = cell.w != null ? String(cell.w) : cell.v != null ? String(cell.v) : null;
+      const url = cell.l?.Target ?? null;
+      row[c] = { text, url };
+    }
+    grid[r] = row;
+  }
+  return { grid, nRows: range.e.r + 1, nCols: range.e.c + 1 };
+}
+
+function cellAt(grid: Cell[][], r: number, c: number): Cell {
+  return grid[r]?.[c] ?? EMPTY_CELL;
+}
+
+function firstNonEmpty(row: Cell[] | undefined): string {
+  if (!row) return '';
+  for (const cell of row) {
+    const t = clean(cell?.text ?? null);
+    if (t != null) return t;
+  }
+  return '';
+}
+
+/** Build the matcher's header-cell list for a row, dropping structural marker cells. */
+function headerCells(row: Cell[] | undefined, nCols: number): HeaderCell[] {
+  const cells: HeaderCell[] = [];
+  if (!row) return cells;
+  for (let c = 0; c < nCols; c++) {
+    const text = (row[c]?.text ?? '').trim();
+    if (!text) continue;
+    if (HEADER_MARKERS.includes(normalizeHeader(text))) continue; // "Column header"
+    cells.push({ col: c, text });
+  }
+  return cells;
+}
+
+interface SheetEval {
+  name: string;
+  headerRow: number; // 0-based grid index
+  match: MatchResult;
+  grain: Grain;
+  shaped: boolean;
+  fieldCount: number;
+  grid: Cell[][];
+  nRows: number;
+  nCols: number;
+}
+
+/** Locate the header row of a grid, or null if it has none. */
+function detectHeaderRow(grid: Cell[][], nRows: number, nCols: number): number | null {
+  const limit = Math.min(nRows, 15);
+  // 1) The explicit "Column header" / "عنوان العمود" marker row.
+  for (let r = 0; r < limit; r++) {
+    if (HEADER_MARKERS.includes(normalizeHeader(firstNonEmpty(grid[r])))) return r;
+  }
+  // 2) Fallback: the row that maps the most canonical fields (and at least Year+Month).
+  let best: { r: number; count: number } | null = null;
+  for (let r = 0; r < limit; r++) {
+    if (META_MARKERS.includes(normalizeHeader(firstNonEmpty(grid[r])))) continue;
+    const m = matchColumns(headerCells(grid[r], nCols));
+    const count = m.byField.size;
+    if (m.byField.has('year') && m.byField.has('month') && count >= 3) {
+      if (!best || count > best.count) best = { r, count };
+    }
+  }
+  return best ? best.r : null;
+}
+
+/** Daily if a Daily-LO/Period column maps AND has data in the body; else weekly. */
+function detectGrain(grid: Cell[][], headerRow: number, nRows: number, match: MatchResult): Grain {
+  const daily = match.byField.get('dailyLearningOutcome');
+  const period = match.byField.get('period');
+  for (const col of [daily?.col, period?.col]) {
+    if (col == null) continue;
+    for (let r = headerRow + 1; r < nRows; r++) {
+      if (META_MARKERS.includes(normalizeHeader(firstNonEmpty(grid[r])))) continue;
+      if (clean(cellAt(grid, r, col).text) != null) return 'daily';
+    }
+  }
+  return 'weekly';
+}
+
+function evaluateSheet(name: string, sheet: XLSX.WorkSheet): SheetEval | null {
+  const { grid, nRows, nCols } = buildGrid(sheet);
+  if (nRows === 0) return null;
+  const headerRow = detectHeaderRow(grid, nRows, nCols);
+  if (headerRow == null) return null;
+  const match = matchColumns(headerCells(grid[headerRow], nCols));
+  const grain = detectGrain(grid, headerRow, nRows, match);
+  const f = match.byField;
+  const hasOutcome =
+    f.has('dailyLearningOutcome') ||
+    f.has('period') ||
+    f.has('weeklySkillLearningOutcome') ||
+    f.has('weeklyKnowledgeLearningOutcome');
+  const shaped = f.has('year') && f.has('month') && hasOutcome;
+  return { name, headerRow, match, grain, shaped, fieldCount: f.size, grid, nRows, nCols };
+}
+
+/** Highest `V<n>` in a sheet name (for tie-breaking Professionalism V1/V2/V4). */
+function versionRank(name: string): number {
+  const m = name.match(/v\s*(\d+)/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+interface SheetSelection {
+  chosen: SheetEval;
+  candidateSheets: string[];
+  ambiguous: boolean;
+}
+
+/** Choose the curriculum sheet. Never just `sheetnames[0]`. */
+function selectSheet(workbook: XLSX.WorkBook, requested?: string): SheetSelection {
+  const evals: SheetEval[] = [];
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const ev = evaluateSheet(name, sheet);
+    if (ev) evals.push(ev);
+  }
+
+  if (requested) {
+    const ev = evals.find((e) => e.name === requested);
+    if (!ev) {
+      throw new Error(`Requested sheet "${requested}" has no recognisable curriculum header.`);
+    }
+    const others = evals.filter((e) => e.shaped && e.name !== ev.name).map((e) => e.name);
+    return { chosen: ev, candidateSheets: others, ambiguous: false };
+  }
+
+  const shaped = evals.filter((e) => e.shaped);
+  if (shaped.length === 0) {
+    throw new Error(
+      'Could not find a curriculum sheet: no header row mapping Subject/Year/Month and a learning-outcome column.',
+    );
+  }
+  if (shaped.length === 1) {
+    return { chosen: shaped[0], candidateSheets: [], ambiguous: false };
+  }
+
+  // (a) most mapped fields, (b) highest V<n>, (c) last sheet.
+  const order = new Map(workbook.SheetNames.map((n, i) => [n, i] as const));
+  const ranked = [...shaped].sort(
+    (a, b) =>
+      b.fieldCount - a.fieldCount ||
+      versionRank(b.name) - versionRank(a.name) ||
+      (order.get(b.name) ?? 0) - (order.get(a.name) ?? 0),
+  );
+  const chosen = ranked[0];
+  return {
+    chosen,
+    candidateSheets: shaped.filter((e) => e.name !== chosen.name).map((e) => e.name),
+    ambiguous: true,
+  };
+}
+
+// ── The parse ─────────────────────────────────────────────────────────────────────
+
+export interface ParseOptions {
+  sheet?: string;
+  fileName?: string;
+}
+
+/**
+ * Parse a curriculum workbook for one subject into canonical records + an operator
+ * report, plus rows adapted down to the current `curriculum_lesson` table.
  *
- * Resilient by design: locates columns by header text (never position), forward-
- * fills merged Year/Month/Week and the monthly/weekly outcome cells, collapses
- * `#REF!`/`#VALUE!`/`#N/A` to null, and skips baseline/eval/section/blank rows
- * (anything without a valid 1–6 period and a resolved year/month/week).
- *
- * Rows with a null daily_outcome are KEPT (they count as "unresolved" upstream) so
- * the schedule grid stays complete.
- *
- * @throws if no sheet with a recognisable header is found.
+ * @throws if no sheet has a recognisable curriculum header.
  */
 export function parseCurriculumWorkbook(
   buffer: Buffer | ArrayBuffer,
   subjectCode: string,
-): ParsedCurriculumRow[] {
+  opts: ParseOptions = {},
+): ParseResult {
   const data = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
   const workbook = XLSX.read(data, { type: 'buffer' });
 
-  let matrix: unknown[][] | null = null;
-  let header: { headerRow: number; columns: Map<Field, number> } | null = null;
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    if (!sheet) continue;
-    const m = sheetToMatrix(sheet);
-    const h = findHeader(m);
-    if (h) {
-      matrix = m;
-      header = h;
-      break;
+  const { chosen, candidateSheets, ambiguous } = selectSheet(workbook, opts.sheet);
+  const { grid, nRows, headerRow, match, grain } = chosen;
+  const { byField } = match;
+
+  const colOf = (f: CanonicalField): number | null => byField.get(f)?.col ?? null;
+  const rawAt = (r: number, f: CanonicalField): string | null => {
+    const c = colOf(f);
+    return c == null ? null : clean(cellAt(grid, r, c).text);
+  };
+  const urlAt = (r: number, f: CanonicalField): string | null => {
+    const c = colOf(f);
+    return c == null ? null : cellAt(grid, r, c).url;
+  };
+
+  // Subject + Subject LO are sheet-level constants (first non-empty in their column).
+  const firstInColumn = (f: CanonicalField): string | null => {
+    const c = colOf(f);
+    if (c == null) return null;
+    for (let r = headerRow + 1; r < nRows; r++) {
+      if (META_MARKERS.includes(normalizeHeader(firstNonEmpty(grid[r])))) continue;
+      const v = clean(cellAt(grid, r, c).text);
+      if (v != null) return v;
+    }
+    return null;
+  };
+  const subjectConst = firstInColumn('subject') ?? subjectCode;
+  const subjectLOConst = firstInColumn('subjectLearningOutcome');
+
+  const filled = new Map<CanonicalField, string | null>();
+  const records = new Map<string, CurriculumRecord>(); // dedupe by sourceKey
+  const lessonRows = new Map<string, ParsedCurriculumRow>(); // dedupe by lesson_key
+  let skippedLessonRows = 0;
+  let nonInstructional = 0;
+  let refSeen = false;
+
+  const hasWeekCol = byField.has('week');
+  const hasPeriodCol = byField.has('period');
+
+  for (let r = headerRow + 1; r < nRows; r++) {
+    // Skip header-block meta rows (the "Description"/"الوصف" row sits just below the
+    // header; band rows sit above it) so they never emit a bogus record.
+    if (META_MARKERS.includes(normalizeHeader(firstNonEmpty(grid[r])))) continue;
+
+    // Refresh forward-fill state: any non-blank cell starts a new group.
+    for (const f of FILL_FIELDS) {
+      const v = rawAt(r, f);
+      if (v != null) filled.set(f, v);
+    }
+
+    const value = (f: CanonicalField): string | null =>
+      FILL_FIELDS.includes(f) ? (filled.get(f) ?? rawAt(r, f)) : rawAt(r, f);
+
+    // Detect #REF! in any mapped value column (for the report).
+    for (const [, m] of byField) {
+      if (isErrorText(cellAt(grid, r, m.col).text)) refSeen = true;
+    }
+
+    const rawPeriod = rawAt(r, 'period');
+    const rawDaily = rawAt(r, 'dailyLearningOutcome');
+    const rawWeek = rawAt(r, 'week');
+    const rawWeeklySkill = rawAt(r, 'weeklySkillLearningOutcome');
+    const rawWeeklyKnowledge = rawAt(r, 'weeklyKnowledgeLearningOutcome');
+
+    const emit =
+      grain === 'daily'
+        ? rawPeriod != null || rawDaily != null
+        : hasWeekCol
+          ? rawWeek != null
+          : rawWeeklySkill != null || rawWeeklyKnowledge != null || rawAt(r, 'topic') != null;
+    if (!emit) continue;
+
+    const yearLabel = value('year');
+    const yearIndex = parseYearIndex(yearLabel);
+    const month = value('month');
+    const week = toInt(value('week'));
+    const periodLabel = grain === 'daily' ? rawPeriod : null;
+    const periodNumber = grain === 'daily' ? parsePeriodNumber(rawPeriod) : null;
+    if (grain === 'daily' && periodLabel != null && periodNumber == null) nonInstructional++;
+
+    const resourceText = rawAt(r, 'resources');
+    const resourceUrl = urlAt(r, 'resources') ?? extractUrl(resourceText);
+
+    const periodPart =
+      periodNumber != null ? `p${periodNumber}` : periodLabel ? `p:${slug(periodLabel)}` : 'wk';
+    const yearKey = yearIndex != null ? `y${yearIndex}` : `l:${normalizeHeader(yearLabel ?? '')}`;
+    const sourceKey = createHash('sha1')
+      .update(
+        [subjectCode, yearKey, (month ?? '').toLowerCase(), week != null ? `w${week}` : 'w-', periodPart].join('|'),
+      )
+      .digest('hex')
+      .slice(0, 16);
+
+    const record: CurriculumRecord = {
+      subject: subjectConst,
+      subjectLearningOutcome: subjectLOConst,
+      yearLabel: yearLabel ?? '',
+      yearIndex,
+      annualLearningOutcome: value('annualLearningOutcome'),
+      month,
+      monthlyLearningOutcome: value('monthlyLearningOutcome'),
+      monthlySkillLearningOutcome: value('monthlySkillLearningOutcome'),
+      monthlyKnowledgeLearningOutcome: value('monthlyKnowledgeLearningOutcome'),
+      week,
+      weeklySkillLearningOutcome: hasWeekCol ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
+      weeklyKnowledgeLearningOutcome: hasWeekCol
+        ? value('weeklyKnowledgeLearningOutcome')
+        : rawWeeklyKnowledge,
+      period: periodLabel,
+      periodNumber,
+      dailyLearningOutcome: rawDaily,
+      resourceText,
+      resourceUrl,
+      topic: value('topic'),
+      focusArea: value('focusArea'),
+      lessonIdentifier: rawAt(r, 'lessonIdentifier'),
+      grain,
+      sourceKey,
+      sourceRow: r + 1,
+    };
+    records.set(sourceKey, record);
+
+    // Adapt down to the current curriculum_lesson 5-tuple, or skip + count.
+    if (
+      grain === 'daily' &&
+      yearIndex != null &&
+      month != null &&
+      week != null &&
+      periodNumber != null &&
+      periodNumber >= 1 &&
+      periodNumber <= 6
+    ) {
+      const lessonKey = buildLessonKey(subjectCode, yearIndex, month, week, periodNumber);
+      lessonRows.set(lessonKey, {
+        subject_code: subjectCode,
+        year: yearIndex,
+        month,
+        week,
+        period: periodNumber,
+        lesson_key: lessonKey,
+        daily_outcome: rawDaily,
+        focus_area: rawAt(r, 'focusArea'),
+        linguistic_skill: rawAt(r, 'linguisticSkill'),
+        theme: rawAt(r, 'theme') ?? rawAt(r, 'topic'),
+        resources: parseResources(resourceText, resourceUrl),
+        taxonomy_id: rawAt(r, 'lessonIdentifier'),
+        monthly_knowledge_lo: value('monthlyKnowledgeLearningOutcome'),
+        monthly_skills_lo: value('monthlySkillLearningOutcome'),
+        weekly_knowledge_lo: value('weeklyKnowledgeLearningOutcome'),
+        weekly_skills_lo: value('weeklySkillLearningOutcome'),
+      });
+    } else {
+      skippedLessonRows++;
     }
   }
 
-  if (!matrix || !header) {
-    throw new Error(
-      'Could not find a curriculum sheet: no header row with Year, Month and Period columns.',
+  const recordList = [...records.values()];
+  const report = buildReport({
+    fileName: opts.fileName ?? '',
+    selectedSheet: chosen.name,
+    candidateSheets,
+    ambiguous,
+    headerRow: headerRow + 1,
+    grain,
+    match,
+    hasPeriodCol,
+    records: recordList,
+    nonInstructional,
+    refSeen,
+    skippedLessonRows,
+  });
+
+  return { records: recordList, report, lessonRows: [...lessonRows.values()], skippedLessonRows };
+}
+
+// ── Report ──────────────────────────────────────────────────────────────────────
+
+interface ReportArgs {
+  fileName: string;
+  selectedSheet: string;
+  candidateSheets: string[];
+  ambiguous: boolean;
+  headerRow: number;
+  grain: Grain;
+  match: MatchResult;
+  hasPeriodCol: boolean;
+  records: CurriculumRecord[];
+  nonInstructional: number;
+  refSeen: boolean;
+  skippedLessonRows: number;
+}
+
+/** Canonical fields we generally expect to find; absence is reported. */
+const EXPECTED_FIELDS: CanonicalField[] = [
+  'subject',
+  'year',
+  'month',
+  'week',
+  'resources',
+];
+
+function buildReport(a: ReportArgs): ImportReport {
+  const f = a.match.byField;
+  const warnings: string[] = [];
+
+  // Critical fields drive needsReview.
+  const grainOutcomePresent =
+    a.grain === 'daily'
+      ? f.has('dailyLearningOutcome') || f.has('period')
+      : f.has('weeklySkillLearningOutcome') || f.has('weeklyKnowledgeLearningOutcome');
+  const missingCritical = !f.has('year') || !f.has('month') || !grainOutcomePresent;
+
+  const criticalFields: CanonicalField[] = [
+    'year',
+    'month',
+    ...(a.grain === 'daily'
+      ? (['dailyLearningOutcome'] as CanonicalField[])
+      : (['weeklySkillLearningOutcome', 'weeklyKnowledgeLearningOutcome'] as CanonicalField[])),
+  ];
+  const lowConfidence = criticalFields.some((cf) => {
+    const m = f.get(cf);
+    return m != null && m.confidence < 0.9;
+  });
+
+  const expected = [
+    ...EXPECTED_FIELDS,
+    a.grain === 'daily' ? 'dailyLearningOutcome' : 'weeklySkillLearningOutcome',
+  ] as CanonicalField[];
+  const missingFields = expected.filter((cf) => !f.has(cf));
+
+  if (a.ambiguous) {
+    warnings.push(
+      `Multiple curriculum-shaped sheets; selected "${a.selectedSheet}". Candidates: ${a.candidateSheets.join(', ')}.`,
     );
   }
-
-  const { headerRow, columns } = header;
-  const at = (row: unknown[], field: Field): unknown =>
-    columns.has(field) ? row[columns.get(field)!] : null;
-
-  // Forward-fill state for merged/grouped columns.
-  const filled = new Map<Field, string | null>();
-
-  // De-dupe on the natural key within a single file (last row wins).
-  const byKey = new Map<string, ParsedCurriculumRow>();
-
-  for (let r = headerRow + 1; r < matrix.length; r++) {
-    const row = matrix[r] ?? [];
-
-    // Refresh fill-down state: a non-blank cell starts a new group.
-    for (const field of FILL_DOWN) {
-      const v = clean(at(row, field));
-      if (v != null) filled.set(field, v);
+  if (a.grain === 'weekly') {
+    warnings.push('No period/daily column found — parsed at weekly grain (one record per week).');
+  }
+  if (a.nonInstructional > 0) {
+    warnings.push(
+      `${a.nonInstructional} non-instructional rows kept with null daily outcome/period.`,
+    );
+  }
+  if (a.refSeen) {
+    warnings.push('Spreadsheet error (#REF!/#N/A) seen in mapped value cells; collapsed to null.');
+  }
+  if (a.skippedLessonRows > 0) {
+    warnings.push(
+      `${a.skippedLessonRows} records cannot satisfy the legacy 5-tuple (weekly-grain / non-instructional) and are not written to curriculum_lesson yet.`,
+    );
+  }
+  for (const cf of criticalFields) {
+    const m = f.get(cf);
+    if (m != null && m.confidence < 0.9) {
+      warnings.push(`Critical field "${cf}" mapped at ${m.confidence} confidence ("${m.header}").`);
     }
-
-    const year = toInt(filled.get('year') ?? at(row, 'year'));
-    const month = filled.get('month') ?? clean(at(row, 'month'));
-    const week = toInt(filled.get('week') ?? at(row, 'week'));
-    const period = toInt(at(row, 'period'));
-
-    // Skip baseline/eval/section/blank rows: a real lesson needs the full key.
-    if (year == null || month == null || week == null || period == null) continue;
-    if (period < 1 || period > 6) continue;
-
-    const lessonKey = buildLessonKey(subjectCode, year, month, week, period);
-    byKey.set(lessonKey, {
-      subject_code: subjectCode,
-      year,
-      month,
-      week,
-      period,
-      lesson_key: lessonKey,
-      daily_outcome: clean(at(row, 'daily_outcome')),
-      focus_area: clean(at(row, 'focus_area')),
-      linguistic_skill: clean(at(row, 'linguistic_skill')),
-      theme: clean(at(row, 'theme')),
-      resources: parseResources(at(row, 'resources')),
-      taxonomy_id: clean(at(row, 'taxonomy_id')),
-      monthly_knowledge_lo: filled.get('monthly_knowledge_lo') ?? clean(at(row, 'monthly_knowledge_lo')),
-      monthly_skills_lo: filled.get('monthly_skills_lo') ?? clean(at(row, 'monthly_skills_lo')),
-      weekly_knowledge_lo: filled.get('weekly_knowledge_lo') ?? clean(at(row, 'weekly_knowledge_lo')),
-      weekly_skills_lo: filled.get('weekly_skills_lo') ?? clean(at(row, 'weekly_skills_lo')),
-    });
   }
 
-  return [...byKey.values()];
+  return {
+    fileName: a.fileName,
+    selectedSheet: a.selectedSheet,
+    candidateSheets: a.candidateSheets,
+    needsReview: a.ambiguous || missingCritical || lowConfidence,
+    headerRow: a.headerRow,
+    grain: a.grain,
+    columnMap: a.match.columnMap,
+    unmappedHeaders: a.match.unmappedHeaders,
+    missingFields,
+    rowCount: a.records.length,
+    warnings,
+    sampleRecords: a.records.slice(0, 5),
+  };
 }

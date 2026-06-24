@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile, getMyMemberships } from '@/lib/auth';
 import { importCurriculumWorkbook } from '@/lib/curriculum/import';
+import { parseCurriculumWorkbook } from '@/lib/curriculum/parse';
 import type { CurriculumSyncSource } from '@/lib/curriculum/types';
 
 /**
@@ -23,6 +24,10 @@ import type { CurriculumSyncSource } from '@/lib/curriculum/types';
 export async function POST(request: NextRequest) {
   // ── Read subject_code + workbook bytes (multipart or raw binary) ──
   let subjectCode = request.nextUrl.searchParams.get('subject_code') ?? '';
+  const dryRunParam = request.nextUrl.searchParams.get('dryRun');
+  let dryRun = dryRunParam === '1' || dryRunParam === 'true';
+  let sheet = request.nextUrl.searchParams.get('sheet') ?? undefined;
+  let fileName = '';
   let buffer: ArrayBuffer | null = null;
 
   const contentType = request.headers.get('content-type') ?? '';
@@ -30,8 +35,15 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get('file');
     const formSubject = form.get('subject_code');
+    const formDryRun = form.get('dryRun');
+    const formSheet = form.get('sheet');
     if (typeof formSubject === 'string' && formSubject) subjectCode = formSubject;
-    if (file instanceof File) buffer = await file.arrayBuffer();
+    if (typeof formDryRun === 'string' && (formDryRun === '1' || formDryRun === 'true')) dryRun = true;
+    if (typeof formSheet === 'string' && formSheet) sheet = formSheet;
+    if (file instanceof File) {
+      buffer = await file.arrayBuffer();
+      fileName = file.name;
+    }
   } else {
     buffer = await request.arrayBuffer();
   }
@@ -54,6 +66,21 @@ export async function POST(request: NextRequest) {
       { error: `Not permitted to import curriculum for "${subjectCode}".` },
       { status: 403 },
     );
+  }
+
+  // ── Dry-run: parse and return the operator report WITHOUT writing. This is the
+  //    safety check when a workbook changes shape (column map, unmapped headers,
+  //    missing fields, sample records) — no DB mutation, no sync run. ──
+  if (dryRun) {
+    try {
+      const { report } = parseCurriculumWorkbook(buffer, subjectCode, { sheet, fileName });
+      return NextResponse.json({ dryRun: true, report });
+    } catch (err) {
+      return NextResponse.json(
+        { dryRun: true, error: err instanceof Error ? err.message : 'Failed to parse workbook.' },
+        { status: 422 },
+      );
+    }
   }
 
   // ── Run the import ──

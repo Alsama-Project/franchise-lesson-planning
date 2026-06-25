@@ -31,6 +31,7 @@ export function PartContent({
   attachedResources = [],
   worksheet,
   worksheetContext,
+  techniques = [],
   fallback,
 }: {
   /** The plan block this part maps to, or undefined for fixed parts (routines). */
@@ -41,6 +42,12 @@ export function PartContent({
   worksheet?: unknown;
   /** Master-frame context for the worksheet — passed only with `worksheet`. */
   worksheetContext?: WorksheetContext;
+  /**
+   * Resolved "Link it together" technique selections (label + note), passed for
+   * the cfu / exit_ticket parts. The caller resolves each technique id to its
+   * display label from the activity bank.
+   */
+  techniques?: { label: string; note: string }[];
   /** Fixed-part description shown when there is no block (e.g. Standard routines). */
   fallback?: string;
 }) {
@@ -51,13 +58,20 @@ export function PartContent({
 
   const hasWorksheet = worksheet !== undefined && worksheetContext !== undefined;
 
+  // cfu / exit_ticket use the "Link it together" technique model — their legacy
+  // single-select fields (activity_title, note, teacher/students/materials) are no
+  // longer written, so for those parts we render ONLY the resolved techniques.
+  const isTechniqueBlock = block.type === 'cfu' || block.type === 'exit_ticket';
+
   const hasWriting =
     block.activity_title.trim() ||
     block.note?.trim() ||
     block.teacher_does.trim() ||
     block.students_do.trim() ||
     block.resources.trim();
-  const hasAnything = hasWriting || attachedResources.length > 0 || hasWorksheet;
+  const hasAnything = isTechniqueBlock
+    ? techniques.length > 0 || attachedResources.length > 0
+    : hasWriting || attachedResources.length > 0 || hasWorksheet;
 
   if (!hasAnything) {
     return (
@@ -69,13 +83,31 @@ export function PartContent({
 
   return (
     <div className="flex flex-col gap-[10px]">
-      {block.activity_title.trim() ? (
-        <div className="text-[13px] font-semibold text-ink">{block.activity_title}</div>
+      {techniques.length > 0 ? (
+        <div className="flex flex-col gap-[6px]">
+          {techniques.map((t, i) => (
+            <div key={i} className="text-[12.5px] leading-[1.5]">
+              <span className="font-semibold text-ink">{t.label}</span>
+              {t.note.trim() ? <span className="text-neutral-800"> — {t.note}</span> : null}
+            </div>
+          ))}
+        </div>
       ) : null}
-      <Detail label="What I'll do" value={block.note ?? ''} />
-      <Detail label="Teacher" value={block.teacher_does} />
-      <Detail label="Students" value={block.students_do} />
-      <Detail label="Materials" value={block.resources} />
+      {block.type === 'recap' ? (
+        block.note?.trim() ? (
+          <div className="text-[12.5px] leading-[1.5] text-neutral-800">{block.note}</div>
+        ) : null
+      ) : !isTechniqueBlock ? (
+        <>
+          {block.activity_title.trim() ? (
+            <div className="text-[13px] font-semibold text-ink">{block.activity_title}</div>
+          ) : null}
+          <Detail label="What I'll do" value={block.note ?? ''} />
+          <Detail label="Teacher" value={block.teacher_does} />
+          <Detail label="Students" value={block.students_do} />
+          <Detail label="Materials" value={block.resources} />
+        </>
+      ) : null}
       {attachedResources.length > 0 ? <ReadOnlyResourceList resources={attachedResources} /> : null}
       {hasWorksheet ? (
         <div>

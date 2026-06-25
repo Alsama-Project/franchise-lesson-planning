@@ -5,6 +5,7 @@ import type { Block, LessonBlockType, PlanStatus, TeachingPhase } from '@/types/
 import type { ResourceWithTags } from '@/types/resource';
 import { blockMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
 import { getBlock, routinesMinutes } from '@/lib/editor/plan-blocks';
+import { normalizeLinkIt, resolveTechniques } from '@/lib/editor/link-it';
 import { phaseLabel } from '@/lib/editor/phase';
 import { TimeStepper } from '@/components/editor/TimeStepper';
 import { PartContent } from '@/components/editor/PartContent';
@@ -44,6 +45,7 @@ export function ReviewStep({
   materials,
   worksheet,
   worksheetContext,
+  techniqueLabels,
   attachedFor,
   onMaterialsChange,
   onBlockMinutes,
@@ -57,6 +59,8 @@ export function ReviewStep({
   worksheet: unknown;
   /** Master-frame context for the read-only worksheet render. */
   worksheetContext: WorksheetContext;
+  /** Technique id → display-name map for resolving the Link-it selections. */
+  techniqueLabels: Map<string, string>;
   /** Resolve a block's attached bank resources via the editor's client cache. */
   attachedFor: (block: Block | undefined) => ResourceWithTags[];
   onMaterialsChange: (next: string[]) => void;
@@ -67,6 +71,15 @@ export function ReviewStep({
   const [draft, setDraft] = useState('');
 
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
+
+  // "Link it together" selections, resolved to display rows for the cfu / exit parts.
+  const linkIt = normalizeLinkIt(blocks);
+  const techniquesFor = (key: string) =>
+    key === 'cfu'
+      ? resolveTechniques(linkIt.checkForUnderstanding, techniqueLabels)
+      : key === 'exit_ticket'
+        ? resolveTechniques(linkIt.exitTicket, techniqueLabels)
+        : undefined;
 
   const homework = getBlock(blocks, 'homework');
   const homeworkMin = homework && blockMinutes(homework) > 0 ? blockMinutes(homework) : 30;
@@ -256,6 +269,7 @@ export function ReviewStep({
                     worksheetContext={
                       p.key === 'independent_practice' ? worksheetContext : undefined
                     }
+                    techniques={techniquesFor(p.key)}
                     fallback={p.detail}
                   />
                 </div>

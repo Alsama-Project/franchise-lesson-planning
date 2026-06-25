@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { PartContent } from '@/components/editor/PartContent';
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
+import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
 import type { Block, TeachingPhase } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
@@ -25,9 +26,22 @@ const SCOPE_LABEL = {
 } as const;
 
 export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
-  const { plan, classContext, curriculum, resourceBank } = data;
+  const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
+
+  // "Link it together" selections, resolved to display rows for the cfu / exit blocks.
+  const linkIt = normalizeLinkIt(plan.blocks);
+  const techniqueLabels = techniqueLabelMap(
+    activitiesByBlock.cfu ?? [],
+    activitiesByBlock.exit_ticket ?? [],
+  );
+  const techniquesFor = (type: Block['type']) =>
+    type === 'cfu'
+      ? resolveTechniques(linkIt.checkForUnderstanding, techniqueLabels)
+      : type === 'exit_ticket'
+        ? resolveTechniques(linkIt.exitTicket, techniqueLabels)
+        : undefined;
 
   // Resources attached to any block were resolved by the loader; index them so
   // each block can list its own attachments without another round-trip.
@@ -141,6 +155,7 @@ export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
                     worksheetContext={
                       block.type === 'independent_practice' ? worksheetContext : undefined
                     }
+                    techniques={techniquesFor(block.type)}
                   />
                 </div>
               </div>

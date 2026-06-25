@@ -1,256 +1,213 @@
 'use client';
 
 import { useState } from 'react';
-import type { Block, TeachingPhase } from '@/types/lesson';
-import type { ActivityBankItem, ClassLiteracy } from '@/lib/editor/load-plan';
-import { PhaseSelect } from '@/components/editor/PhaseSelect';
-import { Textarea } from '@/components/editor/fields';
+import type { LinkItTechnique } from '@/types/lesson';
+import type { ActivityBankItem } from '@/lib/editor/load-plan';
+import type { LinkIt } from '@/lib/editor/link-it';
 
-const VISIBLE_BEFORE_EXPAND = 4;
+/** Pink editable note field (colour semantic: pink = teacher-editable). */
+const NOTE_FIELD =
+  'w-full rounded-[9px] border border-mine-field bg-surface px-[11px] py-[8px] font-sans ' +
+  'text-[13px] leading-[1.5] text-ink placeholder:text-neutral-400 outline-none ' +
+  'focus:border-pink focus:ring-2 focus:ring-pink/25';
 
-type Accent = 'teal' | 'pink';
-
-const ACCENT: Record<
-  Accent,
-  { label: string; selectedCard: string; selectText: string; noteLabel: string }
-> = {
-  teal: {
-    label: 'text-[#186155]',
-    selectedCard: 'border-[1.5px] border-teal bg-[#E4F0ED]',
-    selectText: 'text-teal',
-    noteLabel: 'text-[#186155]',
-  },
-  pink: {
-    label: 'text-pink',
-    selectedCard: 'border-[1.5px] border-pink bg-[#FBF2F5]',
-    selectText: 'text-pink',
-    noteLabel: 'text-pink',
-  },
-};
-
-/** The literacy-specific instruction chips shown under a selected technique. */
-function LiteracyChips({
-  activity,
-  literacy,
-}: {
-  activity: ActivityBankItem;
-  literacy: ClassLiteracy;
-}) {
-  const chips: { label: string; className: string }[] = [];
-  if ((literacy === 'literate' || literacy === 'mixed') && activity.literate_instructions) {
-    chips.push({
-      label: `Literate · ${activity.literate_instructions}`,
-      className: 'border-[#CFE6E0] text-[#186155]',
-    });
-  }
-  if ((literacy === 'illiterate' || literacy === 'mixed') && activity.illiterate_instructions) {
-    chips.push({
-      label: `Illiterate · ${activity.illiterate_instructions}`,
-      className: 'border-[#F1D8E1] text-pink',
-    });
-  }
-  if (chips.length === 0) return null;
+function PlusIcon() {
   return (
-    <div className="mt-2 flex flex-wrap gap-[7px]">
-      {chips.map((c) => (
-        <span
-          key={c.label}
-          className={`rounded-badge border bg-surface px-2 py-[3px] text-[11px] ${c.className}`}
-        >
-          {c.label}
-        </span>
-      ))}
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+/** Shared strip frame: a full-width bordered card with a title and its content. */
+function Strip({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[14px] border border-border bg-surface px-[18px] py-[16px]">
+      <div className="text-[14px] font-bold uppercase tracking-[0.05em] text-neutral-700">
+        {title}
+      </div>
+      <div className="mt-[12px]">{children}</div>
     </div>
   );
 }
 
-function TechniqueColumn({
-  heading,
-  pickHint,
-  accent,
+/** The teal "+ Add" button + its inline technique popover. */
+function AddTechnique({
   activities,
-  selectedRef,
-  note,
-  noteLabel,
-  notePlaceholder,
-  literacy,
-  onSelect,
-  onNote,
+  selected,
+  onAdd,
 }: {
-  heading: string;
-  pickHint: string;
-  accent: Accent;
   activities: ActivityBankItem[];
-  selectedRef: string | null;
-  note: string;
-  noteLabel: string;
-  notePlaceholder: string;
-  literacy: ClassLiteracy;
-  onSelect: (activity: ActivityBankItem | null) => void;
-  onNote: (note: string) => void;
+  selected: LinkItTechnique[];
+  onAdd: (id: string) => void;
 }) {
-  const [showAll, setShowAll] = useState(false);
-  const a = ACCENT[accent];
-
-  const visible = activities.filter(
-    (item, i) => showAll || i < VISIBLE_BEFORE_EXPAND || item.id === selectedRef,
-  );
-  const hidden = activities.length - visible.length;
+  const [open, setOpen] = useState(false);
+  // An already-added technique drops out of the list.
+  const available = activities.filter((a) => !selected.some((s) => s.technique === a.id));
 
   return (
-    <div className="p-[22px]">
-      <div className="mb-[11px] flex items-baseline justify-between">
-        <span className={`text-[12px] font-bold uppercase tracking-[0.05em] ${a.label}`}>
-          {heading}
-        </span>
-        <span className="text-[12px] text-neutral-400">{pickHint}</span>
-      </div>
-      <div className="flex flex-col gap-[9px]">
-        {visible.map((item) => {
-          const selected = item.id === selectedRef;
-          if (selected) {
-            return (
-              <div key={item.id} className={`rounded-[11px] px-[13px] py-3 ${a.selectedCard}`}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(null)}
-                  className="flex w-full items-center justify-between gap-2 text-left"
-                >
-                  <span className="text-[14px] font-semibold">{item.name}</span>
-                  <span
-                    className={
-                      'rounded-badge px-[9px] py-[3px] text-[11px] font-semibold text-white ' +
-                      (accent === 'teal' ? 'bg-teal' : 'bg-pink')
-                    }
-                  >
-                    ✓ Selected
-                  </span>
-                </button>
-                <LiteracyChips activity={item} literacy={literacy} />
-                <div className="mt-[10px]">
-                  <label className={`text-[11.5px] font-semibold ${a.noteLabel}`}>{noteLabel}</label>
-                  <Textarea
-                    rows={2}
-                    value={note}
-                    onChange={(e) => onNote(e.target.value)}
-                    placeholder={notePlaceholder}
-                    className="mt-1.5 bg-surface"
-                  />
-                </div>
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-teal-tint-border bg-teal-tint px-[12px] py-[8px] text-[13px] font-semibold text-teal hover:bg-[#d8ebe6]"
+      >
+        <PlusIcon />
+        Add
+      </button>
+      {open ? (
+        <>
+          {/* Click-away backdrop. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-[calc(100%+6px)] z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)]">
+            {available.length === 0 ? (
+              <div className="px-[10px] py-[12px] text-center text-[12.5px] text-neutral-400">
+                All techniques added.
               </div>
-            );
-          }
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSelect(item)}
-              className="flex items-center justify-between gap-2 rounded-[11px] border border-border bg-surface px-[13px] py-[11px] text-left hover:border-border-strong"
-            >
-              <span className="text-[14px] font-semibold">{item.name}</span>
-              <span className={`text-[12px] font-semibold ${a.selectText}`}>Select</span>
-            </button>
-          );
-        })}
-        {hidden > 0 ? (
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="rounded-[9px] border border-dashed border-[#DACFBE] bg-surface-subtle px-3 py-[9px] text-[12.5px] font-medium text-neutral-600 hover:bg-surface"
-          >
-            Show all {activities.length} techniques
-          </button>
-        ) : null}
-      </div>
+            ) : (
+              available.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    onAdd(a.id);
+                    setOpen(false);
+                  }}
+                  className="block w-full rounded-[8px] px-[11px] py-[9px] text-left text-[13.5px] font-medium text-ink hover:bg-teal-tint"
+                >
+                  {a.name}
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
+  );
+}
+
+/** One selected technique: a teal chip (name + remove) above its pink note field. */
+function TechniqueRow({
+  name,
+  note,
+  onNote,
+  onRemove,
+}: {
+  name: string;
+  note: string;
+  onNote: (note: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-[11px] border border-teal-tint-border bg-[#F3F8F7] p-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center rounded-badge bg-teal-tint px-[10px] py-[4px] text-[13px] font-semibold text-[#186155]">
+          {name}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${name}`}
+          className="shrink-0 rounded-full p-1 text-neutral-400 hover:text-pink"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <input
+        value={note}
+        onChange={(e) => onNote(e.target.value)}
+        placeholder="Add a note…"
+        className={`mt-[9px] ${NOTE_FIELD}`}
+      />
+    </div>
+  );
+}
+
+/** A technique strip: the title + Add, then a card per selected technique. */
+function TechniqueStrip({
+  title,
+  activities,
+  selected,
+  onChange,
+}: {
+  title: string;
+  activities: ActivityBankItem[];
+  selected: LinkItTechnique[];
+  onChange: (next: LinkItTechnique[]) => void;
+}) {
+  const nameById = new Map(activities.map((a) => [a.id, a.name]));
+
+  const add = (id: string) => onChange([...selected, { technique: id, note: '' }]);
+  const remove = (id: string) => onChange(selected.filter((s) => s.technique !== id));
+  const setNote = (id: string, note: string) =>
+    onChange(selected.map((s) => (s.technique === id ? { ...s, note } : s)));
+
+  return (
+    <Strip title={title}>
+      <div className="flex flex-col gap-[10px]">
+        {selected.map((s) => (
+          <TechniqueRow
+            key={s.technique}
+            name={nameById.get(s.technique) ?? 'Technique'}
+            note={s.note}
+            onNote={(note) => setNote(s.technique, note)}
+            onRemove={() => remove(s.technique)}
+          />
+        ))}
+        <div>
+          <AddTechnique activities={activities} selected={selected} onAdd={add} />
+        </div>
+      </div>
+    </Strip>
   );
 }
 
 /**
- * Step 4 — Link it: two bordered halves. Left = Check for Understanding, right =
- * Exit ticket. Each is a single-select list of pre-approved techniques; the
- * selected one expands a 1–2 line note. The header carries the phase dropdown
- * and the CFU/Exit time steppers.
+ * Step 4 — "Link it together": three stacked strips. Recap is a single free-text
+ * field; Check-for-understanding and Exit ticket each let the teacher add any
+ * number of pre-approved techniques (from the real activity bank), each as a teal
+ * chip with a pink note. Colour semantics: pink = teacher-editable, teal = the
+ * technique selections/actions.
  */
 export function LinkItStep({
-  cfuBlock,
-  exitBlock,
+  linkIt,
   cfuActivities,
   exitActivities,
-  literacy,
-  onCfuChange,
-  onExitChange,
+  onChange,
 }: {
-  cfuBlock: Block;
-  exitBlock: Block;
+  linkIt: LinkIt;
   cfuActivities: ActivityBankItem[];
   exitActivities: ActivityBankItem[];
-  literacy: ClassLiteracy;
-  onCfuChange: (patch: Partial<Block>) => void;
-  onExitChange: (patch: Partial<Block>) => void;
+  onChange: (next: LinkIt) => void;
 }) {
-  function selectActivity(
-    block: Block,
-    onChange: (patch: Partial<Block>) => void,
-    activity: ActivityBankItem | null,
-  ) {
-    if (!activity) {
-      onChange({ activity_ref: null, activity_title: '' });
-      return;
-    }
-    onChange({ activity_ref: activity.id, activity_title: activity.name });
-  }
-
   return (
-    <div className="mt-[22px] overflow-hidden rounded-[16px] border border-border">
-      <div className="flex flex-wrap items-start justify-between gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
-        <div>
-          <div className="flex flex-wrap items-center gap-[10px]">
-            <span className="text-[20px] font-semibold">Link it together</span>
-            <PhaseSelect
-              value={cfuBlock.phase}
-              onChange={(phase) => onCfuChange({ phase: phase as TeachingPhase | null })}
-            />
-          </div>
-        </div>
-      </div>
-      {/* TODO(reskin): the mockup shows a right-hand resource bank pane on this
-          step ("two-pane bank"). It is intentionally NOT wired here: Step 4 has
-          two blocks (cfu + exit_ticket) and the attach target is undefined, so
-          adding it would be new behaviour rather than a restyle. Confirm the
-          intended target before exposing ResourcePanel on Step 4. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2">
-        <div className="border-b border-[#EFE8DD] lg:border-b-0 lg:border-r">
-          <TechniqueColumn
-            heading="Check for Understanding"
-            pickHint="pick one"
-            accent="teal"
-            activities={cfuActivities}
-            selectedRef={cfuBlock.activity_ref}
-            note={cfuBlock.note ?? ''}
-            noteLabel="What you'll do (1–2 lines)"
-            notePlaceholder="e.g. After reading, ask students to show 0–5 fingers…"
-            literacy={literacy}
-            onSelect={(activity) => selectActivity(cfuBlock, onCfuChange, activity)}
-            onNote={(note) => onCfuChange({ note })}
-          />
-        </div>
-        <div>
-          <TechniqueColumn
-            heading="Exit ticket"
-            pickHint="pick 1"
-            accent="pink"
-            activities={exitActivities}
-            selectedRef={exitBlock.activity_ref}
-            note={exitBlock.note ?? ''}
-            noteLabel="What students do (1–2 lines)"
-            notePlaceholder="e.g. Draw one family member and label them."
-            literacy={literacy}
-            onSelect={(activity) => selectActivity(exitBlock, onExitChange, activity)}
-            onNote={(note) => onExitChange({ note })}
-          />
-        </div>
-      </div>
+    <div className="mt-[22px] flex flex-col gap-[14px]">
+      <Strip title="Recap">
+        <textarea
+          rows={3}
+          value={linkIt.recap}
+          onChange={(e) => onChange({ ...linkIt, recap: e.target.value })}
+          placeholder="Write the recap…"
+          className={`resize-y ${NOTE_FIELD}`}
+        />
+      </Strip>
+
+      <TechniqueStrip
+        title="Check for understanding"
+        activities={cfuActivities}
+        selected={linkIt.checkForUnderstanding}
+        onChange={(next) => onChange({ ...linkIt, checkForUnderstanding: next })}
+      />
+
+      <TechniqueStrip
+        title="Exit ticket"
+        activities={exitActivities}
+        selected={linkIt.exitTicket}
+        onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
+      />
     </div>
   );
 }

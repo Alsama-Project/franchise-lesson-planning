@@ -8,6 +8,12 @@ import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
 import { deriveMaterials, getBlock, patchBlock } from '@/lib/editor/plan-blocks';
 import {
+  normalizeLinkIt,
+  applyLinkIt,
+  techniqueLabelMap,
+  type LinkIt,
+} from '@/lib/editor/link-it';
+import {
   isObjectiveCheckResult,
   requestObjectiveCheck,
   ObjectiveCheckRequestError,
@@ -214,8 +220,19 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
 
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
-  const cfuBlock = getBlock(blocks, 'cfu');
-  const exitBlock = getBlock(blocks, 'exit_ticket');
+
+  // "Link it together" reads through the read-time normalizer (new or legacy
+  // plans → one shape) and writes back into the blocks JSONB on change. The label
+  // map resolves technique ids → display names from the real activity bank.
+  const linkIt = useMemo(() => normalizeLinkIt(blocks), [blocks]);
+  const techniqueLabels = useMemo(
+    () => techniqueLabelMap(activitiesByBlock.cfu ?? [], activitiesByBlock.exit_ticket ?? []),
+    [activitiesByBlock],
+  );
+  const onLinkItChange = useCallback(
+    (next: LinkIt) => setBlocks((bs) => applyLinkIt(bs, next)),
+    [],
+  );
 
   // Real lesson/curriculum/class context for the worksheet builder's locked
   // master frame and the Generate/bank flows. Subject comes from the lesson's
@@ -231,18 +248,19 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       dailyOutcome: curriculum?.dailyLO ?? '',
       centreName: classContext.schoolName,
       lessonCode: curriculum?.lessonCode ?? plan.curriculum_lesson_id,
-      exitTicket:
-        exitBlock?.students_do?.trim() ||
-        exitBlock?.activity_title?.trim() ||
-        exitBlock?.note?.trim() ||
-        '',
+      // The worksheet's exit-ticket context now comes from the Link-it model: the
+      // chosen exit techniques (label — note), joined.
+      exitTicket: linkIt.exitTicket
+        .map((e) => [techniqueLabels.get(e.technique) ?? '', e.note.trim()].filter(Boolean).join(' — '))
+        .filter(Boolean)
+        .join('; '),
       weeklyOutcome: curriculum?.weekLO ?? '',
       monthlyLo: curriculum?.monthlyLO ?? '',
       grammarVocab: curriculum?.grammarVocab ?? '',
       lessonPlanId: plan.id,
       subjectId: classContext.subjectId,
     }),
-    [classContext, curriculum, exitBlock, plan.id, plan.curriculum_lesson_id, plan.year],
+    [classContext, curriculum, linkIt, techniqueLabels, plan.id, plan.curriculum_lesson_id, plan.year],
   );
 
   return (
@@ -305,15 +323,12 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
           />
         ) : null}
 
-        {step === 4 && cfuBlock && exitBlock ? (
+        {step === 4 ? (
           <LinkItStep
-            cfuBlock={cfuBlock}
-            exitBlock={exitBlock}
+            linkIt={linkIt}
             cfuActivities={activitiesByBlock.cfu ?? []}
             exitActivities={activitiesByBlock.exit_ticket ?? []}
-            literacy={classContext.literacy}
-            onCfuChange={(patch) => patchType('cfu', patch)}
-            onExitChange={(patch) => patchType('exit_ticket', patch)}
+            onChange={onLinkItChange}
           />
         ) : null}
 
@@ -326,6 +341,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             materials={materials}
             worksheet={worksheet}
             worksheetContext={worksheetContext}
+            techniqueLabels={techniqueLabels}
             attachedFor={attachedFor}
             onMaterialsChange={setMaterials}
             onBlockMinutes={setBlockMinutes}

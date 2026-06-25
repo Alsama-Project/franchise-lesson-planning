@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SubjectRow } from '@/lib/console';
 import {
@@ -31,11 +31,9 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
 
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newCode, setNewCode] = useState('');
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [editCode, setEditCode] = useState('');
 
   const [archiveTarget, setArchiveTarget] = useState<SubjectRow | null>(null);
 
@@ -51,20 +49,6 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
       router.refresh();
     });
   }
-
-  /** Live code-uniqueness check (case-insensitive), excluding one subject id. */
-  function codeClash(code: string, excludeId?: string): string | null {
-    const c = code.trim().toLowerCase();
-    if (!c) return null;
-    const hit = subjects.find((s) => s.code.toLowerCase() === c && s.id !== excludeId);
-    return hit ? hit.name : null;
-  }
-
-  const newClash = useMemo(() => codeClash(newCode), [newCode, subjects]); // eslint-disable-line react-hooks/exhaustive-deps
-  const editClash = useMemo(
-    () => codeClash(editCode, editId ?? undefined),
-    [editCode, editId, subjects], // eslint-disable-line react-hooks/exhaustive-deps
-  );
 
   const active = subjects.filter((s) => !s.archivedAt);
   const archived = subjects.filter((s) => s.archivedAt);
@@ -91,20 +75,11 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
                   autoFocus
                 />
               </div>
-              <div className="min-w-[140px]">
-                <PinkField
-                  value={newCode}
-                  onChange={setNewCode}
-                  placeholder="Code (e.g. english)"
-                  aria-label="Subject code"
-                />
-              </div>
               <PrimaryButton
-                disabled={pending || !newName.trim() || !newCode.trim() || !!newClash}
+                disabled={pending || !newName.trim()}
                 onClick={() =>
-                  run(() => createSubject({ name: newName, code: newCode }), () => {
+                  run(() => createSubject({ name: newName }), () => {
                     setNewName('');
-                    setNewCode('');
                     setAdding(false);
                   })
                 }
@@ -113,11 +88,9 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
               </PrimaryButton>
               <GhostButton onClick={() => setAdding(false)}>Cancel</GhostButton>
             </div>
-            {newClash ? (
-              <p className="mt-[10px] text-[12.5px] font-medium text-[#B23A2E]">
-                Code {newCode.trim()} is already used by {newClash}.
-              </p>
-            ) : null}
+            <p className="mt-[10px] text-[12px] text-[#A79E94]">
+              A matching curriculum code is assigned automatically.
+            </p>
           </div>
         ) : null}
 
@@ -155,18 +128,7 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
                     )}
                   </Td>
                   <Td>
-                    {editing ? (
-                      <div className="max-w-[160px]">
-                        <PinkField value={editCode} onChange={setEditCode} aria-label="Subject code" />
-                        {editClash ? (
-                          <p className="mt-1 text-[11.5px] font-medium text-[#B23A2E]">
-                            Used by {editClash}.
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <MonoChip>{s.code}</MonoChip>
-                    )}
+                    <MonoChip>{s.code}</MonoChip>
                   </Td>
                   <Td className="text-right tabular-nums text-[#7A7068]">{s.activeClassCount}</Td>
                   <Td>
@@ -177,10 +139,10 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
                       <div className="flex items-center justify-end gap-3">
                         <GhostButton
                           tone="teal"
-                          disabled={pending || !editName.trim() || !editCode.trim() || !!editClash}
+                          disabled={pending || !editName.trim()}
                           onClick={() =>
                             run(
-                              () => updateSubject({ id: s.id, name: editName, code: editCode }),
+                              () => updateSubject({ id: s.id, name: editName }),
                               () => setEditId(null),
                             )
                           }
@@ -204,7 +166,6 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
                           onClick={() => {
                             setEditId(s.id);
                             setEditName(s.name);
-                            setEditCode(s.code);
                           }}
                         >
                           Edit

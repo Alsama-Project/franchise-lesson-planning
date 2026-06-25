@@ -52,7 +52,8 @@ export function ResourceBankModal({
   ctx: WorksheetContext;
   vocabulary: TagsByDimension;
   onClose: () => void;
-  onAdd: (resource: ResourceWithTags, uploaderName: string | null) => void;
+  /** Add the chosen resource to the worksheet. May be async (image/PDF copy). */
+  onAdd: (resource: ResourceWithTags, uploaderName: string | null) => void | Promise<void>;
 }) {
   const [subjectScoped, setSubjectScoped] = useState(true);
   const [all, setAll] = useState<ResourceWithTags[] | null>(null);
@@ -65,6 +66,8 @@ export function ResourceBankModal({
   const [formatSel, setFormatSel] = useState<Set<ResourceFormat>>(new Set());
   const [uploaderSel, setUploaderSel] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // Load (and reload when the subject scope is cleared). RLS scopes the read.
   // Previous results stay visible during a reload (no synchronous reset).
@@ -165,6 +168,20 @@ export function ResourceBankModal({
   // tightening a filter that hides the picked card disables Add rather than
   // adding an invisible resource.
   const pickedResource = filtered.find((r) => r.id === picked) ?? null;
+
+  // Adding can involve copying/converting content (image upload, PDF render), so
+  // it's awaited with a busy state; the builder closes the modal on success.
+  const handleAdd = async () => {
+    if (!pickedResource || adding) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      await onAdd(pickedResource, names[pickedResource.uploaded_by] ?? null);
+    } catch {
+      setAddError('Could not add that resource. Try again.');
+      setAdding(false);
+    }
+  };
 
   return (
     <div
@@ -324,20 +341,26 @@ export function ResourceBankModal({
 
         {/* footer */}
         <div style={{ padding: '14px 22px', borderTop: '1px solid #EFE8DD', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12.5, color: '#756B64' }}>
-            {pickedResource ? '1 resource selected' : 'Select a resource'}
+          <span style={{ fontSize: 12.5, color: addError ? '#B62A5C' : '#756B64' }}>
+            {addError
+              ? addError
+              : adding
+                ? 'Adding to the worksheet…'
+                : pickedResource
+                  ? '1 resource selected'
+                  : 'Select a resource'}
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
-            <button type="button" onClick={onClose} style={{ fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, color: '#2A2422', background: '#fff', border: '1px solid #DDD4C8', padding: '10px 18px', borderRadius: 10, cursor: 'pointer' }}>
+            <button type="button" onClick={onClose} disabled={adding} style={{ fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, color: '#2A2422', background: '#fff', border: '1px solid #DDD4C8', padding: '10px 18px', borderRadius: 10, cursor: adding ? 'default' : 'pointer', opacity: adding ? 0.6 : 1 }}>
               Cancel
             </button>
             <button
               type="button"
-              disabled={!pickedResource}
-              onClick={() => pickedResource && onAdd(pickedResource, names[pickedResource.uploaded_by] ?? null)}
-              style={{ fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, color: '#fff', background: TEAL, border: 'none', padding: '10px 20px', borderRadius: 10, cursor: pickedResource ? 'pointer' : 'default', opacity: pickedResource ? 1 : 0.6 }}
+              disabled={!pickedResource || adding}
+              onClick={handleAdd}
+              style={{ fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, color: '#fff', background: TEAL, border: 'none', padding: '10px 20px', borderRadius: 10, cursor: pickedResource && !adding ? 'pointer' : 'default', opacity: pickedResource && !adding ? 1 : 0.6 }}
             >
-              Add to worksheet
+              {adding ? 'Adding…' : 'Add to worksheet'}
             </button>
           </div>
         </div>

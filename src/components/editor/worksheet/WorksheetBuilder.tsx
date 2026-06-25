@@ -43,12 +43,12 @@ import {
   isWorksheetEmpty,
   moveBlock,
   newFreeBlock,
-  newResourceBlock,
   nextZ,
   parseWorksheet,
   removeBlock,
   updateBlock,
 } from '@/lib/editor/worksheet';
+import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
 import { getResourcesByIdsAction, recordUsageAction } from '@/lib/actions/resources';
 import type { WorksheetContext } from './context';
 import { MasterFrame } from './MasterFrame';
@@ -285,15 +285,23 @@ export function WorksheetBuilder({
     setModalOpen(true);
   }, []);
 
+  // Adding a bank resource builds editable free block(s) populated with a COPY of
+  // its content (rich text / image / PDF-page images), then appends them — the
+  // teacher edits them exactly like self-made blocks, and edits never touch the
+  // saved resource. The modal stays open (showing a busy state) until this
+  // resolves, since image/PDF copies involve uploads.
   const addFromBank = useCallback(
-    (resource: ResourceWithTags, uploaderName: string | null) => {
-      setResolved((prev) => ({ ...prev, [resource.id]: resource }));
-      setAttempted((prev) => new Set([...prev, resource.id]));
-      commit(appendBlock(ws, newResourceBlock(resource.id, uploaderName)));
+    async (resource: ResourceWithTags) => {
+      const built = await buildBlocksFromResource(resource);
+      if (built.length > 0) {
+        let next = wsRef.current;
+        for (const block of built) next = appendBlock(next, block);
+        commit(next);
+      }
       void recordUsageAction(resource.id, context.lessonPlanId);
       setModalOpen(false);
     },
-    [commit, ws, context.lessonPlanId],
+    [commit, context.lessonPlanId],
   );
 
   // changeFree + onElementsChange are bound once by each block's editor, so they

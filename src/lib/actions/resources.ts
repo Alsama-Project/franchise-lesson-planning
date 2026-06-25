@@ -27,6 +27,7 @@ import {
   updateResource,
 } from '@/lib/resources';
 import { recordUsage } from '@/lib/resources/usage';
+import { getResourceTextHtml } from '@/lib/resources/content';
 import type { MostUsedResource } from '@/lib/resources/usage';
 import type {
   CreateResourceInput,
@@ -67,6 +68,18 @@ export async function getResourcesByIdsAction(
   ids: string[]
 ): Promise<ResourceWithTags[]> {
   return getResourcesByIds(ids);
+}
+
+/**
+ * Extract a file-backed resource's text as an HTML fragment, for seeding an
+ * editable worksheet free block. Returns null for image/binary/link resources
+ * (the worksheet builder handles those separately). Server-only conversion
+ * (mammoth) runs behind this wrapper.
+ */
+export async function getResourceTextHtmlAction(
+  resourceId: string
+): Promise<{ html: string } | null> {
+  return getResourceTextHtml(resourceId);
 }
 
 /** Resolve resource uploader ids to display names (for the bank "Shared by" facet). */

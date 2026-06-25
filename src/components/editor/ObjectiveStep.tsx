@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 import {
   SMARTT_LETTERS,
@@ -76,10 +76,32 @@ export function ObjectiveStep({
   // genuinely differs, so typing never moves the caret (on a keystroke the node
   // already holds the new value, so the effect is a no-op).
   const editableRef = useRef<HTMLSpanElement>(null);
+  const [focused, setFocused] = useState(false);
+
   useEffect(() => {
     const el = editableRef.current;
     if (el && el.textContent !== remainder) el.textContent = remainder;
   }, [remainder]);
+
+  // Focus the editable region and drop the caret at the END of any existing text.
+  // Used when the teacher clicks the fixed stem or the padding around the field —
+  // a click anywhere on the objective line lands the caret in the editable part.
+  function focusEditableAtEnd() {
+    const el = editableRef.current;
+    if (!el) return;
+    el.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  // The placeholder is shown only when the field is BOTH empty AND not focused, so
+  // it clears the moment the field receives focus and returns on blur-while-empty.
+  const showPlaceholder = remainder.trim() === '' && !focused;
 
   return (
     <div className="mt-1.5">
@@ -94,7 +116,27 @@ export function ObjectiveStep({
       {/* "Yours" — a pink block holding a white field. The stem is baked in and
           non-editable; the teacher writes only the remainder. */}
       <div className="mt-4 rounded-[14px] border border-mine-border bg-mine p-[15px]">
-        <div className="relative rounded-[11px] border border-mine-field bg-surface px-[15px] py-[14px]">
+        {/* A click anywhere on this field (the stem, the padding) drops the caret
+            into the editable region — except clicks already inside the editable
+            (which position the caret naturally) and clicks on the Aya button. When
+            focused, the pink field gets a stronger pink border + ring so "I've
+            clicked in" is unmistakable. */}
+        <div
+          onMouseDown={(e) => {
+            const el = editableRef.current;
+            const target = e.target as HTMLElement;
+            if (el && (target === el || el.contains(target))) return;
+            if (target.closest('button')) return;
+            e.preventDefault();
+            focusEditableAtEnd();
+          }}
+          className={
+            'relative cursor-text rounded-[11px] border bg-surface px-[15px] py-[14px] transition-colors ' +
+            (focused
+              ? 'border-pink ring-2 ring-pink/30'
+              : 'border-mine-field')
+          }
+        >
           <button
             type="button"
             onClick={onCheck}
@@ -108,7 +150,9 @@ export function ObjectiveStep({
           {/* Stem + remainder render as ONE wrapping paragraph: the teacher's
               text continues inline after the fixed stem rather than dropping to a
               second line. The remainder is a flowing contentEditable span (a
-              replaced <textarea> cannot wrap inline with preceding text). */}
+              replaced <textarea> cannot wrap inline with preceding text). The stem
+              stays muted (text-stem) so it reads as a fixed label; the teacher's
+              text renders in body ink (text-ink), clearly distinct from the stem. */}
           <p className="pr-[34px] text-[16px] leading-[1.55]">
             <span className="text-stem">{OBJECTIVE_STEM} </span>
             <span
@@ -119,9 +163,11 @@ export function ObjectiveStep({
               contentEditable
               suppressContentEditableWarning
               data-placeholder="read five short sentences about a family and identify the family words."
-              data-empty={remainder.trim() === '' ? 'true' : 'false'}
+              data-empty={showPlaceholder ? 'true' : 'false'}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
               onInput={(e) => onChange(e.currentTarget.textContent ?? '')}
-              className="whitespace-pre-wrap break-words font-sans text-[16px] text-neutral-900 outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-neutral-400 data-[empty=true]:before:content-[attr(data-placeholder)]"
+              className="whitespace-pre-wrap break-words font-sans text-[16px] text-ink caret-pink outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-neutral-400 data-[empty=true]:before:content-[attr(data-placeholder)]"
             />
           </p>
         </div>

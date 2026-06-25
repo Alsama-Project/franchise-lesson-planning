@@ -5,16 +5,17 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import {
   IMPERSONATION_ROLE_COOKIE,
-  STASH_COOKIE,
   clearAuthCookies,
+  clearStash,
   getAllowedUids,
   impersonationEnabled,
   isStashedSessionResumable,
   isTestRole,
+  readStash,
   roleToCredentials,
   stashCookieOptions,
   writeSessionToAuthCookies,
-  type ImpersonationStash,
+  writeStash,
 } from '@/lib/test-impersonation';
 
 /**
@@ -99,35 +100,26 @@ export async function POST(request: NextRequest) {
       return fail('gate', 'impersonation is not enabled in this environment', 404);
     }
 
-    // ── Auth: current session ────────────────────────────────────────────────
-    stage = 'auth';
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return fail('auth', 'no current session', 401);
-    }
-
     const cookieStore = await cookies();
-    const stash = readStash(cookieStore.get(STASH_COOKIE)?.value);
-
-    // The REAL signed-in admin must be on the allowlist. While already
-    // impersonating, the real admin is the stashed identity, not the cookie user.
-    const realUid = stash?.uid ?? user.id;
-    if (!getAllowedUids().includes(realUid)) {
-      return fail('auth', 'caller is not on the impersonation allowlist', 404);
-    }
+    const stash = await readStash(cookieStore);
 
     const body = (await request.json().catch(() => null)) as
       | { role?: unknown; action?: unknown }
       | null;
 
     // ── Return to my account ────────────────────────────────────────────────
+    // Authorized from the STASH alone, never the current session: while
+    // impersonating, the cookie user is the test user (not on the allowlist). The
+    // stash is only ever written after an allowlisted admin passed the gate on
+    // switch, so a valid stash from an allowlisted admin IS proof this session
+    // began as that admin — that is what authorizes the return.
     if (body?.action === 'return') {
       stage = 'restore';
       if (!stash) {
         return NextResponse.json({ ok: true, impersonating: false });
+      }
+      if (!getAllowedUids().includes(stash.uid)) {
+        return fail('auth', 'caller is not on the impersonation allowlist', 404);
       }
 
       // If the stashed real session is still good, resume it by writing the auth
@@ -136,7 +128,7 @@ export async function POST(request: NextRequest) {
       // `refresh_token_already_used` 400).
       if (isStashedSessionResumable(stash.session)) {
         writeSessionToAuthCookies(cookieStore, stash.session);
-        cookieStore.delete(STASH_COOKIE);
+        clearStash(cookieStore);
         cookieStore.delete(IMPERSONATION_ROLE_COOKIE);
         return NextResponse.json({ ok: true, impersonating: false });
       }
@@ -145,9 +137,25 @@ export async function POST(request: NextRequest) {
       // Clear the impersonated session + stash and send the user through the
       // normal Entra login — a clean fallback, not an error.
       clearAuthCookies(cookieStore);
-      cookieStore.delete(STASH_COOKIE);
+      clearStash(cookieStore);
       cookieStore.delete(IMPERSONATION_ROLE_COOKIE);
       return NextResponse.json({ ok: true, impersonating: false, redirectTo: '/login' });
+    }
+
+    // ── Switch into a role: requires the current REAL admin session ──────────
+    stage = 'auth';
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return fail('auth', 'no current session', 401);
+    }
+    // The real admin is the stashed identity when already impersonating, else the
+    // current session.
+    const realUid = stash?.uid ?? user.id;
+    if (!getAllowedUids().includes(realUid)) {
+      return fail('auth', 'caller is not on the impersonation allowlist', 404);
     }
 
     // ── Switch role: validate the requested role ─────────────────────────────
@@ -174,10 +182,9 @@ export async function POST(request: NextRequest) {
       if (!session) {
         return fail('auth', 'no active session to stash', 401);
       }
-      // Stash the WHOLE session (incl. expiry + user) so Return can resume it by
-      // writing cookies directly, with no refresh-token replay.
-      const toStash: ImpersonationStash = { uid: user.id, session };
-      cookieStore.set(STASH_COOKIE, JSON.stringify(toStash), stashCookieOptions());
+      // Stash the WHOLE session (incl. expiry + user), CHUNKED, so Return can
+      // resume it by writing cookies directly, with no refresh-token replay.
+      writeStash(cookieStore, { uid: user.id, session });
     }
 
     // ── Establish the impersonated session by signing in as the test user ─────
@@ -213,24 +220,5 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     // Unexpected throw — tag it with the step in flight; message is secret-free.
     return fail(stage, reason(err, 'unexpected error'), 500);
-  }
-}
-
-function readStash(raw: string | undefined): ImpersonationStash | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ImpersonationStash>;
-    const session = parsed.session;
-    if (
-      typeof parsed.uid === 'string' &&
-      session &&
-      typeof session.access_token === 'string' &&
-      typeof session.refresh_token === 'string'
-    ) {
-      return { uid: parsed.uid, session };
-    }
-    return null;
-  } catch {
-    return null;
   }
 }

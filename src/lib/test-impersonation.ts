@@ -3,6 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import {
   DEFAULT_COOKIE_OPTIONS,
+  combineChunks,
   createChunks,
   isChunkLike,
   stringToBase64URL,
@@ -180,6 +181,51 @@ export function stashCookieOptions() {
   };
 }
 
+/**
+ * Persist the stash, CHUNKED, under {@link STASH_COOKIE}. The stash holds the
+ * whole real session (incl. the Azure user object), which routinely exceeds the
+ * ~4KB single-cookie limit — an oversized cookie is silently dropped by the
+ * browser, which is what made the stash vanish mid-impersonation (bar gone, and
+ * Return seeing only the test user). Chunking mirrors how `@supabase/ssr` stores
+ * the auth cookie. Stale chunks from a prior stash are removed first.
+ */
+export function writeStash(cookieStore: CookieStore, stash: ImpersonationStash): void {
+  const chunks = createChunks(STASH_COOKIE, JSON.stringify(stash));
+  const nextNames = new Set(chunks.map((c) => c.name));
+  for (const { name } of cookieStore.getAll()) {
+    if (isChunkLike(name, STASH_COOKIE) && !nextNames.has(name)) cookieStore.delete(name);
+  }
+  for (const { name, value } of chunks) cookieStore.set(name, value, stashCookieOptions());
+}
+
+/** Read + reassemble the (possibly chunked) stash, validating its shape. */
+export async function readStash(cookieStore: CookieStore): Promise<ImpersonationStash | null> {
+  const raw = await combineChunks(STASH_COOKIE, (name) => cookieStore.get(name)?.value ?? null);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ImpersonationStash>;
+    const session = parsed.session;
+    if (
+      typeof parsed.uid === 'string' &&
+      session &&
+      typeof session.access_token === 'string' &&
+      typeof session.refresh_token === 'string'
+    ) {
+      return { uid: parsed.uid, session };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove every stash chunk cookie. */
+export function clearStash(cookieStore: CookieStore): void {
+  for (const { name } of cookieStore.getAll()) {
+    if (isChunkLike(name, STASH_COOKIE)) cookieStore.delete(name);
+  }
+}
+
 export interface ImpersonationState {
   /** Whether the bar should render at all (all non-target gates passed). */
   active: boolean;
@@ -197,44 +243,36 @@ const INACTIVE: ImpersonationState = {
 
 /**
  * Server-side decision for the authed shell: should the test bar render, and if
- * so, whose role is being viewed? Mirrors the route's gates so the bar never
- * appears for anyone who could not actually use it:
- *   - the feature is enabled and non-production, and
- *   - the REAL signed-in user (the stashed identity when already impersonating,
- *     otherwise the current session) is on the admin allowlist.
+ * so, whose role is being viewed? The real-admin identity — not the current
+ * session — decides this, so the bar stays visible THROUGHOUT impersonation
+ * (otherwise the only in-app way back disappears):
+ *   - if a valid stash from an allowlisted admin exists, we are impersonating and
+ *     the bar renders regardless of the (test-user) session's state;
+ *   - otherwise the bar renders only when the current session IS an allowlisted
+ *     admin (so they can start impersonating).
  */
 export async function getImpersonationState(): Promise<ImpersonationState> {
   if (!impersonationEnabled()) return INACTIVE;
 
   const cookieStore = await cookies();
-  const stashUid = readStashUid(cookieStore.get(STASH_COOKIE)?.value);
+  const stash = await readStash(cookieStore);
 
+  // Impersonating: authorize from the stashed real admin, not the cookie user.
+  if (stash && getAllowedUids().includes(stash.uid)) {
+    const roleValue = cookieStore.get(IMPERSONATION_ROLE_COOKIE)?.value;
+    return {
+      active: true,
+      impersonating: true,
+      currentRole: isTestRole(roleValue) ? roleValue : null,
+    };
+  }
+
+  // Not impersonating: the bar shows only for an allowlisted real admin session.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return INACTIVE;
+  if (!user || !getAllowedUids().includes(user.id)) return INACTIVE;
 
-  // While impersonating, the cookie user is the target; the real admin is the
-  // stashed identity. Gate on the real admin either way.
-  const realUid = stashUid ?? user.id;
-  if (!getAllowedUids().includes(realUid)) return INACTIVE;
-
-  const impersonating = stashUid !== null;
-  const roleValue = cookieStore.get(IMPERSONATION_ROLE_COOKIE)?.value;
-  return {
-    active: true,
-    impersonating,
-    currentRole: impersonating && isTestRole(roleValue) ? roleValue : null,
-  };
-}
-
-function readStashUid(raw: string | undefined): string | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ImpersonationStash>;
-    return typeof parsed.uid === 'string' ? parsed.uid : null;
-  } catch {
-    return null;
-  }
+  return { active: true, impersonating: false, currentRole: null };
 }

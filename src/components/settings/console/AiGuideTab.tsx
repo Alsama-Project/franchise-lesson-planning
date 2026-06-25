@@ -19,8 +19,9 @@ function formatUploaded(iso: string): string {
 
 /**
  * Admin "AI resource guide" sub-section. Shows the active guide version (when /
- * by whom), a plain-text upload control (.md / .txt), and a read-only preview of
- * the current guide text. Upload-only — there is no inline editing. Each upload
+ * by whom), an upload control (.md / .txt read verbatim, or .docx converted to
+ * markdown), and a read-only preview of the current guide text. Upload-only —
+ * there is no inline editing. Each upload
  * POSTs a new immutable version to `/api/ai-resource-guide`, then refreshes.
  *
  * When no version exists, the generator uses a built-in default guide; the UI
@@ -62,7 +63,7 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
           <input
             ref={fileRef}
             type="file"
-            accept=".md,.txt,text/markdown,text/plain"
+            accept=".md,.txt,.docx,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -71,7 +72,7 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
             }}
           />
           <GhostButton tone="teal" disabled={pending} onClick={() => fileRef.current?.click()}>
-            {pending ? 'Uploading…' : 'Upload .md / .txt'}
+            {pending ? 'Uploading…' : 'Upload .md / .txt / .docx'}
           </GhostButton>
         </div>
       }
@@ -113,7 +114,7 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
           </pre>
         </div>
       ) : (
-        <EmptyState>Upload a .md or .txt guide to preview it here.</EmptyState>
+        <EmptyState>Upload a .md, .txt, or .docx guide to preview it here.</EmptyState>
       )}
     </SectionCard>
   );

@@ -1,16 +1,19 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/auth';
+import { docxToMarkdown } from '@/lib/ai/docx';
 
 /**
  * POST /api/ai-resource-guide
  *
  * Admin-only. Uploads a new version of the AI resource guide — the
  * admin-authored best-practice text that steers the resource generator (Aya).
- * Accepts a plain-text `.md` or `.txt` file as multipart/form-data (`file`
- * field), reads it server-side, and INSERTS a new `ai_resource_guide` row
+ * Accepts a plain-text `.md` or `.txt` file, or a Word `.docx`, as
+ * multipart/form-data (`file` field). Text files are read as-is; a `.docx` is
+ * converted to markdown server-side (mammoth → HTML → turndown, images dropped).
+ * Either way the resulting text is INSERTed as a new `ai_resource_guide` row
  * (`uploaded_by` = the caller). Each upload is a new immutable version; the
- * latest is active. No .docx parsing in the MVP (follow-up).
+ * latest is active.
  *
  * Auth: a signed-in admin only. Non-admins get 403; the table's RLS
  * (`ai_resource_guide_insert_admin`) is the backstop.
@@ -20,8 +23,20 @@ import { getCurrentProfile } from '@/lib/auth';
  *  runaway upload would bloat the prompt; 256 KB is generous for prose. */
 const MAX_BYTES = 256 * 1024;
 
-/** Accepted plain-text extensions (no .docx parsing in the MVP). */
-const ALLOWED_EXTENSIONS = ['.md', '.txt'] as const;
+/** Raw upload bound for a `.docx` (which may carry images we discard). This only
+ *  caps what the parser ingests; the extracted text is held to {@link MAX_BYTES}. */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Accepted plain-text extensions, read verbatim as the guide. */
+const TEXT_EXTENSIONS = ['.md', '.txt'] as const;
+
+/** Word document extension + mimetype, converted to markdown before storage. */
+const DOCX_EXTENSION = '.docx';
+const DOCX_MIMETYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/** All accepted extensions, for the file-type error message. */
+const ALLOWED_EXTENSIONS = [...TEXT_EXTENSIONS, DOCX_EXTENSION] as const;
 
 export async function POST(request: NextRequest) {
   // ── Authorise: signed-in admin only ──
@@ -59,23 +74,52 @@ export async function POST(request: NextRequest) {
   }
 
   const name = file.name.toLowerCase();
-  if (!ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+  const isDocx = name.endsWith(DOCX_EXTENSION) || file.type === DOCX_MIMETYPE;
+  const isText = TEXT_EXTENSIONS.some((ext) => name.endsWith(ext));
+  if (!isDocx && !isText) {
     return NextResponse.json(
-      { error: `Unsupported file type. Upload a ${ALLOWED_EXTENSIONS.join(' or ')} file.` },
+      { error: `Unsupported file type. Upload a ${ALLOWED_EXTENSIONS.join(', ')} file.` },
       { status: 400 },
     );
   }
 
-  if (file.size > MAX_BYTES) {
+  // Bound the parser's input. Text guides are small; a .docx may carry images
+  // (which we drop) so it gets a roomier raw cap — the real limit is applied to
+  // the extracted text below.
+  const rawCap = isDocx ? MAX_UPLOAD_BYTES : MAX_BYTES;
+  if (file.size > rawCap) {
     return NextResponse.json(
-      { error: `File is too large (max ${Math.round(MAX_BYTES / 1024)} KB).` },
+      { error: `File is too large (max ${Math.round(rawCap / 1024)} KB).` },
       { status: 400 },
     );
   }
 
-  const content = (await file.text()).trim();
+  // Resolve the file to the guide text: .docx is converted to markdown
+  // (images dropped); .md / .txt are read verbatim, exactly as before.
+  let content: string;
+  if (isDocx) {
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      content = (await docxToMarkdown(buffer)).trim();
+    } catch {
+      return NextResponse.json(
+        { error: 'Could not read the Word document. Please check the file and try again.' },
+        { status: 400 },
+      );
+    }
+  } else {
+    content = (await file.text()).trim();
+  }
+
+  // Existing validation, applied to the resolved text (non-empty + size cap).
   if (content.length === 0) {
     return NextResponse.json({ error: 'The guide file is empty.' }, { status: 400 });
+  }
+  if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) {
+    return NextResponse.json(
+      { error: `Guide text is too large (max ${Math.round(MAX_BYTES / 1024)} KB).` },
+      { status: 400 },
+    );
   }
 
   // ── Insert a new version (RLS enforces admin + uploaded_by = caller) ──

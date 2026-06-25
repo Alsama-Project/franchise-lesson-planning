@@ -6,9 +6,19 @@
 // "Your upload" chip and edit/delete controls appear, and only on resources the
 // viewer may edit.
 
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import type { ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
+import { previewKind, previewSrc } from '@/components/resources/preview';
 import { EditIcon, TrashIcon, TrendingUp } from '@/components/resources/icons';
+
+// Client-only: pdfjs uses canvas + a Web Worker, so it must never render on the
+// server. Loaded lazily so the renderer is fetched only for cards that need it.
+const PdfThumbnail = dynamic(
+  () => import('@/components/resources/PdfThumbnail').then((m) => m.PdfThumbnail),
+  { ssr: false },
+);
 
 interface ResourceCardProps {
   resource: ResourceWithTags;
@@ -31,32 +41,62 @@ export function ResourceCard({
 }: ResourceCardProps) {
   const v = resourceView(resource);
 
+  // Inline preview: an image or first-page PDF thumbnail when previewable,
+  // falling back to the flat format-coloured block on a non-previewable format
+  // or any load/render error.
+  const kind = previewKind(resource);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const showPreview = kind !== null && !previewFailed;
+
   return (
     <button
       type="button"
       onClick={() => onOpen(resource)}
       className="flex flex-col overflow-hidden rounded-[14px] border border-border bg-surface text-left transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40"
     >
-      {/* Format thumbnail */}
+      {/* Format thumbnail — a real preview when one is available, otherwise the
+          flat format-coloured block. Badges overlay either way. */}
       <div
-        className="relative flex h-20 items-center justify-center"
+        className="relative flex h-20 items-center justify-center overflow-hidden"
         style={{ background: v.fmtBg }}
       >
+        {showPreview ? (
+          <div className="absolute inset-0">
+            {kind === 'image' ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewSrc(resource)}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+                onError={() => setPreviewFailed(true)}
+              />
+            ) : (
+              <PdfThumbnail
+                src={previewSrc(resource)}
+                onError={() => setPreviewFailed(true)}
+              />
+            )}
+          </div>
+        ) : null}
+
         {v.isNew ? (
-          <span className="absolute left-2 top-2 rounded-badge bg-pink px-[7px] py-0.5 text-[9.5px] font-bold tracking-[0.04em] text-white">
+          <span className="absolute left-2 top-2 z-10 rounded-badge bg-pink px-[7px] py-0.5 text-[9.5px] font-bold tracking-[0.04em] text-white">
             NEW
           </span>
         ) : null}
-        <span className="absolute right-2 top-2 inline-flex items-center gap-[3px] rounded-badge bg-white/80 px-[7px] py-0.5 text-[10px] font-semibold text-neutral-800">
+        <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-[3px] rounded-badge bg-white/80 px-[7px] py-0.5 text-[10px] font-semibold text-neutral-800">
           <TrendingUp size={11} style={{ color: '#B0651E' }} strokeWidth={2.2} />
           {resource.usage_count}
         </span>
-        <span
-          className="text-[11px] font-bold tracking-[0.04em]"
-          style={{ color: v.fmtColor }}
-        >
-          {v.formatShort}
-        </span>
+        {!showPreview ? (
+          <span
+            className="text-[11px] font-bold tracking-[0.04em]"
+            style={{ color: v.fmtColor }}
+          >
+            {v.formatShort}
+          </span>
+        ) : null}
       </div>
 
       {/* Body */}

@@ -337,6 +337,9 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             blocks={blocks}
             total={total}
             materials={materials}
+            worksheet={worksheet}
+            worksheetContext={worksheetContext}
+            attachedFor={attachedFor}
             onMaterialsChange={setMaterials}
             onBlockMinutes={setBlockMinutes}
           />

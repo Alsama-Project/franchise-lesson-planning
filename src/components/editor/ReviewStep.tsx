@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import type { Block, LessonBlockType, PlanStatus, TeachingPhase } from '@/types/lesson';
+import type { ResourceWithTags } from '@/types/resource';
 import { blockMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
 import { getBlock, routinesMinutes } from '@/lib/editor/plan-blocks';
 import { phaseLabel } from '@/lib/editor/phase';
 import { TimeStepper } from '@/components/editor/TimeStepper';
+import { PartContent } from '@/components/editor/PartContent';
+import type { WorksheetContext } from '@/components/editor/worksheet/context';
 
 const PHASE_TAG: Record<TeachingPhase, string> = {
   i_do: 'text-[#1F7A6C] bg-[#E4F0ED]',
@@ -16,20 +19,14 @@ const PHASE_TAG: Record<TeachingPhase, string> = {
 interface PartRow {
   key: string;
   name: string;
+  /** Fixed-part description, shown when the part has no editable block (routines). */
   detail: string;
   phase: TeachingPhase | null;
   minutes: number;
   /** Editable blocks carry a stepper; fixed parts show plain text. */
   type?: LessonBlockType;
-}
-
-function blockDetail(block: Block | undefined, fallback: string): string {
-  if (!block) return fallback;
-  if (block.type === 'cfu' || block.type === 'exit_ticket') {
-    const parts = [block.activity_title || '—', block.note].filter(Boolean);
-    return parts.join(' · ') || fallback;
-  }
-  return block.teacher_does || block.students_do || fallback;
+  /** The plan block this part maps to, resolved once for header + body. */
+  block?: Block;
 }
 
 /**
@@ -45,6 +42,9 @@ export function ReviewStep({
   blocks,
   total,
   materials,
+  worksheet,
+  worksheetContext,
+  attachedFor,
   onMaterialsChange,
   onBlockMinutes,
 }: {
@@ -53,6 +53,12 @@ export function ReviewStep({
   blocks: Block[];
   total: number;
   materials: string[];
+  /** The plan's student worksheet (rendered read-only under Independent practice). */
+  worksheet: unknown;
+  /** Master-frame context for the read-only worksheet render. */
+  worksheetContext: WorksheetContext;
+  /** Resolve a block's attached bank resources via the editor's client cache. */
+  attachedFor: (block: Block | undefined) => ResourceWithTags[];
   onMaterialsChange: (next: string[]) => void;
   onBlockMinutes: (type: LessonBlockType, next: number) => void;
 }) {
@@ -65,6 +71,19 @@ export function ReviewStep({
   const homework = getBlock(blocks, 'homework');
   const homeworkMin = homework && blockMinutes(homework) > 0 ? blockMinutes(homework) : 30;
 
+  const part = (key: string, name: string, type: LessonBlockType): PartRow => {
+    const block = getBlock(blocks, type);
+    return {
+      key,
+      name,
+      detail: '',
+      phase: block?.phase ?? null,
+      minutes: blockMinutes(block ?? ({} as Block)),
+      type,
+      block,
+    };
+  };
+
   const parts: PartRow[] = [
     {
       key: 'routines',
@@ -73,54 +92,12 @@ export function ReviewStep({
       phase: null,
       minutes: routinesMinutes(blocks),
     },
-    {
-      key: 'check_homework',
-      name: 'Homework check',
-      detail: blockDetail(getBlock(blocks, 'check_homework'), 'Review the previous homework.'),
-      phase: getBlock(blocks, 'check_homework')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'check_homework') ?? ({} as Block)),
-      type: 'check_homework',
-    },
-    {
-      key: 'recap',
-      name: 'Recap',
-      detail: blockDetail(getBlock(blocks, 'recap'), 'Activate prior learning.'),
-      phase: getBlock(blocks, 'recap')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'recap') ?? ({} as Block)),
-      type: 'recap',
-    },
-    {
-      key: 'new_content',
-      name: 'New content',
-      detail: blockDetail(getBlock(blocks, 'new_content'), 'Planned in the Teach it step.'),
-      phase: getBlock(blocks, 'new_content')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'new_content') ?? ({} as Block)),
-      type: 'new_content',
-    },
-    {
-      key: 'cfu',
-      name: 'Check for Understanding',
-      detail: blockDetail(getBlock(blocks, 'cfu'), 'Pick a technique in the Link it step.'),
-      phase: getBlock(blocks, 'cfu')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'cfu') ?? ({} as Block)),
-      type: 'cfu',
-    },
-    {
-      key: 'independent_practice',
-      name: 'Independent practice',
-      detail: blockDetail(getBlock(blocks, 'independent_practice'), 'Planned in the Practise step.'),
-      phase: getBlock(blocks, 'independent_practice')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'independent_practice') ?? ({} as Block)),
-      type: 'independent_practice',
-    },
-    {
-      key: 'exit_ticket',
-      name: 'Exit ticket',
-      detail: blockDetail(getBlock(blocks, 'exit_ticket'), 'Pick an exit ticket in the Link it step.'),
-      phase: getBlock(blocks, 'exit_ticket')?.phase ?? null,
-      minutes: blockMinutes(getBlock(blocks, 'exit_ticket') ?? ({} as Block)),
-      type: 'exit_ticket',
-    },
+    part('check_homework', 'Homework check', 'check_homework'),
+    part('recap', 'Recap', 'recap'),
+    part('new_content', 'New content', 'new_content'),
+    part('cfu', 'Check for Understanding', 'cfu'),
+    part('independent_practice', 'Independent practice', 'independent_practice'),
+    part('exit_ticket', 'Exit ticket', 'exit_ticket'),
   ];
 
   function commitDraft() {
@@ -271,8 +248,16 @@ export function ReviewStep({
                 </div>
               </div>
               {open ? (
-                <div className="px-4 pb-[13px] pl-[37px] text-[12.5px] leading-[1.5] text-neutral-800">
-                  {p.detail}
+                <div className="px-4 pb-[13px] pl-[37px]">
+                  <PartContent
+                    block={p.block}
+                    attachedResources={attachedFor(p.block)}
+                    worksheet={p.key === 'independent_practice' ? worksheet : undefined}
+                    worksheetContext={
+                      p.key === 'independent_practice' ? worksheetContext : undefined
+                    }
+                    fallback={p.detail}
+                  />
                 </div>
               ) : null}
             </div>

@@ -5,9 +5,12 @@
 
 import Link from 'next/link';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
+import { PartContent } from '@/components/editor/PartContent';
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
-import type { TeachingPhase } from '@/types/lesson';
+import type { Block, TeachingPhase } from '@/types/lesson';
+import type { ResourceWithTags } from '@/types/resource';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
+import type { WorksheetContext } from '@/components/editor/worksheet/context';
 
 const PHASE_LABEL: Record<TeachingPhase, string> = {
   i_do: 'I do',
@@ -22,9 +25,41 @@ const SCOPE_LABEL = {
 } as const;
 
 export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
-  const { plan, classContext, curriculum } = data;
+  const { plan, classContext, curriculum, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
+
+  // Resources attached to any block were resolved by the loader; index them so
+  // each block can list its own attachments without another round-trip.
+  const resourcesById = new Map<string, ResourceWithTags>(
+    resourceBank.attached.map((r) => [r.id, r]),
+  );
+  const attachedFor = (block: Block): ResourceWithTags[] =>
+    (block.resourceIds ?? [])
+      .map((id) => resourcesById.get(id))
+      .filter((r): r is ResourceWithTags => !!r);
+
+  // Master-frame context for the read-only worksheet render (mirrors the editor's
+  // WorksheetContext; only the fields the static print view reads are populated).
+  const exitBlock = plan.blocks.find((b) => b.type === 'exit_ticket');
+  const worksheetContext: WorksheetContext = {
+    subjectName: classContext.subjectName,
+    year: classContext.scope === 'class' ? classContext.year : plan.year,
+    theme: curriculum?.theme ?? '',
+    dailyOutcome: curriculum?.dailyLO ?? '',
+    centreName: classContext.schoolName,
+    lessonCode: curriculum?.lessonCode ?? plan.curriculum_lesson_id,
+    exitTicket:
+      exitBlock?.students_do?.trim() ||
+      exitBlock?.activity_title?.trim() ||
+      exitBlock?.note?.trim() ||
+      '',
+    weeklyOutcome: curriculum?.weekLO ?? '',
+    grammarVocab: curriculum?.grammarVocab ?? '',
+    literacy: classContext.literacy,
+    lessonPlanId: plan.id,
+    subjectId: classContext.subjectId,
+  };
 
   const groupSuffix =
     classContext.scope === 'centre'
@@ -100,29 +135,21 @@ export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
                     {blockMinutes(block)} min
                   </span>
                 </div>
-                {block.activity_title.trim() ? (
-                  <div className="mt-[6px] text-[13px] font-medium text-neutral-800">
-                    {block.activity_title}
-                  </div>
-                ) : null}
-                <Detail label="Teacher" value={block.teacher_does} />
-                <Detail label="Students" value={block.students_do} />
-                <Detail label="Materials" value={block.resources} />
+                <div className="mt-[8px]">
+                  <PartContent
+                    block={block}
+                    attachedResources={attachedFor(block)}
+                    worksheet={block.type === 'independent_practice' ? plan.worksheet : undefined}
+                    worksheetContext={
+                      block.type === 'independent_practice' ? worksheetContext : undefined
+                    }
+                  />
+                </div>
               </div>
             ))}
           </div>
         </section>
       </div>
-    </div>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  if (!value.trim()) return null;
-  return (
-    <div className="mt-[6px] text-[12.5px] leading-[1.5]">
-      <span className="font-semibold text-text-faint">{label}: </span>
-      <span className="text-neutral-800">{value}</span>
     </div>
   );
 }

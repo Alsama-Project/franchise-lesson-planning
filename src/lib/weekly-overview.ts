@@ -89,11 +89,12 @@ interface MembershipRow {
 }
 
 /** The empty board shown when there's no session or no teaching assignment. */
-function emptyBoard(teacherName: string, subjectName = ''): BoardData {
+function emptyBoard(teacherName: string, subjectName = '', subjectCode = ''): BoardData {
   return {
     teacherName,
     context: null,
     subjectName,
+    subjectCode,
     coordinate: { month: '', week: 1 },
     coordinateLabel: '—',
     prev: null,
@@ -261,7 +262,7 @@ export async function getBoardData(input: {
   // Nothing synced for this subject/years yet → an empty-but-valid board.
   if (coords.length === 0) {
     return {
-      ...emptyBoard(teacherName, subjectName),
+      ...emptyBoard(teacherName, subjectName, subjectCode),
       context,
       hasClasses: true,
       years: years.map((year) => ({ year, plans: [], lessons: [] })),
@@ -372,6 +373,7 @@ export async function getBoardData(input: {
     teacherName,
     context,
     subjectName,
+    subjectCode,
     coordinate,
     coordinateLabel: `${coordinate.month} · Week ${coordinate.week}`,
     prev,

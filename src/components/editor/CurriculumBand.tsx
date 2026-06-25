@@ -11,7 +11,7 @@ import type { EditorCurriculumContext } from '@/lib/editor/load-plan';
 export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumContext | null }) {
   if (!curriculum) return null;
 
-  const hasContext = !!(curriculum.weekLO || curriculum.monthLO);
+  const hasContext = !!(curriculum.weekLO || curriculum.monthlyLO || curriculum.monthLO);
 
   return (
     <div className="grid grid-cols-1 gap-[14px] md:grid-cols-[1.6fr_1fr] md:grid-rows-2">
@@ -29,6 +29,12 @@ export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumCon
               <div>
                 <span className="font-semibold text-given-label">This week · </span>
                 {curriculum.weekLO}
+              </div>
+            ) : null}
+            {curriculum.monthlyLO ? (
+              <div>
+                <span className="font-semibold text-given-label">Monthly objective · </span>
+                {curriculum.monthlyLO}
               </div>
             ) : null}
             {curriculum.monthLO ? (

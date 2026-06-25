@@ -35,6 +35,18 @@ export type PlanStatus = 'in_progress' | 'submitted' | 'needs_review' | 'approve
 export type PlanScope = 'class' | 'centre' | 'org';
 
 /**
+ * One "Link it together" technique selection on the cfu / exit_ticket blocks: a
+ * reference to a pre-approved technique by its STABLE `activity_bank` id (never
+ * its display label, so it survives label edits) plus the teacher's short note.
+ */
+export interface LinkItTechnique {
+  /** Stable `activity_bank` id of the chosen technique. */
+  technique: string;
+  /** The teacher's short note for this technique. */
+  note: string;
+}
+
+/**
  * One timed block within a lesson. Stored as an ordered element of the
  * `lesson_plans.blocks` JSONB array.
  */
@@ -63,10 +75,22 @@ export interface Block {
    * existing plans/code keep working.
    */
   minutes?: number;
-  /** The short CFU "what I'll do" line. */
+  /**
+   * The short "what I'll do" line. Also holds the free-text Recap on the `recap`
+   * block (the "Link it together" Recap strip).
+   */
   note?: string;
   /** Ids of resources attached to this block. */
   resourceIds?: string[];
+  /**
+   * "Link it together" technique selections for the `cfu` / `exit_ticket` blocks:
+   * the chosen pre-approved techniques (by stable `activity_bank` id) each with a
+   * short note. This is the current model; it replaces the legacy single
+   * `activity_ref` + `note` for these two blocks. The legacy fields are LEFT IN
+   * PLACE for rollback safety (never written, never dropped) and mapped in by the
+   * read-time normalizer (see @/lib/editor/link-it). Undefined on other blocks.
+   */
+  techniques?: LinkItTechnique[];
 }
 
 /**

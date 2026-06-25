@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 import {
   SMARTT_LETTERS,
@@ -69,9 +70,20 @@ export function ObjectiveStep({
 }) {
   const checkDisabled = checking || remainder.trim().length === 0;
 
+  // The remainder is an inline, flowing editable region (so the teacher's text
+  // continues on the same line as the fixed stem and wraps as one paragraph). It
+  // stays a *controlled* field: we write `remainder` into the node only when it
+  // genuinely differs, so typing never moves the caret (on a keystroke the node
+  // already holds the new value, so the effect is a no-op).
+  const editableRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = editableRef.current;
+    if (el && el.textContent !== remainder) el.textContent = remainder;
+  }, [remainder]);
+
   return (
     <div className="mt-1.5">
-      <div className="text-[22px] font-semibold">Write the lesson objective</div>
+      <div className="text-[22px] font-semibold">Write the SMARTT objective</div>
 
       <div className="mt-[18px] flex flex-wrap gap-1.5">
         {SMARTT_LETTERS.map((l) => (
@@ -93,17 +105,25 @@ export function ObjectiveStep({
           >
             <SparkIcon size={15} />
           </button>
-          <div className="pr-[34px] text-[16px] leading-[1.55]">
+          {/* Stem + remainder render as ONE wrapping paragraph: the teacher's
+              text continues inline after the fixed stem rather than dropping to a
+              second line. The remainder is a flowing contentEditable span (a
+              replaced <textarea> cannot wrap inline with preceding text). */}
+          <p className="pr-[34px] text-[16px] leading-[1.55]">
             <span className="text-stem">{OBJECTIVE_STEM} </span>
-            <textarea
-              rows={2}
-              value={remainder}
-              onChange={(e) => onChange(e.target.value)}
+            <span
+              ref={editableRef}
+              role="textbox"
+              aria-multiline="true"
               aria-label="SMARTT objective"
-              placeholder="read five short sentences about a family and identify the family words."
-              className="mt-[6px] block w-full resize-y border-0 bg-transparent p-0 font-sans text-[16px] leading-[1.5] text-neutral-900 outline-none placeholder:text-neutral-400"
+              contentEditable
+              suppressContentEditableWarning
+              data-placeholder="read five short sentences about a family and identify the family words."
+              data-empty={remainder.trim() === '' ? 'true' : 'false'}
+              onInput={(e) => onChange(e.currentTarget.textContent ?? '')}
+              className="whitespace-pre-wrap break-words font-sans text-[16px] text-neutral-900 outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-neutral-400 data-[empty=true]:before:content-[attr(data-placeholder)]"
             />
-          </div>
+          </p>
         </div>
         <div className="mt-[13px] flex justify-end">
           <button

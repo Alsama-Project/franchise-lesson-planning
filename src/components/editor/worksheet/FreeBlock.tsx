@@ -43,6 +43,10 @@ type View = 'blank' | 'compose' | 'doc';
 const MIN_TEXTBOX = { w: 120, h: 56 };
 const MIN_IMAGE = { w: 48, h: 48 };
 
+// Resting minimum for a block's document area: enough for the "Exercise N"
+// heading plus a line or two. The block grows past this with its content.
+const DOC_MIN_HEIGHT = 96;
+
 /**
  * The active context the chrome toolbar formats / inserts into. `editor` is the
  * focused editor (a block's doc or one of its text boxes); `blockId` is the
@@ -130,6 +134,14 @@ export function FreeBlock({
 }) {
   const hasContent = Boolean(block.doc) || block.elements.length > 0;
   const [view, setView] = useState<View>(hasContent ? 'doc' : 'blank');
+
+  // The block's resting height tracks its content: the flowing tiptap doc grows
+  // naturally, and the (absolutely-positioned) floating layer can't push layout,
+  // so we reserve just enough room to contain the lowest floating element. With
+  // no floating elements the block stays at a small sensible minimum, so a
+  // near-empty exercise is short instead of imposing a large fixed height.
+  const floatBottom = block.elements.reduce((m, el) => Math.max(m, el.y + el.h), 0);
+  const docMinHeight = floatBottom > 0 ? Math.ceil(floatBottom + 24) : DOC_MIN_HEIGHT;
   const fromAIRef = useRef(block.fromAI);
   const [fromAI, setFromAI] = useState(block.fromAI);
 
@@ -162,7 +174,13 @@ export function FreeBlock({
     (w: number, h: number, min: { w: number; h: number }) => {
       const els = elementsRef.current;
       const off = 24 + (els.length % 5) * 18;
-      return clampGeom({ x: off, y: off, w, h }, boxSize(), min);
+      // Clamp against a box tall enough to hold the new element at full size even
+      // when the block is currently short — the block then grows to contain it
+      // (its min-height tracks the lowest element). Without this, inserting into
+      // a near-empty block would shrink the element to the tiny current height.
+      const box = boxSize();
+      const room = { w: box.w, h: Math.max(box.h, off + h + 40) };
+      return clampGeom({ x: off, y: off, w, h }, room, min);
     },
     [boxSize],
   );
@@ -192,7 +210,9 @@ export function FreeBlock({
       const w = Math.min(natural.w, 360, box.w);
       const h = w * (natural.h / natural.w);
       const els = elementsRef.current;
-      const g = clampGeom({ ...cascadeGeom(w, h, MIN_IMAGE), w, h }, box, MIN_IMAGE);
+      // cascadeGeom already clamps against a box grown to fit the image, so the
+      // block can size up to contain it — don't re-clamp to the current height.
+      const g = cascadeGeom(w, h, MIN_IMAGE);
       const el = newFloatingImage(res.url, file.name, g, nextZ(els));
       setView('doc');
       commitElements([...els, el]);
@@ -209,7 +229,7 @@ export function FreeBlock({
       const w = Math.min(info.w || 320, box.w);
       const h = info.h && info.w ? w * (info.h / info.w) : w * 0.66;
       const els = elementsRef.current;
-      const g = clampGeom({ ...cascadeGeom(w, h, MIN_IMAGE), w, h }, box, MIN_IMAGE);
+      const g = cascadeGeom(w, h, MIN_IMAGE);
       const el = newFloatingImage(info.src, info.alt, g, nextZ(els));
       commitElements([...els, el]);
       onSelectElement(el.id);
@@ -383,9 +403,9 @@ export function FreeBlock({
 
       {/* CHOICE STATE (only while the block is truly empty) */}
       {view === 'blank' ? (
-        <div style={{ background: '#fff', padding: '24px 48px 64px' }}>
+        <div style={{ background: '#fff', padding: '24px 48px 40px' }}>
           <ExerciseHeading index={index} />
-          <div style={{ minHeight: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+          <div style={{ minHeight: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
             <span style={{ width: 54, height: 54, borderRadius: 14, background: '#F3ECE2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#A79E94" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 7V5h16v2M9 5v14M7 19h4" />
@@ -422,7 +442,7 @@ export function FreeBlock({
 
       {/* DOCUMENT + contained floating layer (the block is the positioning context) */}
       <div
-        style={{ position: 'relative', background: '#fff', padding: '24px 48px 38px', minHeight: 372, display: view === 'doc' ? 'block' : 'none' }}
+        style={{ position: 'relative', background: '#fff', padding: '24px 48px 38px', minHeight: docMinHeight, display: view === 'doc' ? 'block' : 'none' }}
       >
         <ExerciseHeading index={index} />
         {fromAI ? (

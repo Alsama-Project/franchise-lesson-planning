@@ -52,6 +52,7 @@ export function MasterFrame({
 
   return (
     <div
+      className="ws-page"
       style={{
         width: 794,
         minHeight: 1123,
@@ -88,7 +89,7 @@ export function MasterFrame({
           <LockIcon /> Master
         </span>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
             <span style={{ fontFamily: 'var(--font-sacramento), cursive', fontSize: 44, lineHeight: 0.62, color: '#B62A5C' }}>
               Alsama
             </span>
@@ -97,8 +98,13 @@ export function MasterFrame({
               Student worksheet
             </span>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 19, fontWeight: 700, color: '#2A2422' }}>{titleLine(ctx)}</div>
+          {/* Title is constrained to its column so a long subject·year·theme wraps
+              cleanly instead of running under the Master badge or off the page edge.
+              paddingTop keeps the first wrapped line clear of the badge above it. */}
+          <div style={{ textAlign: 'right', maxWidth: 340, minWidth: 0, paddingTop: 6 }}>
+            <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.2, color: '#2A2422', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+              {titleLine(ctx)}
+            </div>
             {ctx.centreName ? (
               <div style={{ fontSize: 12.5, color: '#93826B', marginTop: 2 }}>{ctx.centreName}</div>
             ) : null}

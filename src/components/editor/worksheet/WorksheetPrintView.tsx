@@ -96,20 +96,23 @@ export function WorksheetPrintView({
 }) {
   return (
     <MasterFrame ctx={ctx}>
-      {ws.blocks.map((block, i) =>
-        block.kind === 'free' ? (
-          <PrintFreeBlock key={block.id} block={block} index={i} />
-        ) : (
-          <ResourceBlock
-            key={block.id}
-            resource={resolved[block.resourceId] ?? null}
-            uploaderName={block.uploaderName}
-            index={i}
-            onDelete={() => {}}
-            chromeless
-          />
-        ),
-      )}
+      {ws.blocks.map((block, i) => (
+        // ws-print-block carries break-inside: avoid so a single exercise isn't
+        // split across an A4 page boundary mid-line when it prints.
+        <div key={block.id} className="ws-print-block">
+          {block.kind === 'free' ? (
+            <PrintFreeBlock block={block} index={i} />
+          ) : (
+            <ResourceBlock
+              resource={resolved[block.resourceId] ?? null}
+              uploaderName={block.uploaderName}
+              index={i}
+              onDelete={() => {}}
+              chromeless
+            />
+          )}
+        </div>
+      ))}
     </MasterFrame>
   );
 }

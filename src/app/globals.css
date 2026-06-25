@@ -232,6 +232,17 @@
   .ws-print-scale {
     transform: none !important;
   }
+  /* The A4 frame keeps its one-sheet minimum but must let overflowing content
+   * flow onto additional sheets — overflow:hidden would clip it to page 1. */
+  .ws-page {
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+  /* Keep an exercise on a single sheet rather than splitting it mid-line. */
+  .ws-print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .ws-no-print {
     display: none !important;
   }

@@ -21,6 +21,7 @@ import {
   type NodeViewProps,
 } from '@tiptap/react';
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { ImageCropModal } from './ImageCropModal';
 
 export type ImageAlign = 'left' | 'center' | 'right';
 
@@ -65,6 +66,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
   const imgRef = useRef<HTMLImageElement>(null);
   const latestWidth = useRef<number | null>(null);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
 
   const displayWidth = liveWidth ?? width ?? null;
 
@@ -175,6 +177,17 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
                 <AlignIcon align={a} />
               </button>
             ))}
+            {/* Crop — re-uploads a real cropped image and swaps this node's src. */}
+            <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
+            <button
+              type="button"
+              title="Crop image"
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={() => setCropOpen(true)}
+              style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: '#5C544E' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" /></svg>
+            </button>
             {onFloat ? (
               <>
                 <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
@@ -202,6 +215,23 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
           <ResizeHandle corner="left" onPointerDown={(ev) => startResize(ev, 'left')} />
           <ResizeHandle corner="right" onPointerDown={(ev) => startResize(ev, 'right')} />
         </>
+      ) : null}
+
+      {cropOpen ? (
+        <ImageCropModal
+          src={src}
+          alt={alt}
+          onCancel={() => setCropOpen(false)}
+          onCropped={(url) => {
+            // Swap to the freshly cropped upload. Keep `width`/`align`: the on-page
+            // frame stays put and height re-derives from the new aspect, so the
+            // crop renders identically in the editor and the print/PDF export. The
+            // pre-crop file is intentionally left in storage (orphan cleanup is
+            // out of scope for this slice).
+            updateAttributes({ src: url });
+            setCropOpen(false);
+          }}
+        />
       ) : null}
     </NodeViewWrapper>
   );

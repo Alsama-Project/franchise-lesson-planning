@@ -42,7 +42,15 @@ const NOT_STARTED_CAP = 8;
  * distance keeps a plain click navigating to the plan. "Not started" is excluded
  * from drag (no plan row → no status) and instead opens the scope chooser.
  */
-export function StatusView({ years, ownerId }: { years: BoardYear[]; ownerId: string | null }) {
+export function StatusView({
+  years,
+  ownerId,
+  subjectName,
+}: {
+  years: BoardYear[];
+  ownerId: string | null;
+  subjectName: string;
+}) {
   const cards = planCardsForYears(years, ownerId);
   const empties = emptySlotCards(years);
 
@@ -96,9 +104,14 @@ export function StatusView({ years, ownerId }: { years: BoardYear[]; ownerId: st
         <div className="grid grid-cols-5 items-start gap-[14px]">
           {STATUS_COLUMN_ORDER.map((status) =>
             status === 'not_started' ? (
-              <NotStartedColumn key={status} cards={empties} />
+              <NotStartedColumn key={status} cards={empties} subjectName={subjectName} />
             ) : (
-              <StatusColumn key={status} status={status} cards={byStatus[status]} />
+              <StatusColumn
+                key={status}
+                status={status}
+                cards={byStatus[status]}
+                subjectName={subjectName}
+              />
             ),
           )}
         </div>
@@ -134,7 +147,7 @@ function ColumnHeader({ status, count }: { status: SlotStatus; count: number }) 
 }
 
 /** The "Not started" column: capped, never a drop target, cards never draggable. */
-function NotStartedColumn({ cards }: { cards: EmptySlotCard[] }) {
+function NotStartedColumn({ cards, subjectName }: { cards: EmptySlotCard[]; subjectName: string }) {
   const visible = cards.slice(0, NOT_STARTED_CAP);
   const hidden = cards.length - visible.length;
 
@@ -143,7 +156,7 @@ function NotStartedColumn({ cards }: { cards: EmptySlotCard[] }) {
       <ColumnHeader status="not_started" count={cards.length} />
       <div className="flex flex-col gap-2">
         {visible.map((card) => (
-          <NotStartedLessonCard key={card.key} card={card} />
+          <NotStartedLessonCard key={card.key} card={card} subjectName={subjectName} />
         ))}
         {hidden > 0 ? (
           <div className="py-[6px] text-center text-[11.5px] text-text-faint">+ {hidden} more</div>
@@ -157,7 +170,15 @@ function NotStartedColumn({ cards }: { cards: EmptySlotCard[] }) {
 }
 
 /** A real-status column: a drop target whose cards are draggable. */
-function StatusColumn({ status, cards }: { status: PlanStatus; cards: PlanCard[] }) {
+function StatusColumn({
+  status,
+  cards,
+  subjectName,
+}: {
+  status: PlanStatus;
+  cards: PlanCard[];
+  subjectName: string;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
   return (
@@ -171,7 +192,7 @@ function StatusColumn({ status, cards }: { status: PlanStatus; cards: PlanCard[]
         )}
       >
         {cards.map((card) => (
-          <DraggableStatusCard key={card.key} card={card} />
+          <DraggableStatusCard key={card.key} card={card} subjectName={subjectName} />
         ))}
         {cards.length === 0 ? (
           <div className="py-[8px] text-center text-[11.5px] text-text-faint">None</div>
@@ -182,7 +203,7 @@ function StatusColumn({ status, cards }: { status: PlanStatus; cards: PlanCard[]
 }
 
 /** A status card wrapped as a @dnd-kit draggable, still a click-through link. */
-function DraggableStatusCard({ card }: { card: PlanCard }) {
+function DraggableStatusCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
   const { listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: card.planId,
     data: { card },
@@ -200,7 +221,7 @@ function DraggableStatusCard({ card }: { card: PlanCard }) {
       {...listeners}
       className={cn('cursor-grab', isDragging && 'cursor-grabbing opacity-80')}
     >
-      <StatusLessonCard card={card} />
+      <StatusLessonCard card={card} subjectName={subjectName} />
     </div>
   );
 }

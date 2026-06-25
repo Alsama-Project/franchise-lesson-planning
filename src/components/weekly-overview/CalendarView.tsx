@@ -23,7 +23,7 @@ import { cn } from '@/lib/cn';
 import { CalendarLessonCard } from '@/components/weekly-overview/LessonCard';
 import { useScopeChooser, type AddYearOption } from '@/components/weekly-overview/ScopeChooser';
 import type { PlanCard } from '@/components/weekly-overview/cards';
-import { WEEKDAYS, WEEKDAY_LABELS, todayISO, weekdayOf } from '@/lib/week';
+import { WEEKDAYS, addDays, formatWeekdayDate, todayISO } from '@/lib/week';
 import { reorderPlans, type PlanPlacement } from '@/lib/actions/lesson-plan';
 import type { BoardPlan, BoardYear } from '@/types/weekly-overview';
 
@@ -48,9 +48,14 @@ const COLUMNS = WEEKDAYS.map((key, i) => ({ key, weekday: i + 1 }));
 export function CalendarView({
   years,
   ownerId,
+  subjectName,
+  mondayDate,
 }: {
   years: BoardYear[];
   ownerId: string | null;
+  subjectName: string;
+  /** The shown week's real Monday (`YYYY-MM-DD`) from `term_week`, or null when no row. */
+  mondayDate: string | null;
 }) {
   const { openAdd } = useScopeChooser();
   const [byDay, setByDay] = useState<ByDay>(() => buildByDay(years));
@@ -66,7 +71,6 @@ export function CalendarView({
     setByDay(buildByDay(years));
   }
 
-  const today = weekdayOf(todayISO());
   const dragEnabled = ownerId === null;
 
   const sensors = useSensors(
@@ -187,16 +191,19 @@ export function CalendarView({
               <DayColumn
                 key={key}
                 weekday={weekday}
-                isToday={key === today}
+                mondayDate={mondayDate}
                 cards={byDay[weekday]}
                 ownerId={ownerId}
+                subjectName={subjectName}
                 dragEnabled={dragEnabled}
                 onAddLesson={() => openAdd({ weekday, years: addOptionsFor(weekday) })}
               />
             ))}
           </div>
           <DragOverlay>
-            {activePlan ? <CalendarLessonCard card={toPlanCard(activePlan)} /> : null}
+            {activePlan ? (
+              <CalendarLessonCard card={toPlanCard(activePlan)} subjectName={subjectName} />
+            ) : null}
           </DragOverlay>
         </DndContext>
       </div>
@@ -275,21 +282,29 @@ function toPlanCard(plan: BoardPlan): PlanCard {
 /** A weekday column: header, the day's card stack (all years), and "+ Add lesson". */
 function DayColumn({
   weekday,
-  isToday,
+  mondayDate,
   cards,
   ownerId,
+  subjectName,
   dragEnabled,
   onAddLesson,
 }: {
   weekday: number;
-  isToday: boolean;
+  mondayDate: string | null;
   cards: BoardPlan[];
   ownerId: string | null;
+  subjectName: string;
   dragEnabled: boolean;
   onAddLesson: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${weekday}` });
-  const label = WEEKDAY_LABELS[WEEKDAYS[weekday - 1]];
+
+  // §4 — the column's real date is the week's Monday + its weekday offset (Mon+0
+  // … Fri+4), but ONLY when `term_week` gave us a Monday. With no row the header is
+  // just "Period {p}" (no fabricated date), and "Today" can't be proven either.
+  const colDate = mondayDate ? addDays(mondayDate, weekday - 1) : null;
+  const isToday = colDate !== null && colDate === todayISO();
+  const label = colDate ? `Period ${weekday} · ${formatWeekdayDate(colDate)}` : `Period ${weekday}`;
 
   // The owner filter only hides cards (it never renumbers); `period` is already the
   // per-year ordinal from the normalised stack, so numbers stay stable.
@@ -316,7 +331,12 @@ function DayColumn({
       >
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {visible.map((plan) => (
-            <SortableCard key={plan.id} plan={plan} dragEnabled={dragEnabled} />
+            <SortableCard
+              key={plan.id}
+              plan={plan}
+              subjectName={subjectName}
+              dragEnabled={dragEnabled}
+            />
           ))}
         </SortableContext>
 
@@ -340,7 +360,15 @@ function DayColumn({
  * only under "Everyone"); a shared centre/org card stays put but still sorts into
  * the column by its stored placement.
  */
-function SortableCard({ plan, dragEnabled }: { plan: BoardPlan; dragEnabled: boolean }) {
+function SortableCard({
+  plan,
+  subjectName,
+  dragEnabled,
+}: {
+  plan: BoardPlan;
+  subjectName: string;
+  dragEnabled: boolean;
+}) {
   const disabled = !dragEnabled || !plan.canEdit;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: plan.id,
@@ -356,7 +384,7 @@ function SortableCard({ plan, dragEnabled }: { plan: BoardPlan; dragEnabled: boo
   return (
     <div ref={setNodeRef} style={style}>
       <div {...attributes} {...listeners} className={disabled ? undefined : 'cursor-grab'}>
-        <CalendarLessonCard card={toPlanCard(plan)} />
+        <CalendarLessonCard card={toPlanCard(plan)} subjectName={subjectName} />
       </div>
     </div>
   );

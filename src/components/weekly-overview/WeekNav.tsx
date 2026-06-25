@@ -10,16 +10,23 @@ function href(coord: BoardCoordinate, view: View): string {
 
 /**
  * Curriculum-week navigation: prev / next arrows step through the scheme of work
- * by (month, week) — NOT by calendar date. The label shows the curriculum
- * coordinate (e.g. "March · Week 2"). An arrow is disabled at the start/end of the
- * synced curriculum. The selected view is carried along so stepping weeks keeps it.
+ * by (month, week) — NOT by calendar date. The label shows the 1-based teaching
+ * "Week {n}" (e.g. "Week 36"), with "· current" appended only when today falls in
+ * the shown week (proven by a `term_week` row; never shown while that table is
+ * empty). The curriculum coordinate ("March · Week 2") rides along as the tooltip.
+ * An arrow is disabled at the start/end of the synced curriculum. The selected
+ * view is carried along so stepping weeks keeps it.
  */
 export function WeekNav({
+  weekNo,
+  isCurrent,
   coordinateLabel,
   prev,
   next,
   view,
 }: {
+  weekNo: number;
+  isCurrent: boolean;
   coordinateLabel: string;
   prev: BoardCoordinate | null;
   next: BoardCoordinate | null;
@@ -28,8 +35,14 @@ export function WeekNav({
   return (
     <div className="flex items-center gap-[6px]">
       <NavButton href={prev ? href(prev, view) : null} label="Previous week" dir="left" />
-      <span className="min-w-[150px] text-center text-[14px] font-semibold">
-        {coordinateLabel}
+      <span
+        className="min-w-[150px] text-center text-[14px] font-semibold"
+        title={coordinateLabel}
+      >
+        {weekNo > 0 ? `Week ${weekNo}` : '—'}
+        {isCurrent ? (
+          <span className="ml-[5px] font-normal text-neutral-500">· current</span>
+        ) : null}
       </span>
       <NavButton href={next ? href(next, view) : null} label="Next week" dir="right" />
     </div>

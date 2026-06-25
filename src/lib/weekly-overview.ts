@@ -11,6 +11,7 @@
 // key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
+import { resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav, getCurriculumWeekCells } from '@/lib/curriculumUtils';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { PlanScope, PlanStatus } from '@/types/lesson';
@@ -88,13 +89,17 @@ interface MembershipRow {
 }
 
 /** The empty board shown when there's no session or no teaching assignment. */
-function emptyBoard(teacherName: string, subjectName = ''): BoardData {
+function emptyBoard(teacherName: string, subjectName = '', subjectCode = ''): BoardData {
   return {
     teacherName,
     context: null,
     subjectName,
+    subjectCode,
     coordinate: { month: '', week: 1 },
     coordinateLabel: '—',
+    weekNo: 0,
+    mondayDate: null,
+    isCurrent: false,
     prev: null,
     next: null,
     years: [],
@@ -260,7 +265,7 @@ export async function getBoardData(input: {
   // Nothing synced for this subject/years yet → an empty-but-valid board.
   if (coords.length === 0) {
     return {
-      ...emptyBoard(teacherName, subjectName),
+      ...emptyBoard(teacherName, subjectName, subjectCode),
       context,
       hasClasses: true,
       years: years.map((year) => ({ year, plans: [], lessons: [] })),
@@ -274,6 +279,13 @@ export async function getBoardData(input: {
   const coordinate = coords[index];
   const prev = index > 0 ? coords[index - 1] : null;
   const next = index < coords.length - 1 ? coords[index + 1] : null;
+
+  // The 1-based teaching-week number = the coordinate's position in the ordered
+  // scheme of work (Month 1 Week 1 = 1, …). This needs no dates — it's the key
+  // into `term_week` for the real Monday + "current" flag (see resolveTermWeek,
+  // the single, temporary point of date resolution).
+  const weekNo = index + 1;
+  const { mondayDate, isCurrent } = await resolveTermWeek(supabase, weekNo);
 
   // The curriculum lessons (P1..P5) for each taught year at the selected
   // coordinate — the "+ Add lesson" pool and the join target for the plans.
@@ -371,8 +383,12 @@ export async function getBoardData(input: {
     teacherName,
     context,
     subjectName,
+    subjectCode,
     coordinate,
     coordinateLabel: `${coordinate.month} · Week ${coordinate.week}`,
+    weekNo,
+    mondayDate,
+    isCurrent,
     prev,
     next,
     years: yearBands,

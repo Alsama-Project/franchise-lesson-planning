@@ -22,6 +22,14 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+// Sun-first so a UTC `getUTCDay()` (0 = Sun) indexes straight in.
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 /** Parse a `YYYY-MM-DD` string to a UTC-midnight Date, or null if malformed. */
 function parseISO(iso: string): Date | null {
   if (!ISO_DATE.test(iso)) return null;
@@ -124,6 +132,20 @@ export function formatLongDate(iso: string): string {
   ];
   const weekday = weekdayNames[date.getUTCDay()];
   return `${weekday} ${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/** "Mon, Jun 15" — weekday + abbreviated month + day, no year. For day-column headers. */
+export function formatWeekdayDate(iso: string): string {
+  const date = parseISO(iso);
+  if (!date) return iso;
+  return `${WEEKDAYS_SHORT[date.getUTCDay()]}, ${MONTHS_SHORT[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+/** "Jun 15, 2026" — abbreviated month + day + year. For the "Week of …" label. */
+export function formatMonthDayYear(iso: string): string {
+  const date = parseISO(iso);
+  if (!date) return iso;
+  return `${MONTHS_SHORT[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
 }
 
 /** Which weekday a `YYYY-MM-DD` date falls on, or null for weekends. */

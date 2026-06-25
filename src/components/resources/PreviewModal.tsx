@@ -9,6 +9,7 @@
 import { useState, useTransition } from 'react';
 import type { Folder, ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
+import { previewKind, previewSrc } from '@/components/resources/preview';
 import { DownloadIcon, EyeIcon, LinkIcon, PlusIcon, XIcon, EditIcon } from '@/components/resources/icons';
 
 interface PreviewModalProps {
@@ -44,6 +45,13 @@ export function PreviewModal({
   onEdit,
 }: PreviewModalProps) {
   const v = resourceView(resource);
+  // Inline preview in the hero: the full image, or the PDF rendered natively in
+  // an iframe; falls back to the flat coloured hero on a non-previewable format
+  // or a load error.
+  const kind = previewKind(resource);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const showPreview = kind !== null && !previewFailed;
+  const src = previewSrc(resource);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -77,13 +85,35 @@ export function PreviewModal({
         aria-label={resource.title}
         className="max-h-[88vh] w-[540px] max-w-full overflow-auto rounded-[18px] bg-surface shadow-card"
       >
-        {/* Hero */}
+        {/* Hero — a real inline preview when available, otherwise the flat
+            format-coloured banner. */}
         <div
-          className="relative flex h-[150px] items-center justify-center"
-          style={{ background: v.fmtBg }}
+          className={`relative flex items-center justify-center ${showPreview ? 'min-h-[150px]' : 'h-[150px]'}`}
+          style={{ background: showPreview ? '#2A2422' : v.fmtBg }}
         >
+          {showPreview && kind === 'image' ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={src}
+              alt={resource.title}
+              className="max-h-[60vh] w-full object-contain"
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : showPreview && kind === 'pdf' ? (
+            <iframe
+              src={src}
+              title={`Preview of ${resource.title}`}
+              className="h-[60vh] w-full border-0 bg-white"
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : (
+            <span className="text-[20px] font-bold tracking-[0.04em]" style={{ color: v.fmtColor }}>
+              {v.formatShort}
+            </span>
+          )}
+
           {v.isNew ? (
-            <span className="absolute left-[14px] top-[14px] rounded-badge bg-pink px-[9px] py-[3px] text-[10px] font-bold tracking-[0.04em] text-white">
+            <span className="absolute left-[14px] top-[14px] z-10 rounded-badge bg-pink px-[9px] py-[3px] text-[10px] font-bold tracking-[0.04em] text-white">
               NEW
             </span>
           ) : null}
@@ -91,13 +121,10 @@ export function PreviewModal({
             type="button"
             onClick={onClose}
             aria-label="Close preview"
-            className="absolute right-3 top-3 inline-flex size-[30px] items-center justify-center rounded-[8px] bg-white/85 text-neutral-800"
+            className="absolute right-3 top-3 z-10 inline-flex size-[30px] items-center justify-center rounded-[8px] bg-white/85 text-neutral-800"
           >
             <XIcon size={15} />
           </button>
-          <span className="text-[20px] font-bold tracking-[0.04em]" style={{ color: v.fmtColor }}>
-            {v.formatShort}
-          </span>
         </div>
 
         <div className="p-[22px] pt-5">

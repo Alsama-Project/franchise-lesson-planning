@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 
 export const WIZARD_STEPS: { label: string }[] = [
-  { label: 'Objective' },
+  { label: 'SMARTT objective' },
   { label: 'Teach it' },
   { label: 'Practise' },
   { label: 'Link it' },
@@ -72,7 +72,7 @@ export function Stepper({
                 </span>
                 <span
                   className={
-                    'hidden w-[68px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] sm:block ' +
+                    'hidden w-[116px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] sm:block ' +
                     (isCur ? 'font-semibold text-ink' : isDone ? 'font-medium text-neutral-800' : 'font-medium text-neutral-400')
                   }
                 >

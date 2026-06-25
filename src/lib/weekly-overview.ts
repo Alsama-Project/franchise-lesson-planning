@@ -11,6 +11,7 @@
 // key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
+import { resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav, getCurriculumWeekCells } from '@/lib/curriculumUtils';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { PlanScope, PlanStatus } from '@/types/lesson';
@@ -96,6 +97,9 @@ function emptyBoard(teacherName: string, subjectName = ''): BoardData {
     subjectName,
     coordinate: { month: '', week: 1 },
     coordinateLabel: '—',
+    weekNo: 0,
+    mondayDate: null,
+    isCurrent: false,
     prev: null,
     next: null,
     years: [],
@@ -276,6 +280,13 @@ export async function getBoardData(input: {
   const prev = index > 0 ? coords[index - 1] : null;
   const next = index < coords.length - 1 ? coords[index + 1] : null;
 
+  // The 1-based teaching-week number = the coordinate's position in the ordered
+  // scheme of work (Month 1 Week 1 = 1, …). This needs no dates — it's the key
+  // into `term_week` for the real Monday + "current" flag (see resolveTermWeek,
+  // the single, temporary point of date resolution).
+  const weekNo = index + 1;
+  const { mondayDate, isCurrent } = await resolveTermWeek(supabase, weekNo);
+
   // The curriculum lessons (P1..P5) for each taught year at the selected
   // coordinate — the "+ Add lesson" pool and the join target for the plans.
   const cellsByYear = await Promise.all(
@@ -374,6 +385,9 @@ export async function getBoardData(input: {
     subjectName,
     coordinate,
     coordinateLabel: `${coordinate.month} · Week ${coordinate.week}`,
+    weekNo,
+    mondayDate,
+    isCurrent,
     prev,
     next,
     years: yearBands,

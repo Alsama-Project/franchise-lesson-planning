@@ -7,6 +7,7 @@ import { WeekNav } from '@/components/weekly-overview/WeekNav';
 import { ViewToggle } from '@/components/weekly-overview/ViewToggle';
 import { PeopleFilter, EVERYONE } from '@/components/weekly-overview/PeopleFilter';
 import { ScopeChooserProvider } from '@/components/weekly-overview/ScopeChooser';
+import { formatMonthDayYear } from '@/lib/week';
 import type { BoardData } from '@/types/weekly-overview';
 
 type View = 'calendar' | 'status';
@@ -67,11 +68,27 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
           <div className="flex flex-wrap items-center gap-[14px]">
             <PeopleFilter owners={data.owners} value={owner} onChange={setOwner} />
             <WeekNav
+              weekNo={data.weekNo}
+              isCurrent={data.isCurrent}
               coordinateLabel={data.coordinateLabel}
               prev={data.prev}
               next={data.next}
               view={view}
             />
+            {/* §3 — the shown week's real Monday from `term_week`, or a neutral
+                placeholder while the table is empty (no fabricated dates). */}
+            <span className="text-[13px] text-neutral-600">
+              {data.mondayDate ? (
+                <>
+                  Week of{' '}
+                  <b className="font-semibold text-neutral-800">
+                    {formatMonthDayYear(data.mondayDate)}
+                  </b>
+                </>
+              ) : (
+                'Week of —'
+              )}
+            </span>
             <ViewToggle view={view} onChange={changeView} />
           </div>
         </div>
@@ -82,9 +99,14 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
         ) : data.years.length === 0 || data.coordinate.month === '' ? (
           <EmptyCurriculum subjectName={data.subjectName} />
         ) : view === 'status' ? (
-          <StatusView years={data.years} ownerId={ownerId} />
+          <StatusView years={data.years} ownerId={ownerId} subjectName={data.subjectName} />
         ) : (
-          <CalendarView years={data.years} ownerId={ownerId} />
+          <CalendarView
+            years={data.years}
+            ownerId={ownerId}
+            subjectName={data.subjectName}
+            mondayDate={data.mondayDate}
+          />
         )}
       </div>
     </ScopeChooserProvider>

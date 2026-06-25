@@ -15,15 +15,15 @@
 import { CardShell } from '@/components/weekly-overview/CardShell';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
 import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
-import { periodLabel, type EmptySlotCard, type PlanCard } from '@/components/weekly-overview/cards';
+import { cardTitle, periodLabel, type EmptySlotCard, type PlanCard } from '@/components/weekly-overview/cards';
 import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 
 /** Calendar-view planned card — restored CalendarCard (status badge + scope chip). */
-export function CalendarLessonCard({ card }: { card: PlanCard }) {
+export function CalendarLessonCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit}>
       <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
+      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
       <div className="flex items-center justify-between gap-2">
         <StatusChip status={card.status} />
         {card.owner ? <OwnerAvatar owner={card.owner} /> : null}
@@ -33,13 +33,13 @@ export function CalendarLessonCard({ card }: { card: PlanCard }) {
 }
 
 /** Status-view planned card — restored StatusCard. */
-export function StatusLessonCard({ card }: { card: PlanCard }) {
+export function StatusLessonCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit}>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-          <div className="mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
+          <div className="mt-[3px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
         </div>
         {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
       </div>
@@ -52,7 +52,7 @@ export function StatusLessonCard({ card }: { card: PlanCard }) {
  * the whole card (and its teal "Plan" chip) opens the scope chooser for this
  * curriculum lesson, defaulting it onto its natural day (the curriculum period).
  */
-export function NotStartedLessonCard({ card }: { card: EmptySlotCard }) {
+export function NotStartedLessonCard({ card, subjectName }: { card: EmptySlotCard; subjectName: string }) {
   const { openChooser } = useScopeChooser();
   const open = () =>
     openChooser({
@@ -70,7 +70,7 @@ export function NotStartedLessonCard({ card }: { card: EmptySlotCard }) {
     >
       <div className="min-w-0">
         <div className="text-[11px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-        <div className="mt-[2px] text-[14px] font-semibold">Year {card.year}</div>
+        <div className="mt-[2px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
       </div>
       <span className="inline-flex flex-shrink-0 items-center gap-[4px] rounded-badge border border-teal-tint-border bg-teal-tint px-[8px] py-[4px] text-[10.5px] font-bold text-teal">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

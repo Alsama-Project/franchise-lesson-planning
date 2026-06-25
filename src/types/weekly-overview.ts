@@ -109,8 +109,21 @@ export interface BoardData {
   subjectName: string;
   /** The selected curriculum coordinate. */
   coordinate: BoardCoordinate;
-  /** Human label for the coordinate, e.g. "March · Week 2". */
+  /** Human label for the coordinate, e.g. "March · Week 2". Kept as the week label's tooltip. */
   coordinateLabel: string;
+  /**
+   * The curriculum teaching-week number (1-based: Month 1 Week 1 = 1, …≈36),
+   * derived by counting curriculum coordinates in order. Drives the "Week {n}"
+   * label and is the `term_week` lookup key. `0` when no curriculum is synced.
+   */
+  weekNo: number;
+  /**
+   * The shown week's real Monday (`YYYY-MM-DD`) from `term_week.starts_on`, or
+   * `null` when no mapping row exists (the table is empty for now). Never fabricated.
+   */
+  mondayDate: string | null;
+  /** Whether today falls in the shown week — only ever true when a `term_week` row proves it. */
+  isCurrent: boolean;
   /** The previous coordinate (or null at the start of the scheme of work). */
   prev: BoardCoordinate | null;
   /** The next coordinate (or null at the end of the scheme of work). */

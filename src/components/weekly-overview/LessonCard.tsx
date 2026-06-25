@@ -7,23 +7,24 @@
 //   • the Status variant:   time line · class line · scope chip, owner on the right
 //   • the "Not started" variant: faint line · class line + teal "Plan" chip
 //
-// The ONLY changes from the old card are the data bindings the new model forces —
-// class line → "Year N" (never an A/B group label); time line → the day-ordinal
-// "Period #" (re-derived from the day's stack) — and the small scope chip. Nothing
-// is restyled.
+// The two text lines, top to bottom: the subtitle line carries the board SUBJECT
+// (e.g. "English") in the muted/subtitle treatment, and the title line carries
+// "Year N" (never an A/B group label) in bold. The period is conveyed by the
+// day column + stack position, not repeated on the card. The small scope chip
+// stays on planned cards. Nothing else is restyled.
 
 import { CardShell } from '@/components/weekly-overview/CardShell';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
 import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
-import { cardTitle, periodLabel, type EmptySlotCard, type PlanCard } from '@/components/weekly-overview/cards';
+import type { EmptySlotCard, PlanCard } from '@/components/weekly-overview/cards';
 import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 
 /** Calendar-view planned card — restored CalendarCard (status badge + scope chip). */
 export function CalendarLessonCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit}>
-      <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
+      <div className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
+      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
       <div className="flex items-center justify-between gap-2">
         <StatusChip status={card.status} />
         {card.owner ? <OwnerAvatar owner={card.owner} /> : null}
@@ -38,8 +39,8 @@ export function StatusLessonCard({ card, subjectName }: { card: PlanCard; subjec
     <CardShell planId={card.planId} canEdit={card.canEdit}>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-          <div className="mt-[3px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
+          <div className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
+          <div className="mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
         </div>
         {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
       </div>
@@ -69,8 +70,8 @@ export function NotStartedLessonCard({ card, subjectName }: { card: EmptySlotCar
       className="flex items-center justify-between gap-2 rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px] text-left transition-colors hover:bg-surface-cream"
     >
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
-        <div className="mt-[2px] text-[14px] font-semibold">{cardTitle(subjectName, card.year)}</div>
+        <div className="text-[11px] font-semibold text-text-faint">{subjectName}</div>
+        <div className="mt-[2px] text-[14px] font-semibold">Year {card.year}</div>
       </div>
       <span className="inline-flex flex-shrink-0 items-center gap-[4px] rounded-badge border border-teal-tint-border bg-teal-tint px-[8px] py-[4px] text-[10.5px] font-bold text-teal">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

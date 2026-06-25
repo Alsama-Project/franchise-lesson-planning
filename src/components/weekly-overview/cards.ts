@@ -38,16 +38,6 @@ export interface EmptySlotCard {
   focusArea: string;
 }
 
-/** The "time" line shown on a card — the day-ordinal position. */
-export function periodLabel(period: number): string {
-  return `Period ${period}`;
-}
-
-/** The card's title line — "{Subject}, Year N" (e.g. "English, Year 2"), or "Year N" when no subject. */
-export function cardTitle(subjectName: string, year: number): string {
-  return subjectName ? `${subjectName}, Year ${year}` : `Year ${year}`;
-}
-
 /** Clamp a curriculum period to a Mon–Fri (1..5) column, defaulting to Monday. */
 function defaultWeekday(period: number): number {
   if (!Number.isFinite(period)) return 1;

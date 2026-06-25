@@ -1,26 +1,30 @@
 'use client';
 
-// The inline scope chooser behind the board's two creation affordances:
-//   • openChooser  — a "Not started" card or a "+ make your own" link: the lesson
-//     is fixed, the teacher only picks a scope.
-//   • openAdd      — a day column's "+ Add lesson": the teacher picks one of the
-//     week's curriculum lessons for that year, then a scope.
-// Both create a correctly-scoped in_progress plan placed on the chosen day
-// (`weekday` + the next `period` in that day) and route into the 5-step wizard.
+// The board's two creation affordances, behind a shared provider:
+//   • openChooser  — a "Not started" card: the curriculum lesson (and its year) is
+//     already fixed, so creation has nothing left to ask — it confirms and goes.
+//   • openAdd      — a day column's "+ Add lesson": the teacher picks a year group,
+//     then one of that year's curriculum lessons for the week.
+//
+// Creation no longer asks "who for" (the audience/scope step) — whose lessons you
+// see is the weekly board's "Everyone / me" view filter, not a creation concern.
+// Every new plan defaults to the centre year-group scope via the existing scope
+// mechanism (createScopedPlan with scope: 'centre'); the teacher drops straight
+// into the 5-step wizard.
 
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
-import type { BoardClass, BoardLesson } from '@/types/weekly-overview';
-import type { PlanScope } from '@/types/lesson';
+import type { BoardLesson } from '@/types/weekly-overview';
 
 /** A fixed curriculum lesson to plan, with the day placement to write. */
 export interface ScopeTarget {
@@ -33,19 +37,25 @@ export interface ScopeTarget {
   period: number;
 }
 
-/** A day column the teacher is adding a lesson to — lesson chosen in the dialog. */
-export interface AddTarget {
+/** One year group offered by the "+ Add lesson" picker, with its placeable pool. */
+export interface AddYearOption {
   year: number;
-  /** The Mon–Fri column (1..5) the "+ Add lesson" was pressed on. */
-  weekday: number;
-  /** The next day-ordinal position in that column. */
+  /** The next day-ordinal for this year in the chosen column. */
   period: number;
   /** The week's curriculum lessons for this year not already on the board. */
   lessons: BoardLesson[];
 }
 
+/** A day column the teacher is adding a lesson to — year + lesson chosen in-dialog. */
+export interface AddTarget {
+  /** The Mon–Fri column (1..5) the "+ Add lesson" was pressed on. */
+  weekday: number;
+  /** The year groups the teacher teaches, each with its placeable lessons. */
+  years: AddYearOption[];
+}
+
 interface ScopeChooserApi {
-  /** Open the scope chooser for a fixed curriculum lesson. */
+  /** Open the confirm step for a fixed curriculum lesson. */
   openChooser: (target: ScopeTarget) => void;
   /** Open the "+ Add lesson" picker for a day column. */
   openAdd: (target: AddTarget) => void;
@@ -61,11 +71,9 @@ export function useScopeChooser(): ScopeChooserApi {
 
 export function ScopeChooserProvider({
   subjectName,
-  myClassesByYear,
   children,
 }: {
   subjectName: string;
-  myClassesByYear: Record<number, BoardClass[]>;
   children: ReactNode;
 }) {
   const [target, setTarget] = useState<ScopeTarget | null>(null);
@@ -84,21 +92,9 @@ export function ScopeChooserProvider({
   return (
     <ScopeChooserContext.Provider value={{ openChooser, openAdd }}>
       {children}
-      {target ? (
-        <ScopeChooserDialog
-          target={target}
-          subjectName={subjectName}
-          classes={myClassesByYear[target.year] ?? []}
-          onClose={closeChooser}
-        />
-      ) : null}
+      {target ? <ConfirmLessonDialog target={target} onClose={closeChooser} /> : null}
       {addTarget ? (
-        <AddLessonDialog
-          target={addTarget}
-          subjectName={subjectName}
-          classes={myClassesByYear[addTarget.year] ?? []}
-          onClose={closeAdd}
-        />
+        <AddLessonDialog target={addTarget} subjectName={subjectName} onClose={closeAdd} />
       ) : null}
     </ScopeChooserContext.Provider>
   );
@@ -143,15 +139,17 @@ function Modal({
   );
 }
 
-/** The "Plan this lesson for…" footer with Cancel + the confirm button. */
+/** The shared footer: Cancel + the confirm button. */
 function DialogFooter({
   label,
   busy,
+  disabled,
   onCancel,
   onConfirm,
 }: {
   label: string;
   busy: boolean;
+  disabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -167,7 +165,7 @@ function DialogFooter({
       <button
         type="button"
         onClick={onConfirm}
-        disabled={busy}
+        disabled={busy || disabled}
         className="inline-flex items-center gap-[7px] rounded-[10px] bg-teal px-[17px] py-[10px] text-[13.5px] font-semibold text-white shadow-[0_4px_12px_-4px_rgba(31,122,108,0.5)] transition-colors hover:bg-teal-deep disabled:cursor-not-allowed disabled:opacity-40"
       >
         {busy ? 'Starting…' : label}
@@ -179,108 +177,23 @@ function DialogFooter({
   );
 }
 
-/** The reusable scope picker — My class (+ class sub-list) / centre / org. */
-function ScopePicker({
-  scope,
-  setScope,
-  classId,
-  setClassId,
-  classes,
-  year,
-  subjectName,
-}: {
-  scope: PlanScope;
-  setScope: (s: PlanScope) => void;
-  classId: string | null;
-  setClassId: (id: string) => void;
-  classes: BoardClass[];
-  year: number;
-  subjectName: string;
-}) {
-  const subjectLabel = subjectName || 'subject';
-  const hasClasses = classes.length > 0;
-  const multiClass = classes.length > 1;
-
-  return (
-    <div className="mt-[14px] flex flex-col gap-[8px] px-[20px]">
-      <ScopeOption
-        selected={scope === 'class'}
-        disabled={!hasClasses}
-        onSelect={() => setScope('class')}
-        title="My class"
-        detail={
-          !hasClasses
-            ? 'You teach no classes in this year yet.'
-            : multiClass
-              ? 'Pick which class below.'
-              : classes[0]?.label
-        }
-      />
-      {scope === 'class' && multiClass ? (
-        <div className="mb-[2px] ml-[30px] flex flex-col gap-[5px]">
-          {classes.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setClassId(c.id)}
-              className={cn(
-                'rounded-[9px] border px-[11px] py-[8px] text-left text-[13px] transition-colors',
-                c.id === classId
-                  ? 'border-teal bg-teal-tint font-semibold text-teal-deep'
-                  : 'border-border bg-surface hover:bg-surface-subtle',
-              )}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <ScopeOption
-        selected={scope === 'centre'}
-        onSelect={() => setScope('centre')}
-        title={`My centre's Year ${year} ${subjectLabel}`}
-        detail="Shared across your centre — the default."
-      />
-      <ScopeOption
-        selected={scope === 'org'}
-        onSelect={() => setScope('org')}
-        title="All centres"
-        detail="Shared across every centre."
-      />
-    </div>
-  );
-}
-
-function ScopeChooserDialog({
-  target,
-  subjectName,
-  classes,
-  onClose,
-}: {
-  target: ScopeTarget;
-  subjectName: string;
-  classes: BoardClass[];
-  onClose: () => void;
-}) {
+/**
+ * Confirm step for a fixed curriculum lesson ("Not started" card). The lesson and
+ * its year group are already known and the scope defaults to the centre, so there
+ * is nothing to ask — one confirm creates the centre-scoped plan and opens it.
+ */
+function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose: () => void }) {
   const router = useRouter();
-  const [scope, setScope] = useState<PlanScope>('centre');
-  const [classId, setClassId] = useState<string | null>(classes[0]?.id ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEscape(onClose);
 
   const start = async () => {
-    if (scope === 'class' && !classId) {
-      setError('Pick a class to plan for.');
-      return;
-    }
     setBusy(true);
     setError(null);
     const res = await createScopedPlan({
       lessonKey: target.lessonKey,
-      scope,
-      classId: scope === 'class' ? classId ?? undefined : undefined,
+      scope: 'centre',
       weekday: target.weekday,
       period: target.period,
     });
@@ -295,23 +208,14 @@ function ScopeChooserDialog({
   return (
     <Modal label="Plan this lesson" onClose={onClose}>
       <div className="px-[20px] pt-[18px]">
-        <h2 className="text-[17px] font-semibold tracking-[-0.01em]">Plan this lesson for…</h2>
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em]">Plan this lesson</h2>
+        <p className="mt-[5px] text-[12.5px] font-semibold text-text-muted">Year {target.year}</p>
         {target.dailyOutcome ? (
-          <p className="mt-[5px] line-clamp-2 text-[12.5px] leading-[1.45] text-text-muted">
+          <p className="mt-[6px] line-clamp-2 text-[12.5px] leading-[1.45] text-text-muted">
             {target.dailyOutcome}
           </p>
         ) : null}
       </div>
-
-      <ScopePicker
-        scope={scope}
-        setScope={setScope}
-        classId={classId}
-        setClassId={setClassId}
-        classes={classes}
-        year={target.year}
-        subjectName={subjectName}
-      />
 
       {error ? (
         <p className="mx-[20px] mt-[12px] rounded-[10px] bg-status-review-bg px-[12px] py-[8px] text-[12.5px] text-status-review">
@@ -324,44 +228,59 @@ function ScopeChooserDialog({
   );
 }
 
+/**
+ * The "+ Add lesson" picker: choose a year group (when the teacher teaches more
+ * than one), then a curriculum lesson for that year this week. The new plan is
+ * created at centre scope on the chosen day and opens in the wizard.
+ */
 function AddLessonDialog({
   target,
   subjectName,
-  classes,
   onClose,
 }: {
   target: AddTarget;
   subjectName: string;
-  classes: BoardClass[];
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [lessonKey, setLessonKey] = useState<string | null>(target.lessons[0]?.lessonKey ?? null);
-  const [scope, setScope] = useState<PlanScope>('centre');
-  const [classId, setClassId] = useState<string | null>(classes[0]?.id ?? null);
+  const years = target.years;
+  const [year, setYear] = useState<number>(years[0]?.year ?? 0);
+  const active = useMemo(
+    () => years.find((y) => y.year === year) ?? years[0] ?? null,
+    [years, year],
+  );
+  const [lessonKey, setLessonKey] = useState<string | null>(active?.lessons[0]?.lessonKey ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEscape(onClose);
 
-  const noLessons = target.lessons.length === 0;
+  // Keep the selected lesson valid when the year changes.
+  const lessons = active?.lessons ?? [];
+  const selectedValid = lessons.some((l) => l.lessonKey === lessonKey);
+  const effectiveLessonKey = selectedValid ? lessonKey : lessons[0]?.lessonKey ?? null;
+
+  const onPickYear = (next: number) => {
+    setYear(next);
+    const opt = years.find((y) => y.year === next);
+    setLessonKey(opt?.lessons[0]?.lessonKey ?? null);
+    setError(null);
+  };
+
+  const noLessons = lessons.length === 0;
+  const subjectLabel = subjectName || 'this subject';
 
   const add = async () => {
-    if (!lessonKey) {
+    if (!active || !effectiveLessonKey) {
       setError('Pick a lesson to plan.');
-      return;
-    }
-    if (scope === 'class' && !classId) {
-      setError('Pick a class to plan for.');
       return;
     }
     setBusy(true);
     setError(null);
     const res = await createScopedPlan({
-      lessonKey,
-      scope,
-      classId: scope === 'class' ? classId ?? undefined : undefined,
+      lessonKey: effectiveLessonKey,
+      scope: 'centre',
       weekday: target.weekday,
-      period: target.period,
+      period: active.period,
     });
     if (res.ok) {
       router.push(`/plan/${res.planId}`);
@@ -376,25 +295,56 @@ function AddLessonDialog({
       <div className="px-[20px] pt-[18px]">
         <h2 className="text-[17px] font-semibold tracking-[-0.01em]">Add a lesson</h2>
         <p className="mt-[5px] text-[12.5px] leading-[1.45] text-text-muted">
-          Year {target.year} · {WEEKDAY_LABELS[target.weekday] ?? 'this day'}
+          {WEEKDAY_LABELS[target.weekday] ?? 'This day'} · {subjectLabel}
         </p>
       </div>
 
+      {/* Year group — the only audience question; multiple years show a segmented
+          control, a single year is shown as a static label. */}
+      {years.length > 1 ? (
+        <div className="mt-[14px] px-[20px]">
+          <div className="mb-[7px] text-[11.5px] font-semibold uppercase tracking-[0.04em] text-text-faint">
+            Year group
+          </div>
+          <div className="flex flex-wrap gap-[7px]">
+            {years.map((y) => (
+              <button
+                key={y.year}
+                type="button"
+                onClick={() => onPickYear(y.year)}
+                className={cn(
+                  'rounded-[10px] border px-[14px] py-[8px] text-[13px] font-semibold transition-colors',
+                  y.year === year
+                    ? 'border-[1.5px] border-teal bg-teal-tint text-teal-deep'
+                    : 'border-border bg-surface text-ink hover:bg-surface-subtle',
+                )}
+              >
+                Year {y.year}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-[14px] px-[20px] text-[12.5px] font-semibold text-text-muted">
+          Year {active?.year ?? 0}
+        </div>
+      )}
+
       {noLessons ? (
         <p className="mx-[20px] mt-[14px] rounded-[10px] border border-border bg-surface-subtle px-[12px] py-[10px] text-[12.5px] text-text-muted">
-          Every curriculum lesson for Year {target.year} this week is already on the board.
+          Every curriculum lesson for Year {active?.year ?? 0} this week is already on the board.
         </p>
       ) : (
-        <div className="mt-[14px] max-h-[210px] overflow-y-auto px-[20px]">
+        <div className="mt-[12px] max-h-[230px] overflow-y-auto px-[20px]">
           <div className="flex flex-col gap-[6px]">
-            {target.lessons.map((lesson) => (
+            {lessons.map((lesson) => (
               <button
                 key={lesson.lessonKey}
                 type="button"
                 onClick={() => setLessonKey(lesson.lessonKey)}
                 className={cn(
                   'flex w-full items-start gap-[9px] rounded-[10px] border px-[12px] py-[9px] text-left transition-colors',
-                  lesson.lessonKey === lessonKey
+                  lesson.lessonKey === effectiveLessonKey
                     ? 'border-[1.5px] border-teal bg-teal-tint'
                     : 'border border-border bg-surface hover:bg-surface-subtle',
                 )}
@@ -416,18 +366,6 @@ function AddLessonDialog({
         </div>
       )}
 
-      {!noLessons ? (
-        <ScopePicker
-          scope={scope}
-          setScope={setScope}
-          classId={classId}
-          setClassId={setClassId}
-          classes={classes}
-          year={target.year}
-          subjectName={subjectName}
-        />
-      ) : null}
-
       {error ? (
         <p className="mx-[20px] mt-[12px] rounded-[10px] bg-status-review-bg px-[12px] py-[8px] text-[12.5px] text-status-review">
           {error}
@@ -445,7 +383,13 @@ function AddLessonDialog({
           </button>
         </div>
       ) : (
-        <DialogFooter label="Add lesson" busy={busy} onCancel={onClose} onConfirm={add} />
+        <DialogFooter
+          label="Add lesson"
+          busy={busy}
+          disabled={!effectiveLessonKey}
+          onCancel={onClose}
+          onConfirm={add}
+        />
       )}
     </Modal>
   );
@@ -459,52 +403,3 @@ const WEEKDAY_LABELS: Record<number, string> = {
   4: 'Thursday',
   5: 'Friday',
 };
-
-function ScopeOption({
-  selected,
-  disabled,
-  onSelect,
-  title,
-  detail,
-}: {
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  detail?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      className={cn(
-        'flex w-full items-start gap-[10px] rounded-[11px] border px-[13px] py-[11px] text-left transition-colors',
-        disabled
-          ? 'cursor-not-allowed border-border bg-surface-subtle opacity-60'
-          : selected
-            ? 'border-[1.5px] border-teal bg-teal-tint'
-            : 'border border-border bg-surface hover:bg-surface-subtle',
-      )}
-    >
-      <span
-        className={cn(
-          'mt-[2px] flex size-[17px] flex-shrink-0 items-center justify-center rounded-full',
-          selected && !disabled ? 'bg-teal' : 'border-[1.5px] border-border-strong bg-surface',
-        )}
-      >
-        {selected && !disabled ? (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M5 12l4 4 10-11" />
-          </svg>
-        ) : null}
-      </span>
-      <span className="min-w-0">
-        <span className={cn('block text-[13.5px]', selected ? 'font-bold' : 'font-semibold')}>
-          {title}
-        </span>
-        {detail ? <span className="mt-[1px] block text-[11.5px] text-text-muted">{detail}</span> : null}
-      </span>
-    </button>
-  );
-}

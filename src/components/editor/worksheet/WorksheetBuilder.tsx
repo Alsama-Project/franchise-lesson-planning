@@ -510,8 +510,8 @@ export function WorksheetBuilder({
             >
               <MasterFrame ctx={context}>
                 {empty ? (
-                  <div style={{ flex: 1, minHeight: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, border: '2px dashed #D9CDBB', borderRadius: 16, background: '#FCFAF6' }}>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: '#5C544E' }}>This worksheet is empty</div>
+                  <div style={{ flex: 1, minHeight: 460, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, border: '2px dashed #D9CDBB', borderRadius: 14, background: '#FCFAF6' }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: '#5C544E' }}>This worksheet is empty</div>
                     <AddExerciseMenu
                       variant="empty"
                       open={menuOpen}

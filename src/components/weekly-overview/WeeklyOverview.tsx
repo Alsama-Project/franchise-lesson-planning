@@ -53,7 +53,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
   }, [data.years, data.planCount, ownerId]);
 
   return (
-    <ScopeChooserProvider subjectName={data.subjectName} myClassesByYear={data.myClassesByYear}>
+    <ScopeChooserProvider subjectName={data.subjectName}>
       <div>
         {/* Header: context + filters + week nav + view toggle */}
         <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">

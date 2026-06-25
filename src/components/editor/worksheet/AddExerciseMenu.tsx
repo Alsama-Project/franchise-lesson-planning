@@ -9,7 +9,7 @@
 
 function BankIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
     </svg>
   );
@@ -17,7 +17,7 @@ function BankIcon() {
 
 function PenIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B62A5C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B62A5C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19l7-7 3 3-7 7-3-3z" />
       <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
       <path d="M2 2l7.5 7.5" />
@@ -40,12 +40,12 @@ function Menu({
         top: 'calc(100% + 12px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 320,
+        width: 280,
         background: '#fff',
         border: '1px solid #E7DECF',
-        borderRadius: 14,
+        borderRadius: 12,
         boxShadow: '0 24px 60px -20px rgba(40,30,20,0.55)',
-        padding: 8,
+        padding: 7,
         zIndex: 20,
       }}
     >
@@ -55,9 +55,9 @@ function Menu({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 13,
-          padding: 13,
-          borderRadius: 11,
+          gap: 11,
+          padding: 11,
+          borderRadius: 10,
           cursor: 'pointer',
           width: '100%',
           textAlign: 'left',
@@ -67,7 +67,7 @@ function Menu({
         }}
         className="hover:bg-surface-subtle"
       >
-        <span style={{ width: 42, height: 42, borderRadius: 11, background: '#E4F0ED', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: '#E4F0ED', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <BankIcon />
         </span>
         <span>
@@ -81,9 +81,9 @@ function Menu({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 13,
-          padding: 13,
-          borderRadius: 11,
+          gap: 11,
+          padding: 11,
+          borderRadius: 10,
           cursor: 'pointer',
           width: '100%',
           textAlign: 'left',
@@ -93,7 +93,7 @@ function Menu({
         }}
         className="hover:bg-surface-subtle"
       >
-        <span style={{ width: 42, height: 42, borderRadius: 11, background: '#FBF2F5', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: '#FBF2F5', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <PenIcon />
         </span>
         <span>
@@ -132,36 +132,36 @@ export function AddExerciseMenu({
           empty
             ? {
                 fontFamily: 'inherit',
-                fontSize: 16,
+                fontSize: 13.5,
                 fontWeight: 600,
                 color: '#fff',
                 background: '#1F7A6C',
                 border: 'none',
-                padding: '14px 26px',
-                borderRadius: 12,
+                padding: '10px 18px',
+                borderRadius: 10,
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 9,
-                boxShadow: '0 8px 20px -8px rgba(31,122,108,0.5)',
+                gap: 7,
+                boxShadow: '0 6px 16px -8px rgba(31,122,108,0.5)',
               }
             : {
                 fontFamily: 'inherit',
-                fontSize: 13.5,
+                fontSize: 12.5,
                 fontWeight: 600,
                 color: '#1F7A6C',
                 background: '#E4F0ED',
                 border: '1px dashed #9FCEC4',
-                padding: '11px 20px',
-                borderRadius: 11,
+                padding: '9px 16px',
+                borderRadius: 10,
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 7,
               }
         }
       >
-        <svg width={empty ? 18 : 15} height={empty ? 18 : 15} viewBox="0 0 24 24" fill="none" stroke={empty ? '#fff' : '#1F7A6C'} strokeWidth={empty ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round">
+        <svg width={empty ? 15 : 14} height={empty ? 15 : 14} viewBox="0 0 24 24" fill="none" stroke={empty ? '#fff' : '#1F7A6C'} strokeWidth={empty ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
         Add exercise

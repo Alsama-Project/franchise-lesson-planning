@@ -48,7 +48,7 @@ export function SubmitControl({
     );
   }
 
-  const label = status === 'needs_review' ? 'Resubmit' : 'Submit for review';
+  const label = status === 'needs_review' ? 'Resubmit' : 'Submit';
 
   return (
     <button

@@ -14,7 +14,6 @@
 
 import { CardShell } from '@/components/weekly-overview/CardShell';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
-import { ScopeChip } from '@/components/weekly-overview/ScopeChip';
 import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
 import { periodLabel, type EmptySlotCard, type PlanCard } from '@/components/weekly-overview/cards';
 import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
@@ -26,10 +25,7 @@ export function CalendarLessonCard({ card }: { card: PlanCard }) {
       <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
       <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-[6px]">
-          <StatusChip status={card.status} />
-          <ScopeChip scope={card.scope} />
-        </div>
+        <StatusChip status={card.status} />
         {card.owner ? <OwnerAvatar owner={card.owner} /> : null}
       </div>
     </CardShell>
@@ -44,9 +40,6 @@ export function StatusLessonCard({ card }: { card: PlanCard }) {
         <div className="min-w-0">
           <div className="text-[11.5px] font-semibold text-text-faint">{periodLabel(card.period)}</div>
           <div className="mt-[3px] text-[14px] font-semibold">Year {card.year}</div>
-          <div className="mt-[6px]">
-            <ScopeChip scope={card.scope} />
-          </div>
         </div>
         {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
       </div>

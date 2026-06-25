@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getActiveSmarttGuide } from './smartt-guide';
 
 /**
  * AI objective-check service.
@@ -11,9 +12,10 @@ import Anthropic from '@anthropic-ai/sdk';
  * thrown `ObjectiveCheckError`.
  *
  * Backend-only: this runs server-side and reads `ANTHROPIC_API_KEY` from the
- * environment. It deliberately does not touch Supabase, the lesson schema, or
- * any editor state — it is a pure "given an objective string, return feedback"
- * service.
+ * environment. The only state it reads is the active SMARTT objective guide
+ * (via {@link getActiveSmarttGuide}, the RLS-honouring server client — never the
+ * service-role key); otherwise it is a pure "given an objective string, return
+ * feedback" service and does not touch the lesson schema or editor state.
  */
 
 /** Model used for the check. Pinned deliberately — see CLAUDE.md model notes. */
@@ -121,9 +123,33 @@ const RESPONSE_SCHEMA = {
   ],
 } as const;
 
-const SYSTEM_PROMPT = `You are an instructional-design coach for Alsama, a school network that teaches refugee and displaced students. Teachers write a single lesson objective using Alsama's SMARTT framework, and you give concise, supportive, actionable feedback.
+/**
+ * The composed system prompt is built in three parts, in this fixed order
+ * (mirroring how `@/lib/ai/generate-resource` composes its prompt):
+ *   1. {@link ROLE_FRAMING}  — hardcoded role + org framing (who Aya is, who the
+ *      objective is for). Always present.
+ *   2. the active guide      — Kadria's steering from {@link getActiveSmarttGuide}
+ *      (how to judge each letter, examples, feedback tone). Admin-editable.
+ *   3. {@link FLOOR}         — hardcoded, non-negotiable SMARTT anchor + the fixed
+ *      stem + the JSON output contract. Always present.
+ *
+ * Defence in depth: the canonical SMARTT structure, the stem, and the output
+ * contract live in code, NOT in the uploaded guide, so a bad or empty upload can
+ * never strip them or break the result shape the SMARTT pills depend on. With no
+ * guide uploaded the guide defaults to the original prompt's steering text, so
+ * the composed prompt is behaviourally identical to the pre-refactor prompt.
+ */
 
-SMARTT stands for:
+/** Part 1 — hardcoded role + org framing. */
+const ROLE_FRAMING = `You are Aya, an instructional-design coach for Alsama, a school network that teaches refugee and displaced students. Teachers write a single lesson objective using Alsama's SMARTT framework, and you give concise, supportive, actionable feedback.`;
+
+/**
+ * Part 3 — hardcoded FLOOR: the canonical SMARTT anchor, the fixed stem, and the
+ * JSON output contract. This is intentionally a compact subset — the rich
+ * steering lives in the uploaded guide; the floor only fixes the structure the
+ * result shape depends on, so it can never be removed by an upload.
+ */
+const FLOOR = `SMARTT stands for (assess the objective against exactly these six letters — this is the fixed anchor):
 - S — Specific: names one clear learning target, not a vague aim.
 - M — Measurable: success is observable or assessable within the lesson.
 - A — Achievable: realistic for a 50-minute session and the learners.
@@ -131,11 +157,19 @@ SMARTT stands for:
 - T — Time-bound: scoped to this session (the objective opens with "${OBJECTIVE_STEM}").
 - T — Tangible: this is Alsama's distinctive final letter. It means the objective is RELATABLE TO STUDENTS' REAL LIVES — it connects the learning to something concrete and meaningful in the students' own world, not just an abstract academic skill.
 
-For each of the six letters, decide a status of "strong" or "needs work" and write a single, specific one-line note (no more than one sentence). Then give one or two overall suggestions to tighten the objective, and a suggested improved rewrite.
+The suggested rewrite MUST begin with the exact stem "${OBJECTIVE_STEM}".
 
-The improved rewrite MUST begin with the exact stem "${OBJECTIVE_STEM}" and then continue with an observable, student-facing action.
+OUTPUT CONTRACT:
+Return ONLY a JSON object in the required shape: each of the six SMARTT letters ("specific", "measurable", "achievable", "relevant", "time_bound", "tangible") as an object with a "status" of "strong" or "needs work" and a one-line "note"; a "suggestions" array of one or two short strings; and an "improved_objective" string. No code fences, no preamble, no commentary outside the JSON.`;
 
-Keep all notes and suggestions short, plain, and practical for a busy teacher. Base your judgement only on the objective and any context provided; do not invent facts about the lesson.`;
+/**
+ * Compose the full system prompt from the active (or default) guide:
+ * [role framing] → [guide] → [floor]. With no guide uploaded the guide is the
+ * original steering text, so the result matches the pre-refactor prompt.
+ */
+function composeSystemPrompt(guide: string): string {
+  return `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${FLOOR}`;
+}
 
 /** Build the user-turn prompt from the objective and optional context. */
 function buildUserPrompt(objective: string, context?: ObjectiveCheckContext): string {
@@ -230,12 +264,19 @@ export async function checkObjective(
 
   const client = new Anthropic({ apiKey });
 
+  // Compose [role framing] + [active guide] + [floor]. The guide read never
+  // throws (falls back to the original steering text), so the check is robust to
+  // an empty/unreachable guide table and matches the pre-refactor prompt when no
+  // guide is uploaded.
+  const guide = await getActiveSmarttGuide();
+  const systemPrompt = composeSystemPrompt(guide);
+
   let message: Anthropic.Message;
   try {
     message = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: 'user', content: buildUserPrompt(objective, context) }],
       output_config: {
         format: {

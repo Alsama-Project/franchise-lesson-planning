@@ -97,13 +97,30 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BlockRow({ block }: { block: PlanPdfModel['plan']['blocks'][number] }) {
+function BlockRow({
+  block,
+  linkIt,
+}: {
+  block: PlanPdfModel['plan']['blocks'][number];
+  linkIt?: PlanPdfModel['linkIt'];
+}) {
   const phase = phaseLabel(block.phase);
-  const hasDetail =
-    block.activity_title.trim() !== '' ||
-    block.teacher_does.trim() !== '' ||
-    block.students_do.trim() !== '' ||
-    block.resources.trim() !== '';
+
+  // cfu / exit_ticket and recap use the "Link it together" model, not the legacy
+  // single-select fields. Render the resolved techniques (label — note) / recap text.
+  const isTechnique = block.type === 'cfu' || block.type === 'exit_ticket';
+  const techniques =
+    block.type === 'cfu' ? linkIt?.cfu ?? [] : block.type === 'exit_ticket' ? linkIt?.exitTicket ?? [] : [];
+  const recapText = block.type === 'recap' ? (linkIt?.recap ?? '').trim() : '';
+
+  const hasDetail = isTechnique
+    ? techniques.length > 0
+    : block.type === 'recap'
+      ? recapText !== ''
+      : block.activity_title.trim() !== '' ||
+        block.teacher_does.trim() !== '' ||
+        block.students_do.trim() !== '' ||
+        block.resources.trim() !== '';
 
   return (
     <View style={styles.block} wrap={false}>
@@ -112,12 +129,25 @@ function BlockRow({ block }: { block: PlanPdfModel['plan']['blocks'][number] }) 
         <Text style={styles.blockTitle}>{block.title}</Text>
         <Text style={styles.minutes}>{block.duration_minutes} min</Text>
       </View>
-      {block.activity_title.trim() !== '' ? (
-        <Text style={styles.activityTitle}>{block.activity_title}</Text>
-      ) : null}
-      <Detail label="Teacher" value={block.teacher_does} />
-      <Detail label="Students" value={block.students_do} />
-      <Detail label="Materials" value={block.resources} />
+      {isTechnique ? (
+        techniques.map((t, i) => (
+          <Text key={i} style={styles.activityTitle}>
+            {t.label}
+            {t.note.trim() !== '' ? ` — ${t.note}` : ''}
+          </Text>
+        ))
+      ) : block.type === 'recap' ? (
+        recapText !== '' ? <Text style={styles.detailValue}>{recapText}</Text> : null
+      ) : (
+        <>
+          {block.activity_title.trim() !== '' ? (
+            <Text style={styles.activityTitle}>{block.activity_title}</Text>
+          ) : null}
+          <Detail label="Teacher" value={block.teacher_does} />
+          <Detail label="Students" value={block.students_do} />
+          <Detail label="Materials" value={block.resources} />
+        </>
+      )}
       {!hasDetail ? <Text style={styles.empty}>Not planned yet.</Text> : null}
     </View>
   );
@@ -157,7 +187,7 @@ function LessonPlanPage({ model }: { model: PlanPdfModel }) {
       <View style={styles.section}>
         <Text style={styles.blocksHeading}>Lesson Blocks</Text>
         {model.plan.blocks.map((block, i) => (
-          <BlockRow key={`${block.type}-${i}`} block={block} />
+          <BlockRow key={`${block.type}-${i}`} block={block} linkIt={model.linkIt} />
         ))}
         <View style={styles.totalRow}>
           <Text style={styles.totalText}>In-session total: {total} min</Text>

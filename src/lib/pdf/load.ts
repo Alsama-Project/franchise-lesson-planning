@@ -10,9 +10,32 @@ import { createClient } from '@/lib/supabase/server';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { getLessonById } from '@/lib/curriculumUtils';
 import { DEFAULT_BLOCKS } from '@/lib/blocks';
+import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
 import { mondayOf, weekdayDates } from '@/lib/week';
 import type { Block, LessonPlan } from '@/types/lesson';
-import type { PdfCurriculumContext, PlanPdfModel } from './types';
+import type { PdfCurriculumContext, PdfLinkIt, PlanPdfModel } from './types';
+
+/** A Supabase client as returned by createClient (untyped project schema). */
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/** Resolve a plan's blocks into the PDF Link-it model using a technique-label map. */
+function buildLinkIt(blocks: Block[], labels: Map<string, string>): PdfLinkIt {
+  const linkIt = normalizeLinkIt(blocks);
+  return {
+    recap: linkIt.recap,
+    cfu: resolveTechniques(linkIt.checkForUnderstanding, labels),
+    exitTicket: resolveTechniques(linkIt.exitTicket, labels),
+  };
+}
+
+/** Load the cfu/exit technique id → display-name map from the activity bank. */
+async function loadTechniqueLabels(supabase: Db): Promise<Map<string, string>> {
+  const { data } = await supabase
+    .from('activity_bank')
+    .select('id, name')
+    .in('block_type', ['cfu', 'exit_ticket']);
+  return techniqueLabelMap((data ?? []) as { id: string; name: string }[]);
+}
 
 /**
  * Load a single plan as a PDF model. Reuses the editor loader (same RLS-scoped
@@ -23,6 +46,12 @@ export async function loadPlanPdfModel(id: string): Promise<PlanPdfModel | null>
   const data = await loadPlanForEditor(id);
   if (!data) return null;
 
+  // The editor loader already fetched the activity bank — reuse it for labels.
+  const labels = techniqueLabelMap(
+    data.activitiesByBlock.cfu ?? [],
+    data.activitiesByBlock.exit_ticket ?? [],
+  );
+
   return {
     plan: data.plan,
     classContext: {
@@ -31,6 +60,7 @@ export async function loadPlanPdfModel(id: string): Promise<PlanPdfModel | null>
       subjectName: data.classContext.subjectName,
     },
     curriculum: data.curriculum,
+    linkIt: buildLinkIt(data.plan.blocks, labels),
   };
 }
 
@@ -116,13 +146,17 @@ export async function loadWeekPdfModels(
   const rows = data as unknown as RawWeekPlanRow[];
 
   // Resolve curriculum context for every plan up front (the build below is
-  // synchronous). Reads are cached and deduped per curriculum id.
+  // synchronous). Reads are cached and deduped per curriculum id. The technique
+  // labels are a small fixed set, fetched once for the whole week.
   const curriculumByKey = new Map<string, PdfCurriculumContext | null>();
-  await Promise.all(
-    [...new Set(rows.map((r) => r.curriculum_lesson_id))].map(async (id) => {
-      curriculumByKey.set(id, await resolveCurriculum(id));
-    }),
-  );
+  const [, techniqueLabels] = await Promise.all([
+    Promise.all(
+      [...new Set(rows.map((r) => r.curriculum_lesson_id))].map(async (id) => {
+        curriculumByKey.set(id, await resolveCurriculum(id));
+      }),
+    ),
+    loadTechniqueLabels(supabase),
+  ]);
 
   return rows.flatMap((row): PlanPdfModel[] => {
     const rawClass = one(row.class);
@@ -168,6 +202,7 @@ export async function loadWeekPdfModels(
           subjectName: subject?.name ?? '',
         },
         curriculum: curriculumByKey.get(row.curriculum_lesson_id) ?? null,
+        linkIt: buildLinkIt(blocks, techniqueLabels),
       },
     ];
   });

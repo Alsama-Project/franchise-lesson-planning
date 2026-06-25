@@ -35,11 +35,24 @@ export interface PdfAttachment {
   detail?: string;
 }
 
+/**
+ * Resolved "Link it together" content: the recap free-text and the chosen
+ * cfu / exit_ticket techniques (already resolved to display labels via the
+ * activity bank, since the PDF documents don't load it themselves).
+ */
+export interface PdfLinkIt {
+  recap: string;
+  cfu: { label: string; note: string }[];
+  exitTicket: { label: string; note: string }[];
+}
+
 /** Everything one lesson-plan page needs, fully self-contained. */
 export interface PlanPdfModel {
   plan: LessonPlan;
   classContext: PdfClassContext;
   curriculum: PdfCurriculumContext | null;
+  /** Resolved Link-it content for the recap / cfu / exit_ticket blocks. */
+  linkIt?: PdfLinkIt;
   /** Resources/materials attached to the whole plan (reserved; empty today). */
   attachments?: PdfAttachment[];
   /** A worksheet reference for the plan (reserved; absent today). */

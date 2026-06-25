@@ -122,18 +122,39 @@ async function codeTaken(
   return clash ? clash.name : null;
 }
 
-export async function createSubject(input: { name: string; code: string }): Promise<ConsoleResult> {
+/**
+ * Derive a subject's curriculum-match code from its name. `code` is the join key
+ * to `curriculum_lesson.subject_code`, so it is system-managed (never user input)
+ * and follows the seeded convention — a lowercase slug ('English' → 'english').
+ * Returns '' when the name has no Latin letters/digits to slug (caller rejects).
+ */
+function deriveSubjectCode(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // strip combining diacritics
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+export async function createSubject(input: { name: string }): Promise<ConsoleResult> {
   const guard = await requireAdmin();
   if (isFail(guard)) return guard;
 
   const name = input.name.trim();
-  const code = input.code.trim();
   if (!name) return fail('Enter a subject name.');
-  if (!code) return fail('Enter a subject code.');
+
+  // Code is derived, not entered — it must match the curriculum source's
+  // subject_code (see deriveSubjectCode). Reject names that yield no usable code.
+  const code = deriveSubjectCode(name);
+  if (!code) return fail('Enter a subject name with Latin letters or numbers.');
 
   const supabase = await createClient();
   const clashName = await codeTaken(supabase, code);
-  if (clashName) return fail(`Code ${code} is already used by ${clashName}.`);
+  if (clashName) {
+    return fail(`That name maps to code "${code}", already used by ${clashName}. Choose a different name.`);
+  }
 
   const { error } = await supabase.from('subjects').insert({ name, code });
   if (error) return fail(error.message);
@@ -144,21 +165,19 @@ export async function createSubject(input: { name: string; code: string }): Prom
 export async function updateSubject(input: {
   id: string;
   name: string;
-  code: string;
 }): Promise<ConsoleResult> {
   const guard = await requireAdmin();
   if (isFail(guard)) return guard;
 
   const name = input.name.trim();
-  const code = input.code.trim();
   if (!name) return fail('Enter a subject name.');
-  if (!code) return fail('Enter a subject code.');
 
+  // Only the display name is editable. `code` is immutable after creation —
+  // recomputing it from a renamed subject would orphan that subject's
+  // curriculum_lesson rows (matched by subject_code), silently breaking
+  // curriculum lookups. So we never touch code here.
   const supabase = await createClient();
-  const clashName = await codeTaken(supabase, code, input.id);
-  if (clashName) return fail(`Code ${code} is already used by ${clashName}.`);
-
-  const { error } = await supabase.from('subjects').update({ name, code }).eq('id', input.id);
+  const { error } = await supabase.from('subjects').update({ name }).eq('id', input.id);
   if (error) return fail(error.message);
   revalidateConsole();
   return ok();

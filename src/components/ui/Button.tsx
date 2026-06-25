@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 import { Spinner } from "@/components/ui/Spinner";
 
-type Variant = "primary" | "secondary";
+type Variant = "primary" | "secondary" | "brand";
 type Size = "sm" | "md";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -18,8 +18,10 @@ const BASE =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40 focus-visible:ring-offset-2";
 
 const VARIANTS: Record<Variant, string> = {
-  // Teal CTA — the login "Sign in with Microsoft" action.
+  // Teal CTA — the in-app "actions" colour (teal = actions).
   primary: "bg-teal text-white border border-teal hover:bg-[#1a6a5d]",
+  // Brand-pink CTA — the login "Sign in with Microsoft" action.
+  brand: "bg-pink text-white border border-pink hover:bg-[#9e2450]",
   // White surface with a warm border — the shell's quieter actions.
   secondary:
     "bg-surface text-ink border border-border-strong hover:bg-surface-subtle",

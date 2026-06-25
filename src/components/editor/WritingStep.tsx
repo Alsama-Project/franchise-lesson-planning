@@ -9,7 +9,6 @@
 import type { ReactNode } from 'react';
 import type { Block, TeachingPhase } from '@/types/lesson';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
-import type { SuggestContext } from '@/lib/editor/resource-suggest';
 import { PhaseSelect } from '@/components/editor/PhaseSelect';
 import { FieldLabel, Textarea } from '@/components/editor/fields';
 import { AttachedList } from '@/components/editor/AttachedList';
@@ -22,7 +21,6 @@ export function WritingStep({
   subjectId,
   vocabulary,
   folders,
-  suggestContext,
   attachedResources,
   onAttach,
   onRemove,
@@ -34,7 +32,6 @@ export function WritingStep({
   subjectId: string | null;
   vocabulary: TagsByDimension;
   folders: Folder[];
-  suggestContext: SuggestContext;
   attachedResources: ResourceWithTags[];
   onAttach: (resource: ResourceWithTags) => void;
   onRemove: (resourceId: string) => void;
@@ -103,7 +100,6 @@ export function WritingStep({
           subjectId={subjectId}
           vocabulary={vocabulary}
           folders={folders}
-          suggestContext={suggestContext}
           attachedIds={block.resourceIds ?? []}
           onAttach={onAttach}
         />

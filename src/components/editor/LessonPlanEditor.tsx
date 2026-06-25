@@ -7,7 +7,6 @@ import type { EditorPlanData } from '@/lib/editor/load-plan';
 import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
 import { deriveMaterials, getBlock, patchBlock } from '@/lib/editor/plan-blocks';
-import { STAGE_KEYWORDS, type SuggestContext } from '@/lib/editor/resource-suggest';
 import {
   isObjectiveCheckResult,
   requestObjectiveCheck,
@@ -160,17 +159,6 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
     [resourceCache],
   );
 
-  const teachContext = useMemo<SuggestContext>(
-    () => ({
-      subjectId: classContext.subjectId,
-      year: classContext.year,
-      themeLabel: curriculum?.theme ?? null,
-      skillLabel: curriculum?.focusArea ?? null,
-      stageKeywords: STAGE_KEYWORDS.teach,
-    }),
-    [classContext.subjectId, classContext.year, curriculum?.theme, curriculum?.focusArea],
-  );
-
   const canSubmit = remainder.trim().length > 0;
 
   async function handleCheck() {
@@ -300,7 +288,6 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             subjectId={resourceBank.subjectId}
             vocabulary={resourceBank.vocabulary}
             folders={resourceBank.folders}
-            suggestContext={teachContext}
             attachedResources={attachedFor(newContentBlock)}
             onAttach={(resource) => attachResource('new_content', resource)}
             onRemove={(resourceId) => detachResource('new_content', resourceId)}

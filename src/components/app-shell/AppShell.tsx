@@ -17,9 +17,9 @@ type AppShellProps = {
 
 /**
  * The shared authenticated shell — the persistent top bar from the design
- * (wordmark + "LESSON PLANNING" lockup, primary nav, global search, notification
- * bell and the signed-in user), wrapping a page body. Flat and border-delineated
- * on white. Search and bell are presentational for now (no backend wired).
+ * (wordmark + "LESSON PLANNING" lockup, primary nav, notification bell and the
+ * signed-in user), wrapping a page body. Flat and border-delineated on white.
+ * The bell is presentational for now (no backend wired).
  */
 export async function AppShell({ name, subtitle, children }: AppShellProps) {
   // The "Settings" nav link is shown to admins and coordinators (anyone with
@@ -63,9 +63,8 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
 
         <TopNav showSettings={showSettings} />
 
-        {/* Right cluster: search · bell · user */}
+        {/* Right cluster: bell · user */}
         <div className="ml-auto flex items-center gap-[10px]">
-          <GlobalSearch />
           <NotificationBell />
           <UserMenu name={name} subtitle={subtitle} />
         </div>
@@ -74,35 +73,6 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
       <main className="flex-1 bg-surface">
         <div className="px-6 py-8 lg:px-10">{children}</div>
       </main>
-    </div>
-  );
-}
-
-/** Presentational global search field (no backend wired yet). */
-function GlobalSearch() {
-  return (
-    <div className="relative hidden sm:block">
-      <svg
-        width="15"
-        height="15"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#B6ABA0"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="pointer-events-none absolute left-[11px] top-1/2 -translate-y-1/2"
-        aria-hidden
-      >
-        <circle cx="11" cy="11" r="7" />
-        <path d="M21 21l-4-4" />
-      </svg>
-      <input
-        type="search"
-        placeholder="Search…"
-        aria-label="Search"
-        className="w-[170px] rounded-[9px] border border-border bg-surface py-[8px] pl-[33px] pr-3 text-[13px] text-neutral-900 outline-none placeholder:text-text-faint focus:border-teal"
-      />
     </div>
   );
 }

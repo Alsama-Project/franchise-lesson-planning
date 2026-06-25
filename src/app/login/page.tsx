@@ -7,9 +7,10 @@ export const metadata: Metadata = {
 };
 
 /**
- * Microsoft SSO login screen — matches the approved Login design: a teal welcome
- * panel (wordmark + education line) beside the sign-in action, collapsing to a
- * single column on mobile. The only interactive piece is the OAuth button.
+ * Microsoft SSO login screen — matches the approved Login design: a brand-pink
+ * welcome panel (cream wordmark + education line) beside the sign-in action,
+ * collapsing to a single column on mobile. The only interactive piece is the
+ * OAuth button.
  */
 export default function LoginPage() {
   return (
@@ -17,7 +18,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[1100px]">
         <div className="grid overflow-hidden rounded-lg border border-border shadow-card md:h-[620px] md:grid-cols-[1.15fr_1fr]">
           {/* Brand / welcome panel */}
-          <div className="stripe relative flex flex-col justify-between gap-12 bg-teal p-12 sm:p-[52px]">
+          <div className="stripe relative flex flex-col justify-between gap-12 bg-pink p-12 sm:p-[52px]">
             <Wordmark size="lg" tone="cream" />
             <div>
               <div className="mb-[14px] text-xs font-semibold uppercase tracking-[0.16em] text-cream/70">

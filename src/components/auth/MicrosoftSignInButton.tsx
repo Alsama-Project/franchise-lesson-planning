@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { createClient } from "@/lib/supabase/client";
 
-/** Microsoft's four-square mark, monochrome to sit on the teal button. */
+/** Microsoft's four-square mark, monochrome to sit on the pink button. */
 function MicrosoftMark() {
   return (
     <span
@@ -51,6 +51,7 @@ export function MicrosoftSignInButton() {
   return (
     <div>
       <Button
+        variant="brand"
         className="w-full"
         onClick={signIn}
         disabled={pending}

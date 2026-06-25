@@ -2,14 +2,13 @@
 
 // The embedded Resource Bank panel shown on the right of editor steps 2 & 3.
 // It is a compact, self-contained mirror of the full bank (/resources): a header
-// with an "Open full →" link, three tabs (Suggested · Search · Folders), and a
-// row list. A row opens the shared preview popup; "+ Add" attaches the resource
-// to the current section (writing its id onto the block and recording a use).
+// with an "Open full →" link, two tabs (Search · Folders), and a row list. A row
+// opens the shared preview popup; "+ Add" attaches the resource to the current
+// section (writing its id onto the block and recording a use).
 //
-// Suggested ranks the subject/year candidate set by how well each resource
-// matches the lesson context (theme · skill · lesson stage). Search runs the
-// real text + tag filters. Folders shows the user's "Most used" plus their
-// custom folders. All data comes through the resource Server Actions (RLS).
+// Search runs the real text + tag filters. Folders shows the user's "Most used"
+// plus their custom folders. All data comes through the resource Server Actions
+// (RLS).
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
@@ -21,7 +20,6 @@ import {
   searchResourcesAction,
 } from '@/lib/actions/resources';
 import { resourceView } from '@/components/resources/presentation';
-import { rankByMatch, type ScoredResource, type SuggestContext } from '@/lib/editor/resource-suggest';
 import { PreviewModal } from '@/components/resources/PreviewModal';
 import {
   BarsIcon,
@@ -32,10 +30,9 @@ import {
   SearchIcon,
 } from '@/components/resources/icons';
 
-type Tab = 'suggested' | 'search' | 'folders';
+type Tab = 'search' | 'folders';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'suggested', label: 'Suggested' },
   { id: 'search', label: 'Search' },
   { id: 'folders', label: 'Folders' },
 ];
@@ -47,7 +44,6 @@ export interface ResourcePanelProps {
   subjectId: string | null;
   vocabulary: TagsByDimension;
   folders: Folder[];
-  suggestContext: SuggestContext;
   /** Resource ids attached to the current section (drives the ✓ Added state). */
   attachedIds: string[];
   /** Attach a resource to the current section (persists + records usage + caches). */
@@ -57,13 +53,11 @@ export interface ResourcePanelProps {
 /** One compact resource row in the panel list. */
 function ResourceRow({
   resource,
-  score,
   added,
   onPreview,
   onAdd,
 }: {
   resource: ResourceWithTags;
-  score?: number;
   added: boolean;
   onPreview: (r: ResourceWithTags) => void;
   onAdd: (r: ResourceWithTags) => void;
@@ -84,11 +78,6 @@ function ResourceRow({
             >
               {v.formatShort}
             </span>
-            {score != null ? (
-              <span className="rounded-badge bg-[#E2F0E8] px-[7px] py-[2px] text-[10px] font-bold text-[#2E7D5B]">
-                {score}% match
-              </span>
-            ) : null}
             <span className="text-[11px] font-semibold text-[#B0651E]">
               used {resource.usage_count}×
             </span>
@@ -140,35 +129,13 @@ export function ResourcePanel({
   subjectId,
   vocabulary,
   folders,
-  suggestContext,
   attachedIds,
   onAttach,
 }: ResourcePanelProps) {
-  const [tab, setTab] = useState<Tab>('suggested');
+  const [tab, setTab] = useState<Tab>('search');
   const [preview, setPreview] = useState<ResourceWithTags | null>(null);
 
   const addedSet = useMemo(() => new Set(attachedIds), [attachedIds]);
-
-  // ── Suggested ─────────────────────────────────────────────────────────────
-  const [suggested, setSuggested] = useState<ScoredResource[]>([]);
-  const [loadingSuggested, startSuggested] = useTransition();
-  const ctxKey = JSON.stringify(suggestContext);
-
-  useEffect(() => {
-    let cancelled = false;
-    startSuggested(async () => {
-      const rows = await searchResourcesAction({
-        subjectId: subjectId ?? undefined,
-        year: suggestContext.year ?? undefined,
-        limit: 30,
-      });
-      if (!cancelled) setSuggested(rankByMatch(rows, suggestContext));
-    });
-    return () => {
-      cancelled = true;
-    };
-    // ctxKey captures the full suggest context; subjectId is part of it too.
-  }, [ctxKey, subjectId, suggestContext]);
 
   // ── Search ────────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
@@ -256,12 +223,11 @@ export function ResourcePanel({
     return res.ok;
   }, []);
 
-  const renderRows = (rows: { resource: ResourceWithTags; score?: number }[]) =>
-    rows.map(({ resource, score }) => (
+  const renderRows = (rows: ResourceWithTags[]) =>
+    rows.map((resource) => (
       <ResourceRow
         key={resource.id}
         resource={resource}
-        score={score}
         added={addedSet.has(resource.id)}
         onPreview={setPreview}
         onAdd={handleAttach}
@@ -303,22 +269,6 @@ export function ResourcePanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-[14px]">
-        {/* Suggested */}
-        {tab === 'suggested' ? (
-          <div className="flex flex-col gap-[9px]">
-            <div className="text-[11.5px] text-text-faint">
-              Matched to this lesson — theme, skill and stage.
-            </div>
-            {loadingSuggested && suggested.length === 0 ? (
-              <EmptyState>Finding resources…</EmptyState>
-            ) : suggested.length === 0 ? (
-              <EmptyState>No resources for this subject yet. Try Search.</EmptyState>
-            ) : (
-              renderRows(suggested.map((s) => ({ resource: s.resource, score: s.score })))
-            )}
-          </div>
-        ) : null}
-
         {/* Search */}
         {tab === 'search' ? (
           <div className="flex flex-col gap-[11px]">
@@ -363,7 +313,7 @@ export function ResourcePanel({
               </EmptyState>
             ) : (
               <div className="flex flex-col gap-[9px]">
-                {renderRows(searchResults.map((r) => ({ resource: r })))}
+                {renderRows(searchResults)}
               </div>
             )}
           </div>
@@ -386,7 +336,7 @@ export function ResourcePanel({
                 ) : folderResults.length === 0 ? (
                   <EmptyState>This folder is empty.</EmptyState>
                 ) : (
-                  renderRows(folderResults.map((r) => ({ resource: r })))
+                  renderRows(folderResults)
                 )}
               </>
             ) : (

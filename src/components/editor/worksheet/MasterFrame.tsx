@@ -11,9 +11,84 @@
 // the project law: cream surfaces (#F5EDE5 / #FBF6EF) mean curriculum-provided,
 // read-only content.
 
-import { type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { WorksheetContext } from './context';
-import { useFitText } from './useFitText';
+
+// Auto-fit bounds for the header title. Short titles render at the max; long ones
+// shrink to fit one line, dropping to a balanced two-line wrap only at the floor.
+const TITLE_MAX = 19;
+const TITLE_MIN = 12;
+
+/**
+ * The subject·year·theme title, auto-fitted to its column. We measure the text
+ * against the available width and pick the largest font (≤ TITLE_MAX) that keeps
+ * it on a single line; if even TITLE_MIN overflows, we allow a balanced two-line
+ * wrap at the floor. Right padding + the reserved badge column mean the text never
+ * touches the page edge or runs under the "Master" badge.
+ */
+function FitTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [{ size, wrap }, setFit] = useState<{ size: number; wrap: boolean }>({
+    size: TITLE_MAX,
+    wrap: false,
+  });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    // Phase 1 — find the largest size that fits on ONE line (no horizontal
+    // overflow). scrollWidth/clientWidth are layout metrics, unaffected by the
+    // page's zoom transform, so this measures correctly at any zoom.
+    const prevWhiteSpace = el.style.whiteSpace;
+    el.style.whiteSpace = 'nowrap';
+    const fitsOneLine = (fs: number) => {
+      el.style.fontSize = `${fs}px`;
+      return el.scrollWidth <= el.clientWidth + 0.5;
+    };
+
+    let lo = TITLE_MIN;
+    let hi = TITLE_MAX;
+    let best: number | null = fitsOneLine(TITLE_MIN) ? TITLE_MIN : null;
+    for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2;
+      if (fitsOneLine(mid)) {
+        best = mid;
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+
+    el.style.whiteSpace = prevWhiteSpace;
+    el.style.fontSize = '';
+    if (best != null) {
+      setFit({ size: Math.floor(best * 2) / 2, wrap: false });
+    } else {
+      // Too long for one line even at the floor — wrap to (at most) two balanced
+      // lines at the minimum size.
+      setFit({ size: TITLE_MIN, wrap: true });
+    }
+  }, [text]);
+
+  const style: CSSProperties = {
+    fontSize: size,
+    lineHeight: 1.2,
+    fontWeight: 700,
+    color: '#2A2422',
+    textAlign: 'right',
+    whiteSpace: wrap ? 'normal' : 'nowrap',
+    textWrap: 'balance',
+    overflowWrap: 'break-word',
+    wordBreak: 'break-word',
+  };
+
+  return (
+    <div ref={ref} style={style}>
+      {text}
+    </div>
+  );
+}
 
 const LockIcon = ({ stroke = '#A18A6E', size = 12 }: { stroke?: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -50,8 +125,6 @@ export function MasterFrame({
   children: ReactNode;
 }) {
   const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
-  const title = titleLine(ctx);
-  const [titleColRef, titleTextRef, titleFontSize] = useFitText(title);
 
   return (
     <div
@@ -101,36 +174,12 @@ export function MasterFrame({
               Student worksheet
             </span>
           </div>
-          {/* Title column: definite width so the ResizeObserver measurement is
-              deterministic. paddingTop clears the Master badge (top:14, ~22px tall)
-              and paddingRight prevents text from reaching the page edge / badge.
-              The badge is absolutely positioned at right:16 inside the header and
-              is roughly 60px wide, so we reserve that space via paddingRight. */}
-          <div
-            ref={titleColRef}
-            style={{
-              textAlign: 'right',
-              width: 340,
-              minWidth: 0,
-              paddingTop: 6,
-              paddingRight: 70, // reserve Master badge width (≈60px) + 10px gap
-              boxSizing: 'border-box',
-            }}
-          >
-            <div
-              ref={titleTextRef}
-              style={{
-                fontSize: titleFontSize,
-                fontWeight: 700,
-                lineHeight: 1.2,
-                color: '#2A2422',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                textWrap: 'balance' as any,
-                overflowWrap: 'break-word',
-              }}
-            >
-              {title}
-            </div>
+          {/* Title is auto-fitted to this column (see FitTitle): the largest font
+              that holds one line, falling back to a balanced two-line wrap only at
+              the floor. paddingTop reserves the badge's row so the two never touch;
+              maxWidth + the header's 52px padding keep text off the page edge. */}
+          <div style={{ textAlign: 'right', maxWidth: 360, minWidth: 0, paddingTop: 10 }}>
+            <FitTitle text={titleLine(ctx)} />
             {ctx.centreName ? (
               <div style={{ fontSize: 12.5, color: '#93826B', marginTop: 2 }}>{ctx.centreName}</div>
             ) : null}

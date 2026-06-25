@@ -6,6 +6,7 @@ import { StatusView } from '@/components/weekly-overview/StatusView';
 import { WeekNav } from '@/components/weekly-overview/WeekNav';
 import { ViewToggle } from '@/components/weekly-overview/ViewToggle';
 import { PeopleFilter, EVERYONE } from '@/components/weekly-overview/PeopleFilter';
+import { ScopeChooserProvider } from '@/components/weekly-overview/ScopeChooser';
 import type { BoardData } from '@/types/weekly-overview';
 
 type View = 'calendar' | 'status';
@@ -52,7 +53,8 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
   }, [data.years, data.planCount, ownerId]);
 
   return (
-    <div>
+    <ScopeChooserProvider subjectName={data.subjectName}>
+      <div>
         {/* Header: context + filters + week nav + view toggle */}
         <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
@@ -85,6 +87,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
           <CalendarView years={data.years} ownerId={ownerId} />
         )}
       </div>
+    </ScopeChooserProvider>
   );
 }
 

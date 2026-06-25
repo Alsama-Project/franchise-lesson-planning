@@ -36,10 +36,13 @@ export function Stepper({
   const isLast = step === STEP_COUNT;
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-[15px] lg:px-[30px]">
+      {/* Every stage is identical (same 30px circle, same fixed-width label box,
+          same connector treatment); connectors stretch (flex-1) to spread the row
+          evenly. Two things are pinned so the row never reflows as you step:
+          the label box has a FIXED width (so the active/bold label can't widen its
+          stage and shove the next one), and the action cluster has a FIXED width
+          (so swapping Next → Review → Submit never redistributes the connectors). */}
       <div className="flex items-center">
-        {/* Each stage cell is flex-1 so ALL five cells share equal width and
-            the layout is identical regardless of which step is active.
-            The connector lives inside the cell (except for the last stage). */}
         {WIZARD_STEPS.map((s, i) => {
           const no = i + 1;
           const isDone = step > no;
@@ -48,12 +51,12 @@ export function Stepper({
           return (
             <div
               key={s.label}
-              className="flex min-w-0 flex-1 items-center"
+              className={showConn ? 'flex min-w-0 flex-1 items-center' : 'flex shrink-0 items-center'}
             >
               <button
                 type="button"
                 onClick={() => onGo(no)}
-                className="flex items-center gap-[10px] text-left"
+                className="flex shrink-0 items-center gap-[10px] text-left"
               >
                 <span
                   className={
@@ -69,7 +72,7 @@ export function Stepper({
                 </span>
                 <span
                   className={
-                    'hidden text-[13px] sm:block ' +
+                    'hidden w-[68px] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] sm:block ' +
                     (isCur ? 'font-semibold text-ink' : isDone ? 'font-medium text-neutral-800' : 'font-medium text-neutral-400')
                   }
                 >
@@ -79,7 +82,8 @@ export function Stepper({
               {showConn ? (
                 <span
                   className={
-                    'mx-1.5 h-0.5 min-w-[14px] flex-1 ' + (isDone ? 'bg-teal' : 'bg-[#E0D6C7]')
+                    'mx-[10px] h-0.5 min-w-[14px] flex-1 rounded-full ' +
+                    (isDone ? 'bg-teal' : 'bg-[#E0D6C7]')
                   }
                 />
               ) : null}
@@ -87,9 +91,7 @@ export function Stepper({
           );
         })}
 
-        {/* Fixed-width action area so changing the button label / colour /
-            which button shows never causes the stages to reflow. */}
-        <div className="ml-5 flex w-[186px] shrink-0 justify-end gap-[9px]">
+        <div className="ml-4 flex w-[300px] shrink-0 items-center justify-end gap-[9px]">
           {/* Always rendered so the cluster keeps an identical width on every
               step — on Step 1 it is hidden (but still occupies its box) and
               made inert, so the stepper band doesn't reflow at the 1 ↔ 2

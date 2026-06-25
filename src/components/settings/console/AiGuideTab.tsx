@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ResourceGuideVersion } from '@/lib/console';
-import { EmptyState, ErrorText, GhostButton, SectionCard } from './ui';
+import { ErrorText, GhostButton, SectionCard } from './ui';
 
 function formatUploaded(iso: string): string {
   const d = new Date(iso);
@@ -72,20 +72,13 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
             }}
           />
           <GhostButton tone="teal" disabled={pending} onClick={() => fileRef.current?.click()}>
-            {pending ? 'Uploading…' : 'Upload .md / .txt / .docx'}
+            {pending ? 'Uploading…' : 'Upload'}
           </GhostButton>
         </div>
       }
     >
       <div className="px-[18px] py-[16px]">
-        <p className="text-[13px] leading-[1.55] text-[#7A7068]">
-          This guide steers the AI resource generator. It is the editable middle of
-          the prompt — the role framing and the safety rules are always applied in
-          code and cannot be removed by an upload. Each upload saves a new version;
-          the most recent is active.
-        </p>
-
-        <div className="mt-[14px]">
+        <div>
           {active ? (
             <p className="text-[12.5px] text-[#A79E94]">
               Active version uploaded {formatUploaded(active.createdAt)}
@@ -93,7 +86,7 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
             </p>
           ) : (
             <p className="text-[12.5px] text-[#A79E94]">
-              No guide uploaded yet — the generator is using the built-in default guide.
+              No guide uploaded — using the built-in default.
             </p>
           )}
         </div>
@@ -113,9 +106,7 @@ export function AiGuideTab({ active }: { active: ResourceGuideVersion | null }) 
             {active.content}
           </pre>
         </div>
-      ) : (
-        <EmptyState>Upload a .md, .txt, or .docx guide to preview it here.</EmptyState>
-      )}
+      ) : null}
     </SectionCard>
   );
 }

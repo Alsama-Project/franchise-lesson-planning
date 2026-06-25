@@ -17,14 +17,13 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { cn } from '@/lib/cn';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
-import type { BoardLesson } from '@/types/weekly-overview';
+import { NewLessonModal } from '@/components/create-lesson/NewLessonModal';
+import type { BoardClass, BoardCoordinate, BoardLesson } from '@/types/weekly-overview';
 
 /** A fixed curriculum lesson to plan, with the day placement to write. */
 export interface ScopeTarget {
@@ -71,9 +70,20 @@ export function useScopeChooser(): ScopeChooserApi {
 
 export function ScopeChooserProvider({
   subjectName,
+  subjectCode,
+  context,
+  coordinate,
+  classesByYear,
   children,
 }: {
   subjectName: string;
+  subjectCode: string;
+  /** "Centre · Subject" line, for the new-lesson modal's step-1 subtitle. */
+  context: string | null;
+  /** The board's current curriculum coordinate — the modal opens here. */
+  coordinate: BoardCoordinate;
+  /** The teacher's own classes per year — the modal's class-scope pool. */
+  classesByYear: Record<number, BoardClass[]>;
   children: ReactNode;
 }) {
   const [target, setTarget] = useState<ScopeTarget | null>(null);
@@ -94,7 +104,16 @@ export function ScopeChooserProvider({
       {children}
       {target ? <ConfirmLessonDialog target={target} onClose={closeChooser} /> : null}
       {addTarget ? (
-        <AddLessonDialog target={addTarget} subjectName={subjectName} onClose={closeAdd} />
+        <NewLessonModal
+          weekday={addTarget.weekday}
+          years={addTarget.years}
+          subjectName={subjectName}
+          subjectCode={subjectCode}
+          context={context}
+          initialCoordinate={coordinate}
+          classesByYear={classesByYear}
+          onClose={closeAdd}
+        />
       ) : null}
     </ScopeChooserContext.Provider>
   );
@@ -227,179 +246,3 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
     </Modal>
   );
 }
-
-/**
- * The "+ Add lesson" picker: choose a year group (when the teacher teaches more
- * than one), then a curriculum lesson for that year this week. The new plan is
- * created at centre scope on the chosen day and opens in the wizard.
- */
-function AddLessonDialog({
-  target,
-  subjectName,
-  onClose,
-}: {
-  target: AddTarget;
-  subjectName: string;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const years = target.years;
-  const [year, setYear] = useState<number>(years[0]?.year ?? 0);
-  const active = useMemo(
-    () => years.find((y) => y.year === year) ?? years[0] ?? null,
-    [years, year],
-  );
-  const [lessonKey, setLessonKey] = useState<string | null>(active?.lessons[0]?.lessonKey ?? null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEscape(onClose);
-
-  // Keep the selected lesson valid when the year changes.
-  const lessons = active?.lessons ?? [];
-  const selectedValid = lessons.some((l) => l.lessonKey === lessonKey);
-  const effectiveLessonKey = selectedValid ? lessonKey : lessons[0]?.lessonKey ?? null;
-
-  const onPickYear = (next: number) => {
-    setYear(next);
-    const opt = years.find((y) => y.year === next);
-    setLessonKey(opt?.lessons[0]?.lessonKey ?? null);
-    setError(null);
-  };
-
-  const noLessons = lessons.length === 0;
-  const subjectLabel = subjectName || 'this subject';
-
-  const add = async () => {
-    if (!active || !effectiveLessonKey) {
-      setError('Pick a lesson to plan.');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const res = await createScopedPlan({
-      lessonKey: effectiveLessonKey,
-      scope: 'centre',
-      weekday: target.weekday,
-      period: active.period,
-    });
-    if (res.ok) {
-      router.push(`/plan/${res.planId}`);
-      return;
-    }
-    setError(res.error);
-    setBusy(false);
-  };
-
-  return (
-    <Modal label="Add a lesson" onClose={onClose}>
-      <div className="px-[20px] pt-[18px]">
-        <h2 className="text-[17px] font-semibold tracking-[-0.01em]">Add a lesson</h2>
-        <p className="mt-[5px] text-[12.5px] leading-[1.45] text-text-muted">
-          {WEEKDAY_LABELS[target.weekday] ?? 'This day'} · {subjectLabel}
-        </p>
-      </div>
-
-      {/* Year group — the only audience question; multiple years show a segmented
-          control, a single year is shown as a static label. */}
-      {years.length > 1 ? (
-        <div className="mt-[14px] px-[20px]">
-          <div className="mb-[7px] text-[11.5px] font-semibold uppercase tracking-[0.04em] text-text-faint">
-            Year group
-          </div>
-          <div className="flex flex-wrap gap-[7px]">
-            {years.map((y) => (
-              <button
-                key={y.year}
-                type="button"
-                onClick={() => onPickYear(y.year)}
-                className={cn(
-                  'rounded-[10px] border px-[14px] py-[8px] text-[13px] font-semibold transition-colors',
-                  y.year === year
-                    ? 'border-[1.5px] border-teal bg-teal-tint text-teal-deep'
-                    : 'border-border bg-surface text-ink hover:bg-surface-subtle',
-                )}
-              >
-                Year {y.year}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="mt-[14px] px-[20px] text-[12.5px] font-semibold text-text-muted">
-          Year {active?.year ?? 0}
-        </div>
-      )}
-
-      {noLessons ? (
-        <p className="mx-[20px] mt-[14px] rounded-[10px] border border-border bg-surface-subtle px-[12px] py-[10px] text-[12.5px] text-text-muted">
-          Every curriculum lesson for Year {active?.year ?? 0} this week is already on the board.
-        </p>
-      ) : (
-        <div className="mt-[12px] max-h-[230px] overflow-y-auto px-[20px]">
-          <div className="flex flex-col gap-[6px]">
-            {lessons.map((lesson) => (
-              <button
-                key={lesson.lessonKey}
-                type="button"
-                onClick={() => setLessonKey(lesson.lessonKey)}
-                className={cn(
-                  'flex w-full items-start gap-[9px] rounded-[10px] border px-[12px] py-[9px] text-left transition-colors',
-                  lesson.lessonKey === effectiveLessonKey
-                    ? 'border-[1.5px] border-teal bg-teal-tint'
-                    : 'border border-border bg-surface hover:bg-surface-subtle',
-                )}
-              >
-                <span className="mt-[1px] flex-shrink-0 rounded-badge bg-[#F3ECE2] px-[7px] py-[2px] text-[10.5px] font-bold text-neutral-700">
-                  P{lesson.period}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[12.5px] font-semibold leading-[1.35] text-ink">
-                    {lesson.dailyOutcome || 'Untitled lesson'}
-                  </span>
-                  {lesson.focusArea ? (
-                    <span className="mt-[1px] block text-[11px] text-text-muted">{lesson.focusArea}</span>
-                  ) : null}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error ? (
-        <p className="mx-[20px] mt-[12px] rounded-[10px] bg-status-review-bg px-[12px] py-[8px] text-[12.5px] text-status-review">
-          {error}
-        </p>
-      ) : null}
-
-      {noLessons ? (
-        <div className="mt-[16px] flex items-center justify-end border-t border-[#F0EAE1] px-[20px] py-[14px]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-[13px] font-medium text-neutral-700 transition-colors hover:text-ink"
-          >
-            Close
-          </button>
-        </div>
-      ) : (
-        <DialogFooter
-          label="Add lesson"
-          busy={busy}
-          disabled={!effectiveLessonKey}
-          onCancel={onClose}
-          onConfirm={add}
-        />
-      )}
-    </Modal>
-  );
-}
-
-/** Mon–Fri labels keyed by weekday number (1..5), for the add-dialog subtitle. */
-const WEEKDAY_LABELS: Record<number, string> = {
-  1: 'Monday',
-  2: 'Tuesday',
-  3: 'Wednesday',
-  4: 'Thursday',
-  5: 'Friday',
-};

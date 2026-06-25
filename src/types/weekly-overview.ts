@@ -107,6 +107,8 @@ export interface BoardData {
   context: string | null;
   /** The subject the board is showing (English first). */
   subjectName: string;
+  /** The subject's `code` (e.g. "english") — drives the new-lesson curriculum query. */
+  subjectCode: string;
   /** The selected curriculum coordinate. */
   coordinate: BoardCoordinate;
   /** Human label for the coordinate, e.g. "March · Week 2". */

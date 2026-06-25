@@ -9,7 +9,7 @@
 import { useState, useTransition } from 'react';
 import type { Folder, ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
-import { DownloadIcon, LinkIcon, PlusIcon, XIcon, EditIcon } from '@/components/resources/icons';
+import { DownloadIcon, EyeIcon, LinkIcon, PlusIcon, XIcon, EditIcon } from '@/components/resources/icons';
 
 interface PreviewModalProps {
   resource: ResourceWithTags;
@@ -20,7 +20,6 @@ interface PreviewModalProps {
   onClose: () => void;
   onAddToLesson: (resource: ResourceWithTags) => Promise<boolean>;
   onSaveToFolder: (resource: ResourceWithTags, folderId: string) => Promise<boolean>;
-  onOpenResource: (resource: ResourceWithTags) => Promise<void>;
   onEdit: (resource: ResourceWithTags) => void;
 }
 
@@ -42,7 +41,6 @@ export function PreviewModal({
   onClose,
   onAddToLesson,
   onSaveToFolder,
-  onOpenResource,
   onEdit,
 }: PreviewModalProps) {
   const v = resourceView(resource);
@@ -51,6 +49,10 @@ export function PreviewModal({
   const [pending, startTransition] = useTransition();
 
   const isLink = !!resource.external_url;
+  // Server-side route that mints a short-lived signed URL and redirects to it.
+  // Plain anchors (not async window.open) keep these in the click gesture so the
+  // browser doesn't block the new tab / download.
+  const fileHref = `/api/resources/${resource.id}/file`;
 
   const details: { k: string; v: string }[] = [];
   if (v.formatLabel) details.push({ k: 'Format', v: v.formatLabel });
@@ -187,15 +189,36 @@ export function PreviewModal({
             >
               Save to a folder
             </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => startTransition(async () => { await onOpenResource(resource); })}
-              aria-label={isLink ? 'Open link' : 'Download file'}
-              className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-white px-3 py-[11px] text-neutral-800 hover:bg-surface-subtle disabled:opacity-60"
-            >
-              {isLink ? <LinkIcon size={15} /> : <DownloadIcon size={15} />}
-            </button>
+            {isLink ? (
+              <a
+                href={resource.external_url ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open link"
+                className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-white px-3 py-[11px] text-neutral-800 hover:bg-surface-subtle"
+              >
+                <LinkIcon size={15} />
+              </a>
+            ) : (
+              <>
+                <a
+                  href={fileHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Preview file"
+                  className="inline-flex items-center justify-center gap-[7px] rounded-[10px] border border-border-strong bg-white px-[15px] py-[11px] text-[13.5px] font-medium text-neutral-900 hover:bg-surface-subtle"
+                >
+                  <EyeIcon size={15} /> Preview
+                </a>
+                <a
+                  href={`${fileHref}?download=1`}
+                  aria-label="Download file"
+                  className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-white px-3 py-[11px] text-neutral-800 hover:bg-surface-subtle"
+                >
+                  <DownloadIcon size={15} />
+                </a>
+              </>
+            )}
             {canEdit ? (
               <button
                 type="button"

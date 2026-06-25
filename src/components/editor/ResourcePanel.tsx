@@ -16,7 +16,6 @@ import Link from 'next/link';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
 import {
   addResourceToFolderAction,
-  getDownloadUrlAction,
   getMostUsedAction,
   listFolderResourcesAction,
   searchResourcesAction,
@@ -257,17 +256,6 @@ export function ResourcePanel({
     return res.ok;
   }, []);
 
-  const handleOpenResource = useCallback(async (r: ResourceWithTags) => {
-    if (r.external_url) {
-      window.open(r.external_url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (r.file_path) {
-      const url = await getDownloadUrlAction(r.file_path);
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
-    }
-  }, []);
-
   const renderRows = (rows: { resource: ResourceWithTags; score?: number }[]) =>
     rows.map(({ resource, score }) => (
       <ResourceRow
@@ -445,7 +433,6 @@ export function ResourcePanel({
           onClose={() => setPreview(null)}
           onAddToLesson={handleAddFromPreview}
           onSaveToFolder={handleSaveToFolder}
-          onOpenResource={handleOpenResource}
           onEdit={() => {}}
         />
       ) : null}

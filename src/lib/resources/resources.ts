@@ -203,7 +203,13 @@ export async function createResource(
     filePath = buildStoragePath(user.id, input.file.name);
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
-      .upload(filePath, input.file, { upsert: false });
+      // Set contentType from the file's MIME type so the object isn't stored as a
+      // generic binary blob — without it previews (PDFs, images) won't render
+      // inline when opened. Fall back to storage-js inference when unknown.
+      .upload(filePath, input.file, {
+        upsert: false,
+        contentType: input.file.type || undefined,
+      });
     if (uploadError) return { ok: false, error: uploadError.message };
   }
 

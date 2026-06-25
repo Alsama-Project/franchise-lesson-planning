@@ -15,7 +15,6 @@ import {
   createResourceAction,
   deleteFolderAction,
   deleteResourceAction,
-  getDownloadUrlAction,
   getMostUsedAction,
   listFolderResourcesAction,
   recordUsageAction,
@@ -297,17 +296,6 @@ export function ResourceBank({
     [activeView, refreshActiveView]
   );
 
-  const handleOpenResource = useCallback(async (r: ResourceWithTags) => {
-    if (r.external_url) {
-      window.open(r.external_url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (r.file_path) {
-      const url = await getDownloadUrlAction(r.file_path);
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
-    }
-  }, []);
-
   // ── folder CRUD (local list kept in sync) ───────────────────────────────────
   const createFolder = useCallback(async (name: string) => {
     const res = await createFolderAction(name);
@@ -433,7 +421,6 @@ export function ResourceBank({
           onClose={() => setPreview(null)}
           onAddToLesson={handleAddToLesson}
           onSaveToFolder={handleSaveToFolder}
-          onOpenResource={handleOpenResource}
           onEdit={(res) => {
             setPreview(null);
             setEditing(res);

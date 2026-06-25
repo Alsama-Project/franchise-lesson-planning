@@ -67,7 +67,7 @@ export function ResourceCard({
               <img
                 src={previewSrc(resource)}
                 alt=""
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover object-top"
                 loading="lazy"
                 onError={() => setPreviewFailed(true)}
               />

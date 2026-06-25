@@ -97,7 +97,7 @@ export function PdfThumbnail({ src, onReady, onError }: PdfThumbnailProps) {
     };
   }, [visible, src, onReady, onError]);
 
-  return <canvas ref={canvasRef} className="h-full w-full object-cover" aria-hidden />;
+  return <canvas ref={canvasRef} className="h-full w-full object-cover object-top" aria-hidden />;
 }
 
 export default PdfThumbnail;

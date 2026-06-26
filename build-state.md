@@ -667,3 +667,58 @@ feed, no parallel system.
   `/plan/[id]/view`; approve/return clears it while the teacher keeps their
   outcome notification; resubmit re-adds it) need a seeded DB + the test accounts
   to run.
+
+## Phase 8 — Coordinator review comments sidebar ✅ (this phase)
+
+Goal: the right-hand comments sidebar on the coordinator review page, plus its
+coordinator-only backend. Purely additive — `ReadOnlyPlan` (the lesson body) is
+untouched. i18n-aware: every new string is keyed in `messages/en` + `messages/ar`.
+
+### Done
+
+- **Backend (`plan_comments`)** — migration `0022_plan_comments.sql` (printed in the
+  report; **not applied** — George runs it). Table + `(plan_id, created_at)` index,
+  RLS **coordinator-only** for SELECT + INSERT via a new security-definer helper
+  `is_coordinator_of_plan(plan_id)` that resolves the plan's (centre, subject) space
+  class-optionally, exactly like the `lesson_plans` policy (0019). No UPDATE/DELETE
+  policy → comments are immutable. Teacher-facing reveal is a later slice.
+- **Server action / loading** — `addPlanComment(planId, body)` (`@/lib/actions/plan-comments`,
+  auth'd RLS client, returns the persisted row); `getPlanComments(planId)`
+  (`@/lib/review/comments`, oldest→newest, author names resolved via the co-member
+  profiles policy). `decidePlan` is reused unchanged for approve/return/reopen.
+- **Sidebar** — `ReviewCommentsSidebar` (client) in the reserved right rail:
+  header + count (`formatNumber`), flat thread (empty state + comment cards: pink
+  avatar, name, "Coordinator" chip, timestamp, **`dir="auto"` body**), composer
+  (**`dir="auto"` textarea** + microcopy + teal Comment, optimistic add), and the
+  decision footer. Footer by status: `submitted` → Return (amber, gated on ≥1
+  comment with a hint) + Approve (teal); `approved` → Undo; `needs_review` → Reopen.
+  Return opens a 460px confirm modal listing the comments → "Return to {author}".
+- **Decision band reconciled** — the standalone `CoordinatorDecisionBar` is removed;
+  decisions now live only in the sidebar footer. The draft (`in_progress`) neutral
+  "nothing to review yet" note is kept and rendered via the page (no sidebar on
+  drafts).
+- **Draft gating** — the sidebar mounts only for a coordinator AND only on
+  `submitted | needs_review | approved`; a draft shows the neutral note and no
+  sidebar; a non-coordinator sees the plan read-only with nothing loaded.
+- **i18n** — new `review.comments.*` namespace in `messages/en/review.json` +
+  `messages/ar/review.json` (Arabic is machine-translated — **flagged for the
+  native-speaker review pass**). New board key earlier (`board.card.authorPeriod`)
+  is unrelated.
+
+### Migration (apply in Supabase SQL editor)
+
+`supabase/migrations/0022_plan_comments.sql` — printed in the handoff report.
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes · `eslint` clean.
+
+### Notes / follow-ups
+
+- The reserved rail in `ReadOnlyPlan` is **360px** (its existing width); the sidebar
+  fills it. The design calls for 384px, but widening the rail means editing
+  `ReadOnlyPlan`, which this slice must not touch — flagged for the rail-width pass.
+- Comment timestamps are pinned to `APP_TIME_ZONE` (Beirut) to avoid SSR/client
+  hydration drift.
+- No design-reference HTML for the sidebar exists in the repo; the port follows the
+  prompt's detailed behavioural/visual spec.

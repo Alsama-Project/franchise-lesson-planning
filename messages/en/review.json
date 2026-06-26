@@ -1,0 +1,40 @@
+{
+  "review": {
+    "comments": {
+      "title": "Coordinator comments",
+      "draftTitle": "Coordinator review",
+      "draftNote": "This plan is still a draft — nothing to review yet.",
+      "empty": {
+        "title": "No comments yet",
+        "body": "Add feedback for the teacher. They'll see your comments when you return the plan."
+      },
+      "coordinatorChip": "Coordinator",
+      "composer": {
+        "placeholder": "Add a comment on this plan…",
+        "hint": "Comments are shared with the teacher when you return the plan.",
+        "submit": "Comment",
+        "submitting": "Adding…"
+      },
+      "addError": "Couldn't add your comment. Please try again.",
+      "decideError": "Couldn't update the plan. Please try again.",
+      "footer": {
+        "return": "Return for changes",
+        "approve": "Approve plan",
+        "returnHint": "Add at least one comment before returning the plan.",
+        "undo": "Undo approval",
+        "reopen": "Reopen as draft",
+        "working": "Working…"
+      },
+      "modal": {
+        "ariaLabel": "Return plan for changes",
+        "title": "Return this plan for changes?",
+        "subtitle": "The teacher will be able to keep editing and resubmit.",
+        "listHeading": "Comments the teacher will see",
+        "visibleTo": "Visible to {author} when you return the plan",
+        "cancel": "Cancel",
+        "confirm": "Return to {author}",
+        "confirmGeneric": "Return to teacher"
+      }
+    }
+  }
+}

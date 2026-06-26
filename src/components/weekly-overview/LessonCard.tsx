@@ -12,6 +12,9 @@
 // "Year N" (never an A/B group label) in bold. The period is conveyed by the
 // day column + stack position, not repeated on the card. The small scope chip
 // stays on planned cards. Nothing else is restyled.
+//
+// In coordinator (`readOnly`) mode the card opens the read-only review view and
+// adds an author + period line, so plans across all teachers stay distinguishable.
 
 import { useLocale, useTranslations } from 'next-intl';
 import { CardShell } from '@/components/weekly-overview/CardShell';
@@ -22,16 +25,32 @@ import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 import { formatNumber } from '@/lib/format';
 
 /** Calendar-view planned card — restored CalendarCard (status badge + scope chip). */
-export function CalendarLessonCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
+export function CalendarLessonCard({
+  card,
+  subjectName,
+  readOnly = false,
+}: {
+  card: PlanCard;
+  subjectName: string;
+  readOnly?: boolean;
+}) {
   const t = useTranslations('board');
   const locale = useLocale();
   return (
-    <CardShell planId={card.planId} canEdit={card.canEdit}>
+    <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
       <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
-      <div className="mb-[9px] mt-[3px] text-[14px] font-semibold">
+      <div className="mt-[3px] text-[14px] font-semibold">
         {t('card.year', { n: formatNumber(card.year, locale) })}
       </div>
-      <div className="flex items-center justify-between gap-2">
+      {readOnly && card.owner ? (
+        <div dir="auto" className="mt-[2px] truncate text-[11.5px] text-text-muted">
+          {t('card.authorPeriod', {
+            author: card.owner.name,
+            n: formatNumber(card.period, locale),
+          })}
+        </div>
+      ) : null}
+      <div className="mt-[9px] flex items-center justify-between gap-2">
         <StatusChip status={card.status} />
         {card.owner ? <OwnerAvatar owner={card.owner} /> : null}
       </div>
@@ -39,18 +58,36 @@ export function CalendarLessonCard({ card, subjectName }: { card: PlanCard; subj
   );
 }
 
-/** Status-view planned card — restored StatusCard. */
-export function StatusLessonCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
+/** Status-view planned card — restored StatusCard. In coordinator (`readOnly`)
+ *  mode the card names the author (the status is the column), so plans across
+ *  teachers stay distinguishable. */
+export function StatusLessonCard({
+  card,
+  subjectName,
+  readOnly = false,
+}: {
+  card: PlanCard;
+  subjectName: string;
+  readOnly?: boolean;
+}) {
   const t = useTranslations('board');
   const locale = useLocale();
   return (
-    <CardShell planId={card.planId} canEdit={card.canEdit}>
+    <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
           <div className="mt-[3px] text-[14px] font-semibold">
             {t('card.year', { n: formatNumber(card.year, locale) })}
           </div>
+          {readOnly && card.owner ? (
+            <div dir="auto" className="mt-[2px] truncate text-[11.5px] text-text-muted">
+              {t('card.authorPeriod', {
+                author: card.owner.name,
+                n: formatNumber(card.period, locale),
+              })}
+            </div>
+          ) : null}
         </div>
         {card.owner ? <OwnerAvatar owner={card.owner} size={21} /> : null}
       </div>

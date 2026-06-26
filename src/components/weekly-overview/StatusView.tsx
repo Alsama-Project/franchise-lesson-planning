@@ -44,14 +44,21 @@ const NOT_STARTED_CAP = 8;
  * distance keeps a plain click navigating to the plan. "Not started" is excluded
  * from drag (no plan row → no status) and instead opens the scope chooser.
  */
+// The four real-status columns, left → right — the coordinator (read-only) board
+// omits the "Not started" pseudo-column (no roster computation in this slice).
+const REAL_STATUS_COLUMNS: PlanStatus[] = ['in_progress', 'submitted', 'needs_review', 'approved'];
+
 export function StatusView({
   years,
   ownerId,
   subjectName,
+  readOnly = false,
 }: {
   years: BoardYear[];
   ownerId: string | null;
   subjectName: string;
+  /** Coordinator review mode: no drag, and the "Not started" column is omitted. */
+  readOnly?: boolean;
 }) {
   const t = useTranslations('board');
   const cards = planCardsForYears(years, ownerId);
@@ -66,6 +73,22 @@ export function StatusView({
   const effectiveStatus = (card: PlanCard): PlanStatus => overrides[card.planId] ?? card.status;
 
   const byStatus = groupByStatus(cards, effectiveStatus);
+
+  // Coordinator board: four read-only columns, no drag board, no "Not started".
+  if (readOnly) {
+    return (
+      <div className="grid grid-cols-4 items-start gap-[14px]">
+        {REAL_STATUS_COLUMNS.map((status) => (
+          <ReadOnlyStatusColumn
+            key={status}
+            status={status}
+            cards={byStatus[status]}
+            subjectName={subjectName}
+          />
+        ))}
+      </div>
+    );
+  }
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -205,6 +228,35 @@ function StatusColumn({
       >
         {cards.map((card) => (
           <DraggableStatusCard key={card.key} card={card} subjectName={subjectName} />
+        ))}
+        {cards.length === 0 ? (
+          <div className="py-[8px] text-center text-[11.5px] text-text-faint">
+            {t('statusView.none')}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** A read-only status column for the coordinator board: a header and static,
+ *  non-draggable cards that open the review view. Never a drop target. */
+function ReadOnlyStatusColumn({
+  status,
+  cards,
+  subjectName,
+}: {
+  status: PlanStatus;
+  cards: PlanCard[];
+  subjectName: string;
+}) {
+  const t = useTranslations('board');
+  return (
+    <div>
+      <ColumnHeader status={status} count={cards.length} />
+      <div className="flex flex-col gap-2">
+        {cards.map((card) => (
+          <StatusLessonCard key={card.key} card={card} subjectName={subjectName} readOnly />
         ))}
         {cards.length === 0 ? (
           <div className="py-[8px] text-center text-[11.5px] text-text-faint">

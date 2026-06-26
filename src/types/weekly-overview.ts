@@ -139,6 +139,14 @@ export interface BoardData {
   /** False when the teacher teaches no classes yet (calm empty state). */
   hasClasses: boolean;
   /**
+   * True when the viewer is a COORDINATOR of the board's resolved (centre, subject)
+   * space. The board then becomes a space-wide, read-only review surface: cards are
+   * not draggable and carry no status control, they open the read-only review view,
+   * and the Status board omits the "Not started" column. False for a teacher's own
+   * board (unchanged behaviour).
+   */
+  boardReadOnly: boolean;
+  /**
    * The teacher's own classes (via `class_teachers`) in the board subject, keyed
    * by year — drives the "My class" choice in the scope chooser. A year with more
    * than one entry lets the teacher pick which class.

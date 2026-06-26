@@ -52,12 +52,15 @@ export function CalendarView({
   ownerId,
   subjectName,
   mondayDate,
+  readOnly = false,
 }: {
   years: BoardYear[];
   ownerId: string | null;
   subjectName: string;
   /** The shown week's real Monday (`YYYY-MM-DD`) from `term_week`, or null when no row. */
   mondayDate: string | null;
+  /** Coordinator review mode: no drag, no "+ Add lesson", cards open the review view. */
+  readOnly?: boolean;
 }) {
   const t = useTranslations('board');
   const { openAdd } = useScopeChooser();
@@ -74,7 +77,8 @@ export function CalendarView({
     setByDay(buildByDay(years));
   }
 
-  const dragEnabled = ownerId === null;
+  // Coordinators review, they don't arrange the board — drag is off entirely.
+  const dragEnabled = ownerId === null && !readOnly;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -199,6 +203,7 @@ export function CalendarView({
                 ownerId={ownerId}
                 subjectName={subjectName}
                 dragEnabled={dragEnabled}
+                readOnly={readOnly}
                 onAddLesson={() => openAdd({ weekday, years: addOptionsFor(weekday) })}
               />
             ))}
@@ -290,6 +295,7 @@ function DayColumn({
   ownerId,
   subjectName,
   dragEnabled,
+  readOnly,
   onAddLesson,
 }: {
   weekday: number;
@@ -298,6 +304,7 @@ function DayColumn({
   ownerId: string | null;
   subjectName: string;
   dragEnabled: boolean;
+  readOnly: boolean;
   onAddLesson: () => void;
 }) {
   const t = useTranslations('board');
@@ -347,20 +354,24 @@ function DayColumn({
               plan={plan}
               subjectName={subjectName}
               dragEnabled={dragEnabled}
+              readOnly={readOnly}
             />
           ))}
         </SortableContext>
 
-        <button
-          type="button"
-          onClick={onAddLesson}
-          className="inline-flex items-center justify-center gap-[5px] rounded-[10px] border border-dashed border-border-strong px-[12px] py-[10px] text-[11.5px] font-semibold text-text-muted transition-colors hover:border-teal hover:text-teal"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {t('addLesson')}
-        </button>
+        {/* Coordinators review existing plans; they don't author, so no add affordance. */}
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={onAddLesson}
+            className="inline-flex items-center justify-center gap-[5px] rounded-[10px] border border-dashed border-border-strong px-[12px] py-[10px] text-[11.5px] font-semibold text-text-muted transition-colors hover:border-teal hover:text-teal"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {t('addLesson')}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -375,10 +386,12 @@ function SortableCard({
   plan,
   subjectName,
   dragEnabled,
+  readOnly,
 }: {
   plan: BoardPlan;
   subjectName: string;
   dragEnabled: boolean;
+  readOnly: boolean;
 }) {
   const disabled = !dragEnabled || !plan.canEdit;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -395,7 +408,7 @@ function SortableCard({
   return (
     <div ref={setNodeRef} style={style}>
       <div {...attributes} {...listeners} className={disabled ? undefined : 'cursor-grab'}>
-        <CalendarLessonCard card={toPlanCard(plan)} subjectName={subjectName} />
+        <CalendarLessonCard card={toPlanCard(plan)} subjectName={subjectName} readOnly={readOnly} />
       </div>
     </div>
   );

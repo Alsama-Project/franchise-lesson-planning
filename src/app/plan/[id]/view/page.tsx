@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
+import { CoordinatorDecisionBar } from '@/components/editor/CoordinatorDecisionBar';
+import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { createClient } from '@/lib/supabase/server';
 
@@ -21,9 +23,12 @@ export default async function PlanViewPage({
   const { id } = await params;
 
   const supabase = await createClient();
-  const [data, { data: { user } }] = await Promise.all([
+  // The plan, the viewer, and whether the viewer may take a coordinator decision
+  // on this plan (coordinator of its space, or admin) — independent reads.
+  const [data, { data: { user } }, canDecide] = await Promise.all([
     loadPlanForEditor(id),
     supabase.auth.getUser(),
+    canCoordinatePlan(id),
   ]);
   if (!data) notFound();
 
@@ -39,7 +44,14 @@ export default async function PlanViewPage({
       name={name}
       subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}
     >
-      <ReadOnlyPlan data={data} />
+      <ReadOnlyPlan
+        data={data}
+        decisionBar={
+          canDecide ? (
+            <CoordinatorDecisionBar planId={id} status={data.plan.status} />
+          ) : null
+        }
+      />
     </AppShell>
   );
 }

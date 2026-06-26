@@ -3,6 +3,7 @@
 // a shared centre/org plan they didn't make). Editing is creator-only by RLS, so a
 // non-creator save would be rejected — this view never exposes the editable wizard.
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { PartContent } from '@/components/editor/PartContent';
@@ -25,7 +26,20 @@ const SCOPE_LABEL = {
   org: 'All-centres plan',
 } as const;
 
-export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
+export function ReadOnlyPlan({
+  data,
+  decisionBar,
+  rightRail,
+}: {
+  data: EditorPlanData;
+  /** Coordinator decision bar, rendered at the top of the content column when the
+   *  viewer may decide on this plan. Omitted (null) for non-coordinators. */
+  decisionBar?: ReactNode;
+  /** Reserved ~360px right rail. The comments sidebar slots in here in a later
+   *  slice; the content column is width-capped so adding it never reflows the
+   *  plan body. Nothing is rendered here in this slice. */
+  rightRail?: ReactNode;
+}) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
@@ -85,7 +99,13 @@ export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
 
   return (
     <div className="mx-auto -my-8 max-w-[1340px]">
-      <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
+      {/* Content column + reserved right rail. On large screens the content sits in
+          a width-capped left column so a ~360px comments rail (a later slice) can
+          slot beside it via `rightRail` without reflowing the plan body. */}
+      <div className="lg:flex lg:items-start lg:gap-6">
+        <div className="min-w-0 lg:flex-1 lg:max-w-[940px]">
+          {decisionBar}
+          <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
         <Link
           href="/"
           className="mb-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-600 transition-colors hover:text-ink"
@@ -162,6 +182,12 @@ export function ReadOnlyPlan({ data }: { data: EditorPlanData }) {
             ))}
           </div>
         </section>
+          </div>
+        </div>
+
+        {rightRail ? (
+          <aside className="mt-6 lg:mt-0 lg:w-[360px] lg:flex-shrink-0">{rightRail}</aside>
+        ) : null}
       </div>
     </div>
   );

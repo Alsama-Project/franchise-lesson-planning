@@ -556,3 +556,59 @@ notes above describe the removed implementation for reference.
 4. **Guidance content** (block-guidance beyond the current set).
 5. **Multi-subject curriculum** — populate `subject`, ingestion script (the old
    spreadsheet→JSON generator was never in the repo and must be rebuilt).
+
+## Phase 7 — Coordinator review (weekly overview + decisions) ✅ (this phase)
+
+Goal: the coordinator half of the planner — a space-wide, read-only weekly
+overview, plus Approve / Return / Undo decisions on submitted plans. Coordinators
+do NOT author plans. **No comments UI/table/API** (designed in a later slice; this
+slice only reserves layout space for the sidebar).
+
+### Done
+
+- **Role-aware board (`/`)** — `getBoardData` now resolves the board's (centre,
+  subject) ids and sets `BoardData.boardReadOnly` when the viewer is a
+  **coordinator of that space**. No new route: `/` serves both roles. Coordinator
+  visibility was already space-wide via RLS (`lp_member_all`, migration 0019) +
+  the membership-driven year/lesson resolution.
+- **Read-only coordinator board** — `boardReadOnly` threads through
+  `WeeklyOverview` → Calendar/Status → cards:
+  - Calendar: no drag, no "+ Add lesson"; cards open `/plan/[id]/view`.
+  - Status: four real-status columns only (In progress · Submitted · Needs Review ·
+    Approved) — the "Not started" pseudo-column is omitted; no drag.
+  - Cards show **author + Year (class) + Period (time) + status** so plans across
+    teachers are distinguishable (`LessonCard` author/period line in `readOnly`).
+  - Teacher board behaviour is unchanged (`boardReadOnly` is false for teachers).
+- **Decision bar on `/plan/[id]/view`** — `CoordinatorDecisionBar` (client),
+  rendered only when `canCoordinatePlan(id)` is true (coordinator of the plan's
+  space, or admin). Actions by status: `submitted` → Approve / Return for changes;
+  `approved` → Undo approval (reopen as draft); `needs_review` → Reopen as draft;
+  `in_progress` → neutral note. Non-coordinators see the plan read-only, no bar.
+- **Decision server action** — `decidePlan(planId, decision)` in
+  `src/lib/actions/lesson-plan.ts` (auth'd RLS client): approve/return stamp
+  `reviewed_at`; reopen clears `submitted_at` + `reviewed_at`. Authorisation rides
+  on RLS + the `enforce_approval_role` trigger; a pre-check mirrors them for
+  friendly errors. Kept separate from the teacher `setPlanStatus` board-drag path.
+  `canCoordinatePlan` + a shared `resolvePlanSpace` helper back the gating.
+- **Comments sidebar reserved (not built)** — `ReadOnlyPlan` is now a width-capped
+  content column (`lg:max-w-[940px]`) beside an optional `rightRail` slot, so a
+  ~360px comments rail can slot in later without reflowing the plan body. No
+  comments UI/table/route/API added.
+- **Settings** — verified only: coordinators already reach role-aware Settings and
+  the nav link is already gated in (`AppShell` → `TopNav`). No change.
+
+### Migrations
+
+- **None.** The UPDATE RLS already lets a coordinator update in-space plans they
+  don't own (coordinator is a `subject_membership` member → `is_member_of_subject`),
+  and the approval trigger only gates transitions *into* `approved`/`needs_review`,
+  so reopening to `in_progress` is unblocked. No schema change required.
+
+### Verified
+
+- `npx tsc --noEmit` clean; `next build` (Next 16.2.9) passes; `eslint` clean.
+
+### Known follow-ups
+
+- "Return for changes" sets `needs_review` without a reason note in this slice
+  (`review_note` untouched); a note input arrives with the comments sidebar.

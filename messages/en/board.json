@@ -35,7 +35,8 @@
     "addLesson": "Add lesson",
     "card": {
       "year": "Year {n}",
-      "plan": "Plan"
+      "plan": "Plan",
+      "authorPeriod": "{author} · Period {n}"
     },
     "status": {
       "not_started": "Not started",

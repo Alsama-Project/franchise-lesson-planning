@@ -134,29 +134,9 @@ export async function setPlanStatus(
   // teacher transitions (`in_progress` / `submitted`) are unrestricted here (RLS
   // still scopes them to a plan in a space the caller belongs to).
   if (status === 'approved' || status === 'needs_review') {
-    // The plan's (centre, subject) come from its own scope columns now; fall back
-    // to the class join for older rows. A class/centre plan resolves a school, so
-    // a coordinator of that space (or an admin) may approve. An org plan has no
-    // single centre, so only an admin may approve it.
-    const { data: planRow } = await supabase
-      .from('lesson_plans')
-      .select('school_id, subject_id, classes ( school_id, subject_id )')
-      .eq('id', planId)
-      .maybeSingle();
-
-    const row = planRow as {
-      school_id: string | null;
-      subject_id: string | null;
-      classes: { school_id: string; subject_id: string } | null;
-    } | null;
-    if (!row) return { ok: false, error: 'Plan not found or not permitted.' };
-
-    const schoolId = row.school_id ?? row.classes?.school_id ?? null;
-    const subjectId = row.subject_id ?? row.classes?.subject_id ?? null;
-
-    const allowed =
-      (schoolId && subjectId && (await isCoordinatorOf(schoolId, subjectId))) || (await isAdmin());
-    if (!allowed) {
+    const space = await resolvePlanSpace(supabase, planId);
+    if (!space) return { ok: false, error: 'Plan not found or not permitted.' };
+    if (!(await mayDecide(space))) {
       return { ok: false, error: 'Only a coordinator of this subject can change approval status.' };
     }
   }
@@ -172,6 +152,107 @@ export async function setPlanStatus(
   if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
 
   revalidatePath('/');
+  return { ok: true, updated_at: data.updated_at };
+}
+
+/**
+ * Resolve a plan's (centre, subject) space the class-optional way: prefer the
+ * plan's own scope columns, fall back to its class join (class-scoped rows). An
+ * org plan has no single centre, so `schoolId` comes back null and only an admin
+ * may decide on it. Mirrors the resolution in the `enforce_approval_role` trigger.
+ */
+async function resolvePlanSpace(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string,
+): Promise<{ schoolId: string | null; subjectId: string | null } | null> {
+  const { data } = await supabase
+    .from('lesson_plans')
+    .select('school_id, subject_id, classes ( school_id, subject_id )')
+    .eq('id', planId)
+    .maybeSingle();
+
+  const row = data as {
+    school_id: string | null;
+    subject_id: string | null;
+    classes: { school_id: string; subject_id: string } | null;
+  } | null;
+  if (!row) return null;
+
+  return {
+    schoolId: row.school_id ?? row.classes?.school_id ?? null,
+    subjectId: row.subject_id ?? row.classes?.subject_id ?? null,
+  };
+}
+
+/** True when the caller may decide approval for a plan's space (coordinator or admin). */
+async function mayDecide(space: {
+  schoolId: string | null;
+  subjectId: string | null;
+}): Promise<boolean> {
+  return (
+    (!!space.schoolId && !!space.subjectId && (await isCoordinatorOf(space.schoolId, space.subjectId))) ||
+    (await isAdmin())
+  );
+}
+
+/**
+ * Whether the signed-in user may take a coordinator decision on this plan — a
+ * coordinator of the plan's (centre, subject) space, or an admin. Drives whether
+ * the review view shows the decision bar. Read-only; the real authorisation
+ * boundary is RLS + the `enforce_approval_role` trigger.
+ */
+export async function canCoordinatePlan(planId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const space = await resolvePlanSpace(supabase, planId);
+  if (!space) return false;
+  return mayDecide(space);
+}
+
+/** A coordinator decision on a submitted/decided plan. */
+type PlanDecision = 'approve' | 'return' | 'reopen';
+
+/**
+ * Apply a coordinator decision to a plan, stamping the workflow timestamps to
+ * match the teacher-side pattern (`submitted_at` on submit; `reviewed_at` is the
+ * "coordinator decided" mark read by the notifications bell):
+ *
+ *   • approve → `approved`,      stamps `reviewed_at`.
+ *   • return  → `needs_review`,  stamps `reviewed_at`.
+ *   • reopen  → `in_progress`,   clears `submitted_at` + `reviewed_at` (clean draft).
+ *
+ * Authorisation rides on RLS + the `enforce_approval_role` trigger; the pre-check
+ * mirrors them so the UI gets a friendly error rather than a raw DB exception.
+ * Kept separate from the teacher `setPlanStatus` board-drag path on purpose.
+ */
+export async function decidePlan(planId: string, decision: PlanDecision): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const space = await resolvePlanSpace(supabase, planId);
+  if (!space) return { ok: false, error: 'Plan not found or not permitted.' };
+  if (!(await mayDecide(space))) {
+    return { ok: false, error: 'Only a coordinator of this subject can change approval status.' };
+  }
+
+  const now = new Date().toISOString();
+  const patch =
+    decision === 'approve'
+      ? { status: 'approved' as const, reviewed_at: now }
+      : decision === 'return'
+        ? { status: 'needs_review' as const, reviewed_at: now }
+        : { status: 'in_progress' as const, submitted_at: null, reviewed_at: null };
+
+  const { data, error } = await supabase
+    .from('lesson_plans')
+    .update(patch)
+    .eq('id', planId)
+    .select('updated_at')
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
+
+  revalidatePath('/');
+  revalidatePath(`/plan/${planId}/view`);
   return { ok: true, updated_at: data.updated_at };
 }
 

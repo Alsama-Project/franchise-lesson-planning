@@ -106,6 +106,7 @@ function emptyBoard(teacherName: string, subjectName = '', subjectCode = ''): Bo
     owners: [],
     planCount: 0,
     hasClasses: false,
+    boardReadOnly: false,
     myClassesByYear: {},
   };
 }
@@ -182,9 +183,16 @@ export async function getBoardData(input: {
   let subjectCode = '';
   let subjectName = '';
   let schoolName = '';
+  // The resolved space's ids — used to decide whether the viewer is a coordinator
+  // OF THIS board (read-only review mode). Null until resolved.
+  let boardSchoolId: string | null = null;
+  let boardSubjectId: string | null = null;
 
   if (taught.length > 0) {
-    const subjectCounts = new Map<string, { code: string; name: string; school: string; n: number }>();
+    const subjectCounts = new Map<
+      string,
+      { code: string; name: string; school: string; schoolId: string; subjectId: string; n: number }
+    >();
     for (const c of taught) {
       const code = c.subjects?.code ?? '';
       const prev = subjectCounts.get(code);
@@ -192,6 +200,10 @@ export async function getBoardData(input: {
         code,
         name: c.subjects?.name ?? '',
         school: c.schools?.name ?? '',
+        // The (school, subject) ids from the first class of this subject — the
+        // board shows one centre, so the first taught class is authoritative.
+        schoolId: prev?.schoolId ?? c.school_id,
+        subjectId: prev?.subjectId ?? c.subject_id,
         n: (prev?.n ?? 0) + 1,
       });
     }
@@ -201,6 +213,8 @@ export async function getBoardData(input: {
     subjectCode = subject.code;
     subjectName = subject.name;
     schoolName = subject.school;
+    boardSchoolId = subject.schoolId;
+    boardSubjectId = subject.subjectId;
   } else if (memberships.length > 0) {
     const space = [...memberships].sort(
       (a, b) =>
@@ -210,10 +224,18 @@ export async function getBoardData(input: {
     subjectCode = space.subjects?.code ?? '';
     subjectName = space.subjects?.name ?? '';
     schoolName = space.schools?.name ?? '';
+    boardSchoolId = space.school_id;
+    boardSubjectId = space.subject_id;
   } else {
     // No classes and no subject membership — nothing to plan against.
     return emptyBoard(teacherName);
   }
+
+  // The board is a coordinator's read-only review surface when the viewer is a
+  // COORDINATOR of the resolved space. Coordinators do not author plans; they see
+  // every teacher's plan in the space (RLS-permitted) and decide on /plan/[id]/view.
+  const boardReadOnly =
+    !!boardSchoolId && !!boardSubjectId && coordinatorSpaces.has(`${boardSchoolId}:${boardSubjectId}`);
 
   const context = [schoolName, subjectName].filter(Boolean).join(' · ') || null;
 
@@ -268,6 +290,7 @@ export async function getBoardData(input: {
       ...emptyBoard(teacherName, subjectName, subjectCode),
       context,
       hasClasses: true,
+      boardReadOnly,
       years: years.map((year) => ({ year, plans: [], lessons: [] })),
       myClassesByYear,
     };
@@ -395,6 +418,7 @@ export async function getBoardData(input: {
     owners,
     planCount: planRows.length,
     hasClasses: true,
+    boardReadOnly,
     myClassesByYear,
   };
 }

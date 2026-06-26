@@ -118,13 +118,19 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
         ) : data.years.length === 0 || data.coordinate.month === '' ? (
           <EmptyCurriculum subjectName={data.subjectName} />
         ) : view === 'status' ? (
-          <StatusView years={data.years} ownerId={ownerId} subjectName={data.subjectName} />
+          <StatusView
+            years={data.years}
+            ownerId={ownerId}
+            subjectName={data.subjectName}
+            readOnly={data.boardReadOnly}
+          />
         ) : (
           <CalendarView
             years={data.years}
             ownerId={ownerId}
             subjectName={data.subjectName}
             mondayDate={data.mondayDate}
+            readOnly={data.boardReadOnly}
           />
         )}
       </div>

@@ -15,18 +15,26 @@ const BASE = 'block rounded-[12px] border border-border bg-surface px-[13px] py-
 export function CardShell({
   planId,
   canEdit = true,
+  readOnly = false,
   children,
 }: {
   planId: string | null;
   /** Whether the viewer may edit this plan (creator / coordinator / admin). */
   canEdit?: boolean;
+  /**
+   * Force the read-only review route regardless of `canEdit`. Set on the
+   * coordinator board: a coordinator can edit in-space plans, but their board is a
+   * review surface, so cards open `/plan/[id]/view` (where the decision bar lives),
+   * not the editor.
+   */
+  readOnly?: boolean;
   children: ReactNode;
 }) {
   if (!planId) {
     return <div className={BASE}>{children}</div>;
   }
 
-  const href = canEdit ? `/plan/${planId}` : `/plan/${planId}/view`;
+  const href = canEdit && !readOnly ? `/plan/${planId}` : `/plan/${planId}/view`;
 
   return (
     <Link

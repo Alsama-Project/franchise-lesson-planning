@@ -21,8 +21,11 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 
 const SELECT_BASE =
   'appearance-none cursor-pointer rounded-sm border border-status-submitted-border ' +
-  'bg-status-submitted-bg py-[6px] pl-[10px] pr-7 font-sans text-[12px] font-semibold ' +
-  'text-[#186155] outline-none bg-no-repeat';
+  'bg-status-submitted-bg py-[6px] ps-[10px] pe-7 font-sans text-[12px] font-semibold ' +
+  'text-[#186155] outline-none bg-no-repeat ' +
+  // Chevron sits at the inline-end edge — physical-right in LTR, physical-left
+  // in RTL — matching the pe-7 padding reserved for it.
+  '[background-position:right_8px_center] rtl:[background-position:left_8px_center]';
 
 // The teal chevron, supplied via inline style to avoid escaping a data-URL in a
 // Tailwind arbitrary value.
@@ -36,7 +39,6 @@ export function Select({ className, children, style, ...props }: SelectHTMLAttri
       className={cn(SELECT_BASE, className)}
       style={{
         backgroundImage: SELECT_ARROW,
-        backgroundPosition: 'right 8px center',
         backgroundSize: '13px 13px',
         ...style,
       }}

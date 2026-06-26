@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { signOut } from '@/lib/actions/auth';
 import { LocaleSwitcher } from '@/components/app-shell/LocaleSwitcher';
 import { ForceRtlToggle } from '@/components/app-shell/ForceRtlToggle';
@@ -23,12 +24,16 @@ export function UserMenu({
   name,
   subtitle,
   pseudoRtlEnabled = false,
+  pseudoRtlOn = false,
 }: {
   name: string;
   subtitle?: string;
   /** When true, show the dev-only "Force RTL" toggle (ENABLE_PSEUDO_RTL). */
   pseudoRtlEnabled?: boolean;
+  /** Current pseudo-RTL state (server-read from the cookie). */
+  pseudoRtlOn?: boolean;
 }) {
+  const t = useTranslations('nav');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -56,7 +61,7 @@ export function UserMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex cursor-pointer items-center gap-[9px] rounded-full border border-border py-1 pl-1 pr-[10px] transition-colors hover:bg-surface-subtle"
+        className="flex cursor-pointer items-center gap-[9px] rounded-full border border-border py-1 ps-1 pe-[10px] transition-colors hover:bg-surface-subtle"
       >
         <span className="inline-flex size-8 items-center justify-center rounded-full bg-teal text-[12px] font-bold text-white">
           {initials(name)}
@@ -77,7 +82,7 @@ export function UserMenu({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[50px] z-20 w-[232px] rounded-[12px] border border-border bg-surface p-[6px] shadow-card"
+          className="absolute end-0 top-[50px] z-20 w-[232px] rounded-[12px] border border-border bg-surface p-[6px] shadow-card"
         >
           <div className="border-b border-neutral-100 px-3 py-[10px]">
             <div className="text-[13px] font-semibold">{name}</div>
@@ -89,24 +94,24 @@ export function UserMenu({
             href="/settings"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-900 hover:bg-surface-subtle"
+            className="block w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-start text-[13px] text-neutral-900 hover:bg-surface-subtle"
           >
-            Settings
+            {t('settings')}
           </Link>
           <div className="my-1 border-t border-neutral-100" />
           <LocaleSwitcher onSelect={() => setOpen(false)} />
-          {pseudoRtlEnabled ? <ForceRtlToggle /> : null}
+          {pseudoRtlEnabled ? <ForceRtlToggle initialOn={pseudoRtlOn} /> : null}
           <div className="my-1 border-t border-neutral-100" />
           <form action={signOut} role="none">
             <button
               type="submit"
               role="menuitem"
-              className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-[9px] text-left text-[13px] font-semibold text-pink hover:bg-surface-subtle"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-[9px] text-start text-[13px] font-semibold text-pink hover:bg-surface-subtle"
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="rtl:-scale-x-100">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
               </svg>
-              Sign out
+              {t('signOut')}
             </button>
           </form>
         </div>

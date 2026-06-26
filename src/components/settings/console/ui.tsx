@@ -39,7 +39,7 @@ export function Th({ children, className }: { children?: ReactNode; className?: 
   return (
     <th
       className={cn(
-        'px-[18px] py-[10px] text-left text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]',
+        'px-[18px] py-[10px] text-start text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]',
         className,
       )}
     >

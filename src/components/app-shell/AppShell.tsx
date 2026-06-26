@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
+import { getTranslations } from 'next-intl/server';
+import { PSEUDO_RTL_COOKIE } from '@/i18n/config';
 import { Wordmark } from '@/components/ui/Wordmark';
 import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
@@ -36,6 +39,11 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
   // flag (NOT NODE_ENV) so it can be exercised in production, which doubles as
   // the test environment.
   const pseudoRtlEnabled = process.env.ENABLE_PSEUDO_RTL === 'true';
+  const pseudoRtlOn =
+    pseudoRtlEnabled &&
+    (await cookies()).get(PSEUDO_RTL_COOKIE)?.value === '1';
+
+  const t = await getTranslations('nav');
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -56,22 +64,27 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
         {/* Brand — links home to the Weekly Overview */}
         <Link
           href="/"
-          aria-label="Alsama — Lesson Planning"
+          aria-label={t('brandAria')}
           className="flex items-center gap-[11px] rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
         >
           <Wordmark size="sm" tone="brand" className="leading-[0.7]" />
           <span className="h-[22px] w-px bg-neutral-200" />
           <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-neutral-600">
-            Lesson Planning
+            {t('lockup')}
           </span>
         </Link>
 
         <TopNav showSettings={showSettings} />
 
         {/* Right cluster: bell · user */}
-        <div className="ml-auto flex items-center gap-[10px]">
-          <NotificationBell />
-          <UserMenu name={name} subtitle={subtitle} pseudoRtlEnabled={pseudoRtlEnabled} />
+        <div className="ms-auto flex items-center gap-[10px]">
+          <NotificationBell label={t('notifications')} />
+          <UserMenu
+            name={name}
+            subtitle={subtitle}
+            pseudoRtlEnabled={pseudoRtlEnabled}
+            pseudoRtlOn={pseudoRtlOn}
+          />
         </div>
       </header>
 
@@ -83,17 +96,17 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
 }
 
 /** Presentational notification bell with an unread dot (no backend wired yet). */
-function NotificationBell() {
+function NotificationBell({ label }: { label: string }) {
   return (
     <button
       type="button"
-      aria-label="Notifications"
+      aria-label={label}
       className="relative inline-flex size-[38px] items-center justify-center rounded-[9px] border border-border bg-surface transition-colors hover:bg-surface-subtle"
     >
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
       </svg>
-      <span className="absolute right-[9px] top-[8px] size-[7px] rounded-full border-[1.5px] border-white bg-pink" />
+      <span className="absolute end-[9px] top-[8px] size-[7px] rounded-full border-[1.5px] border-white bg-pink" />
     </button>
   );
 }

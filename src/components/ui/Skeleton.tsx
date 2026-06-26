@@ -32,7 +32,7 @@ export function AppShellSkeleton({ children }: { children: ReactNode }) {
           <Skeleton className="h-[34px] w-[88px] rounded-[9px]" />
           <Skeleton className="h-[34px] w-[84px] rounded-[9px]" />
         </div>
-        <div className="ml-auto flex items-center gap-[10px]">
+        <div className="ms-auto flex items-center gap-[10px]">
           <Skeleton className="hidden h-[36px] w-[170px] rounded-[9px] sm:block" />
           <Skeleton className="size-[38px] rounded-[9px]" />
           <Skeleton className="h-[40px] w-[150px] rounded-full" />

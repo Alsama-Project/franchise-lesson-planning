@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 
 type NavItem = {
-  label: string;
+  /** Key into the `nav` message namespace. */
+  key: string;
   href: string;
   isActive: (p: string) => boolean;
 };
@@ -16,9 +18,9 @@ type NavItem = {
  * owns the editor route (`/plan/...`); "Curriculum" is a placeholder stub for now.
  */
 const ITEMS: NavItem[] = [
-  { label: 'Lesson Planning', href: '/', isActive: (p) => p === '/' || p.startsWith('/plan') },
-  { label: 'Curriculum', href: '/curriculum', isActive: (p) => p.startsWith('/curriculum') },
-  { label: 'Resources', href: '/resources', isActive: (p) => p.startsWith('/resources') },
+  { key: 'lessonPlanning', href: '/', isActive: (p) => p === '/' || p.startsWith('/plan') },
+  { key: 'curriculum', href: '/curriculum', isActive: (p) => p.startsWith('/curriculum') },
+  { key: 'resources', href: '/resources', isActive: (p) => p.startsWith('/resources') },
 ];
 
 /**
@@ -28,13 +30,14 @@ const ITEMS: NavItem[] = [
  * the avatar menu.
  */
 const SETTINGS_ITEM: NavItem = {
-  label: 'Settings',
+  key: 'settings',
   href: '/settings',
   isActive: (p) => p.startsWith('/settings'),
 };
 
 export function TopNav({ showSettings = false }: { showSettings?: boolean }) {
   const pathname = usePathname();
+  const t = useTranslations('nav');
   const items = showSettings ? [...ITEMS, SETTINGS_ITEM] : ITEMS;
 
   return (
@@ -53,7 +56,7 @@ export function TopNav({ showSettings = false }: { showSettings?: boolean }) {
                 : 'font-medium text-neutral-900 hover:bg-surface-subtle',
             )}
           >
-            {item.label}
+            {t(item.key)}
           </Link>
         );
       })}

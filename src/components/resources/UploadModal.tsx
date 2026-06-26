@@ -13,9 +13,10 @@
 // the NEW badge are set automatically server-side and never appear here.
 
 import { useMemo, useState, useTransition } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatNumber } from '@/lib/format';
 import type { ResourceWithTags, TagDimension, TagsByDimension } from '@/types/resource';
 import {
-  DIMENSION_LABEL,
   SUBJECT_SPECIFIC_DIMENSIONS,
   UPLOAD_GLOBAL_DIMENSIONS,
   YEAR_OPTIONS,
@@ -56,6 +57,7 @@ function TagSelect({
   options: { id: string; label: string }[];
   onChange: (v: string) => void;
 }) {
+  const t = useTranslations('resources');
   const unset = required && !value;
   return (
     <div>
@@ -69,7 +71,7 @@ function TagSelect({
           unset ? 'border-[1.4px] border-[#E7C3CB] bg-[#FDF7F8] text-[#B08A92]' : 'border-[#CFE6E0] text-ink'
         }`}
       >
-        <option value="">Choose…</option>
+        <option value="">{t('upload.choose')}</option>
         {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
@@ -90,6 +92,8 @@ export function UploadModal({
   onSubmitCreate,
   onSubmitEdit,
 }: UploadModalProps) {
+  const t = useTranslations('resources');
+  const locale = useLocale();
   const isEdit = mode === 'edit';
 
   // Seed tag selections from the existing resource (one per dimension) in edit mode.
@@ -163,7 +167,7 @@ export function UploadModal({
           tagIds: chosenTagIds(),
         });
         if (res.ok) onClose();
-        else setError(res.error ?? 'Could not save changes.');
+        else setError(res.error ?? t('upload.saveChangesError'));
       });
       return;
     }
@@ -180,7 +184,7 @@ export function UploadModal({
     startTransition(async () => {
       const res = await onSubmitCreate(fd);
       if (res.ok) onClose();
-      else setError(res.error ?? 'Could not upload the resource.');
+      else setError(res.error ?? t('upload.uploadError'));
     });
   }
 
@@ -193,26 +197,24 @@ export function UploadModal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={isEdit ? 'Edit resource' : 'Upload to the resource bank'}
+        aria-label={isEdit ? t('upload.editTitle') : t('upload.createTitle')}
         className="max-h-[88vh] w-[660px] max-w-full overflow-auto rounded-[18px] bg-surface shadow-card"
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-[#EFE8DD] bg-surface px-[22px] py-[18px]">
           <div>
             <div className="text-[16px] font-semibold text-ink">
-              {isEdit ? 'Edit resource' : 'Upload to the resource bank'}
+              {isEdit ? t('upload.editTitle') : t('upload.createTitle')}
             </div>
             <div className="mt-0.5 text-[12px] text-text-muted">
-              {isEdit
-                ? 'Update its details and tags.'
-                : 'It goes straight into the shared bank for everyone.'}
+              {isEdit ? t('upload.editSubtitle') : t('upload.createSubtitle')}
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
-            className="ml-auto inline-flex size-[30px] items-center justify-center rounded-[8px] border border-border text-neutral-600"
+            aria-label={t('upload.close')}
+            className="ms-auto inline-flex size-[30px] items-center justify-center rounded-[8px] border border-border text-neutral-600"
           >
             <XIcon size={15} />
           </button>
@@ -228,13 +230,13 @@ export function UploadModal({
                     FILE
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-semibold text-ink">
-                      {file ? file.name : 'Choose a file to upload'}
+                    <div dir="auto" className="truncate text-[13.5px] font-semibold text-ink">
+                      {file ? file.name : t('upload.chooseFile')}
                     </div>
                     <div className="text-[11.5px] text-text-muted">
                       {file
-                        ? `${Math.max(1, Math.round(file.size / 1024))} KB · ready to upload`
-                        : 'PDF, Word, image, audio or video'}
+                        ? t('upload.fileReady', { size: formatNumber(Math.max(1, Math.round(file.size / 1024)), locale) })
+                        : t('upload.fileTypes')}
                     </div>
                   </div>
                   <input
@@ -242,7 +244,7 @@ export function UploadModal({
                     className="hidden"
                     onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
                   />
-                  <span className="text-[12px] font-semibold text-teal">Browse</span>
+                  <span className="text-[12px] font-semibold text-teal">{t('upload.browse')}</span>
                 </label>
               ) : (
                 <div className="mb-[6px] flex items-center gap-[13px] rounded-[12px] border border-[#CFE6E0] bg-[#F4FAF8] px-[15px] py-[13px]">
@@ -253,36 +255,39 @@ export function UploadModal({
                     type="url"
                     value={link}
                     onChange={(e) => setLink(e.target.value)}
-                    placeholder="https://…"
+                    placeholder={t('upload.linkPlaceholder')}
+                    dir="auto"
                     className="min-w-0 flex-1 rounded-[8px] border border-border-strong bg-white px-3 py-2 text-[13px] outline-none"
                   />
                 </div>
               )}
               <div className="mb-[18px] text-center text-[11.5px] text-text-faint">
                 {sourceMode === 'file' ? (
-                  <>
-                    or{' '}
-                    <button
-                      type="button"
-                      onClick={() => setSourceMode('link')}
-                      className="font-semibold text-teal"
-                    >
-                      paste a link
-                    </button>{' '}
-                    instead
-                  </>
+                  t.rich('upload.orInstead', {
+                    action: (chunks) => (
+                      <button
+                        type="button"
+                        onClick={() => setSourceMode('link')}
+                        className="font-semibold text-teal"
+                      >
+                        {chunks}
+                      </button>
+                    ),
+                    label: t('upload.pasteLink'),
+                  })
                 ) : (
-                  <>
-                    or{' '}
-                    <button
-                      type="button"
-                      onClick={() => setSourceMode('file')}
-                      className="font-semibold text-teal"
-                    >
-                      upload a file
-                    </button>{' '}
-                    instead
-                  </>
+                  t.rich('upload.orInstead', {
+                    action: (chunks) => (
+                      <button
+                        type="button"
+                        onClick={() => setSourceMode('file')}
+                        className="font-semibold text-teal"
+                      >
+                        {chunks}
+                      </button>
+                    ),
+                    label: t('upload.uploadFile'),
+                  })
                 )}
               </div>
             </>
@@ -292,22 +297,24 @@ export function UploadModal({
           <div className="mb-3 grid grid-cols-1 gap-3">
             <div>
               <div className="mb-[5px] text-[11px] font-semibold text-text-muted">
-                Title <span className="text-[#B5566A]">*</span>
+                {t('upload.title')} <span className="text-[#B5566A]">*</span>
               </div>
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Family vocabulary flashcards"
+                placeholder={t('upload.titlePlaceholder')}
+                dir="auto"
                 className="w-full rounded-[9px] border border-border-strong bg-white px-[11px] py-[9px] text-[13px] outline-none focus:border-teal"
               />
             </div>
             <div>
-              <div className="mb-[5px] text-[11px] font-semibold text-text-muted">Description</div>
+              <div className="mb-[5px] text-[11px] font-semibold text-text-muted">{t('upload.description')}</div>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                placeholder="Optional — a line on what this is and how to use it."
+                placeholder={t('upload.descriptionPlaceholder')}
+                dir="auto"
                 className="w-full resize-none rounded-[9px] border border-border-strong bg-white px-[11px] py-[9px] text-[13px] outline-none focus:border-teal"
               />
             </div>
@@ -316,36 +323,39 @@ export function UploadModal({
           {/* Tag-it header + progress */}
           <div className="mb-[11px] flex items-center justify-between">
             <div className="text-[13px] font-semibold text-ink">
-              Tag it <span className="font-normal text-text-faint">— every tag is required</span>
+              {t('upload.tagIt')} <span className="font-normal text-text-faint">{t('upload.tagItHint')}</span>
             </div>
             <span
               className={`rounded-full px-[10px] py-[3px] text-[11px] font-semibold ${
                 complete ? 'bg-[#E2F0E8] text-[#2E7D5B]' : 'bg-[#F6ECDA] text-[#B0651E]'
               }`}
             >
-              {setCount} of {total} set
+              {t('upload.progress', {
+                set: formatNumber(setCount, locale),
+                total: formatNumber(total, locale),
+              })}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-[10px]">
             <TagSelect
-              label="Subject"
+              label={t('upload.subject')}
               required
               value={subjectId}
               options={subjects.map((s) => ({ id: s.id, label: s.name }))}
               onChange={setSubjectId}
             />
             <TagSelect
-              label="Year"
+              label={t('upload.year')}
               required
               value={year}
-              options={YEAR_OPTIONS.map((y) => ({ id: String(y), label: `Year ${y}` }))}
+              options={YEAR_OPTIONS.map((y) => ({ id: String(y), label: t('sidebar.yearOption', { year: y }) }))}
               onChange={setYear}
             />
             {applicableGlobal.map((dim) => (
               <div key={dim} className={dim === 'localisation' ? 'col-span-2' : undefined}>
                 <TagSelect
-                  label={DIMENSION_LABEL[dim]}
+                  label={t(`dimensions.${dim}`)}
                   required
                   value={tagByDim[dim] ?? ''}
                   options={(vocabulary[dim] ?? []).map((t) => ({ id: t.id, label: t.label }))}
@@ -361,15 +371,17 @@ export function UploadModal({
               <div className="mb-[10px] flex items-center gap-[7px]">
                 <SparkleIcon size={13} className="text-teal" />
                 <span className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-teal">
-                  {subjects.find((s) => s.id === subjectId)?.name ?? 'Subject'}-specific tags
+                  {t('upload.subjectSpecificTags', {
+                    subject: subjects.find((s) => s.id === subjectId)?.name ?? t('upload.subjectFallback'),
+                  })}
                 </span>
-                <span className="text-[10.5px] text-[#6E9890]">— shown because a subject is chosen</span>
+                <span className="text-[10.5px] text-[#6E9890]">{t('upload.subjectSpecificHint')}</span>
               </div>
               <div className="grid grid-cols-2 gap-[10px]">
                 {applicableSubject.map((dim) => (
                   <TagSelect
                     key={dim}
-                    label={DIMENSION_LABEL[dim]}
+                    label={t(`dimensions.${dim}`)}
                     required
                     value={tagByDim[dim] ?? ''}
                     options={(vocabulary[dim] ?? []).map((t) => ({ id: t.id, label: t.label }))}
@@ -382,8 +394,8 @@ export function UploadModal({
 
           <div className="mt-[14px] flex items-center gap-2 text-[11.5px] text-text-muted">
             <LockIcon size={13} className="text-text-faint" />
-            Set automatically: <b className="text-neutral-800">Uploaded by</b> ·{' '}
-            <b className="text-neutral-800">Popularity</b> · <b className="text-neutral-800">New badge</b>
+            {t('upload.setAutomatically')} <b className="text-neutral-800">{t('upload.uploadedBy')}</b> ·{' '}
+            <b className="text-neutral-800">{t('upload.popularity')}</b> · <b className="text-neutral-800">{t('upload.newBadge')}</b>
           </div>
 
           {error ? (
@@ -397,20 +409,20 @@ export function UploadModal({
         <div className="sticky bottom-0 flex items-center gap-3 border-t border-[#EFE8DD] bg-surface px-[22px] py-[15px]">
           <span className="text-[12px] font-medium text-[#B5566A]">
             {complete
-              ? 'Ready to save'
+              ? t('upload.readyToSave')
               : remaining > 0
-                ? `Set ${remaining} more ${remaining === 1 ? 'thing' : 'things'} to save`
+                ? t('upload.setMoreToSave', { remaining, remainingText: formatNumber(remaining, locale) })
                 : !title.trim()
-                  ? 'Add a title to save'
-                  : 'Attach a file or link to save'}
+                  ? t('upload.addTitleToSave')
+                  : t('upload.attachToSave')}
           </span>
-          <div className="ml-auto flex gap-[9px]">
+          <div className="ms-auto flex gap-[9px]">
             <button
               type="button"
               onClick={onClose}
               className="rounded-[9px] border border-border-strong bg-white px-4 py-[9px] text-[13px] font-medium text-neutral-900 hover:bg-surface-subtle"
             >
-              Cancel
+              {t('upload.cancel')}
             </button>
             <button
               type="button"
@@ -419,7 +431,7 @@ export function UploadModal({
               className="inline-flex items-center gap-2 rounded-[9px] bg-teal px-[18px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:bg-[#BFD6D0]"
             >
               {complete ? <CheckIcon size={14} /> : null}
-              {isEdit ? 'Save changes' : 'Save to bank'}
+              {isEdit ? t('upload.saveChanges') : t('upload.saveToBank')}
             </button>
           </div>
         </div>

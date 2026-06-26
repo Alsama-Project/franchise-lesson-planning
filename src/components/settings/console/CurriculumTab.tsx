@@ -5,28 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { CurriculumSubjectStatus } from '@/lib/console';
 import { importCurriculumAction } from '@/lib/curriculum/actions';
 import { GhostButton, MonoChip, SectionCard } from './ui';
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return 'never';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return 'unknown';
-  const secs = Math.round((Date.now() - then) / 1000);
-  if (secs < 60) return 'just now';
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
-}
-
-/** Local clock time as HH:MM (for the "Sync failed · {HH:MM}" badge). */
-function hhmm(iso: string | null): string {
-  if (!iso) return '--:--';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '--:--';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+import { Stat, UploadProgressBar, UploadStatusBadge, hhmm, timeAgo } from './upload';
 
 /**
  * Card state for one subject — a discriminated union that renders EXACTLY ONE
@@ -194,7 +173,11 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
       {/* Exactly one status element below the stat row, driven by the state. */}
       {state.kind === 'syncing' ? (
         <div className="px-[18px] pb-[16px]">
-          <SyncProgress parsed={state.parsed} total={state.total} />
+          <UploadProgressBar
+            parsed={state.parsed}
+            total={state.total}
+            label="Syncing curriculum"
+          />
         </div>
       ) : state.kind === 'success' ? (
         <div className="px-[18px] pb-[14px]">
@@ -209,50 +192,6 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <div className="text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#A79E94]">{label}</div>
-      <div className="mt-px text-[14px] font-semibold tabular-nums text-[#2A2422]">{value}</div>
-    </div>
-  );
-}
-
-/**
- * The sync progress element. Determinate (teal fill + `{pct}% · {parsed} of
- * ~{total}`) when the run exposes parsed/total; otherwise a single indeterminate
- * teal bar with no text under it. The schema carries no counts today, so this
- * renders indeterminate — numbers are never fabricated.
- */
-function SyncProgress({ parsed, total }: { parsed?: number; total?: number }) {
-  const determinate = typeof total === 'number' && total > 0 && typeof parsed === 'number';
-  if (determinate) {
-    const pct = Math.min(100, Math.max(0, Math.round((parsed! / total!) * 100)));
-    return (
-      <div>
-        <div className="relative h-[6px] w-full overflow-hidden rounded-full bg-[#E4F0ED]">
-          <div
-            className="h-full rounded-full bg-[#1F7A6C] transition-[width] duration-300"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <p className="mt-[7px] text-[12px] text-[#A79E94]">
-          {pct}% · {parsed} of ~{total}
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="relative h-[6px] w-full overflow-hidden rounded-full bg-[#E4F0ED]"
-      role="progressbar"
-      aria-label="Syncing curriculum"
-    >
-      <span className="curriculum-sync-bar" />
-    </div>
-  );
-}
-
 function StateBadge({
   state,
   lastSyncedIso,
@@ -260,35 +199,15 @@ function StateBadge({
   state: CurriculumSyncState;
   lastSyncedIso: string | null;
 }) {
-  const teal = { bg: '#E4F0ED', fg: '#186155' };
-  const red = { bg: '#FBF2F5', fg: '#B23A2E' };
-
-  let bg = teal.bg;
-  let fg = teal.fg;
-  let label: string;
   switch (state.kind) {
     case 'syncing':
-      label = 'Syncing…';
-      break;
+      return <UploadStatusBadge tone="teal" label="Syncing…" />;
     case 'success':
-      label = 'Synced just now';
-      break;
+      return <UploadStatusBadge tone="teal" label="Synced just now" />;
     case 'error':
-      ({ bg, fg } = red);
-      label = `Sync failed · ${hhmm(state.badgeAt)}`;
-      break;
+      return <UploadStatusBadge tone="red" label={`Sync failed · ${hhmm(state.badgeAt)}`} />;
     case 'idle':
     default:
-      label = `Synced ${timeAgo(lastSyncedIso)}`;
-      break;
+      return <UploadStatusBadge tone="teal" label={`Synced ${timeAgo(lastSyncedIso)}`} />;
   }
-
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-[10px] py-[3px] text-[11.5px] font-semibold"
-      style={{ background: bg, color: fg }}
-    >
-      {label}
-    </span>
-  );
 }

@@ -7,6 +7,8 @@
 // URL-backed resources) and, when the viewer may edit, an edit shortcut.
 
 import { useState, useTransition } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatNumber } from '@/lib/format';
 import type { Folder, ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
 import { previewKind, previewSrc } from '@/components/resources/preview';
@@ -29,7 +31,7 @@ function Detail({ k, v }: { k: string; v: string }) {
   return (
     <div>
       <div className="mb-[3px] text-[10.5px] font-bold uppercase tracking-[0.04em] text-text-faint">{k}</div>
-      <div className="text-[13.5px] text-ink">{v}</div>
+      <div dir="auto" className="text-[13.5px] text-ink">{v}</div>
     </div>
   );
 }
@@ -45,6 +47,8 @@ export function PreviewModal({
   onSaveToFolder,
   onEdit,
 }: PreviewModalProps) {
+  const t = useTranslations('resources');
+  const locale = useLocale();
   const v = resourceView(resource);
   // Inline preview in the hero: the full image, or the PDF rendered natively in
   // an iframe; falls back to the flat coloured hero on a non-previewable format
@@ -64,15 +68,16 @@ export function PreviewModal({
   const fileHref = `/api/resources/${resource.id}/file`;
 
   const details: { k: string; v: string }[] = [];
-  if (v.formatLabel) details.push({ k: 'Format', v: v.formatLabel });
-  if (resource.year != null) details.push({ k: 'Year', v: `Year ${resource.year}` });
-  if (subjectName) details.push({ k: 'Subject', v: subjectName });
-  if (v.skill) details.push({ k: 'Skill type', v: v.skill });
-  if (v.theme) details.push({ k: 'Theme', v: v.theme });
-  if (v.exercise) details.push({ k: 'Exercise type', v: v.exercise });
-  if (v.stage) details.push({ k: 'Lesson stage', v: v.stage });
-  if (v.localisation) details.push({ k: 'Localisation', v: v.localisation });
-  if (v.grammar) details.push({ k: 'Grammar content', v: v.grammar });
+  if (v.formatLabel) details.push({ k: t('preview.detailFormat'), v: v.formatLabel });
+  if (resource.year != null)
+    details.push({ k: t('preview.detailYear'), v: t('preview.yearValue', { year: formatNumber(resource.year, locale) }) });
+  if (subjectName) details.push({ k: t('preview.detailSubject'), v: subjectName });
+  if (v.skill) details.push({ k: t('dimensions.skill_type'), v: v.skill });
+  if (v.theme) details.push({ k: t('dimensions.theme'), v: v.theme });
+  if (v.exercise) details.push({ k: t('dimensions.exercise_type'), v: v.exercise });
+  if (v.stage) details.push({ k: t('dimensions.lesson_stage'), v: v.stage });
+  if (v.localisation) details.push({ k: t('dimensions.localisation'), v: v.localisation });
+  if (v.grammar) details.push({ k: t('dimensions.grammar_content'), v: v.grammar });
 
   return (
     <div
@@ -103,7 +108,7 @@ export function PreviewModal({
           ) : showPreview && kind === 'pdf' ? (
             <iframe
               src={src}
-              title={`Preview of ${resource.title}`}
+              title={t('preview.previewOf', { title: resource.title })}
               className="h-[60vh] w-full border-0 bg-white"
               onError={() => setPreviewFailed(true)}
             />
@@ -114,28 +119,28 @@ export function PreviewModal({
           )}
 
           {v.isNew ? (
-            <span className="absolute left-[14px] top-[14px] z-10 rounded-badge bg-pink px-[9px] py-[3px] text-[10px] font-bold tracking-[0.04em] text-white">
-              NEW
+            <span className="absolute start-[14px] top-[14px] z-10 rounded-badge bg-pink px-[9px] py-[3px] text-[10px] font-bold tracking-[0.04em] text-white">
+              {t('preview.new')}
             </span>
           ) : null}
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close preview"
-            className="absolute right-3 top-3 z-10 inline-flex size-[30px] items-center justify-center rounded-[8px] bg-white/85 text-neutral-800"
+            aria-label={t('preview.close')}
+            className="absolute end-3 top-3 z-10 inline-flex size-[30px] items-center justify-center rounded-[8px] bg-white/85 text-neutral-800"
           >
             <XIcon size={15} />
           </button>
         </div>
 
         <div className="p-[22px] pt-5">
-          <div className="text-[19px] font-semibold leading-[1.25] text-ink">{resource.title}</div>
+          <div dir="auto" className="text-[19px] font-semibold leading-[1.25] text-ink">{resource.title}</div>
           {resource.description ? (
-            <p className="mt-2 text-[13px] leading-[1.5] text-text-muted">{resource.description}</p>
+            <p dir="auto" className="mt-2 text-[13px] leading-[1.5] text-text-muted">{resource.description}</p>
           ) : null}
 
           <div className="mt-[9px] inline-flex items-center gap-[6px] rounded-full bg-[#F6ECDA] px-[11px] py-1 text-[12.5px] font-semibold text-[#B0651E]">
-            Used {resource.usage_count}× in lessons
+            {t('preview.usedInLessons', { count: formatNumber(resource.usage_count, locale) })}
           </div>
 
           {details.length > 0 ? (
@@ -149,7 +154,7 @@ export function PreviewModal({
           {isYours ? (
             <div className="mt-4">
               <span className="rounded-badge bg-[#E4F0ED] px-[10px] py-1 text-[11px] font-semibold text-[#186155]">
-                Your upload — you can edit or delete it
+                {t('preview.yourUploadNote')}
               </span>
             </div>
           ) : null}
@@ -163,10 +168,10 @@ export function PreviewModal({
           {/* Folder picker */}
           {folderPickerOpen ? (
             <div className="mt-4 rounded-[12px] border border-border bg-surface-subtle p-3">
-              <div className="mb-2 text-[12px] font-semibold text-neutral-800">Save to which folder?</div>
+              <div className="mb-2 text-[12px] font-semibold text-neutral-800">{t('preview.saveToWhichFolder')}</div>
               {folders.length === 0 ? (
                 <div className="text-[12px] text-text-faint">
-                  You have no folders yet — create one in the sidebar first.
+                  {t('preview.noFoldersYet')}
                 </div>
               ) : (
                 <div className="flex flex-col gap-1">
@@ -179,15 +184,15 @@ export function PreviewModal({
                         startTransition(async () => {
                           const ok = await onSaveToFolder(resource, f.id);
                           if (ok) {
-                            setMessage(`Saved to "${f.name}".`);
+                            setMessage(t('preview.savedToFolder', { name: f.name }));
                             setFolderPickerOpen(false);
                           }
                         })
                       }
-                      className="flex items-center gap-2 rounded-[8px] px-2 py-[6px] text-left text-[12.5px] text-neutral-800 hover:bg-white disabled:opacity-50"
+                      className="flex items-center gap-2 rounded-[8px] px-2 py-[6px] text-start text-[12.5px] text-neutral-800 hover:bg-white disabled:opacity-50"
                     >
                       <span className="size-[10px] rounded-[3px] bg-pink" />
-                      {f.name}
+                      <span dir="auto">{f.name}</span>
                     </button>
                   ))}
                 </div>
@@ -202,21 +207,21 @@ export function PreviewModal({
               onClick={() => onAddToLesson(resource)}
               className="inline-flex flex-1 items-center justify-center gap-[7px] rounded-[10px] bg-teal px-3 py-[11px] text-[13.5px] font-semibold text-white hover:bg-[#1a6a5d] disabled:opacity-60"
             >
-              <PlusIcon size={15} strokeWidth={2.2} /> Add to a lesson
+              <PlusIcon size={15} strokeWidth={2.2} /> {t('preview.addToLesson')}
             </button>
             <button
               type="button"
               onClick={() => setFolderPickerOpen((o) => !o)}
               className="rounded-[10px] border border-border-strong bg-white px-[15px] py-[11px] text-[13.5px] font-medium text-neutral-900 hover:bg-surface-subtle"
             >
-              Save to a folder
+              {t('preview.saveToFolder')}
             </button>
             {isLink ? (
               <a
                 href={resource.external_url ?? '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Open link"
+                aria-label={t('preview.openLink')}
                 className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-white px-3 py-[11px] text-neutral-800 hover:bg-surface-subtle"
               >
                 <LinkIcon size={15} />
@@ -227,14 +232,14 @@ export function PreviewModal({
                   href={fileHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="Preview file"
+                  aria-label={t('preview.previewFile')}
                   className="inline-flex items-center justify-center gap-[7px] rounded-[10px] border border-border-strong bg-white px-[15px] py-[11px] text-[13.5px] font-medium text-neutral-900 hover:bg-surface-subtle"
                 >
-                  <EyeIcon size={15} /> Preview
+                  <EyeIcon size={15} /> {t('preview.preview')}
                 </a>
                 <a
                   href={`${fileHref}?download=1`}
-                  aria-label="Download file"
+                  aria-label={t('preview.downloadFile')}
                   className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-white px-3 py-[11px] text-neutral-800 hover:bg-surface-subtle"
                 >
                   <DownloadIcon size={15} />
@@ -245,7 +250,7 @@ export function PreviewModal({
               <button
                 type="button"
                 onClick={() => onEdit(resource)}
-                aria-label="Edit resource"
+                aria-label={t('preview.editResource')}
                 className="inline-flex w-[46px] items-center justify-center rounded-[10px] border border-border-strong bg-white text-[#7A6E62] hover:bg-surface-subtle"
               >
                 <EditIcon size={15} />

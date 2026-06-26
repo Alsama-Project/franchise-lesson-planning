@@ -1,41 +1,33 @@
 // Static configuration shared by the Resource Bank's browse facets and upload
-// modal: the tag dimensions, their display labels, which adapt to the chosen
-// subject ("English-specific"), and which browse facets start collapsed.
+// modal: the tag dimensions, which adapt to the chosen subject
+// ("English-specific"), and which browse facets start collapsed. Display labels
+// are localised at the call site via the `resources.dimensions` message group
+// (keyed by dimension), so no human-readable label lives here.
 
 import type { TagDimension } from '@/types/resource';
 
 export interface DimensionConfig {
   dimension: TagDimension;
-  label: string;
   /** Adapts to the chosen subject (shows the "English" badge in browse). */
   subjectSpecific?: boolean;
   /** Browse facet starts collapsed. */
   defaultCollapsed?: boolean;
+  /** Rendered as a row of pill toggles rather than checkbox rows. */
+  pills?: boolean;
 }
-
-/** Human label per dimension (used in the upload modal and chips). */
-export const DIMENSION_LABEL: Record<TagDimension, string> = {
-  skill_type: 'Skill type',
-  grammar_content: 'Grammar content',
-  theme: 'Theme',
-  format: 'Format',
-  exercise_type: 'Exercise type',
-  lesson_stage: 'Lesson stage',
-  localisation: 'Localisation',
-};
 
 /** The dimensions that scope to the chosen subject (English first). */
 export const SUBJECT_SPECIFIC_DIMENSIONS: TagDimension[] = ['skill_type', 'grammar_content'];
 
 /** Browse-sidebar facet order (Year is handled separately, above these). */
 export const BROWSE_FACETS: DimensionConfig[] = [
-  { dimension: 'skill_type', label: 'Skill type', subjectSpecific: true },
-  { dimension: 'grammar_content', label: 'Grammar content', subjectSpecific: true },
-  { dimension: 'theme', label: 'Theme' },
-  { dimension: 'format', label: 'Format' },
-  { dimension: 'exercise_type', label: 'Exercise type', defaultCollapsed: true },
-  { dimension: 'lesson_stage', label: 'Lesson stage', defaultCollapsed: true },
-  { dimension: 'localisation', label: 'Localisation', defaultCollapsed: true },
+  { dimension: 'skill_type', subjectSpecific: true },
+  { dimension: 'grammar_content', subjectSpecific: true, pills: true },
+  { dimension: 'theme' },
+  { dimension: 'format', pills: true },
+  { dimension: 'exercise_type', defaultCollapsed: true },
+  { dimension: 'lesson_stage', defaultCollapsed: true },
+  { dimension: 'localisation', defaultCollapsed: true },
 ];
 
 /**

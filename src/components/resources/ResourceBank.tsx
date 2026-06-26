@@ -8,6 +8,8 @@
 // from the signed-in user's id and role.
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatNumber } from '@/lib/format';
 import type { Folder, ResourceFilters, ResourceWithTags } from '@/types/resource';
 import {
   addResourceToFolderAction,
@@ -50,6 +52,9 @@ export function ResourceBank({
   initialResources,
   initialFolders,
 }: ResourceBankProps) {
+  const t = useTranslations('resources');
+  const locale = useLocale();
+
   // ── filter state ──────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
@@ -74,7 +79,7 @@ export function ResourceBank({
   const [addingTo, setAddingTo] = useState<ResourceWithTags | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const subjectName = subjects.find((s) => s.id === defaultSubjectId)?.name ?? 'English';
+  const subjectName = subjects.find((s) => s.id === defaultSubjectId)?.name ?? t('bank.defaultSubject');
 
   // Debounce the search text.
   useEffect(() => {
@@ -213,7 +218,7 @@ export function ResourceBank({
     if (subjectActive && defaultSubjectId) {
       out.push({
         key: 'subject',
-        label: `Subject: ${subjectName}`,
+        label: t('bank.subjectChip', { subject: subjectName }),
         c: teal.c,
         bg: teal.bg,
         xColor: teal.x,
@@ -223,7 +228,7 @@ export function ResourceBank({
     if (selectedYear != null) {
       out.push({
         key: 'year',
-        label: `Year: ${selectedYear}`,
+        label: t('bank.yearChip', { year: formatNumber(selectedYear, locale) }),
         c: teal.c,
         bg: teal.bg,
         xColor: teal.x,
@@ -245,7 +250,7 @@ export function ResourceBank({
       });
     }
     return out;
-  }, [subjectActive, defaultSubjectId, subjectName, selectedYear, selectedTagIds, tagLabelById, toggleTag]);
+  }, [subjectActive, defaultSubjectId, subjectName, selectedYear, selectedTagIds, tagLabelById, toggleTag, t, locale]);
 
   // ── mutations ─────────────────────────────────────────────────────────────────
   const handleCreate = useCallback(
@@ -280,16 +285,16 @@ export function ResourceBank({
 
   const handleDelete = useCallback(
     async (r: ResourceWithTags) => {
-      if (!window.confirm(`Delete "${r.title}"? This removes it from the shared bank.`)) return;
+      if (!window.confirm(t('bank.deleteConfirm', { title: r.title }))) return;
       const res = await deleteResourceAction(r.id);
       if (res.ok) {
         if (preview?.id === r.id) setPreview(null);
         refreshActiveView();
       } else {
-        window.alert(res.error ?? 'Could not delete the resource.');
+        window.alert(res.error ?? t('bank.deleteError'));
       }
     },
-    [preview, refreshActiveView]
+    [preview, refreshActiveView, t]
   );
 
   // Opening the picker: choose which draft lesson to add the resource to.
@@ -304,21 +309,21 @@ export function ResourceBank({
   const handlePickLesson = useCallback(
     async (lesson: DraftLessonSummary): Promise<{ ok: boolean; error?: string }> => {
       const resource = addingTo;
-      if (!resource) return { ok: false, error: 'No resource selected.' };
+      if (!resource) return { ok: false, error: t('bank.noResourceSelected') };
       let blocks;
       try {
         blocks = await buildBlocksFromResource(resource);
       } catch {
-        return { ok: false, error: 'Could not prepare the resource.' };
+        return { ok: false, error: t('bank.prepareError') };
       }
       const res = await appendResourceBlocksToLessonAction(lesson.id, resource.id, blocks);
       if (!res.ok) return { ok: false, error: res.error };
       setAddingTo(null);
-      setToast(`Added “${resource.title}” to ${res.lessonLabel ?? lesson.title}.`);
+      setToast(t('bank.addedToast', { title: resource.title, lesson: res.lessonLabel ?? lesson.title }));
       refreshActiveView();
       return { ok: true };
     },
-    [addingTo, refreshActiveView]
+    [addingTo, refreshActiveView, t]
   );
 
   const handleSaveToFolder = useCallback(
@@ -363,13 +368,13 @@ export function ResourceBank({
 
   // ── header copy ────────────────────────────────────────────────────────────
   const headerLabel = useMemo(() => {
-    if (activeView.kind === 'most-used') return 'in Most used';
+    if (activeView.kind === 'most-used') return t('bank.inMostUsed');
     if (activeView.kind === 'folder') {
       const f = folders.find((x) => x.id === activeView.id);
-      return f ? `in "${f.name}"` : 'in this folder';
+      return f ? t('bank.inFolder', { name: f.name }) : t('bank.inThisFolder');
     }
-    return 'in the bank';
-  }, [activeView, folders]);
+    return t('bank.inBank');
+  }, [activeView, folders, t]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -405,25 +410,28 @@ export function ResourceBank({
           <div className="mb-[14px] flex flex-wrap items-center justify-between gap-2">
             <div className="text-[13px] text-text-muted">
               <b className="text-ink">
-                {displayed.length} {displayed.length === 1 ? 'resource' : 'resources'}
+                {t('bank.count', {
+                  count: displayed.length,
+                  countText: formatNumber(displayed.length, locale),
+                })}
               </b>{' '}
               {headerLabel}
             </div>
             <div className="inline-flex items-center gap-[6px] text-[12.5px] text-neutral-600">
-              Sort: <span className="font-semibold text-neutral-900">Most used</span>
+              {t('bank.sort')} <span className="font-semibold text-neutral-900">{t('bank.sortMostUsed')}</span>
               <ChevronDown size={13} className="text-text-faint" />
             </div>
           </div>
 
           {(loading || searching) && displayed.length === 0 ? (
-            <div className="py-20 text-center text-[13px] text-text-faint">Loading resources…</div>
+            <div className="py-20 text-center text-[13px] text-text-faint">{t('bank.loading')}</div>
           ) : displayed.length === 0 ? (
             <div className="rounded-[14px] border border-dashed border-border-strong py-20 text-center">
-              <div className="text-[14px] font-semibold text-neutral-800">No resources here yet</div>
+              <div className="text-[14px] font-semibold text-neutral-800">{t('bank.emptyTitle')}</div>
               <div className="mt-1 text-[12.5px] text-text-faint">
                 {activeView.kind === 'browse'
-                  ? 'Try clearing some filters, or upload the first one.'
-                  : 'Save resources to this folder from a preview.'}
+                  ? t('bank.emptyBrowse')
+                  : t('bank.emptyFolder')}
               </div>
             </div>
           ) : (

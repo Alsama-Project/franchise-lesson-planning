@@ -15,6 +15,16 @@ import { getActiveResourceGuide } from './resource-guide';
  * environment. It is destination-agnostic — it returns generated content and
  * does not decide where it lands, and deliberately does not touch Supabase, the
  * lesson schema, the resource bank, or any editor state.
+ *
+ * LANGUAGE INVARIANT (do not break): the language of the *generated student
+ * content* follows the SUBJECT / curriculum context, NOT the teacher's UI
+ * locale. An English-subject worksheet must come back in English even when the
+ * teacher is using the app in Arabic. This module therefore must NEVER read
+ * `NEXT_LOCALE` / `getLocale()` / the next-intl request locale — there are
+ * intentionally zero imports of `next-intl` or `next/headers` cookies here, and
+ * none should be added. (Contrast `check-objective`, whose UI-facing feedback
+ * *does* follow the UI locale.) The content language is steered solely by the
+ * curriculum anchors in the user prompt; see {@link LANGUAGE_GUARD}.
  */
 
 /** Model used for generation. Pinned deliberately — see CLAUDE.md model notes. */
@@ -130,12 +140,25 @@ OUTPUT CONTRACT:
 Return ONLY a JSON object with the keys "title", "body", "teacher_notes". "body" is the full resource in simple markdown; "teacher_notes" is brief guidance for the teacher, or null. No code fences, no preamble, no commentary outside the JSON.`;
 
 /**
+ * Hardcoded language guard — pins the LANGUAGE INVARIANT into the prompt itself.
+ *
+ * The generated content's language is determined by the subject and curriculum
+ * context in the user message, never by the teacher's interface language. This
+ * is the in-prompt statement of the code-level rule documented at the top of
+ * this module: this service does not read the UI locale, so the model is told
+ * explicitly to take its language cue from the subject/curriculum only.
+ */
+const LANGUAGE_GUARD = `LANGUAGE OF THE RESOURCE:
+- Write the resource in the language of the SUBJECT being taught, as indicated by the curriculum context (subject, outcomes, grammar/vocabulary, theme) in the user message. For example, an English-subject resource must be written in English even though the students' first language is Arabic.
+- The teacher's app/interface language is irrelevant here and is not provided — never infer the resource language from it. When the subject's language is genuinely unclear from the context, default to English.`;
+
+/**
  * Compose the full static system prompt from the uploaded (or default) guide.
  * Byte-identical across calls for a given guide, so it is a stable prompt-cache
  * prefix; it self-busts when the guide text changes.
  */
 function composeSystemPrompt(guide: string): string {
-  return `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${SAFETY_FLOOR}`;
+  return `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${SAFETY_FLOOR}\n\n${LANGUAGE_GUARD}`;
 }
 
 /** True when this call refines an existing resource rather than generating fresh. */

@@ -8,6 +8,8 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatNumber } from '@/lib/format';
 import type { ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
 import { previewKind, previewSrc } from '@/components/resources/preview';
@@ -39,6 +41,8 @@ export function ResourceCard({
   onEdit,
   onDelete,
 }: ResourceCardProps) {
+  const t = useTranslations('resources');
+  const locale = useLocale();
   const v = resourceView(resource);
 
   // Inline preview: an image or first-page PDF thumbnail when previewable,
@@ -52,7 +56,7 @@ export function ResourceCard({
     <button
       type="button"
       onClick={() => onOpen(resource)}
-      className="flex flex-col overflow-hidden rounded-[14px] border border-border bg-surface text-left transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40"
+      className="flex flex-col overflow-hidden rounded-[14px] border border-border bg-surface text-start transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/40"
     >
       {/* Format thumbnail — a real preview when one is available, otherwise the
           flat format-coloured block. Badges overlay either way. */}
@@ -81,13 +85,13 @@ export function ResourceCard({
         ) : null}
 
         {v.isNew ? (
-          <span className="absolute left-2 top-2 z-10 rounded-badge bg-pink px-[7px] py-0.5 text-[9.5px] font-bold tracking-[0.04em] text-white">
-            NEW
+          <span className="absolute start-2 top-2 z-10 rounded-badge bg-pink px-[7px] py-0.5 text-[9.5px] font-bold tracking-[0.04em] text-white">
+            {t('card.new')}
           </span>
         ) : null}
-        <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-[3px] rounded-badge bg-white/80 px-[7px] py-0.5 text-[10px] font-semibold text-neutral-800">
+        <span className="absolute end-2 top-2 z-10 inline-flex items-center gap-[3px] rounded-badge bg-white/80 px-[7px] py-0.5 text-[10px] font-semibold text-neutral-800">
           <TrendingUp size={11} style={{ color: '#B0651E' }} strokeWidth={2.2} />
-          {resource.usage_count}
+          {formatNumber(resource.usage_count, locale)}
         </span>
         {!showPreview ? (
           <span
@@ -101,7 +105,7 @@ export function ResourceCard({
 
       {/* Body */}
       <div className="flex flex-1 flex-col gap-[9px] p-[13px]">
-        <div className="text-[13.5px] font-semibold leading-[1.3] text-ink">
+        <div dir="auto" className="text-[13.5px] font-semibold leading-[1.3] text-ink">
           {resource.title}
         </div>
 
@@ -125,7 +129,7 @@ export function ResourceCard({
           <div className="flex min-w-0 items-center gap-[6px]">
             {isYours ? (
               <span className="rounded-badge bg-[#E4F0ED] px-2 py-[3px] text-[10px] font-semibold text-[#186155]">
-                Your upload
+                {t('card.yourUpload')}
               </span>
             ) : null}
           </div>
@@ -135,7 +139,7 @@ export function ResourceCard({
               <span
                 role="button"
                 tabIndex={0}
-                aria-label={`Edit ${resource.title}`}
+                aria-label={t('card.editAria', { title: resource.title })}
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(resource);
@@ -154,7 +158,7 @@ export function ResourceCard({
               <span
                 role="button"
                 tabIndex={0}
-                aria-label={`Delete ${resource.title}`}
+                aria-label={t('card.deleteAria', { title: resource.title })}
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(resource);

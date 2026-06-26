@@ -69,27 +69,6 @@
       "generateError": "Generation failed. Try again.",
       "adjustError": "Adjust failed. Try again."
     },
-    "compose": {
-      "title": "Generate with AI",
-      "placeholder": "Describe the resource you need",
-      "generate": "Generate",
-      "generating": "Generating…",
-      "cancel": "Cancel",
-      "presets": [
-        "Matching: picture → word",
-        "5 fill-in-the-blanks",
-        "Multiple choice ×3",
-        "Word bank + sentences"
-      ]
-    },
-    "adjust": {
-      "title": "Adjust with AI",
-      "undo": "Undo adjust",
-      "placeholder": "Make a change…",
-      "apply": "Apply",
-      "applying": "Adjusting…",
-      "chips": ["Simpler", "Add word bank", "More items", "Shorter"]
-    },
     "textbox": {
       "borderOn": "Border on",
       "borderOff": "Border off",

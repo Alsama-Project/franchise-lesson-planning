@@ -8,6 +8,8 @@
 
 import { useTranslations } from 'next-intl';
 
+const CHIP_KEYS = ['ai.adjustSimpler', 'ai.adjustWordBank', 'ai.adjustMoreItems', 'ai.adjustShorter'];
+
 function Sparkle({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -43,8 +45,8 @@ export function AdjustBar({
   canUndo: boolean;
   onUndo: () => void;
 }) {
-  const t = useTranslations('worksheet');
-  const chips = t.raw('adjust.chips') as string[];
+  const t = useTranslations('resources');
+
   const submit = () => {
     const text = instruction.trim();
     if (text) onAdjust(text);
@@ -64,7 +66,7 @@ export function AdjustBar({
         <span style={{ color: '#1F7A6C', display: 'inline-flex' }}>
           <Sparkle />
         </span>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>{t('adjust.title')}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>{t('ai.adjustTitle')}</span>
         {canUndo ? (
           <button
             type="button"
@@ -85,33 +87,37 @@ export function AdjustBar({
               padding: 0,
             }}
           >
-            <UndoIcon /> {t('adjust.undo')}
+            <UndoIcon /> {t('ai.undoAdjust')}
           </button>
         ) : null}
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        {chips.map((chip) => (
-          <button
-            key={chip}
-            type="button"
-            onClick={() => onAdjust(chip)}
-            disabled={adjusting}
-            style={{
-              fontFamily: 'inherit',
-              fontSize: 11.5,
-              fontWeight: 500,
-              color: '#186155',
-              background: '#E4F0ED',
-              border: '1px solid #CFE6E0',
-              borderRadius: 999,
-              padding: '4px 9px',
-              cursor: adjusting ? 'default' : 'pointer',
-            }}
-          >
-            {chip}
-          </button>
-        ))}
+        {CHIP_KEYS.map((key) => {
+          const chip = t(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onAdjust(chip)}
+              disabled={adjusting}
+              dir="auto"
+              style={{
+                fontFamily: 'inherit',
+                fontSize: 11.5,
+                fontWeight: 500,
+                color: '#186155',
+                background: '#E4F0ED',
+                border: '1px solid #CFE6E0',
+                borderRadius: 999,
+                padding: '4px 9px',
+                cursor: adjusting ? 'default' : 'pointer',
+              }}
+            >
+              {chip}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
@@ -126,7 +132,8 @@ export function AdjustBar({
             }
           }}
           disabled={adjusting}
-          placeholder={t('adjust.placeholder')}
+          placeholder={t('ai.adjustPlaceholder')}
+          dir="auto"
           style={{
             flex: 1,
             fontFamily: 'var(--font-sora), sans-serif',
@@ -157,7 +164,7 @@ export function AdjustBar({
             whiteSpace: 'nowrap',
           }}
         >
-          {adjusting ? t('adjust.applying') : t('adjust.apply')}
+          {adjusting ? t('ai.adjusting') : t('ai.apply')}
         </button>
       </div>
 

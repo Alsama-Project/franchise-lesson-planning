@@ -54,7 +54,15 @@
       "none": "None",
       "more": "{count, plural, one {+ {value} more} other {+ {value} more}}",
       "moveError": "Could not move the lesson.",
-      "statusError": "Could not update status."
+      "statusError": "Could not update status.",
+      "openPlan": "Open the plan",
+      "submitModal": {
+        "ariaLabel": "Submit for approval",
+        "title": "Submit for approval?",
+        "body": "This Year {n} lesson will be sent to your subject coordinator for review. You can still open and edit it while it's pending — the coordinator will either approve it or send it back with changes.",
+        "cancel": "Cancel",
+        "submit": "Submit"
+      }
     },
     "confirm": {
       "ariaLabel": "Plan this lesson",

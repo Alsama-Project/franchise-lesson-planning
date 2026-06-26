@@ -198,6 +198,43 @@ function headerCells(row: Cell[] | undefined, nCols: number): HeaderCell[] {
   return cells;
 }
 
+/** How many band rows above the "Column header" row to merge a blank column from. */
+const BAND_LOOKBACK = 2;
+
+/**
+ * Like `headerCells`, but for the FINAL harvest of the resolved header row: some
+ * columns label only in a "band" row ABOVE the column-header row (the curriculum
+ * workbooks use a 3-row header block, and a few merged columns — English col J
+ * "Monthly Learning Outcome", col F "Annual Learning Outcomes" — carry their label
+ * in the band row, leaving the column-header row blank). For any column blank in the
+ * header row, fall back to the nearest non-blank cell in the (up to `BAND_LOOKBACK`)
+ * rows above, so the matcher can place it by meaning. Columns that DO have a header
+ * cell are untouched, so existing mappings are byte-for-byte unchanged — this only
+ * *adds* otherwise-dropped band-labelled columns. Detection (`detectHeaderRow`) keeps
+ * the plain single-row read, so which row is chosen as the header never changes.
+ */
+function headerCellsWithBand(grid: Cell[][], headerRow: number, nCols: number): HeaderCell[] {
+  const row = grid[headerRow];
+  if (!row) return [];
+  const cells: HeaderCell[] = [];
+  for (let c = 0; c < nCols; c++) {
+    let text = (row[c]?.text ?? '').trim();
+    if (!text) {
+      for (let up = 1; up <= BAND_LOOKBACK && headerRow - up >= 0; up++) {
+        const above = (grid[headerRow - up]?.[c]?.text ?? '').trim();
+        if (above) {
+          text = above;
+          break;
+        }
+      }
+    }
+    if (!text) continue;
+    if (HEADER_MARKERS.includes(normalizeHeader(text))) continue; // "Column header"
+    cells.push({ col: c, text });
+  }
+  return cells;
+}
+
 interface SheetEval {
   name: string;
   headerRow: number; // 0-based grid index
@@ -249,7 +286,7 @@ function evaluateSheet(name: string, sheet: XLSX.WorkSheet): SheetEval | null {
   if (nRows === 0) return null;
   const headerRow = detectHeaderRow(grid, nRows, nCols);
   if (headerRow == null) return null;
-  const match = matchColumns(headerCells(grid[headerRow], nCols));
+  const match = matchColumns(headerCellsWithBand(grid, headerRow, nCols));
   const grain = detectGrain(grid, headerRow, nRows, match);
   const f = match.byField;
   const hasOutcome =

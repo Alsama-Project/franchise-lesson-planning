@@ -279,6 +279,54 @@ export async function unsubmitLessonPlan(input: { id: string }): Promise<ActionR
 }
 
 /**
+ * Submit an already-persisted plan for approval BY ID — the write behind the
+ * Status board's drag-to-submit. Unlike `submitLessonPlan` (the editor path),
+ * the board carries no editor edits, so there is nothing to persist via
+ * `buildPatch`: we validate the plan's STORED objective and, on pass, make the
+ * same status/timestamp transition (`submitted` + `submitted_at`, clearing
+ * `reviewed_at` so a resubmit re-enters the queue cleanly).
+ *
+ * Authorisation rides entirely on RLS (`lp_member_all`): the auth'd client both
+ * reads the objective and writes the transition, so a teacher can only submit a
+ * plan they created. No service-role client, no status-/membership-based
+ * widening.
+ */
+export async function submitLessonPlanById(planId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  // Read the stored objective through the auth'd client (RLS scopes the read).
+  const { data: existing, error: loadError } = await supabase
+    .from('lesson_plans')
+    .select('smartt_objective')
+    .eq('id', planId)
+    .maybeSingle();
+
+  if (loadError) return { ok: false, error: loadError.message };
+  if (!existing) return { ok: false, error: 'Plan not found or not permitted.' };
+
+  if (!hasObjectiveContent((existing as { smartt_objective: string | null }).smartt_objective)) {
+    return { ok: false, error: 'Add a SMARTT objective before submitting.' };
+  }
+
+  const { data, error } = await supabase
+    .from('lesson_plans')
+    .update({
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+      reviewed_at: null,
+    })
+    .eq('id', planId)
+    .select('updated_at')
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
+
+  revalidatePath('/');
+  return { ok: true, updated_at: data.updated_at };
+}
+
+/**
  * Submit a plan for coordinator approval: persists the latest objective + blocks,
  * then sets status to `submitted` and stamps `submitted_at`. Guarded by a
  * non-empty objective (beyond the enforced stem).

@@ -25,9 +25,24 @@ import {
   type EmptySlotCard,
   type PlanCard,
 } from '@/components/weekly-overview/cards';
-import { setPlanStatus } from '@/lib/actions/lesson-plan';
+import { setPlanStatus, submitLessonPlanById } from '@/lib/actions/lesson-plan';
+import { SubmitForApprovalModal } from '@/components/weekly-overview/SubmitForApprovalModal';
 import type { BoardYear, SlotStatus } from '@/types/weekly-overview';
 import type { PlanStatus } from '@/types/lesson';
+
+/** A move into "Submitted" held pending the confirm modal (nothing written yet). */
+interface PendingSubmit {
+  card: PlanCard;
+  /** The column the card came from, to roll back to on cancel/failure. */
+  from: PlanStatus;
+}
+
+/** A board error, optionally carrying a plan to link to (the submit-failure case). */
+interface BoardError {
+  text: string;
+  /** When set, the toast offers an "Open the plan" link to fix it in the editor. */
+  planId: string | null;
+}
 
 // How many "Not started" cards to show before collapsing to a "+N more" note.
 const NOT_STARTED_CAP = 8;
@@ -66,7 +81,9 @@ export function StatusView({
 
   // Optimistic per-plan status overrides, keyed by plan id.
   const [overrides, setOverrides] = useState<Record<string, PlanStatus>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BoardError | null>(null);
+  // A drop into "Submitted" awaiting confirmation (card not yet moved).
+  const [pending, setPending] = useState<PendingSubmit | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -90,39 +107,84 @@ export function StatusView({
     );
   }
 
+  /**
+   * Optimistically move a card to `target`, persisting via `persist`. On failure
+   * (or rejection) roll the override back to `previous` and surface the error.
+   * `errorPlanId` is set only on the submit path, so its toast can link to the
+   * plan (a missing objective can't be fixed by dragging).
+   */
+  const commitMove = (
+    planId: string,
+    previous: PlanStatus,
+    target: PlanStatus,
+    persist: () => Promise<{ ok: boolean; error?: string }>,
+    errorPlanId: string | null,
+  ) => {
+    setError(null);
+    setOverrides((prev) => ({ ...prev, [planId]: target }));
+
+    persist()
+      .then((res) => {
+        if (!res.ok) {
+          setOverrides((prev) => ({ ...prev, [planId]: previous }));
+          setError({ text: res.error ?? t('statusView.statusError'), planId: errorPlanId });
+        }
+      })
+      .catch(() => {
+        setOverrides((prev) => ({ ...prev, [planId]: previous }));
+        setError({ text: t('statusView.statusError'), planId: errorPlanId });
+      });
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
 
     const card = active.data.current?.card as PlanCard | undefined;
     if (!card) return;
-    const planId = card.planId;
 
     const target = over.id as PlanStatus;
-    const previous = overrides[planId] ?? card.status;
+    const previous = overrides[card.planId] ?? card.status;
     if (target === previous) return;
 
-    setError(null);
-    setOverrides((prev) => ({ ...prev, [planId]: target }));
+    // Any drop into "Submitted" is a real submission (first submit from In
+    // progress, or resubmit from Needs Review): hold it, confirm, then route
+    // through the editor's submit action. Every other transition keeps its
+    // direct status write, unconfirmed.
+    if (target === 'submitted') {
+      setPending({ card, from: previous });
+      return;
+    }
 
-    setPlanStatus(planId, target)
-      .then((res) => {
-        if (!res.ok) {
-          setOverrides((prev) => ({ ...prev, [planId]: previous }));
-          setError(res.error ?? t('statusView.statusError'));
-        }
-      })
-      .catch(() => {
-        setOverrides((prev) => ({ ...prev, [planId]: previous }));
-        setError(t('statusView.statusError'));
-      });
+    commitMove(card.planId, previous, target, () => setPlanStatus(card.planId, target), null);
+  };
+
+  // Confirm the held submission: optimistically move to Submitted and run the
+  // same validation + write the editor's Submit uses. On the objective failure
+  // the toast links back to the plan so the teacher can add it there.
+  const confirmSubmit = () => {
+    if (!pending) return;
+    const { card, from } = pending;
+    setPending(null);
+    commitMove(card.planId, from, 'submitted', () => submitLessonPlanById(card.planId), card.planId);
   };
 
   return (
     <div>
       {error ? (
         <div className="mb-[12px] rounded-[10px] border border-status-review-bg bg-status-review-bg px-[12px] py-[8px] text-[12.5px] text-status-review">
-          {error}
+          {error.text}
+          {error.planId ? (
+            <>
+              {' '}
+              <a
+                href={`/plan/${error.planId}`}
+                className="font-semibold underline underline-offset-2 hover:text-status-review"
+              >
+                {t('statusView.openPlan')}
+              </a>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -142,6 +204,14 @@ export function StatusView({
           )}
         </div>
       </DndContext>
+
+      {pending ? (
+        <SubmitForApprovalModal
+          year={pending.card.year}
+          onConfirm={confirmSubmit}
+          onCancel={() => setPending(null)}
+        />
+      ) : null}
     </div>
   );
 }

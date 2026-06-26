@@ -35,6 +35,7 @@
       "checking": "جارٍ التحقق…",
       "askAriaLabel": "اسأل آية عن هدفك",
       "askTitle": "اسأل آية للمساعدة في هدفك",
+      "feedback": "ملاحظات",
       "feedbackHeading": "تحقّق هادئ — ملاحظات، وليس محادثة",
       "suggestedRewrite": "إعادة صياغة مقترحة",
       "checkFailed": "فشل التحقق من الهدف."

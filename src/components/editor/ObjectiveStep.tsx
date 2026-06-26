@@ -80,6 +80,10 @@ export function ObjectiveStep({
   const editableRef = useRef<HTMLSpanElement>(null);
   const [focused, setFocused] = useState(false);
 
+  // The check feedback is collapsed behind a "+ FEEDBACK" disclosure: it appears
+  // only once a check has returned a result, and stays closed until opened.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   useEffect(() => {
     const el = editableRef.current;
     if (el && el.textContent !== remainder) el.textContent = remainder;
@@ -194,29 +198,51 @@ export function ObjectiveStep({
         </div>
       ) : null}
 
+      {/* Feedback collapses behind a "+ FEEDBACK" disclosure — it surfaces only
+          once a check has returned a result, closed by default. The revealed
+          content is the unchanged ObjectiveCheckResult render. */}
       {checkResult ? (
-        <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
-          <div className="mb-[9px] flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#1F7A6C">
-              <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" />
-            </svg>
-            {t('feedbackHeading')}
-          </div>
-          {checkResult.suggestions.length > 0 ? (
-            <ul dir="auto" className="ms-[18px] list-disc text-[13px] leading-[1.55] text-neutral-900">
-              {checkResult.suggestions.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen((open) => !open)}
+            aria-expanded={feedbackOpen}
+            className="inline-flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]"
+          >
+            <span
+              aria-hidden
+              className="inline-flex size-[16px] items-center justify-center rounded-full border border-[#CFE6E0] text-[13px] leading-none"
+            >
+              {feedbackOpen ? '−' : '+'}
+            </span>
+            {t('feedback')}
+          </button>
+
+          {feedbackOpen ? (
+            <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
+              <div className="mb-[9px] flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#1F7A6C">
+                  <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" />
+                </svg>
+                {t('feedbackHeading')}
+              </div>
+              {checkResult.suggestions.length > 0 ? (
+                <ul dir="auto" className="ms-[18px] list-disc text-[13px] leading-[1.55] text-neutral-900">
+                  {checkResult.suggestions.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
+                  {t('suggestedRewrite')}
+                </div>
+                <div dir="auto" className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
+                  {checkResult.improved_objective}
+                </div>
+              </div>
+            </div>
           ) : null}
-          <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
-              {t('suggestedRewrite')}
-            </div>
-            <div dir="auto" className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
-              {checkResult.improved_objective}
-            </div>
-          </div>
         </div>
       ) : null}
     </div>

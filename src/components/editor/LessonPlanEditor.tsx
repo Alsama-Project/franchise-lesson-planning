@@ -26,6 +26,7 @@ import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
+import { CurriculumPanel } from '@/components/editor/CurriculumPanel';
 import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
 import { ObjectiveBanner } from '@/components/editor/ObjectiveBanner';
 import { WritingStep } from '@/components/editor/WritingStep';
@@ -288,7 +289,15 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
         {step === 1 ? <CurriculumBand curriculum={curriculum} /> : null}
 
-        {step > 1 ? <ObjectiveBanner remainder={remainder} /> : null}
+        {/* Past Step 1 the cream curriculum context persists alongside the pink
+            objective banner, so the locked daily LO / theme / grammar-vocab stay
+            on screen on every stage. */}
+        {step > 1 ? (
+          <div className="flex flex-col gap-[14px]">
+            <ObjectiveBanner remainder={remainder} />
+            <CurriculumPanel curriculum={curriculum} />
+          </div>
+        ) : null}
 
         {step === 1 ? (
           <ObjectiveStep

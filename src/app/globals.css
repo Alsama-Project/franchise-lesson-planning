@@ -106,6 +106,20 @@
 }
 
 /*
+ * Arabic / RTL typography. Sora has no Arabic subset, so under the Arabic locale
+ * (:lang(ar)) or any RTL direction — including the pseudo-RTL dev toggle, which
+ * keeps lang="en" — we add IBM Plex Sans Arabic for Arabic glyphs. Sora stays
+ * FIRST so Latin runs (e.g. "English") still render in Sora; codepoints Sora
+ * doesn't cover fall through to IBM Plex Sans Arabic. The Sacramento wordmark and
+ * the print/A4 worksheet rules below are intentionally left untouched.
+ */
+[dir="rtl"] body,
+html:lang(ar) body {
+  font-family: var(--font-sora), var(--font-ibm-plex-arabic), ui-sans-serif,
+    system-ui, sans-serif;
+}
+
+/*
  * Inline minutes field (TimeStepper): strip the native number-spinner arrows so
  * the value reads as clean inline text. Increment still works via the keyboard
  * up/down arrows; the visible chrome is just the number + a teal focus state.

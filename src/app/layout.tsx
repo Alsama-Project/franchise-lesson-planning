@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { sacramento, sora } from "./fonts";
+import { ibmPlexSansArabic, sacramento, sora } from "./fonts";
 import { dirFor, isLocale, PSEUDO_RTL_COOKIE } from "@/i18n/config";
 import "./globals.css";
 
@@ -34,7 +34,7 @@ export default async function RootLayout({
     <html
       lang={lang}
       dir={dir}
-      className={`${sora.variable} ${sacramento.variable} h-full antialiased`}
+      className={`${sora.variable} ${ibmPlexSansArabic.variable} ${sacramento.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         <NextIntlClientProvider locale={locale} messages={messages}>

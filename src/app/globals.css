@@ -106,6 +106,20 @@
 }
 
 /*
+ * Arabic / RTL UI typeface. Under Arabic (or a forced RTL direction) the sans
+ * token resolves to IBM Plex Sans Arabic first, falling back to Sora for Latin
+ * runs. This overrides only the `--font-sans` token, so the whole UI — body
+ * text and every `font-sans` utility — swaps in one place; the Sacramento
+ * wordmark (font-display) is untouched. `html` selectors beat the `:root`
+ * default from @theme on equal specificity.
+ */
+html:lang(ar),
+html[dir="rtl"] {
+  --font-sans: var(--font-arabic), var(--font-sora), ui-sans-serif, system-ui,
+    sans-serif;
+}
+
+/*
  * Inline minutes field (TimeStepper): strip the native number-spinner arrows so
  * the value reads as clean inline text. Increment still works via the keyboard
  * up/down arrows; the visible chrome is just the number + a teal focus state.

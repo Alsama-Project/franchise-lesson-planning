@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 // The "+ Add exercise" affordance and its dropdown. Two visual variants share
 // the same menu: `empty` is the large teal button shown when the worksheet has
 // no exercises; `another` is the smaller dashed "add another" button shown below
@@ -33,6 +35,7 @@ function Menu({
   onChooseBank: () => void;
   onCreateNew: () => void;
 }) {
+  const t = useTranslations('worksheet');
   return (
     <div
       style={{
@@ -60,7 +63,7 @@ function Menu({
           borderRadius: 8,
           cursor: 'pointer',
           width: '100%',
-          textAlign: 'left',
+          textAlign: 'start',
           background: 'none',
           border: 'none',
           font: 'inherit',
@@ -71,8 +74,8 @@ function Menu({
           <BankIcon />
         </span>
         <span>
-          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Choose from resource bank</span>
-          <span style={{ display: 'block', fontSize: 10.5, color: '#8A8178', marginTop: 1 }}>Search the shared bank by tag</span>
+          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>{t('addExercise.chooseBank')}</span>
+          <span style={{ display: 'block', fontSize: 10.5, color: '#8A8178', marginTop: 1 }}>{t('addExercise.chooseBankHint')}</span>
         </span>
       </button>
       <button
@@ -86,7 +89,7 @@ function Menu({
           borderRadius: 8,
           cursor: 'pointer',
           width: '100%',
-          textAlign: 'left',
+          textAlign: 'start',
           background: 'none',
           border: 'none',
           font: 'inherit',
@@ -97,8 +100,8 @@ function Menu({
           <PenIcon />
         </span>
         <span>
-          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Create new</span>
-          <span style={{ display: 'block', fontSize: 10.5, color: '#8A8178', marginTop: 1 }}>A blank block — write, draw, drop images</span>
+          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>{t('addExercise.createNew')}</span>
+          <span style={{ display: 'block', fontSize: 10.5, color: '#8A8178', marginTop: 1 }}>{t('addExercise.createNewHint')}</span>
         </span>
       </button>
     </div>
@@ -118,6 +121,7 @@ export function AddExerciseMenu({
   onChooseBank: () => void;
   onCreateNew: () => void;
 }) {
+  const t = useTranslations('worksheet');
   const empty = variant === 'empty';
   return (
     <div
@@ -164,7 +168,7 @@ export function AddExerciseMenu({
         <svg width={empty ? 14 : 12} height={empty ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke={empty ? '#fff' : '#1F7A6C'} strokeWidth={empty ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 5v14M5 12h14" />
         </svg>
-        Add exercise
+        {t('addExercise.button')}
       </button>
       {open ? <Menu onChooseBank={onChooseBank} onCreateNew={onCreateNew} /> : null}
     </div>

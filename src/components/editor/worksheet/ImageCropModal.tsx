@@ -10,6 +10,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslations } from 'next-intl';
 import ReactCrop, { type Crop, type PixelCrop as RICPixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { cropImageToBlob } from '@/lib/editor/crop-image';
@@ -46,6 +47,7 @@ export function ImageCropModal({
   /** A new cropped image was uploaded; swap the node to this URL. */
   onCropped: (url: string) => void;
 }) {
+  const t = useTranslations('worksheet');
   // crop = the live selection (display px); completed = the settled selection
   // used for the actual export.
   const [crop, setCrop] = useState<Crop>();
@@ -72,7 +74,7 @@ export function ImageCropModal({
   const confirm = useCallback(async () => {
     const img = imgRef.current;
     if (!img || !completed || completed.width < 1 || completed.height < 1) {
-      setError('Drag to select a crop area first.');
+      setError(t('crop.selectAreaError'));
       return;
     }
     setBusy(true);
@@ -82,16 +84,16 @@ export function ImageCropModal({
       const blob = await cropImageToBlob(src, natural);
       const url = await uploadWorksheetImageBlob(blob, 'cropped.png');
       if (!url) {
-        setError('Could not upload the cropped image. Try again.');
+        setError(t('crop.uploadError'));
         return;
       }
       onCropped(url);
     } catch {
-      setError('Could not crop this image. Try again.');
+      setError(t('crop.cropError'));
     } finally {
       setBusy(false);
     }
-  }, [completed, src, onCropped]);
+  }, [completed, src, onCropped, t]);
 
   if (typeof document === 'undefined') return null;
 
@@ -101,7 +103,7 @@ export function ImageCropModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Crop image"
+      aria-label={t('crop.title')}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -122,8 +124,8 @@ export function ImageCropModal({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#2A2422' }}>Crop image</span>
-          <span style={{ fontSize: 12, color: '#8A8178' }}>Drag the edges to trim, then apply.</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#2A2422' }}>{t('crop.title')}</span>
+          <span style={{ fontSize: 12, color: '#8A8178' }}>{t('crop.subtitle')}</span>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'center', overflow: 'auto', background: '#F6F2EC', borderRadius: 10, padding: 12 }}>
@@ -154,7 +156,7 @@ export function ImageCropModal({
             disabled={busy}
             style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: '#5C544E', background: '#fff', border: '1px solid #DDD4C8', padding: '8px 14px', borderRadius: 8, cursor: busy ? 'default' : 'pointer' }}
           >
-            Cancel
+            {t('crop.cancel')}
           </button>
           <button
             type="button"
@@ -162,7 +164,7 @@ export function ImageCropModal({
             disabled={busy}
             style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#fff', background: TEAL, border: 'none', padding: '8px 16px', borderRadius: 8, cursor: busy ? 'default' : 'pointer', boxShadow: '0 6px 16px -8px rgba(31,122,108,0.6)' }}
           >
-            {busy ? 'Applying…' : 'Apply crop'}
+            {busy ? t('crop.applying') : t('crop.apply')}
           </button>
         </div>
       </div>

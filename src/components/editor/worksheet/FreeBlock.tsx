@@ -13,6 +13,7 @@
 // it. The block's document and elements are lifted to the parent for autosave.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/core';
 import type {
@@ -133,6 +134,7 @@ export function FreeBlock({
   registerBox: (blockId: string, el: HTMLDivElement | null) => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
 }) {
+  const t = useTranslations('worksheet');
   const hasContent = Boolean(block.doc) || block.elements.length > 0;
   const [view, setView] = useState<View>(hasContent ? 'doc' : 'blank');
 
@@ -286,13 +288,13 @@ export function FreeBlock({
           setView('doc');
           editor.chain().focus().setImage({ src: res.url, alt: file.name }).run();
         } else {
-          setGenError(res.error ?? 'Could not upload the image.');
+          setGenError(res.error ?? t('free.uploadError'));
         }
       } finally {
         setUploading(false);
       }
     },
-    [editor],
+    [editor, t],
   );
 
   const runGenerate = useCallback(async () => {
@@ -311,12 +313,12 @@ export function FreeBlock({
       onChange(editor.getJSON() as WorksheetDoc, true);
     } catch (err) {
       setGenError(
-        err instanceof GenerateResourceRequestError ? err.message : 'Generation failed. Try again.',
+        err instanceof GenerateResourceRequestError ? err.message : t('free.generateError'),
       );
     } finally {
       setGenerating(false);
     }
-  }, [editor, prompt, ctx, onChange, setFrom]);
+  }, [editor, prompt, ctx, onChange, setFrom, t]);
 
   // Stateless adjust: send the doc AS IT STANDS (markdown) + the refinement; the
   // endpoint returns the full updated resource, which replaces the editor content.
@@ -342,13 +344,13 @@ export function FreeBlock({
         onChange(editor.getJSON() as WorksheetDoc, true);
       } catch (err) {
         setAdjustError(
-          err instanceof GenerateResourceRequestError ? err.message : 'Adjust failed. Try again.',
+          err instanceof GenerateResourceRequestError ? err.message : t('free.adjustError'),
         );
       } finally {
         setAdjusting(false);
       }
     },
-    [editor, adjusting, teacherNotes, ctx, onChange, setFrom],
+    [editor, adjusting, teacherNotes, ctx, onChange, setFrom, t],
   );
 
   const undoAdjust = useCallback(() => {
@@ -449,7 +451,7 @@ export function FreeBlock({
       }}
     >
       <BlockBar
-        badge={{ text: 'Free block', variant: 'free' }}
+        badge={{ text: t('block.freeBadge'), variant: 'free' }}
         onDelete={onDelete}
         onDuplicate={onDuplicate}
         dragHandleProps={dragHandleProps}
@@ -468,16 +470,16 @@ export function FreeBlock({
                 <path d="M4 7V5h16v2M9 5v14M7 19h4" />
               </svg>
             </span>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#5C544E' }}>Start your exercise</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#5C544E' }}>{t('free.startExercise')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
               <button type="button" onClick={goWrite} style={choiceBtn}>
-                <PenIcon /> Write it yourself
+                <PenIcon /> {t('free.writeYourself')}
               </button>
               <button type="button" onClick={pickImage} disabled={uploading} style={choiceBtn}>
-                <ImageIcon /> {uploading ? 'Uploading…' : 'Insert image'}
+                <ImageIcon /> {uploading ? t('free.uploading') : t('free.insertImage')}
               </button>
               <button type="button" onClick={toCompose} style={{ ...choiceBtn, color: '#fff', background: '#1F7A6C', border: 'none', boxShadow: '0 6px 16px -8px rgba(31,122,108,0.6)' }}>
-                <Sparkle /> Generate with AI
+                <Sparkle /> {t('free.generateWithAi')}
               </button>
             </div>
             {genError ? <div style={{ fontSize: 12.5, color: '#B62A5C' }}>{genError}</div> : null}
@@ -504,7 +506,7 @@ export function FreeBlock({
         <ExerciseHeading index={index} />
         {fromAI ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#186155', background: '#E4F0ED', border: '1px solid #CFE6E0', borderRadius: 6, padding: '4px 9px', marginBottom: 14 }}>
-            <Sparkle /> Generated with AI
+            <Sparkle /> {t('free.generatedWithAi')}
           </div>
         ) : null}
 
@@ -516,12 +518,12 @@ export function FreeBlock({
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
             </span>
             <div style={{ flex: 1, fontSize: 12, lineHeight: 1.5, color: '#6B5A3E' }}>
-              <span style={{ fontWeight: 700 }}>Teacher note · not on the worksheet.</span> {teacherNotes}
+              <span style={{ fontWeight: 700 }}>{t('free.teacherNoteLabel')}</span> {teacherNotes}
             </div>
             <button
               type="button"
               onClick={() => setNotesDismissed(true)}
-              title="Dismiss"
+              title={t('free.dismiss')}
               style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#9A8A6E', lineHeight: 0, padding: 2 }}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
@@ -530,7 +532,7 @@ export function FreeBlock({
         ) : null}
 
         {uploading ? (
-          <div style={{ fontSize: 12.5, color: '#8A8178', marginBottom: 10 }}>Uploading image…</div>
+          <div style={{ fontSize: 12.5, color: '#8A8178', marginBottom: 10 }}>{t('free.uploadingImage')}</div>
         ) : null}
         <EditorContent editor={editor} />
 

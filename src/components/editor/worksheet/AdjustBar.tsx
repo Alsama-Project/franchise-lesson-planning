@@ -6,7 +6,7 @@
 // new doc out), so there is no thread. A one-step "Undo adjust" restores the
 // pre-adjustment content. Teal = tools/actions, per the project colour law.
 
-const CHIPS = ['Simpler', 'Add word bank', 'More items', 'Shorter'];
+import { useTranslations } from 'next-intl';
 
 function Sparkle({ size = 14 }: { size?: number }) {
   return (
@@ -43,6 +43,8 @@ export function AdjustBar({
   canUndo: boolean;
   onUndo: () => void;
 }) {
+  const t = useTranslations('worksheet');
+  const chips = t.raw('adjust.chips') as string[];
   const submit = () => {
     const text = instruction.trim();
     if (text) onAdjust(text);
@@ -62,14 +64,14 @@ export function AdjustBar({
         <span style={{ color: '#1F7A6C', display: 'inline-flex' }}>
           <Sparkle />
         </span>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>Adjust with AI</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>{t('adjust.title')}</span>
         {canUndo ? (
           <button
             type="button"
             onClick={onUndo}
             disabled={adjusting}
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 5,
@@ -83,13 +85,13 @@ export function AdjustBar({
               padding: 0,
             }}
           >
-            <UndoIcon /> Undo adjust
+            <UndoIcon /> {t('adjust.undo')}
           </button>
         ) : null}
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        {CHIPS.map((chip) => (
+        {chips.map((chip) => (
           <button
             key={chip}
             type="button"
@@ -124,7 +126,7 @@ export function AdjustBar({
             }
           }}
           disabled={adjusting}
-          placeholder="Make a change…"
+          placeholder={t('adjust.placeholder')}
           style={{
             flex: 1,
             fontFamily: 'var(--font-sora), sans-serif',
@@ -155,7 +157,7 @@ export function AdjustBar({
             whiteSpace: 'nowrap',
           }}
         >
-          {adjusting ? 'Adjusting…' : 'Apply'}
+          {adjusting ? t('adjust.applying') : t('adjust.apply')}
         </button>
       </div>
 

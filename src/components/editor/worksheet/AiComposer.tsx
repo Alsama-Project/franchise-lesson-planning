@@ -6,12 +6,7 @@
 // (which calls /api/generate-resource and renders the result into the editor);
 // this component is the prompt UI plus a "Generating…" affordance.
 
-const PRESETS = [
-  'Matching: picture → word',
-  '5 fill-in-the-blanks',
-  'Multiple choice ×3',
-  'Word bank + sentences',
-];
+import { useTranslations } from 'next-intl';
 
 function Sparkle({ size = 16 }: { size?: number }) {
   return (
@@ -36,6 +31,8 @@ export function AiComposer({
   generating: boolean;
   error: string | null;
 }) {
+  const t = useTranslations('worksheet');
+  const presets = t.raw('compose.presets') as string[];
   const appendPreset = (preset: string) => {
     const trimmed = prompt.trim();
     onPromptChange(trimmed ? `${trimmed}\n${preset}` : preset);
@@ -48,7 +45,7 @@ export function AiComposer({
           <span style={{ width: 30, height: 30, borderRadius: 9, background: '#E4F0ED', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#1F7A6C' }}>
             <Sparkle />
           </span>
-          <span style={{ fontSize: 18, fontWeight: 700 }}>Generate with AI</span>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>{t('compose.title')}</span>
         </div>
 
         <div style={{ border: '1.5px solid #CFE6E0', borderRadius: 14, background: '#F7FBFA', padding: 14 }}>
@@ -57,7 +54,7 @@ export function AiComposer({
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             disabled={generating}
-            placeholder="Describe the resource you need"
+            placeholder={t('compose.placeholder')}
             style={{
               width: '100%',
               fontFamily: 'var(--font-sora), sans-serif',
@@ -74,7 +71,7 @@ export function AiComposer({
           />
 
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 11 }}>
-            {PRESETS.map((preset) => (
+            {presets.map((preset) => (
               <button
                 key={preset}
                 type="button"
@@ -119,7 +116,7 @@ export function AiComposer({
               }}
             >
               <Sparkle size={15} />
-              {generating ? 'Generating…' : 'Generate'}
+              {generating ? t('compose.generating') : t('compose.generate')}
             </button>
             <button
               type="button"
@@ -135,7 +132,7 @@ export function AiComposer({
                 cursor: generating ? 'default' : 'pointer',
               }}
             >
-              Cancel
+              {t('compose.cancel')}
             </button>
           </div>
 

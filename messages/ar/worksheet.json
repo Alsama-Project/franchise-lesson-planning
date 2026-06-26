@@ -1,0 +1,121 @@
+{
+  "worksheet": {
+    "toolbar": {
+      "paragraph": "فقرة",
+      "heading1": "العنوان 1",
+      "heading2": "العنوان 2",
+      "bold": "غامق",
+      "italic": "مائل",
+      "underline": "تسطير",
+      "textColour": "لون النص",
+      "alignLeft": "محاذاة لليسار",
+      "alignCentre": "توسيط",
+      "bulletList": "قائمة نقطية",
+      "numberedList": "قائمة مرقّمة",
+      "insertImage": "إدراج صورة في هذا التمرين",
+      "insertImageDisabled": "اختر تمرينًا أولًا",
+      "insertTextBox": "إدراج مربع نص في هذا التمرين",
+      "insertTextBoxDisabled": "اختر تمرينًا أولًا",
+      "insertTable": "إدراج جدول (قريبًا)"
+    },
+    "header": {
+      "title": "ورقة عمل الطالب",
+      "studentsSee": "يراها الطلاب"
+    },
+    "zoom": {
+      "a4": "A4",
+      "zoomOut": "تصغير (Ctrl −)",
+      "zoomIn": "تكبير (Ctrl +)",
+      "fit": "ملاءمة",
+      "fitToWidth": "ملاءمة العرض (Ctrl 0)"
+    },
+    "actions": {
+      "printPreview": "معاينة الطباعة",
+      "fullScreen": "ملء الشاشة",
+      "exitFullScreen": "إنهاء ملء الشاشة",
+      "exitFullScreenTitle": "إنهاء ملء الشاشة (Esc)"
+    },
+    "empty": "ورقة العمل هذه فارغة",
+    "print": {
+      "title": "معاينة الطباعة",
+      "subtitle": "A4 عمودي · يُطبع بالحجم الفعلي",
+      "print": "طباعة",
+      "close": "إغلاق"
+    },
+    "addExercise": {
+      "button": "إضافة تمرين",
+      "chooseBank": "الاختيار من بنك الموارد",
+      "chooseBankHint": "ابحث في البنك المشترك بالوسم",
+      "createNew": "إنشاء جديد",
+      "createNewHint": "كتلة فارغة — اكتب، ارسم، أضف صورًا"
+    },
+    "block": {
+      "freeBadge": "كتلة حرة",
+      "dragToReorder": "اسحب لإعادة الترتيب",
+      "duplicate": "تكرار",
+      "delete": "حذف"
+    },
+    "free": {
+      "startExercise": "ابدأ تمرينك",
+      "writeYourself": "اكتبه بنفسك",
+      "insertImage": "إدراج صورة",
+      "uploading": "جارٍ الرفع…",
+      "uploadingImage": "جارٍ رفع الصورة…",
+      "generateWithAi": "إنشاء بالذكاء الاصطناعي",
+      "generatedWithAi": "أُنشئ بالذكاء الاصطناعي",
+      "teacherNoteLabel": "ملاحظة للمعلّم · ليست على ورقة العمل.",
+      "dismiss": "إغلاق",
+      "uploadError": "تعذّر رفع الصورة.",
+      "generateError": "فشل الإنشاء. حاول مرة أخرى.",
+      "adjustError": "فشل التعديل. حاول مرة أخرى."
+    },
+    "compose": {
+      "title": "إنشاء بالذكاء الاصطناعي",
+      "placeholder": "صف المورد الذي تحتاجه",
+      "generate": "إنشاء",
+      "generating": "جارٍ الإنشاء…",
+      "cancel": "إلغاء",
+      "presets": [
+        "مطابقة: صورة ← كلمة",
+        "5 فراغات للملء",
+        "اختيار من متعدد ×3",
+        "بنك كلمات + جُمل"
+      ]
+    },
+    "adjust": {
+      "title": "التعديل بالذكاء الاصطناعي",
+      "undo": "تراجع عن التعديل",
+      "placeholder": "أجرِ تغييرًا…",
+      "apply": "تطبيق",
+      "applying": "جارٍ التعديل…",
+      "chips": ["أبسط", "أضف بنك كلمات", "عناصر أكثر", "أقصر"]
+    },
+    "textbox": {
+      "borderOn": "الحد مفعّل",
+      "borderOff": "الحد معطّل",
+      "fillWhite": "تعبئة بيضاء",
+      "fillTransparent": "تعبئة شفافة"
+    },
+    "image": {
+      "alignLeft": "محاذاة لليسار",
+      "alignCenter": "توسيط",
+      "alignRight": "محاذاة لليمين",
+      "crop": "اقتصاص الصورة",
+      "float": "تعويم فوق النص (موضع حر)",
+      "bringForward": "إحضار إلى الأمام",
+      "sendBackward": "إرسال إلى الخلف",
+      "delete": "حذف",
+      "makeInline": "جعلها ضمن النص (التفاف مع النص)"
+    },
+    "crop": {
+      "title": "اقتصاص الصورة",
+      "subtitle": "اسحب الحواف للقص، ثم طبّق.",
+      "cancel": "إلغاء",
+      "apply": "تطبيق الاقتصاص",
+      "applying": "جارٍ التطبيق…",
+      "selectAreaError": "اسحب لتحديد منطقة الاقتصاص أولًا.",
+      "uploadError": "تعذّر رفع الصورة المقتصّة. حاول مرة أخرى.",
+      "cropError": "تعذّر اقتصاص هذه الصورة. حاول مرة أخرى."
+    }
+  }
+}

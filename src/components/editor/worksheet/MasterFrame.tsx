@@ -129,6 +129,14 @@ export function MasterFrame({
   return (
     <div
       className="ws-page"
+      // The A4 page is a CONTENT ISLAND: it carries the student-facing worksheet
+      // in the curriculum's language and must stay independent of the surrounding
+      // builder-chrome UI direction. `dir="auto"` resolves the page's own
+      // direction from its content (the master wordmark is Latin, so an English
+      // worksheet stays LTR) rather than inheriting an Arabic UI's `dir="rtl"`,
+      // so the locked frame never mirrors. Per-paragraph bidi inside the editable
+      // body is handled by `unicode-bidi: plaintext` on `.worksheet-doc` blocks.
+      dir="auto"
       style={{
         width: 794,
         minHeight: 1123,

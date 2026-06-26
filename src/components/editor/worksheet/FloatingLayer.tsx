@@ -6,6 +6,7 @@
 // free images. The box element itself (this root) is what every child measures for
 // size + zoom scale when clamping drags.
 
+import { useTranslations } from 'next-intl';
 import type { FloatingElement, FloatingImage, FloatingTextBox as FloatingTextBoxModel, WorksheetDoc } from '@/types/lesson';
 import { FloatingElementView, type Geom, type ScreenRect } from './FloatingElementView';
 import { FloatingTextBox } from './FloatingTextBox';
@@ -44,6 +45,7 @@ export function FloatingLayer({
   insertTextBox: () => void;
   insertFloatingImage: () => void;
 }) {
+  const t = useTranslations('worksheet');
   return (
     <div ref={boxRef} className="ws-float-box" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       {elements.map((el) =>
@@ -86,7 +88,7 @@ export function FloatingLayer({
             controls={
               <button
                 type="button"
-                title="Make inline (wrap with text)"
+                title={t('image.makeInline')}
                 onClick={() => actions.onMakeInline(el as FloatingImage)}
                 style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: '#5C544E' }}
               >

@@ -1,0 +1,121 @@
+{
+  "worksheet": {
+    "toolbar": {
+      "paragraph": "Paragraph",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "textColour": "Text colour",
+      "alignLeft": "Align left",
+      "alignCentre": "Align centre",
+      "bulletList": "Bullet list",
+      "numberedList": "Numbered list",
+      "insertImage": "Insert image into this exercise",
+      "insertImageDisabled": "Select an exercise first",
+      "insertTextBox": "Insert text box into this exercise",
+      "insertTextBoxDisabled": "Select an exercise first",
+      "insertTable": "Insert table (coming soon)"
+    },
+    "header": {
+      "title": "Student worksheet",
+      "studentsSee": "students see this"
+    },
+    "zoom": {
+      "a4": "A4",
+      "zoomOut": "Zoom out (Ctrl −)",
+      "zoomIn": "Zoom in (Ctrl +)",
+      "fit": "Fit",
+      "fitToWidth": "Fit to width (Ctrl 0)"
+    },
+    "actions": {
+      "printPreview": "Print preview",
+      "fullScreen": "Full screen",
+      "exitFullScreen": "Exit full screen",
+      "exitFullScreenTitle": "Exit full screen (Esc)"
+    },
+    "empty": "This worksheet is empty",
+    "print": {
+      "title": "Print preview",
+      "subtitle": "A4 portrait · prints at true size",
+      "print": "Print",
+      "close": "Close"
+    },
+    "addExercise": {
+      "button": "Add exercise",
+      "chooseBank": "Choose from resource bank",
+      "chooseBankHint": "Search the shared bank by tag",
+      "createNew": "Create new",
+      "createNewHint": "A blank block — write, draw, drop images"
+    },
+    "block": {
+      "freeBadge": "Free block",
+      "dragToReorder": "Drag to reorder",
+      "duplicate": "Duplicate",
+      "delete": "Delete"
+    },
+    "free": {
+      "startExercise": "Start your exercise",
+      "writeYourself": "Write it yourself",
+      "insertImage": "Insert image",
+      "uploading": "Uploading…",
+      "uploadingImage": "Uploading image…",
+      "generateWithAi": "Generate with AI",
+      "generatedWithAi": "Generated with AI",
+      "teacherNoteLabel": "Teacher note · not on the worksheet.",
+      "dismiss": "Dismiss",
+      "uploadError": "Could not upload the image.",
+      "generateError": "Generation failed. Try again.",
+      "adjustError": "Adjust failed. Try again."
+    },
+    "compose": {
+      "title": "Generate with AI",
+      "placeholder": "Describe the resource you need",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "cancel": "Cancel",
+      "presets": [
+        "Matching: picture → word",
+        "5 fill-in-the-blanks",
+        "Multiple choice ×3",
+        "Word bank + sentences"
+      ]
+    },
+    "adjust": {
+      "title": "Adjust with AI",
+      "undo": "Undo adjust",
+      "placeholder": "Make a change…",
+      "apply": "Apply",
+      "applying": "Adjusting…",
+      "chips": ["Simpler", "Add word bank", "More items", "Shorter"]
+    },
+    "textbox": {
+      "borderOn": "Border on",
+      "borderOff": "Border off",
+      "fillWhite": "White fill",
+      "fillTransparent": "Transparent fill"
+    },
+    "image": {
+      "alignLeft": "Align left",
+      "alignCenter": "Align center",
+      "alignRight": "Align right",
+      "crop": "Crop image",
+      "float": "Float over text (free position)",
+      "bringForward": "Bring forward",
+      "sendBackward": "Send backward",
+      "delete": "Delete",
+      "makeInline": "Make inline (wrap with text)"
+    },
+    "crop": {
+      "title": "Crop image",
+      "subtitle": "Drag the edges to trim, then apply.",
+      "cancel": "Cancel",
+      "apply": "Apply crop",
+      "applying": "Applying…",
+      "selectAreaError": "Drag to select a crop area first.",
+      "uploadError": "Could not upload the cropped image. Try again.",
+      "cropError": "Could not crop this image. Try again."
+    }
+  }
+}

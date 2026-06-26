@@ -23,6 +23,14 @@ export interface PdfCurriculumContext {
   /** Focus area = the curriculum's linguistic skill (e.g. "Reading"). */
   focusArea: string;
   theme: string;
+  /**
+   * The previous lesson's daily outcome — the "Yesterday's learning outcome" cream
+   * panel shown above the Recap strip, mirroring the editor's Link-it step. Empty
+   * when there is no preceding lesson (or it could not be resolved unambiguously);
+   * the panel then renders nothing. Resolved once by the editor loader and reused
+   * verbatim (see `EditorCurriculumContext.previousDailyLO`), never re-derived here.
+   */
+  previousDailyLO: string;
 }
 
 /**

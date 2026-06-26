@@ -59,6 +59,9 @@ export async function loadPlanPdfModel(id: string): Promise<PlanPdfModel | null>
       schoolName: data.classContext.schoolName,
       subjectName: data.classContext.subjectName,
     },
+    // The editor loader already resolved the curriculum context, including the
+    // previous lesson's daily outcome (its "ambiguous previous lesson" stop-gate
+    // applied). Reuse it verbatim so the PDF's yesterday panel can never diverge.
     curriculum: data.curriculum,
     linkIt: buildLinkIt(data.plan.blocks, labels),
   };
@@ -106,7 +109,14 @@ async function resolveCurriculum(curriculumLessonId: string): Promise<PdfCurricu
   const lookup = await getLessonById(curriculumLessonId);
   const lesson = Array.isArray(lookup) ? lookup[0] : lookup;
   if (!lesson) return null;
-  return { dailyLO: lesson.dailyLO, focusArea: lesson.linguisticSkill, theme: lesson.theme };
+  // The week loader does not resolve the preceding lesson (the board-aligned week
+  // selection is handled separately); leave the yesterday panel empty here.
+  return {
+    dailyLO: lesson.dailyLO,
+    focusArea: lesson.linguisticSkill,
+    theme: lesson.theme,
+    previousDailyLO: '',
+  };
 }
 
 /**

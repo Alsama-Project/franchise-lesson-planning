@@ -1,21 +1,38 @@
 // React-PDF documents for Alsama lesson plans.
 //
 // `LessonPlanPage` renders the body for ONE plan: a branded header (class, year,
-// date), the SMARTT objective, and every lesson block in order with its
-// name, teaching phase (I do / We do / You do), allotted minutes, and planned
-// content. It reads only what `lesson_plans` carries today, and renders the
-// reserved attachment/worksheet slots (see ./types) only when present, so those
-// can be added later without touching this component.
+// date), the locked curriculum target (cream "given" panel), the SMARTT objective
+// (pink "mine" box, stem muted + remainder), the inline lesson blocks in order
+// (each with phase, editable minutes, and planned content), and the grouped
+// "Link it together" strips (Recap — with the previous lesson's outcome — / Check
+// for understanding / Exit ticket). Colour zoning mirrors the editor: cream =
+// locked/curriculum-provided, pink = teacher-editable. It reads only what
+// `lesson_plans` carries today, and renders the reserved attachment/worksheet
+// slots (see ./types) only when present, so those can be added later without
+// touching this component.
 //
 // Two Document wrappers compose it:
 //   • LessonPlanDocument       — a single plan (one page).
 //   • WeekLessonPlansDocument  — many plans, one per page, for batch printing.
 
 import { Document, Page, Text, View } from '@react-pdf/renderer';
-import { inSessionMinutes } from '@/lib/blocks';
+import { blockMinutes, inSessionMinutes } from '@/lib/blocks';
+import { OBJECTIVE_STEM, stripStem } from '@/lib/editor/objective';
 import { formatLongDate } from '@/lib/week';
+import type { LessonBlockType } from '@/types/lesson';
 import { COLORS, phaseLabel, statusLabel, styles } from './theme';
-import type { PdfAttachment, PlanPdfModel } from './types';
+import type { PdfAttachment, PdfLinkIt, PlanPdfModel } from './types';
+
+/**
+ * Block types whose content lives in the "Link it together" section, not the
+ * inline Lesson Blocks list. They are skipped in the block loop and rendered as
+ * the three grouped strips (Recap / Check for understanding / Exit ticket),
+ * mirroring the editor's Link-it step.
+ */
+const LINK_IT_TYPES = new Set<LessonBlockType>(['recap', 'cfu', 'exit_ticket']);
+
+/** The empty Link-it shape, for the rare model that arrives without one. */
+const EMPTY_LINK_IT: PdfLinkIt = { recap: '', cfu: [], exitTicket: [] };
 
 function classHeadline(c: PlanPdfModel['classContext']): string {
   return `Year ${c.year}`;
@@ -64,24 +81,38 @@ function Section({ heading, children }: { heading: string; children: React.React
   );
 }
 
-function ObjectiveSection({ model }: { model: PlanPdfModel }) {
-  const objective = model.plan.smartt_objective?.trim();
+/** The locked curriculum target — a cream ("given") panel, as on the editor. */
+function CurriculumSection({ model }: { model: PlanPdfModel }) {
   const dailyLO = model.curriculum?.dailyLO?.trim();
+  if (!dailyLO) return null;
   return (
-    <Section heading="SMARTT Objective">
+    <View style={styles.givenPanel}>
+      <Text style={styles.givenLabel}>Daily outcome</Text>
+      <Text style={styles.givenValue}>{dailyLO}</Text>
+    </View>
+  );
+}
+
+/**
+ * The SMARTT objective in its pink (teacher-editable) box, with the baked-in
+ * opening stem muted and the teacher's remainder in ink — mirroring the on-screen
+ * ObjectiveBanner. The stem/strip helpers are shared with the editor so the PDF
+ * can never drift from how the objective is stored and composed.
+ */
+function ObjectiveSection({ model }: { model: PlanPdfModel }) {
+  const remainder = stripStem(model.plan.smartt_objective);
+  return (
+    <Section heading="SMARTT objective">
       <View style={styles.objectiveBox}>
-        {objective ? (
-          <Text style={styles.objectiveText}>{objective}</Text>
+        {remainder ? (
+          <Text style={styles.objectiveText}>
+            <Text style={styles.objectiveStem}>{OBJECTIVE_STEM} </Text>
+            {remainder}
+          </Text>
         ) : (
           <Text style={styles.empty}>No objective written yet.</Text>
         )}
       </View>
-      {dailyLO ? (
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Daily LO</Text>
-          <Text style={styles.detailValue}>{dailyLO}</Text>
-        </View>
-      ) : null}
     </Section>
   );
 }
@@ -97,58 +128,111 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BlockRow({
-  block,
-  linkIt,
-}: {
-  block: PlanPdfModel['plan']['blocks'][number];
-  linkIt?: PlanPdfModel['linkIt'];
-}) {
+/** One inline lesson block (the Link-it block types are rendered separately). */
+function BlockRow({ block }: { block: PlanPdfModel['plan']['blocks'][number] }) {
   const phase = phaseLabel(block.phase);
 
-  // cfu / exit_ticket and recap use the "Link it together" model, not the legacy
-  // single-select fields. Render the resolved techniques (label — note) / recap text.
-  const isTechnique = block.type === 'cfu' || block.type === 'exit_ticket';
-  const techniques =
-    block.type === 'cfu' ? linkIt?.cfu ?? [] : block.type === 'exit_ticket' ? linkIt?.exitTicket ?? [] : [];
-  const recapText = block.type === 'recap' ? (linkIt?.recap ?? '').trim() : '';
-
-  const hasDetail = isTechnique
-    ? techniques.length > 0
-    : block.type === 'recap'
-      ? recapText !== ''
-      : block.activity_title.trim() !== '' ||
-        block.teacher_does.trim() !== '' ||
-        block.students_do.trim() !== '' ||
-        block.resources.trim() !== '';
+  const hasDetail =
+    block.activity_title.trim() !== '' ||
+    block.teacher_does.trim() !== '' ||
+    block.students_do.trim() !== '' ||
+    block.resources.trim() !== '';
 
   return (
     <View style={styles.block} wrap={false}>
       <View style={styles.blockHead}>
         {phase ? <Text style={styles.phaseTag}>{phase}</Text> : null}
         <Text style={styles.blockTitle}>{block.title}</Text>
-        <Text style={styles.minutes}>{block.duration_minutes} min</Text>
+        {/* Honour the teacher's editable per-block minutes (falls back to the
+            format default), matching the on-screen read-only view. */}
+        <Text style={styles.minutes}>{blockMinutes(block)} min</Text>
       </View>
-      {isTechnique ? (
-        techniques.map((t, i) => (
-          <Text key={i} style={styles.activityTitle}>
-            {t.label}
-            {t.note.trim() !== '' ? ` — ${t.note}` : ''}
-          </Text>
-        ))
-      ) : block.type === 'recap' ? (
-        recapText !== '' ? <Text style={styles.detailValue}>{recapText}</Text> : null
-      ) : (
-        <>
-          {block.activity_title.trim() !== '' ? (
-            <Text style={styles.activityTitle}>{block.activity_title}</Text>
-          ) : null}
-          <Detail label="Teacher" value={block.teacher_does} />
-          <Detail label="Students" value={block.students_do} />
-          <Detail label="Materials" value={block.resources} />
-        </>
-      )}
+      {block.activity_title.trim() !== '' ? (
+        <Text style={styles.activityTitle}>{block.activity_title}</Text>
+      ) : null}
+      <Detail label="Teacher" value={block.teacher_does} />
+      <Detail label="Students" value={block.students_do} />
+      <Detail label="Materials" value={block.resources} />
       {!hasDetail ? <Text style={styles.empty}>Not planned yet.</Text> : null}
+    </View>
+  );
+}
+
+/** One "Link it together" strip: a sub-heading over its content. */
+function Strip({
+  heading,
+  first,
+  children,
+}: {
+  heading: string;
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={first ? [styles.strip, styles.stripFirst] : styles.strip}>
+      <Text style={styles.stripHeading}>{heading}</Text>
+      {children}
+    </View>
+  );
+}
+
+/** Resolved technique rows (label — note) for the cfu / exit-ticket strips. */
+function TechniqueList({ items }: { items: { label: string; note: string }[] }) {
+  if (items.length === 0) return <Text style={styles.empty}>Not planned yet.</Text>;
+  return (
+    <>
+      {items.map((t, i) => (
+        <Text key={i} style={[styles.activityTitle, styles.techniqueRow]}>
+          {t.label}
+          {t.note.trim() !== '' ? ` — ${t.note}` : ''}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The grouped "Link it together" section: three strips (Recap / Check for
+ * understanding / Exit ticket), driven by the shared `normalizeLinkIt` output.
+ * The Recap strip carries the previous lesson's daily outcome in a cream ("given")
+ * panel above the teacher's (pink) recap text, exactly as the editor lays it out.
+ */
+function LinkItSection({
+  linkIt,
+  previousDailyLO,
+}: {
+  linkIt: PdfLinkIt;
+  previousDailyLO: string;
+}) {
+  const recap = linkIt.recap.trim();
+  const previous = previousDailyLO.trim();
+
+  return (
+    <View style={styles.section} wrap={false}>
+      <Text style={styles.blocksHeading}>Link it together</Text>
+      <View style={styles.linkItCard}>
+        <Strip heading="Recap" first>
+          {previous ? (
+            <View style={styles.givenPanel}>
+              <Text style={styles.givenLabel}>Yesterday&apos;s learning outcome</Text>
+              <Text style={styles.givenValue}>{previous}</Text>
+            </View>
+          ) : null}
+          {recap ? (
+            <View style={styles.recapBox}>
+              <Text style={styles.objectiveText}>{recap}</Text>
+            </View>
+          ) : (
+            <Text style={styles.empty}>Not planned yet.</Text>
+          )}
+        </Strip>
+        <Strip heading="Check for understanding">
+          <TechniqueList items={linkIt.cfu} />
+        </Strip>
+        <Strip heading="Exit ticket">
+          <TechniqueList items={linkIt.exitTicket} />
+        </Strip>
+      </View>
     </View>
   );
 }
@@ -182,17 +266,25 @@ function LessonPlanPage({ model }: { model: PlanPdfModel }) {
   return (
     <Page size="A4" style={styles.page} wrap>
       <Header model={model} />
+      <CurriculumSection model={model} />
       <ObjectiveSection model={model} />
 
       <View style={styles.section}>
         <Text style={styles.blocksHeading}>Lesson Blocks</Text>
-        {model.plan.blocks.map((block, i) => (
-          <BlockRow key={`${block.type}-${i}`} block={block} linkIt={model.linkIt} />
-        ))}
+        {model.plan.blocks
+          .filter((block) => !LINK_IT_TYPES.has(block.type))
+          .map((block, i) => (
+            <BlockRow key={`${block.type}-${i}`} block={block} />
+          ))}
         <View style={styles.totalRow}>
           <Text style={styles.totalText}>In-session total: {total} min</Text>
         </View>
       </View>
+
+      <LinkItSection
+        linkIt={model.linkIt ?? EMPTY_LINK_IT}
+        previousDailyLO={model.curriculum?.previousDailyLO ?? ''}
+      />
 
       {model.attachments && model.attachments.length > 0 ? (
         <AttachmentList heading="Resources & Materials" items={model.attachments} />

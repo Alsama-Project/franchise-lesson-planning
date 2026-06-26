@@ -10,15 +10,31 @@
 
 import { StyleSheet } from '@react-pdf/renderer';
 
-/** Alsama brand palette (kept intentionally small). */
+/**
+ * Alsama brand palette (kept intentionally small).
+ *
+ * The `given*` / `mine*` / `stem` values mirror the editor's "colour = meaning"
+ * design tokens (globals.css): cream `given` = locked, curriculum-provided
+ * content; pink `mine` = teacher-editable content; `stem` = the baked-in,
+ * non-editable objective prefix. Keeping the PDF on the same semantics means the
+ * exported plan reads with the same zoning the teacher sees on screen.
+ */
 export const COLORS = {
   pink: '#B62A5C',
   teal: '#1F7A6C',
   cream: '#F5EDE5',
   ink: '#2A2A2A',
   muted: '#6B6B6B',
+  neutral700: '#756B64', // secondary text — strip / section sub-headings
   hairline: '#E2D8CE',
   white: '#FFFFFF',
+  // Editor zoning roles (see globals.css @theme).
+  given: '#FBF8F3', // cream surface — locked / curriculum-provided
+  givenBorder: '#ECE4D7',
+  givenLabel: '#A6917A',
+  mine: '#FBF2F5', // pink surface — teacher-editable
+  mineBorder: '#F1D8E1',
+  stem: '#A88792', // baked-in objective stem prefix
 } as const;
 
 /** Human label for a gradual-release teaching phase. `null` → no label. */
@@ -127,14 +143,85 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.hairline,
   },
+  // The SMARTT objective is teacher-editable → pink (mine) box, mirroring the
+  // on-screen SmarttObjectiveBox / ObjectiveBanner.
   objectiveBox: {
-    backgroundColor: COLORS.cream,
+    backgroundColor: COLORS.mine,
+    borderWidth: 1,
+    borderColor: COLORS.mineBorder,
     borderRadius: 5,
     padding: 10,
   },
   objectiveText: {
     fontSize: 11,
     lineHeight: 1.5,
+  },
+  // The baked-in, non-editable opening stem, shown muted before the remainder.
+  objectiveStem: {
+    color: COLORS.stem,
+  },
+
+  // ---- Curriculum (locked / "given") panels ------------------------------
+  givenPanel: {
+    backgroundColor: COLORS.given,
+    borderWidth: 1,
+    borderColor: COLORS.givenBorder,
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 10,
+  },
+  givenLabel: {
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: COLORS.givenLabel,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 3,
+  },
+  givenValue: {
+    fontSize: 10.5,
+    fontFamily: 'Helvetica-Bold',
+    color: COLORS.ink,
+    lineHeight: 1.4,
+  },
+
+  // ---- Link it together (three strips) -----------------------------------
+  linkItCard: {
+    borderWidth: 1,
+    borderColor: COLORS.hairline,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  strip: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.hairline,
+    paddingTop: 12,
+  },
+  stripFirst: {
+    marginTop: 0,
+    borderTopWidth: 0,
+    paddingTop: 0,
+  },
+  stripHeading: {
+    fontSize: 9.5,
+    fontFamily: 'Helvetica-Bold',
+    color: COLORS.neutral700,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  // The Recap free-text is teacher-editable → a light pink (mine) field.
+  recapBox: {
+    backgroundColor: COLORS.mine,
+    borderWidth: 1,
+    borderColor: COLORS.mineBorder,
+    borderRadius: 5,
+    padding: 8,
+  },
+  techniqueRow: {
+    marginBottom: 3,
   },
 
   // ---- Blocks ------------------------------------------------------------

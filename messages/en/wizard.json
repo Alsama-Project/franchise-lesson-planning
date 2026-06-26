@@ -35,6 +35,7 @@
       "checking": "Checking…",
       "askAriaLabel": "Ask Aya about your objective",
       "askTitle": "Ask Aya for help with your objective",
+      "feedback": "Feedback",
       "feedbackHeading": "Quiet check — feedback, not a chat",
       "suggestedRewrite": "Suggested rewrite",
       "checkFailed": "The objective check failed."

@@ -1,124 +1,124 @@
 {
   "wizard": {
     "steps": {
-      "objective": "SMARTT objective",
-      "teachIt": "Teach it",
-      "practise": "Practise",
-      "linkIt": "Link it",
-      "review": "Review"
+      "objective": "هدف SMARTT",
+      "teachIt": "التدريس",
+      "practise": "التطبيق",
+      "linkIt": "الربط",
+      "review": "المراجعة"
     },
     "nav": {
-      "back": "Back",
-      "next": "Next",
-      "toReview": "Review",
-      "thisWeek": "This week"
+      "back": "رجوع",
+      "next": "التالي",
+      "toReview": "المراجعة",
+      "thisWeek": "هذا الأسبوع"
     },
     "save": {
-      "saving": "Saving…",
-      "failed": "Save failed — retrying on next edit",
-      "saved": "Saved"
+      "saving": "جارٍ الحفظ…",
+      "failed": "فشل الحفظ — سيُعاد عند التعديل التالي",
+      "saved": "تم الحفظ"
     },
     "subheader": {
-      "year": "Year {year}",
-      "wholeCentre": "Whole centre",
-      "allCentres": "All centres"
+      "year": "السنة {year}",
+      "wholeCentre": "المركز بأكمله",
+      "allCentres": "كل المراكز"
     },
     "total": {
-      "inSession": "{total} / {target} min",
-      "minutes": "{value} min"
+      "inSession": "{total} / {target} دقيقة",
+      "minutes": "{value} دقيقة"
     },
     "objective": {
-      "heading": "Write the SMARTT objective",
-      "fieldAria": "SMARTT objective",
-      "placeholder": "read five short sentences about a family and identify the family words.",
-      "check": "Check my objective",
-      "checking": "Checking…",
-      "askAriaLabel": "Ask Aya about your objective",
-      "askTitle": "Ask Aya for help with your objective",
-      "feedbackHeading": "Quiet check — feedback, not a chat",
-      "suggestedRewrite": "Suggested rewrite",
-      "checkFailed": "The objective check failed."
+      "heading": "اكتب هدف SMARTT",
+      "fieldAria": "هدف SMARTT",
+      "placeholder": "قراءة خمس جمل قصيرة عن عائلة وتحديد كلمات العائلة.",
+      "check": "تحقّق من هدفي",
+      "checking": "جارٍ التحقق…",
+      "askAriaLabel": "اسأل آية عن هدفك",
+      "askTitle": "اسأل آية للمساعدة في هدفك",
+      "feedbackHeading": "تحقّق هادئ — ملاحظات، وليس محادثة",
+      "suggestedRewrite": "إعادة صياغة مقترحة",
+      "checkFailed": "فشل التحقق من الهدف."
     },
     "banner": {
-      "label": "SMARTT objective",
-      "notWritten": "not written yet"
+      "label": "هدف SMARTT",
+      "notWritten": "لم يُكتب بعد"
     },
     "curriculum": {
-      "dailyOutcome": "Daily outcome",
-      "thisWeek": "This week",
-      "monthlyObjective": "Monthly objective",
-      "thisMonth": "This month",
-      "grammarVocab": "Grammar & vocabulary",
-      "theme": "Theme",
-      "yesterdayOutcome": "Yesterday''s learning outcome"
+      "dailyOutcome": "الناتج اليومي",
+      "thisWeek": "هذا الأسبوع",
+      "monthlyObjective": "الهدف الشهري",
+      "thisMonth": "هذا الشهر",
+      "grammarVocab": "القواعد والمفردات",
+      "theme": "الموضوع",
+      "yesterdayOutcome": "ناتج تعلّم الأمس"
     },
     "teach": {
-      "newContentTitle": "Teach the new content",
-      "teacherDoes": "What the teacher does",
-      "studentsDo": "What students do",
-      "teacherPlaceholder": "Model the task, narrate your thinking, set the success criteria…",
-      "studentsPlaceholder": "What the class is doing — reading, answering, working in pairs…",
-      "worksheetTitle": "Student worksheet",
-      "worksheetHint": "build the sheet students work from"
+      "newContentTitle": "تدريس المحتوى الجديد",
+      "teacherDoes": "ما يفعله المعلّم",
+      "studentsDo": "ما يفعله الطلاب",
+      "teacherPlaceholder": "اعرض المهمة بالنموذج، اشرح تفكيرك بصوت مسموع، حدّد معايير النجاح…",
+      "studentsPlaceholder": "ما يفعله الصف — القراءة، الإجابة، العمل في أزواج…",
+      "worksheetTitle": "ورقة عمل الطالب",
+      "worksheetHint": "ابنِ الورقة التي يعمل منها الطلاب"
     },
     "practise": {
-      "title": "Practise"
+      "title": "التطبيق"
     },
     "phase": {
-      "aria": "Teaching phase",
-      "placeholder": "— phase —"
+      "aria": "مرحلة التدريس",
+      "placeholder": "— المرحلة —"
     },
     "linkIt": {
-      "recap": "Recap",
-      "checkForUnderstanding": "Check for understanding",
-      "exitTicket": "Exit ticket",
-      "recapPlaceholder": "Write the recap…",
-      "add": "Add",
-      "allAdded": "All techniques added.",
-      "notePlaceholder": "Add a note…",
-      "remove": "Remove {name}",
-      "techniqueFallback": "Technique"
+      "recap": "الاستذكار",
+      "checkForUnderstanding": "التحقق من الفهم",
+      "exitTicket": "بطاقة الخروج",
+      "recapPlaceholder": "اكتب الاستذكار…",
+      "add": "إضافة",
+      "allAdded": "تمت إضافة كل التقنيات.",
+      "notePlaceholder": "أضف ملاحظة…",
+      "remove": "إزالة {name}",
+      "techniqueFallback": "تقنية"
     },
     "review": {
-      "heading": "Review the whole lesson",
-      "downloadPdf": "Download PDF",
-      "inSessionTotal": "In-session total",
-      "requiredMaterials": "Required materials",
-      "materialsHint": "pre-filled from your blocks · editable",
-      "removeMaterial": "Remove {name}",
-      "materialPlaceholder": "Material name…",
-      "addMaterial": "＋ Add material",
-      "colPart": "Lesson part",
-      "colPhase": "Phase",
-      "colTime": "Time",
+      "heading": "راجع الدرس بأكمله",
+      "downloadPdf": "تنزيل PDF",
+      "inSessionTotal": "الإجمالي ضمن الحصة",
+      "requiredMaterials": "المستلزمات المطلوبة",
+      "materialsHint": "مُعبّأة مسبقاً من كتلك · قابلة للتعديل",
+      "removeMaterial": "إزالة {name}",
+      "materialPlaceholder": "اسم المستلزَم…",
+      "addMaterial": "＋ إضافة مستلزَم",
+      "colPart": "جزء الدرس",
+      "colPhase": "المرحلة",
+      "colTime": "الوقت",
       "parts": {
-        "routines": "Standard routines",
-        "routinesDetail": "Anthem · Warm-up · Cool down — pre-filled and fixed.",
-        "homeworkCheck": "Homework check",
-        "recap": "Recap",
-        "newContent": "New content",
-        "cfu": "Check for Understanding",
-        "independentPractice": "Independent practice",
-        "exitTicket": "Exit ticket"
+        "routines": "الروتين المعتاد",
+        "routinesDetail": "النشيد · الإحماء · التهدئة — مُعبّأة مسبقاً وثابتة.",
+        "homeworkCheck": "التحقق من الواجب",
+        "recap": "الاستذكار",
+        "newContent": "المحتوى الجديد",
+        "cfu": "التحقق من الفهم",
+        "independentPractice": "التطبيق المستقل",
+        "exitTicket": "بطاقة الخروج"
       },
-      "homework": "Homework",
-      "homeworkNote": "— at home, excluded from 50"
+      "homework": "الواجب المنزلي",
+      "homeworkNote": "— في المنزل، مستثنى من الـ 50"
     },
     "submit": {
-      "approved": "Approved",
-      "submittedAwaiting": "Submitted · awaiting review",
-      "resubmit": "Resubmit",
-      "submit": "Submit",
-      "submitting": "Submitting…",
-      "needObjective": "Add a SMARTT objective first"
+      "approved": "مُعتمَد",
+      "submittedAwaiting": "مُرسَل · بانتظار المراجعة",
+      "resubmit": "إعادة الإرسال",
+      "submit": "إرسال",
+      "submitting": "جارٍ الإرسال…",
+      "needObjective": "أضف هدف SMARTT أولاً"
     },
     "timeStepper": {
-      "ariaMinutes": "Minutes",
-      "ariaLabelledMinutes": "{label} in minutes",
-      "min": "min"
+      "ariaMinutes": "الدقائق",
+      "ariaLabelledMinutes": "{label} بالدقائق",
+      "min": "دقيقة"
     },
     "errors": {
-      "couldNotSubmit": "Could not submit."
+      "couldNotSubmit": "تعذّر الإرسال."
     }
   }
 }

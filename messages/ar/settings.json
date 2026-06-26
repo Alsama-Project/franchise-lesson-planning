@@ -1,169 +1,169 @@
 {
   "settings": {
-    "backToPlanning": "Back to planning",
-    "title": "Settings",
+    "backToPlanning": "العودة إلى التخطيط",
+    "title": "الإعدادات",
     "subtitle": {
-      "admin": "Organisation administration · your profile",
-      "coordinator": "Your coordinator spaces · your profile",
-      "teacher": "Your profile"
+      "admin": "إدارة المؤسسة · ملفك الشخصي",
+      "coordinator": "مساحات التنسيق الخاصة بك · ملفك الشخصي",
+      "teacher": "ملفك الشخصي"
     },
     "tabs": {
-      "profile": "Profile",
-      "centres": "Centres",
-      "subjects": "Subjects",
-      "classes": "Classes",
-      "members": "Members & roles",
-      "curriculum": "Curriculum",
-      "ai_guide": "AI resource guide",
-      "smartt_guide": "SMARTT objective guide"
+      "profile": "الملف الشخصي",
+      "centres": "المراكز",
+      "subjects": "المواد",
+      "classes": "الصفوف",
+      "members": "الأعضاء والأدوار",
+      "curriculum": "المنهاج",
+      "ai_guide": "دليل موارد الذكاء الاصطناعي",
+      "smartt_guide": "دليل أهداف SMARTT"
     },
     "language": {
-      "label": "Language"
+      "label": "اللغة"
     },
     "common": {
-      "somethingWrong": "Something went wrong.",
+      "somethingWrong": "حدث خطأ ما.",
       "dash": "—",
-      "cancel": "Cancel",
-      "close": "Close",
-      "save": "Save",
-      "edit": "Edit",
-      "create": "Create",
-      "restore": "Restore"
+      "cancel": "إلغاء",
+      "close": "إغلاق",
+      "save": "حفظ",
+      "edit": "تعديل",
+      "create": "إنشاء",
+      "restore": "استعادة"
     },
     "roles": {
-      "coordinator": "Coordinator",
-      "teacher": "Teacher",
-      "noAccess": "No access"
+      "coordinator": "منسّق",
+      "teacher": "معلّم",
+      "noAccess": "لا صلاحية"
     },
     "status": {
-      "active": "Active",
-      "archived": "Archived"
+      "active": "نشط",
+      "archived": "مؤرشف"
     },
     "members": {
-      "title": "Members & roles",
-      "empty": "No people to show.",
+      "title": "الأعضاء والأدوار",
+      "empty": "لا يوجد أشخاص لعرضهم.",
       "col": {
-        "person": "Person",
-        "role": "Role",
-        "school": "School",
-        "subject": "Subject",
-        "class": "Class",
-        "actions": "Actions"
+        "person": "الشخص",
+        "role": "الدور",
+        "school": "المركز",
+        "subject": "المادة",
+        "class": "الصف",
+        "actions": "إجراءات"
       },
-      "edit": "Edit",
-      "remove": "Remove",
-      "assign": "Assign",
-      "you": "You",
+      "edit": "تعديل",
+      "remove": "إزالة",
+      "assign": "تعيين",
+      "you": "أنت",
       "modal": {
-        "title": "Permissions · {name}",
-        "intro": "Access is granted per (centre × subject) space. Saving sets exactly the selected pairs at the chosen role and removes any de-selected ones.",
-        "role": "Role",
+        "title": "الصلاحيات · {name}",
+        "intro": "تُمنح الصلاحية لكل مساحة (مركز × مادة). الحفظ يضبط تماماً الأزواج المحددة بالدور المختار ويزيل أي أزواج أُلغِي تحديدها.",
+        "role": "الدور",
         "roleOption": {
-          "teacher": "teacher",
-          "coordinator": "coordinator"
+          "teacher": "معلّم",
+          "coordinator": "منسّق"
         },
-        "centres": "Centres",
-        "subjects": "Subjects",
-        "noActiveCentres": "No active centres.",
-        "noActiveSubjects": "No active subjects.",
-        "cancel": "Cancel",
-        "save": "Save permissions"
+        "centres": "المراكز",
+        "subjects": "المواد",
+        "noActiveCentres": "لا توجد مراكز نشطة.",
+        "noActiveSubjects": "لا توجد مواد نشطة.",
+        "cancel": "إلغاء",
+        "save": "حفظ الصلاحيات"
       },
       "coordinator": {
-        "title": "Members & roles",
-        "empty": "You don’t coordinate any spaces.",
-        "spaceTitle": "{subject} at {school}",
-        "spaceMeta": "· Your space · {count, plural, one {# member} other {# members}}",
-        "promote": "Promote to coordinator",
-        "remove": "Remove",
-        "footnote": "To add a teacher who isn’t here yet, ask them to sign in and complete onboarding for this space, or have an admin assign them. Coordinators can’t browse the full people directory."
+        "title": "الأعضاء والأدوار",
+        "empty": "أنت لا تنسّق أي مساحات.",
+        "spaceTitle": "{subject} في {school}",
+        "spaceMeta": "· مساحتك · {count, plural, zero {لا أعضاء} one {عضو واحد} two {عضوان} few {# أعضاء} many {# عضواً} other {# عضو}}",
+        "promote": "ترقية إلى منسّق",
+        "remove": "إزالة",
+        "footnote": "لإضافة معلّم غير موجود هنا بعد، اطلب منه تسجيل الدخول وإكمال عملية الإعداد لهذه المساحة، أو اطلب من مسؤول تعيينه. لا يمكن للمنسّقين تصفّح دليل الأشخاص الكامل."
       }
     },
     "subjects": {
-      "title": "Subjects",
-      "close": "Close",
-      "new": "＋ New subject",
-      "namePlaceholder": "Subject name",
-      "nameLabel": "Subject name",
-      "create": "Create",
-      "cancel": "Cancel",
-      "autoCodeHint": "A matching curriculum code is assigned automatically.",
-      "empty": "No subjects yet. Create the first one above.",
+      "title": "المواد",
+      "close": "إغلاق",
+      "new": "＋ مادة جديدة",
+      "namePlaceholder": "اسم المادة",
+      "nameLabel": "اسم المادة",
+      "create": "إنشاء",
+      "cancel": "إلغاء",
+      "autoCodeHint": "يُخصَّص رمز منهاج مطابق تلقائياً.",
+      "empty": "لا توجد مواد بعد. أنشئ الأولى في الأعلى.",
       "col": {
-        "name": "Name",
-        "code": "Code",
-        "classes": "Classes",
-        "status": "Status",
-        "actions": "Actions"
+        "name": "الاسم",
+        "code": "الرمز",
+        "classes": "الصفوف",
+        "status": "الحالة",
+        "actions": "إجراءات"
       },
-      "save": "Save",
-      "restore": "Restore",
-      "edit": "Edit",
-      "archive": "Archive",
-      "archiveTitle": "Archive {name}?",
-      "archiveFallbackName": "subject",
-      "blocked": "{count, plural, one {# class} other {# classes}} still reference this subject. Reassign or archive those classes first.",
-      "archiveConfirm": "This subject will be hidden from planning. You can restore it at any time.",
-      "archiveAction": "Archive subject"
+      "save": "حفظ",
+      "restore": "استعادة",
+      "edit": "تعديل",
+      "archive": "أرشفة",
+      "archiveTitle": "أرشفة {name}؟",
+      "archiveFallbackName": "المادة",
+      "blocked": "{count, plural, one {لا يزال صف واحد يشير إلى هذه المادة.} two {لا يزال صفّان يشيران إلى هذه المادة.} few {لا تزال # صفوف تشير إلى هذه المادة.} many {لا يزال # صفاً يشير إلى هذه المادة.} other {لا يزال # صف يشير إلى هذه المادة.}} أعد تعيين تلك الصفوف أو أرشفتها أولاً.",
+      "archiveConfirm": "ستُخفى هذه المادة من التخطيط. يمكنك استعادتها في أي وقت.",
+      "archiveAction": "أرشفة المادة"
     },
     "curriculum": {
-      "title": "Curriculum",
-      "empty": "No subjects to sync.",
+      "title": "المنهاج",
+      "empty": "لا توجد مواد للمزامنة.",
       "stat": {
-        "lessons": "Lessons",
-        "unresolved": "Unresolved",
-        "deactivated": "Deactivated",
-        "lastSynced": "Last synced"
+        "lessons": "الدروس",
+        "unresolved": "غير محلولة",
+        "deactivated": "مُعطَّلة",
+        "lastSynced": "آخر مزامنة"
       },
       "action": {
-        "refreshing": "Refreshing…",
-        "retry": "Retry sync",
-        "refresh": "Refresh now",
-        "reviewUnresolved": "Review {count} unresolved",
-        "upload": "Upload .xlsx"
+        "refreshing": "جارٍ التحديث…",
+        "retry": "إعادة المزامنة",
+        "refresh": "تحديث الآن",
+        "reviewUnresolved": "مراجعة {count} غير محلولة",
+        "upload": "رفع ملف .xlsx"
       },
       "badge": {
-        "syncing": "Syncing…",
-        "syncedJustNow": "Synced just now",
-        "syncFailed": "Sync failed · {time}",
-        "synced": "Synced {ago}"
+        "syncing": "جارٍ المزامنة…",
+        "syncedJustNow": "تمت المزامنة الآن",
+        "syncFailed": "فشلت المزامنة · {time}",
+        "synced": "تمت المزامنة {ago}"
       },
-      "errorReach": "Couldn't reach the curriculum source. Last good sync was {ago}.",
-      "progressAria": "Syncing curriculum",
-      "progressText": "{pct}% · {parsed} of ~{total}",
+      "errorReach": "تعذّر الوصول إلى مصدر المنهاج. كانت آخر مزامنة ناجحة {ago}.",
+      "progressAria": "جارٍ مزامنة المنهاج",
+      "progressText": "{pct}% · {parsed} من ~{total}",
       "timeAgo": {
-        "never": "never",
-        "unknown": "unknown",
-        "justNow": "just now",
-        "minutes": "{count} min ago",
-        "hours": "{count, plural, one {# hr ago} other {# hrs ago}}",
-        "days": "{count, plural, one {# day ago} other {# days ago}}"
+        "never": "أبداً",
+        "unknown": "غير معروف",
+        "justNow": "الآن",
+        "minutes": "{count, plural, one {قبل دقيقة} two {قبل دقيقتين} few {قبل # دقائق} many {قبل # دقيقة} other {قبل # دقيقة}}",
+        "hours": "{count, plural, one {قبل ساعة} two {قبل ساعتين} few {قبل # ساعات} many {قبل # ساعة} other {قبل # ساعة}}",
+        "days": "{count, plural, one {قبل يوم} two {قبل يومين} few {قبل # أيام} many {قبل # يوماً} other {قبل # يوم}}"
       }
     },
     "guide": {
-      "document": "Document",
-      "uploaded": "Uploaded",
-      "noGuide": "No guide uploaded — using the built-in default.",
-      "upload": "Upload",
-      "uploading": "Uploading…",
-      "uploadFailed": "Upload failed. Please try again.",
+      "document": "المستند",
+      "uploaded": "تم الرفع",
+      "noGuide": "لم يُرفع أي دليل — يتم استخدام الدليل الافتراضي المدمج.",
+      "upload": "رفع",
+      "uploading": "جارٍ الرفع…",
+      "uploadFailed": "فشل الرفع. يُرجى المحاولة مرة أخرى.",
       "badge": {
-        "uploading": "Uploading…",
-        "failed": "Upload failed · {time}",
-        "saved": "Saved just now",
-        "uploaded": "Uploaded {ago}",
-        "none": "No guide yet"
+        "uploading": "جارٍ الرفع…",
+        "failed": "فشل الرفع · {time}",
+        "saved": "تم الحفظ الآن",
+        "uploaded": "تم الرفع {ago}",
+        "none": "لا يوجد دليل بعد"
       }
     },
     "aiGuide": {
-      "title": "AI resource guide",
-      "successMessage": "New guide version saved. It is now active for all resource generation.",
-      "uploadingLabel": "Uploading resource guide"
+      "title": "دليل موارد الذكاء الاصطناعي",
+      "successMessage": "تم حفظ نسخة جديدة من الدليل. أصبحت الآن فعّالة لكل عمليات توليد الموارد.",
+      "uploadingLabel": "جارٍ رفع دليل الموارد"
     },
     "smarttGuide": {
-      "title": "SMARTT objective guide",
-      "successMessage": "New guide version saved. It is now active for all objective checks.",
-      "uploadingLabel": "Uploading objective guide"
+      "title": "دليل أهداف SMARTT",
+      "successMessage": "تم حفظ نسخة جديدة من الدليل. أصبحت الآن فعّالة لكل عمليات التحقق من الأهداف.",
+      "uploadingLabel": "جارٍ رفع دليل الأهداف"
     }
   }
 }

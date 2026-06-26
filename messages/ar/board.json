@@ -1,112 +1,112 @@
 {
   "board": {
-    "title": "This week",
-    "plannedThisWeek": "{count, plural, one {<b>{value}</b> planned this week} other {<b>{value}</b> planned this week}}",
-    "weekOf": "Week of <b>{date}</b>",
-    "weekOfEmpty": "Week of —",
+    "title": "هذا الأسبوع",
+    "plannedThisWeek": "{count, plural, zero {<b>{value}</b> دروس مُخطَّطة هذا الأسبوع} one {<b>{value}</b> درس مُخطَّط هذا الأسبوع} two {<b>{value}</b> درسان مُخطَّطان هذا الأسبوع} few {<b>{value}</b> دروس مُخطَّطة هذا الأسبوع} many {<b>{value}</b> درساً مُخطَّطاً هذا الأسبوع} other {<b>{value}</b> درس مُخطَّط هذا الأسبوع}}",
+    "weekOf": "أسبوع <b>{date}</b>",
+    "weekOfEmpty": "أسبوع —",
     "emptyClasses": {
-      "title": "No classes assigned yet",
-      "body": "Pick the classes you teach in <settings>Settings</settings> and your curriculum board will appear here — one section per year you teach."
+      "title": "لا توجد صفوف معيَّنة بعد",
+      "body": "اختر الصفوف التي تُدرّسها في <settings>الإعدادات</settings> وسيظهر لك لوح المنهاج هنا — قسم واحد لكل سنة تُدرّسها."
     },
     "emptyCurriculum": {
-      "title": "No curriculum synced yet",
-      "body": "{hasSubject, select, yes {<s>{subject}</s> has} other {This subject has}} no curriculum lessons synced for the years you teach. Once a coordinator syncs the curriculum, your board will fill in."
+      "title": "لم تتم مزامنة أي منهاج بعد",
+      "body": "{hasSubject, select, yes {<s>{subject}</s> ليس لديها} other {هذه المادة ليس لديها}} دروس منهاج مُزامَنة للسنوات التي تُدرّسها. بمجرد أن يُزامن المنسّق المنهاج، سيمتلئ لوحك."
     },
     "people": {
-      "everyone": "Everyone"
+      "everyone": "الجميع"
     },
     "weekNav": {
-      "previousWeek": "Previous week",
-      "nextWeek": "Next week",
-      "unavailable": "{label} (unavailable)",
-      "weekNumber": "Week {n}",
-      "current": "· current",
+      "previousWeek": "الأسبوع السابق",
+      "nextWeek": "الأسبوع التالي",
+      "unavailable": "{label} (غير متاح)",
+      "weekNumber": "الأسبوع {n}",
+      "current": "· الحالي",
       "empty": "—"
     },
     "viewToggle": {
-      "calendar": "Calendar",
-      "status": "Status"
+      "calendar": "التقويم",
+      "status": "الحالة"
     },
     "column": {
-      "periodWithDate": "Period {n} · {date}",
-      "period": "Period {n}",
-      "today": "Today"
+      "periodWithDate": "الحصة {n} · {date}",
+      "period": "الحصة {n}",
+      "today": "اليوم"
     },
-    "addLesson": "Add lesson",
+    "addLesson": "إضافة درس",
     "card": {
-      "year": "Year {n}",
-      "plan": "Plan",
-      "authorPeriod": "{author} · Period {n}"
+      "year": "السنة {n}",
+      "plan": "تخطيط",
+      "authorPeriod": "{author} · الحصة {n}"
     },
     "status": {
-      "not_started": "Not started",
-      "in_progress": "In progress",
-      "submitted": "Submitted",
-      "needs_review": "Needs Review",
-      "approved": "Approved"
+      "not_started": "لم يبدأ",
+      "in_progress": "قيد التنفيذ",
+      "submitted": "مُرسَل",
+      "needs_review": "بحاجة إلى مراجعة",
+      "approved": "مُعتمَد"
     },
     "scope": {
-      "class": "Class",
-      "centre": "Centre",
-      "org": "All centres"
+      "class": "صف",
+      "centre": "مركز",
+      "org": "كل المراكز"
     },
     "statusView": {
-      "none": "None",
-      "more": "{count, plural, one {+ {value} more} other {+ {value} more}}",
-      "moveError": "Could not move the lesson.",
-      "statusError": "Could not update status."
+      "none": "لا شيء",
+      "more": "{count, plural, other {+ {value} أخرى}}",
+      "moveError": "تعذّر نقل الدرس.",
+      "statusError": "تعذّر تحديث الحالة."
     },
     "confirm": {
-      "ariaLabel": "Plan this lesson",
-      "title": "Plan this lesson",
-      "year": "Year {n}",
-      "cancel": "Cancel",
-      "starting": "Starting…",
-      "start": "Start planning"
+      "ariaLabel": "خطِّط هذا الدرس",
+      "title": "خطِّط هذا الدرس",
+      "year": "السنة {n}",
+      "cancel": "إلغاء",
+      "starting": "جارٍ البدء…",
+      "start": "ابدأ التخطيط"
     },
     "modal": {
-      "ariaLabel": "New lesson",
-      "badge": "New lesson",
-      "close": "Close",
-      "tabClass": "Class",
-      "tabLesson": "Lesson",
-      "cancel": "Cancel",
-      "back": "Back",
-      "continue": "Continue",
-      "creating": "Creating…",
-      "create": "Create lesson",
+      "ariaLabel": "درس جديد",
+      "badge": "درس جديد",
+      "close": "إغلاق",
+      "tabClass": "الصف",
+      "tabLesson": "الدرس",
+      "cancel": "إلغاء",
+      "back": "رجوع",
+      "continue": "متابعة",
+      "creating": "جارٍ الإنشاء…",
+      "create": "إنشاء الدرس",
       "errors": {
-        "pickLesson": "Pick a lesson to plan.",
-        "pickClass": "Pick a class to plan for."
+        "pickLesson": "اختر درساً لتخطيطه.",
+        "pickClass": "اختر صفاً لتخطّط له."
       },
       "classStep": {
-        "title": "Which class?",
-        "yearGroup": "Year group",
-        "year": "Year {n}",
-        "planFor": "Plan for",
-        "oneClass": "One class you teach",
-        "wholeCentre": "Whole centre",
-        "wholeCentreSub": "Every Year-group class at your centre",
-        "allCentres": "All centres",
-        "allCentresSub": "Shared across every centre"
+        "title": "أي صف؟",
+        "yearGroup": "السنة الدراسية",
+        "year": "السنة {n}",
+        "planFor": "التخطيط لـ",
+        "oneClass": "صف واحد تُدرّسه",
+        "wholeCentre": "المركز بأكمله",
+        "wholeCentreSub": "كل صف لكل سنة في مركزك",
+        "allCentres": "كل المراكز",
+        "allCentresSub": "مشترَك بين جميع المراكز"
       },
       "lessonStep": {
-        "title": "Which lesson?",
-        "breadcrumbYear": "Year {n}",
-        "breadcrumbWeek": "Week {n}",
-        "thisSubject": "this subject",
-        "week": "Week {n}",
-        "previousWeek": "Previous week",
-        "nextWeek": "Next week",
-        "emptyWithMonth": "No curriculum lessons synced for <s>{subject}</s>, Year {year}, <m>{month}</m> · Week {week}.",
-        "emptyNoMonth": "No curriculum lessons synced for <s>{subject}</s>, Year {year}."
+        "title": "أي درس؟",
+        "breadcrumbYear": "السنة {n}",
+        "breadcrumbWeek": "الأسبوع {n}",
+        "thisSubject": "هذه المادة",
+        "week": "الأسبوع {n}",
+        "previousWeek": "الأسبوع السابق",
+        "nextWeek": "الأسبوع التالي",
+        "emptyWithMonth": "لا توجد دروس منهاج مُزامَنة لـ <s>{subject}</s>، السنة {year}، <m>{month}</m> · الأسبوع {week}.",
+        "emptyNoMonth": "لا توجد دروس منهاج مُزامَنة لـ <s>{subject}</s>، السنة {year}."
       },
       "periodCard": {
-        "period": "Period {n}",
-        "untitled": "Untitled lesson",
-        "focus": "Focus · ",
-        "selected": "Selected",
-        "select": "Select"
+        "period": "الحصة {n}",
+        "untitled": "درس بلا عنوان",
+        "focus": "التركيز · ",
+        "selected": "محدَّد",
+        "select": "تحديد"
       }
     }
   }

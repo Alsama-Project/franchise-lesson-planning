@@ -1,15 +1,15 @@
 {
   "nav": {
-    "brandAria": "Alsama — Lesson Planning",
-    "lockup": "Lesson Planning",
-    "lessonPlanning": "Lesson Planning",
-    "curriculum": "Curriculum",
-    "resources": "Resources",
-    "settings": "Settings",
-    "notifications": "Notifications",
-    "signOut": "Sign out",
-    "weeklyOverview": "Weekly Overview",
-    "language": "Language",
-    "forceRtlDev": "Force RTL (dev)"
+    "brandAria": "السماء — تخطيط الدروس",
+    "lockup": "تخطيط الدروس",
+    "lessonPlanning": "تخطيط الدروس",
+    "curriculum": "المنهاج",
+    "resources": "الموارد",
+    "settings": "الإعدادات",
+    "notifications": "الإشعارات",
+    "signOut": "تسجيل الخروج",
+    "weeklyOverview": "النظرة الأسبوعية",
+    "language": "اللغة",
+    "forceRtlDev": "فرض الاتجاه من اليمين لليسار (تطوير)"
   }
 }

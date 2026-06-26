@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { signOut } from '@/lib/actions/auth';
 import { setLocale } from '@/app/actions/locale';
 import { setPseudoRtl } from '@/app/actions/pseudo-rtl';
@@ -43,6 +43,7 @@ export function UserMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const locale = useLocale();
+  const t = useTranslations('common');
 
   // Persist the chosen locale, then hard-reload so the root layout re-evaluates
   // <html lang>/dir (router.refresh alone would not re-render <html>).
@@ -85,7 +86,7 @@ export function UserMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex cursor-pointer items-center gap-[9px] rounded-full border border-border py-1 pl-1 pr-[10px] transition-colors hover:bg-surface-subtle"
+        className="flex cursor-pointer items-center gap-[9px] rounded-full border border-border py-1 ps-1 pe-[10px] transition-colors hover:bg-surface-subtle"
       >
         <span className="inline-flex size-8 items-center justify-center rounded-full bg-teal text-[12px] font-bold text-white">
           {initials(name)}
@@ -106,7 +107,7 @@ export function UserMenu({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[50px] z-20 w-[232px] rounded-[12px] border border-border bg-surface p-[6px] shadow-card"
+          className="absolute end-0 top-[50px] z-20 w-[232px] rounded-[12px] border border-border bg-surface p-[6px] shadow-card"
         >
           <div className="border-b border-neutral-100 px-3 py-[10px]">
             <div className="text-[13px] font-semibold">{name}</div>
@@ -118,16 +119,16 @@ export function UserMenu({
             href="/settings"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-900 hover:bg-surface-subtle"
+            className="block w-full cursor-pointer rounded-[8px] px-3 py-[9px] text-start text-[13px] text-neutral-900 hover:bg-surface-subtle"
           >
-            Settings
+            {t('settings')}
           </Link>
 
           {/* Language switcher — renders only the enabled locales. Arabic is
               switched on (added to enabledLocales) in its own branch. */}
           <div className="mt-[2px] border-t border-neutral-100 pt-[6px]">
             <div className="px-3 pb-[4px] pt-[2px] text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
-              Language
+              {t('language')}
             </div>
             {enabledLocales.map((loc) => {
               const active = loc === locale;
@@ -138,7 +139,7 @@ export function UserMenu({
                   role="menuitem"
                   onClick={() => chooseLocale(loc)}
                   aria-current={active ? 'true' : undefined}
-                  className="flex w-full cursor-pointer items-center justify-between rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-900 hover:bg-surface-subtle"
+                  className="flex w-full cursor-pointer items-center justify-between rounded-[8px] px-3 py-[9px] text-start text-[13px] text-neutral-900 hover:bg-surface-subtle"
                 >
                   <span>{LOCALE_LABELS[loc]}</span>
                   {active ? (
@@ -158,9 +159,9 @@ export function UserMenu({
                 role="menuitemcheckbox"
                 aria-checked={pseudoRtlActive}
                 onClick={togglePseudoRtl}
-                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-[8px] px-3 py-[9px] text-left text-[13px] text-neutral-700 hover:bg-surface-subtle"
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-[8px] px-3 py-[9px] text-start text-[13px] text-neutral-700 hover:bg-surface-subtle"
               >
-                <span>Force RTL (dev)</span>
+                <span>{t('forceRtlDev')}</span>
                 <span
                   aria-hidden
                   className={`inline-flex h-[18px] w-[30px] items-center rounded-full px-[2px] transition-colors ${
@@ -177,12 +178,14 @@ export function UserMenu({
             <button
               type="submit"
               role="menuitem"
-              className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-[9px] text-left text-[13px] font-semibold text-pink hover:bg-surface-subtle"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-[9px] text-start text-[13px] font-semibold text-pink hover:bg-surface-subtle"
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {/* Reading-order (door → arrow-out) icon: mirror it in RTL so the
+                  arrow still points "out". Flip at the use-site, not the def. */}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rtl:-scale-x-100" aria-hidden>
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
               </svg>
-              Sign out
+              {t('signOut')}
             </button>
           </form>
         </div>

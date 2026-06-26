@@ -1,6 +1,7 @@
 {
   "common": {
     "appName": "Alsama Lesson Planner",
+    "breadcrumb": "Breadcrumb",
     "brandAriaLabel": "Alsama — Lesson Planning",
     "lockup": "Lesson Planning",
     "notifications": "Notifications",

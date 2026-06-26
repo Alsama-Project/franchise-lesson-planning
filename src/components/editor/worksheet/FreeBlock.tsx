@@ -532,7 +532,11 @@ export function FreeBlock({
         {uploading ? (
           <div style={{ fontSize: 12.5, color: '#8A8178', marginBottom: 10 }}>Uploading image…</div>
         ) : null}
-        <EditorContent editor={editor} />
+        {/* AI-generated / teacher-authored worksheet content self-orients (LTR or
+            RTL) from its first strong character, independent of the UI chrome. */}
+        <div dir="auto">
+          <EditorContent editor={editor} />
+        </div>
 
         {/* Adjust — stateless AI iteration on a generated doc (presets + undo). */}
         {fromAI ? (

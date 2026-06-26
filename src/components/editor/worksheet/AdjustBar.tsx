@@ -6,7 +6,9 @@
 // new doc out), so there is no thread. A one-step "Undo adjust" restores the
 // pre-adjustment content. Teal = tools/actions, per the project colour law.
 
-const CHIPS = ['Simpler', 'Add word bank', 'More items', 'Shorter'];
+import { useTranslations } from 'next-intl';
+
+const CHIP_KEYS = ['ai.adjustSimpler', 'ai.adjustWordBank', 'ai.adjustMoreItems', 'ai.adjustShorter'];
 
 function Sparkle({ size = 14 }: { size?: number }) {
   return (
@@ -43,6 +45,8 @@ export function AdjustBar({
   canUndo: boolean;
   onUndo: () => void;
 }) {
+  const t = useTranslations('resources');
+
   const submit = () => {
     const text = instruction.trim();
     if (text) onAdjust(text);
@@ -62,14 +66,14 @@ export function AdjustBar({
         <span style={{ color: '#1F7A6C', display: 'inline-flex' }}>
           <Sparkle />
         </span>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>Adjust with AI</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#186155' }}>{t('ai.adjustTitle')}</span>
         {canUndo ? (
           <button
             type="button"
             onClick={onUndo}
             disabled={adjusting}
             style={{
-              marginLeft: 'auto',
+              marginInlineStart: 'auto',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 5,
@@ -83,33 +87,37 @@ export function AdjustBar({
               padding: 0,
             }}
           >
-            <UndoIcon /> Undo adjust
+            <UndoIcon /> {t('ai.undoAdjust')}
           </button>
         ) : null}
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        {CHIPS.map((chip) => (
-          <button
-            key={chip}
-            type="button"
-            onClick={() => onAdjust(chip)}
-            disabled={adjusting}
-            style={{
-              fontFamily: 'inherit',
-              fontSize: 11.5,
-              fontWeight: 500,
-              color: '#186155',
-              background: '#E4F0ED',
-              border: '1px solid #CFE6E0',
-              borderRadius: 999,
-              padding: '4px 9px',
-              cursor: adjusting ? 'default' : 'pointer',
-            }}
-          >
-            {chip}
-          </button>
-        ))}
+        {CHIP_KEYS.map((key) => {
+          const chip = t(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onAdjust(chip)}
+              disabled={adjusting}
+              dir="auto"
+              style={{
+                fontFamily: 'inherit',
+                fontSize: 11.5,
+                fontWeight: 500,
+                color: '#186155',
+                background: '#E4F0ED',
+                border: '1px solid #CFE6E0',
+                borderRadius: 999,
+                padding: '4px 9px',
+                cursor: adjusting ? 'default' : 'pointer',
+              }}
+            >
+              {chip}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
@@ -124,7 +132,8 @@ export function AdjustBar({
             }
           }}
           disabled={adjusting}
-          placeholder="Make a change…"
+          placeholder={t('ai.adjustPlaceholder')}
+          dir="auto"
           style={{
             flex: 1,
             fontFamily: 'var(--font-sora), sans-serif',
@@ -155,7 +164,7 @@ export function AdjustBar({
             whiteSpace: 'nowrap',
           }}
         >
-          {adjusting ? 'Adjusting…' : 'Apply'}
+          {adjusting ? t('ai.adjusting') : t('ai.apply')}
         </button>
       </div>
 

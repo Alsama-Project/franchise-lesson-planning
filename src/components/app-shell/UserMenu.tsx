@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { signOut } from '@/lib/actions/auth';
 import { LocaleSwitcher } from '@/components/app-shell/LocaleSwitcher';
+import { ForceRtlToggle } from '@/components/app-shell/ForceRtlToggle';
 
 /** Up-to-two-letter initials for the avatar, derived from the display name. */
 function initials(name: string): string {
@@ -18,7 +19,16 @@ function initials(name: string): string {
  * opens a small menu (identity, profile link, sign out). Sign out posts to the
  * `signOut` server action, so the session is cleared server-side.
  */
-export function UserMenu({ name, subtitle }: { name: string; subtitle?: string }) {
+export function UserMenu({
+  name,
+  subtitle,
+  pseudoRtlEnabled = false,
+}: {
+  name: string;
+  subtitle?: string;
+  /** When true, show the dev-only "Force RTL" toggle (ENABLE_PSEUDO_RTL). */
+  pseudoRtlEnabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -85,6 +95,7 @@ export function UserMenu({ name, subtitle }: { name: string; subtitle?: string }
           </Link>
           <div className="my-1 border-t border-neutral-100" />
           <LocaleSwitcher onSelect={() => setOpen(false)} />
+          {pseudoRtlEnabled ? <ForceRtlToggle /> : null}
           <div className="my-1 border-t border-neutral-100" />
           <form action={signOut} role="none">
             <button

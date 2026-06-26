@@ -32,6 +32,11 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
   ]);
   const showSettings = admin || memberships.some((m) => m.role === 'coordinator');
 
+  // Dev-only RTL preview toggle, surfaced in the user menu. Gated on an explicit
+  // flag (NOT NODE_ENV) so it can be exercised in production, which doubles as
+  // the test environment.
+  const pseudoRtlEnabled = process.env.ENABLE_PSEUDO_RTL === 'true';
+
   return (
     <div className="flex min-h-screen flex-col">
       {impersonation.active ? (
@@ -66,7 +71,7 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
         {/* Right cluster: bell · user */}
         <div className="ml-auto flex items-center gap-[10px]">
           <NotificationBell />
-          <UserMenu name={name} subtitle={subtitle} />
+          <UserMenu name={name} subtitle={subtitle} pseudoRtlEnabled={pseudoRtlEnabled} />
         </div>
       </header>
 

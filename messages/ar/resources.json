@@ -164,10 +164,6 @@
     "ai": {
       "generateTitle": "الإنشاء بالذكاء الاصطناعي",
       "promptPlaceholder": "صف المورد الذي تحتاجه",
-      "presetMatching": "مطابقة: صورة إلى كلمة",
-      "presetFillBlanks": "5 فراغات للتعبئة",
-      "presetMultipleChoice": "اختيار من متعدد ×3",
-      "presetWordBank": "بنك كلمات + جمل",
       "generating": "جارٍ الإنشاء…",
       "generate": "إنشاء",
       "cancel": "إلغاء",

@@ -164,10 +164,6 @@
     "ai": {
       "generateTitle": "Generate with AI",
       "promptPlaceholder": "Describe the resource you need",
-      "presetMatching": "Matching: picture → word",
-      "presetFillBlanks": "5 fill-in-the-blanks",
-      "presetMultipleChoice": "Multiple choice ×3",
-      "presetWordBank": "Word bank + sentences",
       "generating": "Generating…",
       "generate": "Generate",
       "cancel": "Cancel",

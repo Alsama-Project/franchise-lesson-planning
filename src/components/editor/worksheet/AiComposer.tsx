@@ -1,19 +1,12 @@
 'use client';
 
 // The "Generate with AI" composer state of a Free block (aiView = 'compose'): a
-// prompt textarea, the quick-preset chips that append to the prompt, and the
-// Generate / Cancel actions. Generation itself is owned by the parent Free block
-// (which calls /api/generate-resource and renders the result into the editor);
-// this component is the prompt UI plus a "Generating…" affordance.
+// prompt textarea and the Generate / Cancel actions. Generation itself is owned
+// by the parent Free block (which calls /api/generate-resource and renders the
+// result into the editor); this component is the prompt UI plus a "Generating…"
+// affordance.
 
 import { useTranslations } from 'next-intl';
-
-const PRESET_KEYS = [
-  'ai.presetMatching',
-  'ai.presetFillBlanks',
-  'ai.presetMultipleChoice',
-  'ai.presetWordBank',
-];
 
 function Sparkle({ size = 16 }: { size?: number }) {
   return (
@@ -39,11 +32,6 @@ export function AiComposer({
   error: string | null;
 }) {
   const t = useTranslations('resources');
-
-  const appendPreset = (preset: string) => {
-    const trimmed = prompt.trim();
-    onPromptChange(trimmed ? `${trimmed}\n${preset}` : preset);
-  };
 
   return (
     <div style={{ background: '#fff', padding: '30px 48px 40px', minHeight: 372 }}>
@@ -77,34 +65,6 @@ export function AiComposer({
               resize: 'vertical',
             }}
           />
-
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 11 }}>
-            {PRESET_KEYS.map((key) => {
-              const preset = t(key);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => appendPreset(preset)}
-                  disabled={generating}
-                  dir="auto"
-                  style={{
-                    fontSize: 11.5,
-                    fontWeight: 500,
-                    color: '#186155',
-                    background: '#E4F0ED',
-                    border: '1px solid #CFE6E0',
-                    borderRadius: 999,
-                    padding: '5px 11px',
-                    cursor: generating ? 'default' : 'pointer',
-                    font: 'inherit',
-                  }}
-                >
-                  {preset}
-                </button>
-              );
-            })}
-          </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 15 }}>
             <button

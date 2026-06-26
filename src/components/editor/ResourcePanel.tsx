@@ -39,9 +39,6 @@ const TABS: { id: Tab; labelKey: string }[] = [
   { id: 'folders', labelKey: 'panel.tabFolders' },
 ];
 
-/** The Search tab's filter chips are drawn from these vocabulary dimensions. */
-const FILTER_DIMENSIONS = ['theme', 'skill_type', 'format', 'exercise_type'] as const;
-
 export interface ResourcePanelProps {
   subjectId: string | null;
   vocabulary: TagsByDimension;
@@ -131,7 +128,6 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 export function ResourcePanel({
   subjectId,
-  vocabulary,
   folders,
   attachedIds,
   onAttach,
@@ -145,7 +141,6 @@ export function ResourcePanel({
   // ── Search ────────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
-  const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
   const [searchResults, setSearchResults] = useState<ResourceWithTags[]>([]);
   const [searching, startSearch] = useTransition();
 
@@ -154,8 +149,6 @@ export function ResourcePanel({
     return () => clearTimeout(t);
   }, [query]);
 
-  const tagKey = useMemo(() => [...selectedTagIds].sort().join(','), [selectedTagIds]);
-
   useEffect(() => {
     if (tab !== 'search') return;
     let cancelled = false;
@@ -163,7 +156,6 @@ export function ResourcePanel({
       const rows = await searchResourcesAction({
         q: appliedQuery || undefined,
         subjectId: subjectId ?? undefined,
-        tagIds: selectedTagIds.size > 0 ? [...selectedTagIds] : undefined,
         limit: 30,
       });
       if (!cancelled) setSearchResults(rows);
@@ -171,21 +163,7 @@ export function ResourcePanel({
     return () => {
       cancelled = true;
     };
-  }, [tab, appliedQuery, tagKey, subjectId, selectedTagIds]);
-
-  const filterChips = useMemo(
-    () => FILTER_DIMENSIONS.flatMap((d) => vocabulary[d] ?? []),
-    [vocabulary]
-  );
-
-  const toggleTag = useCallback((id: string) => {
-    setSelectedTagIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  }, [tab, appliedQuery, subjectId]);
 
   // ── Folders ───────────────────────────────────────────────────────────────
   const [folderView, setFolderView] = useState<'most-used' | string | null>(null);
@@ -287,35 +265,11 @@ export function ResourcePanel({
                 className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-neutral-400"
               />
             </div>
-            {filterChips.length > 0 ? (
-              <div className="flex flex-wrap gap-[5px]">
-                {filterChips.map((t) => {
-                  const on = selectedTagIds.has(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleTag(t.id)}
-                      className={
-                        'rounded-badge border px-[8px] py-[3px] text-[10.5px] font-semibold ' +
-                        (on
-                          ? 'border-teal bg-[#E4F0ED] text-[#186155]'
-                          : 'border-border-strong bg-surface text-neutral-600 hover:border-teal')
-                      }
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
             {searching && searchResults.length === 0 ? (
               <EmptyState>{t('panel.searching')}</EmptyState>
             ) : searchResults.length === 0 ? (
               <EmptyState>
-                {appliedQuery || selectedTagIds.size > 0
-                  ? t('panel.noMatches')
-                  : t('panel.searchHint')}
+                {appliedQuery ? t('panel.noMatches') : t('panel.searchHint')}
               </EmptyState>
             ) : (
               <div className="flex flex-col gap-[9px]">

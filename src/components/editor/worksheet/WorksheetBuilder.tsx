@@ -433,9 +433,6 @@ export function WorksheetBuilder({
               <rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" />
             </svg>
             <span style={{ fontSize: 15, fontWeight: 700 }}>{t('header.title')}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#B62A5C', background: '#FBF2F5', border: '1px solid #F1D8E1', borderRadius: 6, padding: '3px 9px' }}>
-              {t('header.studentsSee')}
-            </span>
           </div>
 
           <div style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 9 }}>

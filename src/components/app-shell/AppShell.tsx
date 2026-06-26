@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { Wordmark } from '@/components/ui/Wordmark';
 import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
+import { NotificationBell } from '@/components/app-shell/NotificationBell';
 import { TestUserBar } from '@/components/app-shell/TestUserBar';
 import { isAdmin, getMyMemberships } from '@/lib/auth';
+import { getMyNotifications } from '@/lib/notifications';
 import { getImpersonationState } from '@/lib/test-impersonation';
 
 type AppShellProps = {
@@ -19,16 +21,18 @@ type AppShellProps = {
  * The shared authenticated shell — the persistent top bar from the design
  * (wordmark + "LESSON PLANNING" lockup, primary nav, notification bell and the
  * signed-in user), wrapping a page body. Flat and border-delineated on white.
- * The bell is presentational for now (no backend wired).
+ * The bell lists the signed-in teacher's approved / returned lessons
+ * (`getMyNotifications`); its unread dot shows only when that list is non-empty.
  */
 export async function AppShell({ name, subtitle, children }: AppShellProps) {
   // The "Settings" nav link is shown to admins and coordinators (anyone with
   // console tabs beyond Profile); `/settings` is role-aware, so this is
   // presentation only. Everyone reaches Settings via the avatar menu too.
-  const [admin, memberships, impersonation] = await Promise.all([
+  const [admin, memberships, impersonation, notifications] = await Promise.all([
     isAdmin(),
     getMyMemberships(),
     getImpersonationState(),
+    getMyNotifications(),
   ]);
   const showSettings = admin || memberships.some((m) => m.role === 'coordinator');
 
@@ -65,7 +69,7 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
 
         {/* Right cluster: bell · user */}
         <div className="ml-auto flex items-center gap-[10px]">
-          <NotificationBell />
+          <NotificationBell items={notifications} />
           <UserMenu name={name} subtitle={subtitle} />
         </div>
       </header>
@@ -74,21 +78,5 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
         <div className="px-6 py-8 lg:px-10">{children}</div>
       </main>
     </div>
-  );
-}
-
-/** Presentational notification bell with an unread dot (no backend wired yet). */
-function NotificationBell() {
-  return (
-    <button
-      type="button"
-      aria-label="Notifications"
-      className="relative inline-flex size-[38px] items-center justify-center rounded-[9px] border border-border bg-surface transition-colors hover:bg-surface-subtle"
-    >
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
-      </svg>
-      <span className="absolute right-[9px] top-[8px] size-[7px] rounded-full border-[1.5px] border-white bg-pink" />
-    </button>
   );
 }

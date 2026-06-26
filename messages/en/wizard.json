@@ -1,0 +1,124 @@
+{
+  "wizard": {
+    "steps": {
+      "objective": "SMARTT objective",
+      "teachIt": "Teach it",
+      "practise": "Practise",
+      "linkIt": "Link it",
+      "review": "Review"
+    },
+    "nav": {
+      "back": "Back",
+      "next": "Next",
+      "toReview": "Review",
+      "thisWeek": "This week"
+    },
+    "save": {
+      "saving": "Saving…",
+      "failed": "Save failed — retrying on next edit",
+      "saved": "Saved"
+    },
+    "subheader": {
+      "year": "Year {year}",
+      "wholeCentre": "Whole centre",
+      "allCentres": "All centres"
+    },
+    "total": {
+      "inSession": "{total} / {target} min",
+      "minutes": "{value} min"
+    },
+    "objective": {
+      "heading": "Write the SMARTT objective",
+      "fieldAria": "SMARTT objective",
+      "placeholder": "read five short sentences about a family and identify the family words.",
+      "check": "Check my objective",
+      "checking": "Checking…",
+      "askAriaLabel": "Ask Aya about your objective",
+      "askTitle": "Ask Aya for help with your objective",
+      "feedbackHeading": "Quiet check — feedback, not a chat",
+      "suggestedRewrite": "Suggested rewrite",
+      "checkFailed": "The objective check failed."
+    },
+    "banner": {
+      "label": "SMARTT objective",
+      "notWritten": "not written yet"
+    },
+    "curriculum": {
+      "dailyOutcome": "Daily outcome",
+      "thisWeek": "This week",
+      "monthlyObjective": "Monthly objective",
+      "thisMonth": "This month",
+      "grammarVocab": "Grammar & vocabulary",
+      "theme": "Theme",
+      "yesterdayOutcome": "Yesterday''s learning outcome"
+    },
+    "teach": {
+      "newContentTitle": "Teach the new content",
+      "teacherDoes": "What the teacher does",
+      "studentsDo": "What students do",
+      "teacherPlaceholder": "Model the task, narrate your thinking, set the success criteria…",
+      "studentsPlaceholder": "What the class is doing — reading, answering, working in pairs…",
+      "worksheetTitle": "Student worksheet",
+      "worksheetHint": "build the sheet students work from"
+    },
+    "practise": {
+      "title": "Practise"
+    },
+    "phase": {
+      "aria": "Teaching phase",
+      "placeholder": "— phase —"
+    },
+    "linkIt": {
+      "recap": "Recap",
+      "checkForUnderstanding": "Check for understanding",
+      "exitTicket": "Exit ticket",
+      "recapPlaceholder": "Write the recap…",
+      "add": "Add",
+      "allAdded": "All techniques added.",
+      "notePlaceholder": "Add a note…",
+      "remove": "Remove {name}",
+      "techniqueFallback": "Technique"
+    },
+    "review": {
+      "heading": "Review the whole lesson",
+      "downloadPdf": "Download PDF",
+      "inSessionTotal": "In-session total",
+      "requiredMaterials": "Required materials",
+      "materialsHint": "pre-filled from your blocks · editable",
+      "removeMaterial": "Remove {name}",
+      "materialPlaceholder": "Material name…",
+      "addMaterial": "＋ Add material",
+      "colPart": "Lesson part",
+      "colPhase": "Phase",
+      "colTime": "Time",
+      "parts": {
+        "routines": "Standard routines",
+        "routinesDetail": "Anthem · Warm-up · Cool down — pre-filled and fixed.",
+        "homeworkCheck": "Homework check",
+        "recap": "Recap",
+        "newContent": "New content",
+        "cfu": "Check for Understanding",
+        "independentPractice": "Independent practice",
+        "exitTicket": "Exit ticket"
+      },
+      "homework": "Homework",
+      "homeworkNote": "— at home, excluded from 50"
+    },
+    "submit": {
+      "approved": "Approved",
+      "submittedAwaiting": "Submitted · awaiting review",
+      "resubmit": "Resubmit",
+      "submit": "Submit",
+      "submitting": "Submitting…",
+      "needObjective": "Add a SMARTT objective first"
+    },
+    "timeStepper": {
+      "ariaMinutes": "Minutes",
+      "ariaLabelledMinutes": "{label} in minutes",
+      "min": "min"
+    },
+    "errors": {
+      "couldNotSubmit": "Could not submit."
+    }
+  }
+}

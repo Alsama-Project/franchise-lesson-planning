@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 /**
  * An inline, editable minutes value with a "min" suffix — used in the Review
@@ -27,6 +28,7 @@ export function TimeStepper({
   /** Slightly tighter sizing for the Review table. */
   small?: boolean;
 }) {
+  const t = useTranslations('wizard.timeStepper');
   // While focused, hold the raw text so the field can be cleared and retyped
   // freely; commit valid numbers as they are typed and re-sync on blur.
   const [draft, setDraft] = useState<string | null>(null);
@@ -52,10 +54,10 @@ export function TimeStepper({
         onChange={(e) => handleChange(e.target.value)}
         onFocus={(e) => e.target.select()}
         onBlur={() => setDraft(null)}
-        aria-label={label ? `${label} in minutes` : 'Minutes'}
-        className={`time-field w-[2.6em] cursor-text rounded-[6px] px-[3px] py-[2px] text-right font-semibold tabular-nums text-ink outline-none transition-colors hover:bg-surface-subtle focus:bg-teal-tint focus:ring-1 focus:ring-teal ${num}`}
+        aria-label={label ? t('ariaLabelledMinutes', { label }) : t('ariaMinutes')}
+        className={`time-field w-[2.6em] cursor-text rounded-[6px] px-[3px] py-[2px] text-end font-semibold tabular-nums text-ink outline-none transition-colors hover:bg-surface-subtle focus:bg-teal-tint focus:ring-1 focus:ring-teal ${num}`}
       />
-      <span className={`text-neutral-600 ${suffix}`}>min</span>
+      <span className={`text-neutral-600 ${suffix}`}>{t('min')}</span>
     </span>
   );
 }

@@ -6,6 +6,7 @@
 // listeners come from the parent sortable wrapper and attach to the ⠿ handle.
 
 import type { HTMLAttributes } from 'react';
+import { useTranslations } from 'next-intl';
 
 export interface BlockBadge {
   text: string;
@@ -52,6 +53,7 @@ export function BlockBar({
   onDuplicate?: () => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
 }) {
+  const t = useTranslations('worksheet');
   const isFree = badge.variant === 'free';
   return (
     <div
@@ -66,7 +68,7 @@ export function BlockBar({
     >
       <span
         {...dragHandleProps}
-        title="Drag to reorder"
+        title={t('block.dragToReorder')}
         style={{ color: '#C7BCAE', cursor: 'grab', letterSpacing: '-2px', touchAction: 'none' }}
       >
         ⠿
@@ -96,13 +98,13 @@ export function BlockBar({
       >
         {badge.text}
       </span>
-      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 2 }}>
+      <span style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 2 }}>
         {onDuplicate ? (
-          <button type="button" title="Duplicate" onClick={onDuplicate} style={ACTION_STYLE}>
+          <button type="button" title={t('block.duplicate')} onClick={onDuplicate} style={ACTION_STYLE}>
             <DuplicateIcon />
           </button>
         ) : null}
-        <button type="button" title="Delete" onClick={onDelete} style={ACTION_STYLE}>
+        <button type="button" title={t('block.delete')} onClick={onDelete} style={ACTION_STYLE}>
           <TrashIcon />
         </button>
       </span>

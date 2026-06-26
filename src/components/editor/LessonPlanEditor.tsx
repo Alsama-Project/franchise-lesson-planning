@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { Block, LessonBlockType, PlanStatus } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
@@ -43,9 +44,10 @@ function normalizeBlocks(blocks: Block[]): Block[] {
 }
 
 function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === 'saving') return <span className="text-[13px] text-neutral-600">Saving…</span>;
+  const t = useTranslations('wizard.save');
+  if (state === 'saving') return <span className="text-[13px] text-neutral-600">{t('saving')}</span>;
   if (state === 'error') {
-    return <span className="text-[13px] text-pink">Save failed — retrying on next edit</span>;
+    return <span className="text-[13px] text-pink">{t('failed')}</span>;
   }
   if (state === 'idle') return null;
   return (
@@ -53,13 +55,14 @@ function SaveIndicator({ state }: { state: SaveState }) {
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
         <path d="M5 12l4 4 10-11" />
       </svg>
-      Saved
+      {t('saved')}
     </span>
   );
 }
 
 export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
+  const t = useTranslations('wizard');
 
   const [step, setStep] = useState(1);
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
@@ -180,7 +183,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       setCheckResult(result);
     } catch (err) {
       setCheckError(
-        err instanceof ObjectiveCheckRequestError ? err.message : 'The objective check failed.',
+        err instanceof ObjectiveCheckRequestError ? err.message : t('objective.checkFailed'),
       );
     } finally {
       setChecking(false);
@@ -205,7 +208,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       setStatus('submitted');
       setSaveState('saved');
     } else {
-      setSubmitError(res.error ?? 'Could not submit.');
+      setSubmitError(res.error ?? t('errors.couldNotSubmit'));
     }
   }
 
@@ -278,7 +281,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
         onGo={goStep}
         onBack={() => goStep(step - 1)}
         onNext={() => goStep(step + 1)}
-        nextLabel={step === 4 ? 'Review →' : 'Next →'}
+        nextLabel={step === 4 ? t('nav.toReview') : t('nav.next')}
         submitSlot={submitControl}
       />
 
@@ -300,7 +303,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
 
         {step === 2 && newContentBlock ? (
           <WritingStep
-            title="Teach the new content"
+            title={t('teach.newContentTitle')}
             block={newContentBlock}
             onPatch={(patch) => patchType('new_content', patch)}
             subjectId={resourceBank.subjectId}

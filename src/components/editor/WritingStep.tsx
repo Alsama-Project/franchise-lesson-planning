@@ -7,6 +7,7 @@
 // (a fixed 396px column, a 1px divider, no shadow), identical on both steps.
 
 import type { ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 import type { Block, TeachingPhase } from '@/types/lesson';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
 import { PhaseSelect } from '@/components/editor/PhaseSelect';
@@ -38,6 +39,7 @@ export function WritingStep({
   /** The student worksheet builder, rendered on the Practise step only. */
   worksheetSlot?: ReactNode;
 }) {
+  const t = useTranslations('wizard.teach');
   return (
     <div className="mt-[22px] overflow-hidden rounded-[16px] border border-border">
       {/* Header */}
@@ -58,22 +60,24 @@ export function WritingStep({
         <div className="flex flex-col gap-[18px] p-6">
           <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
             <div>
-              <FieldLabel>What the teacher does</FieldLabel>
+              <FieldLabel>{t('teacherDoes')}</FieldLabel>
               <Textarea
+                dir="auto"
                 rows={4}
                 value={block.teacher_does}
                 onChange={(e) => onPatch({ teacher_does: e.target.value })}
-                placeholder="Model the task, narrate your thinking, set the success criteria…"
+                placeholder={t('teacherPlaceholder')}
                 className="mt-1.5"
               />
             </div>
             <div>
-              <FieldLabel>What students do</FieldLabel>
+              <FieldLabel>{t('studentsDo')}</FieldLabel>
               <Textarea
+                dir="auto"
                 rows={4}
                 value={block.students_do}
                 onChange={(e) => onPatch({ students_do: e.target.value })}
-                placeholder="What the class is doing — reading, answering, working in pairs…"
+                placeholder={t('studentsPlaceholder')}
                 className="mt-1.5"
               />
             </div>
@@ -83,10 +87,10 @@ export function WritingStep({
             <div>
               <div className="mb-[8px] flex items-center gap-[8px]">
                 <span className="text-[12px] font-bold uppercase tracking-[0.05em] text-neutral-700">
-                  Student worksheet
+                  {t('worksheetTitle')}
                 </span>
                 <span className="text-[11px] text-text-faint">
-                  build the sheet students work from
+                  {t('worksheetHint')}
                 </span>
               </div>
               {worksheetSlot}

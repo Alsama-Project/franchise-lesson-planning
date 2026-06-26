@@ -9,6 +9,7 @@
 
 import { useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslations } from 'next-intl';
 import type { FloatingElement } from '@/types/lesson';
 import { clampGeom } from '@/lib/editor/worksheet';
 
@@ -80,6 +81,7 @@ export function FloatingElementView({
   controls?: ReactNode;
   children: ReactNode;
 }) {
+  const t = useTranslations('worksheet');
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [live, setLive] = useState<Geom | null>(null);
   // While dragging, the element is shown as a fixed-position ghost (a portal to
@@ -242,13 +244,13 @@ export function FloatingElementView({
             }}
           >
             {controls}
-            <button type="button" title="Bring forward" onClick={() => onRestack('forward')} style={stripBtn}>
+            <button type="button" title={t('image.bringForward')} onClick={() => onRestack('forward')} style={stripBtn}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="3" width="13" height="13" rx="2" /><path d="M5 11v8a2 2 0 0 0 2 2h8" /></svg>
             </button>
-            <button type="button" title="Send backward" onClick={() => onRestack('backward')} style={stripBtn}>
+            <button type="button" title={t('image.sendBackward')} onClick={() => onRestack('backward')} style={stripBtn}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="8" width="13" height="13" rx="2" /><path d="M19 13V5a2 2 0 0 0-2-2H9" /></svg>
             </button>
-            <button type="button" title="Delete" onClick={onDelete} style={{ ...stripBtn, color: '#B62A5C' }}>
+            <button type="button" title={t('image.delete')} onClick={onDelete} style={{ ...stripBtn, color: '#B62A5C' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
             </button>
           </div>

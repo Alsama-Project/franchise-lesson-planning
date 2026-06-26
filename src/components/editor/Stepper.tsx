@@ -1,13 +1,15 @@
 'use client';
 
 import { Fragment, type ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 
-export const WIZARD_STEPS: { label: string }[] = [
-  { label: 'SMARTT objective' },
-  { label: 'Teach it' },
-  { label: 'Practise' },
-  { label: 'Link it' },
-  { label: 'Review' },
+/** Step keys, in order, into the `wizard.steps` message namespace. */
+export const WIZARD_STEPS: { key: string }[] = [
+  { key: 'objective' },
+  { key: 'teachIt' },
+  { key: 'practise' },
+  { key: 'linkIt' },
+  { key: 'review' },
 ];
 
 export const STEP_COUNT = WIZARD_STEPS.length;
@@ -33,6 +35,7 @@ export function Stepper({
   /** Rendered in place of "Next" on the final step (the submit control). */
   submitSlot: ReactNode;
 }) {
+  const t = useTranslations('wizard');
   const isLast = step === STEP_COUNT;
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-[15px] lg:px-[30px]">
@@ -49,11 +52,11 @@ export function Stepper({
           const isCur = step === no;
           const showConn = i < STEP_COUNT - 1;
           return (
-            <Fragment key={s.label}>
+            <Fragment key={s.key}>
               <button
                 type="button"
                 onClick={() => onGo(no)}
-                className="flex shrink-0 items-center gap-[10px] text-left"
+                className="flex shrink-0 items-center gap-[10px] text-start"
               >
                 <span
                   className={
@@ -73,7 +76,7 @@ export function Stepper({
                     (isCur ? 'font-semibold text-ink' : isDone ? 'font-medium text-neutral-800' : 'font-medium text-neutral-400')
                   }
                 >
-                  {s.label}
+                  {t(`steps.${s.key}`)}
                 </span>
               </button>
               {showConn ? (
@@ -88,7 +91,7 @@ export function Stepper({
           );
         })}
 
-        <div className="ml-4 flex w-[300px] shrink-0 items-center justify-end gap-[9px]">
+        <div className="ms-4 flex w-[300px] shrink-0 items-center justify-end gap-[9px]">
           {/* Always rendered so the cluster keeps an identical width on every
               step — on Step 1 it is hidden (but still occupies its box) and
               made inert, so the stepper band doesn't reflow at the 1 ↔ 2
@@ -104,7 +107,7 @@ export function Stepper({
               (step === 1 ? ' invisible' : '')
             }
           >
-            ← Back
+            <span aria-hidden className="inline-block rtl:-scale-x-100">←</span> {t('nav.back')}
           </button>
           {isLast ? (
             submitSlot
@@ -114,7 +117,7 @@ export function Stepper({
               onClick={onNext}
               className="min-w-[92px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-center text-[13px] font-semibold text-white hover:bg-[#1a6a5d]"
             >
-              {nextLabel}
+              {nextLabel} <span aria-hidden className="inline-block rtl:-scale-x-100">→</span>
             </button>
           )}
         </div>

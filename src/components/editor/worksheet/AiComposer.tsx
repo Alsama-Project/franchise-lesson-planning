@@ -6,11 +6,13 @@
 // (which calls /api/generate-resource and renders the result into the editor);
 // this component is the prompt UI plus a "Generating…" affordance.
 
-const PRESETS = [
-  'Matching: picture → word',
-  '5 fill-in-the-blanks',
-  'Multiple choice ×3',
-  'Word bank + sentences',
+import { useTranslations } from 'next-intl';
+
+const PRESET_KEYS = [
+  'ai.presetMatching',
+  'ai.presetFillBlanks',
+  'ai.presetMultipleChoice',
+  'ai.presetWordBank',
 ];
 
 function Sparkle({ size = 16 }: { size?: number }) {
@@ -36,6 +38,8 @@ export function AiComposer({
   generating: boolean;
   error: string | null;
 }) {
+  const t = useTranslations('resources');
+
   const appendPreset = (preset: string) => {
     const trimmed = prompt.trim();
     onPromptChange(trimmed ? `${trimmed}\n${preset}` : preset);
@@ -48,7 +52,7 @@ export function AiComposer({
           <span style={{ width: 30, height: 30, borderRadius: 9, background: '#E4F0ED', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#1F7A6C' }}>
             <Sparkle />
           </span>
-          <span style={{ fontSize: 18, fontWeight: 700 }}>Generate with AI</span>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>{t('ai.generateTitle')}</span>
         </div>
 
         <div style={{ border: '1.5px solid #CFE6E0', borderRadius: 14, background: '#F7FBFA', padding: 14 }}>
@@ -57,7 +61,8 @@ export function AiComposer({
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             disabled={generating}
-            placeholder="Describe the resource you need"
+            placeholder={t('ai.promptPlaceholder')}
+            dir="auto"
             style={{
               width: '100%',
               fontFamily: 'var(--font-sora), sans-serif',
@@ -74,27 +79,31 @@ export function AiComposer({
           />
 
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 11 }}>
-            {PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => appendPreset(preset)}
-                disabled={generating}
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 500,
-                  color: '#186155',
-                  background: '#E4F0ED',
-                  border: '1px solid #CFE6E0',
-                  borderRadius: 999,
-                  padding: '5px 11px',
-                  cursor: generating ? 'default' : 'pointer',
-                  font: 'inherit',
-                }}
-              >
-                {preset}
-              </button>
-            ))}
+            {PRESET_KEYS.map((key) => {
+              const preset = t(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => appendPreset(preset)}
+                  disabled={generating}
+                  dir="auto"
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: '#186155',
+                    background: '#E4F0ED',
+                    border: '1px solid #CFE6E0',
+                    borderRadius: 999,
+                    padding: '5px 11px',
+                    cursor: generating ? 'default' : 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  {preset}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 15 }}>
@@ -119,7 +128,7 @@ export function AiComposer({
               }}
             >
               <Sparkle size={15} />
-              {generating ? 'Generating…' : 'Generate'}
+              {generating ? t('ai.generating') : t('ai.generate')}
             </button>
             <button
               type="button"
@@ -135,7 +144,7 @@ export function AiComposer({
                 cursor: generating ? 'default' : 'pointer',
               }}
             >
-              Cancel
+              {t('ai.cancel')}
             </button>
           </div>
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import type { PlanStatus } from '@/types/lesson';
 import { cn } from '@/lib/cn';
 import { Spinner } from '@/components/ui/Spinner';
@@ -25,13 +26,15 @@ export function SubmitControl({
   submitting: boolean;
   onSubmit: () => void;
 }) {
+  const t = useTranslations('wizard.submit');
+
   if (status === 'approved') {
     return (
       <span className="inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border border-status-approved-border bg-status-approved-bg px-4 py-[9px] text-[13px] font-semibold text-status-approved">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 12l4 4 10-11" />
         </svg>
-        Approved
+        {t('approved')}
       </span>
     );
   }
@@ -43,12 +46,12 @@ export function SubmitControl({
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 2" />
         </svg>
-        Submitted · awaiting review
+        {t('submittedAwaiting')}
       </span>
     );
   }
 
-  const label = status === 'needs_review' ? 'Resubmit' : 'Submit';
+  const label = status === 'needs_review' ? t('resubmit') : t('submit');
 
   return (
     <button
@@ -56,13 +59,13 @@ export function SubmitControl({
       onClick={onSubmit}
       disabled={submitting || !canSubmit}
       aria-busy={submitting || undefined}
-      title={!canSubmit ? 'Add a SMARTT objective first' : undefined}
+      title={!canSubmit ? t('needObjective') : undefined}
       className={cn(
         'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-pink px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#a3234f] disabled:cursor-not-allowed disabled:opacity-60',
       )}
     >
       {submitting ? <Spinner size={15} /> : null}
-      {submitting ? 'Submitting…' : label}
+      {submitting ? t('submitting') : label}
     </button>
   );
 }

@@ -215,6 +215,20 @@ html:lang(ar) body {
   font-weight: 700;
   color: var(--color-ink);
 }
+/*
+ * Per-paragraph bidi. The worksheet is bilingual: a teacher may type Arabic in
+ * one block and English in the next, or mix them within one block. `unicode-bidi:
+ * plaintext` resolves each block-level element's direction from its OWN content
+ * (like `dir="auto"` per paragraph) — Arabic runs flow RTL, English LTR — without
+ * writing any direction into the stored tiptap JSON. Block-level elements only;
+ * the page frame stays LTR (see MasterFrame `dir="auto"`).
+ */
+.worksheet-doc p,
+.worksheet-doc h1,
+.worksheet-doc h2,
+.worksheet-doc li {
+  unicode-bidi: plaintext;
+}
 .worksheet-doc p {
   margin: 0;
 }

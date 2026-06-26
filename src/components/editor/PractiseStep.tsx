@@ -6,6 +6,7 @@
 // builder (toolbar + inline A4 canvas). The resource bank is reached through the
 // builder's modal (not an embedded side panel), matching the mockup.
 
+import { useTranslations } from 'next-intl';
 import type { Block, TeachingPhase, Worksheet } from '@/types/lesson';
 import type { TagsByDimension } from '@/types/resource';
 import { PhaseSelect } from '@/components/editor/PhaseSelect';
@@ -28,11 +29,12 @@ export function PractiseStep({
   context: WorksheetContext;
   vocabulary: TagsByDimension;
 }) {
+  const t = useTranslations('wizard');
   return (
     <div className="mt-[22px] overflow-hidden rounded-[16px] border border-border bg-surface">
       {/* Block header */}
       <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
-        <span className="text-[20px] font-semibold">Practise</span>
+        <span className="text-[20px] font-semibold">{t('practise.title')}</span>
         <PhaseSelect
           value={block.phase}
           onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
@@ -42,22 +44,24 @@ export function PractiseStep({
       {/* Teacher / student writing (pink-editable) */}
       <div className="grid grid-cols-1 gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px] md:grid-cols-2">
         <div>
-          <FieldLabel>What the teacher does</FieldLabel>
+          <FieldLabel>{t('teach.teacherDoes')}</FieldLabel>
           <Textarea
+            dir="auto"
             rows={2}
             value={block.teacher_does}
             onChange={(e) => onPatch({ teacher_does: e.target.value })}
-            placeholder="Model the task, narrate your thinking, set the success criteria…"
+            placeholder={t('teach.teacherPlaceholder')}
             className="mt-1.5"
           />
         </div>
         <div>
-          <FieldLabel>What students do</FieldLabel>
+          <FieldLabel>{t('teach.studentsDo')}</FieldLabel>
           <Textarea
+            dir="auto"
             rows={2}
             value={block.students_do}
             onChange={(e) => onPatch({ students_do: e.target.value })}
-            placeholder="What the class is doing — reading, answering, working in pairs…"
+            placeholder={t('teach.studentsPlaceholder')}
             className="mt-1.5"
           />
         </div>

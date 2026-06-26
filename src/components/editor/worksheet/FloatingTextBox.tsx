@@ -6,6 +6,7 @@
 // inside it. Minimal style: a border on/off toggle and a transparent/white fill.
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { generateHTML, type JSONContent } from '@tiptap/core';
 import type { FloatingTextBox as FloatingTextBoxModel, WorksheetDoc } from '@/types/lesson';
@@ -56,6 +57,7 @@ export function FloatingTextBox({
   onActivate: (api: ActiveBlock) => void;
   onDeactivate: (id: string) => void;
 }) {
+  const t = useTranslations('worksheet');
   const editor = useEditor({
     extensions: worksheetEditorExtensions(),
     content: (el.doc as JSONContent | null) ?? '',
@@ -111,7 +113,7 @@ export function FloatingTextBox({
         <>
           <button
             type="button"
-            title={el.border ? 'Border on' : 'Border off'}
+            title={el.border ? t('textbox.borderOn') : t('textbox.borderOff')}
             onClick={() => onStyleChange({ border: !el.border })}
             style={toggleBtn(el.border)}
           >
@@ -119,7 +121,7 @@ export function FloatingTextBox({
           </button>
           <button
             type="button"
-            title={el.fill === 'white' ? 'White fill' : 'Transparent fill'}
+            title={el.fill === 'white' ? t('textbox.fillWhite') : t('textbox.fillTransparent')}
             onClick={() => onStyleChange({ fill: el.fill === 'white' ? 'transparent' : 'white' })}
             style={toggleBtn(el.fill === 'white')}
           >

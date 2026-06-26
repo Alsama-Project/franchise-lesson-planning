@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import type { TeachingPhase } from '@/types/lesson';
 import { parsePhase, phaseLabel } from '@/lib/editor/phase';
 
@@ -25,9 +26,10 @@ export function PhaseSelect({
   value: TeachingPhase | null;
   onChange: (phase: TeachingPhase | null) => void;
 }) {
+  const t = useTranslations('wizard.phase');
   return (
     <select
-      aria-label="Teaching phase"
+      aria-label={t('aria')}
       value={value ?? ''}
       onChange={(e) => onChange(parsePhase(e.target.value))}
       className={
@@ -35,7 +37,7 @@ export function PhaseSelect({
         (value ? PHASE_STYLE[value] : PHASE_NEUTRAL)
       }
     >
-      <option value="">— phase —</option>
+      <option value="">{t('placeholder')}</option>
       <option value="i_do">{phaseLabel('i_do')}</option>
       <option value="we_do">{phaseLabel('we_do')}</option>
       <option value="you_do">{phaseLabel('you_do')}</option>

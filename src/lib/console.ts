@@ -519,14 +519,17 @@ export async function getCurriculumStatus(
 
 // ── AI resource guide (admin) ────────────────────────────────────────────────
 
-/** The active AI-resource-guide version, for the admin Settings preview. */
+/**
+ * The active AI-resource-guide version, for the admin Settings surface. The
+ * console shows the original filename + upload date only (no text preview); the
+ * stored `content` is served to the AI backend through the security-definer read
+ * function (`get_active_resource_guide()`) and is not exposed here.
+ */
 export interface ResourceGuideVersion {
-  /** The full guide text (read-only preview). */
-  content: string;
-  /** When this version was uploaded. */
+  /** The original uploaded filename, or null on rows predating capture (0021). */
+  originalFilename: string | null;
+  /** When this version was uploaded (`created_at`). */
   createdAt: string;
-  /** Display name of the uploader, best-effort (null if not resolvable). */
-  uploadedByName: string | null;
 }
 
 /**
@@ -535,47 +538,37 @@ export interface ResourceGuideVersion {
  * built-in default guide is in use). Admin-only by RLS
  * (`ai_resource_guide_select_admin`); a non-admin read yields no rows → null.
  *
- * The uploader's name is best-effort: there is no admin-wide `profiles` SELECT
- * policy (see the RLS note at the top of this file), so it resolves only when the
- * admin shares a space with the uploader (commonly themselves). Falls back to null.
+ * `original_filename` is null on versions uploaded before 0021; the UI falls back
+ * to showing the upload date alone in that case.
  */
 export async function getActiveResourceGuideVersion(): Promise<ResourceGuideVersion | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from('ai_resource_guide')
-    .select('content, created_at, uploaded_by')
+    .select('original_filename, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = data as
-    | { content: string; created_at: string; uploaded_by: string | null }
-    | null;
+  const row = data as { original_filename: string | null; created_at: string } | null;
   if (!row) return null;
 
-  let uploadedByName: string | null = null;
-  if (row.uploaded_by) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', row.uploaded_by)
-      .maybeSingle();
-    uploadedByName = (profile as { full_name: string | null } | null)?.full_name ?? null;
-  }
-
-  return { content: row.content, createdAt: row.created_at, uploadedByName };
+  return { originalFilename: row.original_filename, createdAt: row.created_at };
 }
 
 // ── SMARTT objective guide (admin) ───────────────────────────────────────────
 
-/** The active SMARTT-objective-guide version, for the admin Settings preview. */
+/**
+ * The active SMARTT-objective-guide version, for the admin Settings surface. The
+ * console shows the original filename + upload date only (no text preview); the
+ * stored `content` is served to the AI backend through the security-definer read
+ * function (`get_active_smartt_guide()`) and is not exposed here.
+ */
 export interface SmarttGuideVersion {
-  /** The full guide text (read-only preview). */
-  content: string;
-  /** When this version was uploaded. */
+  /** The original uploaded filename, or null on rows predating capture (0021). */
+  originalFilename: string | null;
+  /** When this version was uploaded (`created_at`). */
   createdAt: string;
-  /** Display name of the uploader, best-effort (null if not resolvable). */
-  uploadedByName: string | null;
 }
 
 /**
@@ -584,9 +577,8 @@ export interface SmarttGuideVersion {
  * built-in default guide is in use). Admin-only by RLS
  * (`smartt_objective_guide_select_admin`); a non-admin read yields no rows → null.
  *
- * The uploader's name is best-effort: there is no admin-wide `profiles` SELECT
- * policy (see the RLS note at the top of this file), so it resolves only when the
- * admin shares a space with the uploader (commonly themselves). Falls back to null.
+ * `original_filename` is null on versions uploaded before 0021; the UI falls back
+ * to showing the upload date alone in that case.
  *
  * Faithful clone of {@link getActiveResourceGuideVersion} — different table.
  */
@@ -594,25 +586,13 @@ export async function getActiveSmarttGuideVersion(): Promise<SmarttGuideVersion 
   const supabase = await createClient();
   const { data } = await supabase
     .from('smartt_objective_guide')
-    .select('content, created_at, uploaded_by')
+    .select('original_filename, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = data as
-    | { content: string; created_at: string; uploaded_by: string | null }
-    | null;
+  const row = data as { original_filename: string | null; created_at: string } | null;
   if (!row) return null;
 
-  let uploadedByName: string | null = null;
-  if (row.uploaded_by) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', row.uploaded_by)
-      .maybeSingle();
-    uploadedByName = (profile as { full_name: string | null } | null)?.full_name ?? null;
-  }
-
-  return { content: row.content, createdAt: row.created_at, uploadedByName };
+  return { originalFilename: row.original_filename, createdAt: row.created_at };
 }

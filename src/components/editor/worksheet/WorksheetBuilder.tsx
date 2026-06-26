@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   DndContext,
   PointerSensor,
@@ -85,6 +86,7 @@ export function WorksheetBuilder({
   /** Tag vocabulary for the bank modal's facets (loaded with the plan). */
   vocabulary: TagsByDimension;
 }) {
+  const t = useTranslations('worksheet');
   const [ws, setWs] = useState<Worksheet>(() => parseWorksheet(value));
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -430,53 +432,53 @@ export function WorksheetBuilder({
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B62A5C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
               <rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" />
             </svg>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>Student worksheet</span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{t('header.title')}</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: '#B62A5C', background: '#FBF2F5', border: '1px solid #F1D8E1', borderRadius: 6, padding: '3px 9px' }}>
-              students see this
+              {t('header.studentsSee')}
             </span>
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #E7DECF', borderRadius: 999, padding: '5px 7px 5px 12px' }}>
-              <span style={{ fontSize: 11.5, color: '#8A8178' }}>A4</span>
-              <button type="button" onClick={() => setZoom((z) => clampZoom(round2(z - 0.1)))} title="Zoom out (Ctrl −)" style={zoomBtn}>
+          <div style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #E7DECF', borderRadius: 999, paddingBlock: 5, paddingInlineStart: 12, paddingInlineEnd: 7 }}>
+              <span style={{ fontSize: 11.5, color: '#8A8178' }}>{t('zoom.a4')}</span>
+              <button type="button" onClick={() => setZoom((z) => clampZoom(round2(z - 0.1)))} title={t('zoom.zoomOut')} style={zoomBtn}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>
               </button>
               <span style={{ fontSize: 11.5, fontWeight: 600, minWidth: 32, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-              <button type="button" onClick={() => setZoom((z) => clampZoom(round2(z + 0.1)))} title="Zoom in (Ctrl +)" style={zoomBtn}>
+              <button type="button" onClick={() => setZoom((z) => clampZoom(round2(z + 0.1)))} title={t('zoom.zoomIn')} style={zoomBtn}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
               </button>
-              <button type="button" onClick={fitToWidth} title="Fit to width (Ctrl 0)" style={{ ...zoomBtn, width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600, color: '#5C544E' }}>
-                Fit
+              <button type="button" onClick={fitToWidth} title={t('zoom.fitToWidth')} style={{ ...zoomBtn, width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600, color: '#5C544E' }}>
+                {t('zoom.fit')}
               </button>
             </div>
 
             <button
               type="button"
               onClick={() => setPrintOpen(true)}
-              title="Print preview"
+              title={t('actions.printPreview')}
               style={chromeButton(false)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="3" width="12" height="6" rx="1" /><path d="M6 14h12v7H6z" /><path d="M6 14H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>
-              Print preview
+              {t('actions.printPreview')}
             </button>
 
             {/* Full screen — CSS maximize overlay; teal "Exit" while active, Esc also leaves */}
             <button
               type="button"
               onClick={() => setMaximised((m) => !m)}
-              title={maximised ? 'Exit full screen (Esc)' : 'Full screen'}
+              title={maximised ? t('actions.exitFullScreenTitle') : t('actions.fullScreen')}
               style={chromeButton(maximised)}
             >
               {maximised ? (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
-                  Exit full screen
+                  {t('actions.exitFullScreen')}
                 </>
               ) : (
                 <>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
-                  Full screen
+                  {t('actions.fullScreen')}
                 </>
               )}
             </button>
@@ -525,7 +527,7 @@ export function WorksheetBuilder({
               <MasterFrame ctx={context}>
                 {empty ? (
                   <div style={{ flex: 1, minHeight: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, border: '2px dashed #D9CDBB', borderRadius: 16, background: '#FCFAF6' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#5C544E' }}>This worksheet is empty</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#5C544E' }}>{t('empty')}</div>
                     <AddExerciseMenu
                       variant="empty"
                       open={menuOpen}
@@ -606,6 +608,7 @@ function PrintPreview({
   resolved: Record<string, ResourceWithTags>;
   onClose: () => void;
 }) {
+  const t = useTranslations('worksheet');
   const [previewScale, setPreviewScale] = useState(0.85);
 
   useEffect(() => {
@@ -640,15 +643,15 @@ function PrintPreview({
           zIndex: 2,
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 700 }}>Print preview</span>
-        <span style={{ fontSize: 12, color: '#8A8178' }}>A4 portrait · prints at true size</span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>{t('print.title')}</span>
+        <span style={{ fontSize: 12, color: '#8A8178' }}>{t('print.subtitle')}</span>
+        <span style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 8 }}>
           <button type="button" onClick={() => window.print()} style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#fff', background: '#1F7A6C', border: 'none', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="3" width="12" height="6" rx="1" /><path d="M6 14h12v7H6z" /><path d="M6 14H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>
-            Print
+            {t('print.print')}
           </button>
           <button type="button" onClick={onClose} style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#2A2422', background: '#fff', border: '1px solid #DDD4C8', borderRadius: 9, padding: '8px 14px', cursor: 'pointer' }}>
-            Close
+            {t('print.close')}
           </button>
         </span>
       </div>

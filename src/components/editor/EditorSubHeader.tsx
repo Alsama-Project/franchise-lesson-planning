@@ -2,21 +2,10 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import type { EditorClassContext } from '@/lib/editor/load-plan';
 import { IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(d);
-}
+import { formatDate, formatNumber } from '@/lib/format';
 
 /**
  * The editor sub-header: a "‹ This week" back link to the Weekly Overview, the
@@ -38,6 +27,8 @@ export function EditorSubHeader({
   /** The in-session running total badge only belongs on the Review step. */
   showTotal?: boolean;
 }) {
+  const t = useTranslations('wizard');
+  const locale = useLocale();
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
   const totalColor = onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]';
   const totalStroke = onTarget ? '#2E7D5B' : '#B0651E';
@@ -46,12 +37,20 @@ export function EditorSubHeader({
   // no further label — a class is identified by year alone (no group concept).
   const scopeSuffix =
     classContext.scope === 'centre'
-      ? 'Whole centre'
+      ? t('subheader.wholeCentre')
       : classContext.scope === 'org'
-        ? 'All centres'
+        ? t('subheader.allCentres')
         : null;
 
-  const dateLabel = formatDate(lessonDate);
+  const dateLabel = lessonDate
+    ? formatDate(`${lessonDate}T00:00:00Z`, locale, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+    : '';
   // The trailing line shows the date (when set) and centre, joined cleanly.
   const metaLine = [dateLabel, classContext.schoolName].filter(Boolean).join(' · ');
 
@@ -61,26 +60,26 @@ export function EditorSubHeader({
         href="/"
         className="mb-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-600 transition-colors hover:text-ink"
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rtl:-scale-x-100">
           <path d="M15 18l-6-6 6-6" />
         </svg>
-        This week
+        {t('nav.thisWeek')}
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-[10px]">
           <span className="text-[19px] font-semibold">
-            Year {classContext.year}
+            {t('subheader.year', { year: formatNumber(classContext.year, locale) })}
             {scopeSuffix ? ` · ${scopeSuffix}` : ''}
           </span>
           {classContext.subjectName ? (
-            <span className="rounded-badge bg-[#F3ECE2] px-[9px] py-[3px] text-[12px] text-neutral-700">
+            <span dir="auto" className="rounded-badge bg-[#F3ECE2] px-[9px] py-[3px] text-[12px] text-neutral-700">
               {classContext.subjectName}
             </span>
           ) : null}
           {metaLine ? (
             <>
               <span className="text-neutral-300">·</span>
-              <span className="text-[13px] text-neutral-600">{metaLine}</span>
+              <span dir="auto" className="text-[13px] text-neutral-600">{metaLine}</span>
             </>
           ) : null}
         </div>
@@ -93,7 +92,10 @@ export function EditorSubHeader({
                 <path d="M12 7v5l3 2" />
               </svg>
               <span className={`text-[13.5px] font-bold ${totalColor}`}>
-                {total} / {IN_SESSION_TARGET_MINUTES} min
+                {t('total.inSession', {
+                  total: formatNumber(total, locale),
+                  target: formatNumber(IN_SESSION_TARGET_MINUTES, locale),
+                })}
               </span>
             </div>
           ) : null}

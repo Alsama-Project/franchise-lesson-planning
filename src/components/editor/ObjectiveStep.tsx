@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 import {
   SMARTT_LETTERS,
@@ -68,6 +69,7 @@ export function ObjectiveStep({
   checkError: string | null;
   onCheck: () => void;
 }) {
+  const t = useTranslations('wizard.objective');
   const checkDisabled = checking || remainder.trim().length === 0;
 
   // The remainder is an inline, flowing editable region (so the teacher's text
@@ -105,7 +107,7 @@ export function ObjectiveStep({
 
   return (
     <div className="mt-1.5">
-      <div className="text-[22px] font-semibold">Write the SMARTT objective</div>
+      <div className="text-[22px] font-semibold">{t('heading')}</div>
 
       <div className="mt-[18px] flex flex-wrap gap-1.5">
         {SMARTT_LETTERS.map((l) => (
@@ -141,9 +143,9 @@ export function ObjectiveStep({
             type="button"
             onClick={onCheck}
             disabled={checkDisabled}
-            aria-label="Ask Aya about your objective"
-            title="Ask Aya for help with your objective"
-            className="absolute right-[11px] top-[11px] inline-flex size-[30px] items-center justify-center rounded-full bg-teal text-white shadow-[0_1px_3px_rgba(31,122,108,0.35)] hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={t('askAriaLabel')}
+            title={t('askTitle')}
+            className="absolute end-[11px] top-[11px] inline-flex size-[30px] items-center justify-center rounded-full bg-teal text-white shadow-[0_1px_3px_rgba(31,122,108,0.35)] hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SparkIcon size={15} />
           </button>
@@ -153,16 +155,17 @@ export function ObjectiveStep({
               replaced <textarea> cannot wrap inline with preceding text). The stem
               stays muted (text-stem) so it reads as a fixed label; the teacher's
               text renders in body ink (text-ink), clearly distinct from the stem. */}
-          <p className="pr-[34px] text-[16px] leading-[1.55]">
+          <p className="pe-[34px] text-[16px] leading-[1.55]">
             <span className="text-stem">{OBJECTIVE_STEM} </span>
             <span
               ref={editableRef}
               role="textbox"
+              dir="auto"
               aria-multiline="true"
-              aria-label="SMARTT objective"
+              aria-label={t('fieldAria')}
               contentEditable
               suppressContentEditableWarning
-              data-placeholder="read five short sentences about a family and identify the family words."
+              data-placeholder={t('placeholder')}
               data-empty={showPlaceholder ? 'true' : 'false'}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
@@ -180,7 +183,7 @@ export function ObjectiveStep({
             className="inline-flex shrink-0 items-center gap-[7px] rounded-[9px] bg-teal px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {checking ? <Spinner size={14} /> : <SparkIcon size={14} />}
-            {checking ? 'Checking…' : 'Check my objective'}
+            {checking ? t('checking') : t('check')}
           </button>
         </div>
       </div>
@@ -192,15 +195,15 @@ export function ObjectiveStep({
       ) : null}
 
       {checkResult ? (
-        <div className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
+        <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
           <div className="mb-[9px] flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="#1F7A6C">
               <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" />
             </svg>
-            Quiet check — feedback, not a chat
+            {t('feedbackHeading')}
           </div>
           {checkResult.suggestions.length > 0 ? (
-            <ul className="ml-[18px] list-disc text-[13px] leading-[1.55] text-neutral-900">
+            <ul dir="auto" className="ms-[18px] list-disc text-[13px] leading-[1.55] text-neutral-900">
               {checkResult.suggestions.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
@@ -208,9 +211,9 @@ export function ObjectiveStep({
           ) : null}
           <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
             <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
-              Suggested rewrite
+              {t('suggestedRewrite')}
             </div>
-            <div className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
+            <div dir="auto" className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
               {checkResult.improved_objective}
             </div>
           </div>

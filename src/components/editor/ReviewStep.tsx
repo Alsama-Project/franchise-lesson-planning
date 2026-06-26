@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import type { Block, LessonBlockType, PlanStatus, TeachingPhase } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import { blockMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
+import { formatNumber } from '@/lib/format';
 import { getBlock, routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques } from '@/lib/editor/link-it';
 import { phaseLabel } from '@/lib/editor/phase';
@@ -66,6 +68,8 @@ export function ReviewStep({
   onMaterialsChange: (next: string[]) => void;
   onBlockMinutes: (type: LessonBlockType, next: number) => void;
 }) {
+  const t = useTranslations('wizard');
+  const locale = useLocale();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ new_content: true });
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
@@ -100,17 +104,17 @@ export function ReviewStep({
   const parts: PartRow[] = [
     {
       key: 'routines',
-      name: 'Standard routines',
-      detail: 'Anthem · Warm-up · Cool down — pre-filled and fixed.',
+      name: t('review.parts.routines'),
+      detail: t('review.parts.routinesDetail'),
       phase: null,
       minutes: routinesMinutes(blocks),
     },
-    part('check_homework', 'Homework check', 'check_homework'),
-    part('recap', 'Recap', 'recap'),
-    part('new_content', 'New content', 'new_content'),
-    part('cfu', 'Check for Understanding', 'cfu'),
-    part('independent_practice', 'Independent practice', 'independent_practice'),
-    part('exit_ticket', 'Exit ticket', 'exit_ticket'),
+    part('check_homework', t('review.parts.homeworkCheck'), 'check_homework'),
+    part('recap', t('review.parts.recap'), 'recap'),
+    part('new_content', t('review.parts.newContent'), 'new_content'),
+    part('cfu', t('review.parts.cfu'), 'cfu'),
+    part('independent_practice', t('review.parts.independentPractice'), 'independent_practice'),
+    part('exit_ticket', t('review.parts.exitTicket'), 'exit_ticket'),
   ];
 
   function commitDraft() {
@@ -129,7 +133,7 @@ export function ReviewStep({
   return (
     <div className="mt-[22px]">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="text-[22px] font-semibold">Review the whole lesson</div>
+        <div className="text-[22px] font-semibold">{t('review.heading')}</div>
         <div className="flex flex-wrap items-center gap-4">
           {status === 'approved' ? (
             <a
@@ -141,13 +145,16 @@ export function ReviewStep({
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
               </svg>
-              Download PDF
+              {t('review.downloadPdf')}
             </a>
           ) : null}
           <div className="inline-flex items-center gap-2 text-[13px]">
-            <span className="text-neutral-600">In-session total</span>
+            <span className="text-neutral-600">{t('review.inSessionTotal')}</span>
             <span className={`font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>
-              {total} / {IN_SESSION_TARGET_MINUTES} min
+              {t('total.inSession', {
+                total: formatNumber(total, locale),
+                target: formatNumber(IN_SESSION_TARGET_MINUTES, locale),
+              })}
             </span>
           </div>
         </div>
@@ -157,21 +164,22 @@ export function ReviewStep({
       <div className="mt-4 rounded-[13px] border border-border px-4 py-[15px]">
         <div className="mb-2.5 flex items-center justify-between gap-2.5">
           <span className="text-[12px] font-bold uppercase tracking-[0.05em] text-neutral-700">
-            Required materials
+            {t('review.requiredMaterials')}
           </span>
-          <span className="text-[11px] text-neutral-400">pre-filled from your blocks · editable</span>
+          <span className="text-[11px] text-neutral-400">{t('review.materialsHint')}</span>
         </div>
         <div className="flex flex-wrap gap-[7px]">
           {materials.map((m, i) => (
             <span
               key={`${m}-${i}`}
+              dir="auto"
               className="inline-flex items-center gap-1.5 rounded-[8px] border border-border bg-surface-subtle px-[11px] py-[6px] text-[12.5px] text-neutral-900"
             >
               {m}
               <button
                 type="button"
                 onClick={() => removeMaterial(i)}
-                aria-label={`Remove ${m}`}
+                aria-label={t('review.removeMaterial', { name: m })}
                 className="text-neutral-300 hover:text-pink"
               >
                 ✕
@@ -181,6 +189,7 @@ export function ReviewStep({
           {adding ? (
             <input
               autoFocus
+              dir="auto"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commitDraft}
@@ -191,7 +200,7 @@ export function ReviewStep({
                   setAdding(false);
                 }
               }}
-              placeholder="Material name…"
+              placeholder={t('review.materialPlaceholder')}
               className="rounded-[8px] border border-teal bg-surface px-[11px] py-[6px] text-[12.5px] outline-none"
             />
           ) : (
@@ -200,7 +209,7 @@ export function ReviewStep({
               onClick={() => setAdding(true)}
               className="rounded-[8px] border border-dashed border-[#CFE6E0] bg-[#E4F0ED] px-[11px] py-[6px] text-[12.5px] font-semibold text-teal"
             >
-              ＋ Add material
+              {t('review.addMaterial')}
             </button>
           )}
         </div>
@@ -209,9 +218,9 @@ export function ReviewStep({
       {/* Lesson-parts table */}
       <div className="mt-3.5 overflow-hidden rounded-[13px] border border-border">
         <div className="grid grid-cols-[1fr_92px_96px] border-b border-[#EFE8DD] bg-surface-subtle text-[11px] font-bold uppercase tracking-[0.04em] text-neutral-400">
-          <div className="px-4 py-2.5">Lesson part</div>
-          <div className="px-2 py-2.5 text-center">Phase</div>
-          <div className="px-3.5 py-2.5 text-right">Time</div>
+          <div className="px-4 py-2.5">{t('review.colPart')}</div>
+          <div className="px-2 py-2.5 text-center">{t('review.colPhase')}</div>
+          <div className="px-3.5 py-2.5 text-end">{t('review.colTime')}</div>
         </div>
         {parts.map((p) => {
           const open = !!expanded[p.key];
@@ -222,7 +231,7 @@ export function ReviewStep({
                 <button
                   type="button"
                   onClick={() => setExpanded((e) => ({ ...e, [p.key]: !e[p.key] }))}
-                  className="flex items-center gap-2 px-4 py-[11px] text-left"
+                  className="flex items-center gap-2 px-4 py-[11px] text-start"
                 >
                   <svg
                     width="13"
@@ -233,7 +242,9 @@ export function ReviewStep({
                     strokeWidth="2.4"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className={open ? 'rotate-90 transition-transform' : 'transition-transform'}
+                    className={
+                      (open ? 'rotate-90' : 'rtl:-scale-x-100') + ' transition-transform'
+                    }
                   >
                     <path d="M9 18l6-6-6-6" />
                   </svg>
@@ -256,12 +267,14 @@ export function ReviewStep({
                       onChange={(next) => onBlockMinutes(p.type!, next)}
                     />
                   ) : (
-                    <span className="text-[12.5px] text-neutral-600">{p.minutes} min</span>
+                    <span className="text-[12.5px] text-neutral-600">
+                      {t('total.minutes', { value: formatNumber(p.minutes, locale) })}
+                    </span>
                   )}
                 </div>
               </div>
               {open ? (
-                <div className="px-4 pb-[13px] pl-[37px]">
+                <div className="px-4 pb-[13px] ps-[37px]">
                   <PartContent
                     block={p.block}
                     attachedResources={attachedFor(p.block)}
@@ -279,10 +292,11 @@ export function ReviewStep({
         })}
         <div className="grid grid-cols-[1fr_96px] bg-[#FBF6EF]">
           <div className="px-4 py-[11px] text-[13px] font-semibold">
-            Homework <span className="font-medium text-neutral-600">— at home, excluded from 50</span>
+            {t('review.homework')}{' '}
+            <span className="font-medium text-neutral-600">{t('review.homeworkNote')}</span>
           </div>
-          <div className="px-3.5 py-[11px] text-right text-[12.5px] text-neutral-600">
-            {homeworkMin} min
+          <div className="px-3.5 py-[11px] text-end text-[12.5px] text-neutral-600">
+            {t('total.minutes', { value: formatNumber(homeworkMin, locale) })}
           </div>
         </div>
       </div>

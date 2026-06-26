@@ -21,6 +21,7 @@ import {
   type NodeViewProps,
 } from '@tiptap/react';
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useTranslations } from 'next-intl';
 import { ImageCropModal } from './ImageCropModal';
 
 export type ImageAlign = 'left' | 'center' | 'right';
@@ -54,6 +55,7 @@ function layoutCss(align: ImageAlign, width: number | null): string {
 }
 
 function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, extension }: NodeViewProps) {
+  const t = useTranslations('worksheet');
   const src = node.attrs.src as string;
   const alt = (node.attrs.alt as string | null) ?? '';
   const title = (node.attrs.title as string | null) ?? undefined;
@@ -158,7 +160,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
               <button
                 key={a}
                 type="button"
-                title={`Align ${a}`}
+                title={t(`image.align${a[0].toUpperCase()}${a.slice(1)}`)}
                 onMouseDown={(ev) => ev.preventDefault()}
                 onClick={() => updateAttributes({ align: a })}
                 style={{
@@ -181,7 +183,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
             <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
             <button
               type="button"
-              title="Crop image"
+              title={t('image.crop')}
               onMouseDown={(ev) => ev.preventDefault()}
               onClick={() => setCropOpen(true)}
               style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: '#5C544E' }}
@@ -193,7 +195,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
                 <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
                 <button
                   type="button"
-                  title="Float over text (free position)"
+                  title={t('image.float')}
                   onMouseDown={(ev) => ev.preventDefault()}
                   onClick={() => {
                     const img = imgRef.current;

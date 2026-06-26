@@ -125,10 +125,12 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Insert a new version (RLS enforces admin + uploaded_by = caller) ──
+  // `original_filename` (0021) is display metadata for the admin console; the
+  // served `content` is unchanged. We store the original (case-preserving) name.
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('smartt_objective_guide')
-    .insert({ content, uploaded_by: profile.id })
+    .insert({ content, uploaded_by: profile.id, original_filename: file.name })
     .select('id, created_at')
     .single();
 

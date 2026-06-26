@@ -1,5 +1,6 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
+import { getLocale } from 'next-intl/server';
 import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
 
 /**
@@ -152,15 +153,34 @@ The objective — and your suggested rewrite — must use the exact stem "${OBJE
 Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; then one or two overall suggestions to tighten the objective; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
 
 /**
- * Compose the system prompt: hardcoded role framing → the active (or default)
- * guide → hardcoded FLOOR + contract. Mirrors generate-resource's
- * `composeSystemPrompt`. With no guide uploaded, the guide argument is
- * `DEFAULT_SMARTT_GUIDE` (the per-letter steering split out of the original
- * hardcoded prompt), so the checker receives the same role + steering + letters +
- * stem + contract as before — behaviour is unchanged.
+ * Language directive appended ONLY when the teacher's UI locale is Arabic.
+ *
+ * Aya's objective check is UI-facing feedback, so its language follows the UI
+ * locale (unlike generate-resource, whose content language follows the
+ * subject/curriculum — never the UI). This directive switches only the
+ * human-readable feedback text to Modern Standard Arabic; it must NOT touch the
+ * JSON contract: the keys, the structure, and the status enum values stay
+ * exactly as the FLOOR specifies, and the rewrite keeps the fixed English stem.
  */
-function composeSystemPrompt(guide: string): string {
-  return `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${SMARTT_FLOOR}`;
+const ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" and every entry in "suggestions" — in Modern Standard Arabic (الفصحى).
+Do NOT translate or alter the JSON contract: keep all JSON keys in English, and keep each "status" value as the exact English literal "strong" or "needs work". The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
+
+/**
+ * Compose the system prompt: hardcoded role framing → the active (or default)
+ * guide → hardcoded FLOOR + contract → (Arabic only) a language directive.
+ * Mirrors generate-resource's `composeSystemPrompt`. With no guide uploaded, the
+ * guide argument is `DEFAULT_SMARTT_GUIDE` (the per-letter steering split out of
+ * the original hardcoded prompt), so the checker receives the same role +
+ * steering + letters + stem + contract as before — behaviour is unchanged.
+ *
+ * `locale` is the active UI locale (read server-side via next-intl). When it is
+ * `'ar'` the {@link ARABIC_DIRECTIVE} is appended so the feedback text comes back
+ * in Arabic; the FLOOR, the stem, and the JSON contract are untouched, so the
+ * `ObjectiveCheckResult` shape is identical regardless of locale.
+ */
+function composeSystemPrompt(guide: string, locale: string): string {
+  const base = `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${SMARTT_FLOOR}`;
+  return locale === 'ar' ? `${base}\n\n${ARABIC_DIRECTIVE}` : base;
 }
 
 /** Build the user-turn prompt from the objective and optional context. */
@@ -259,8 +279,13 @@ export async function checkObjective(
   // Compose the system prompt from the active SMARTT guide (admin-uploaded
   // steering, or the hardcoded default when none exists). The FLOOR + schema keep
   // the output shape fixed regardless of what the guide says.
+  //
+  // This is UI-facing feedback, so its language follows the active UI locale,
+  // resolved server-side from the NEXT_LOCALE cookie via next-intl. Only the
+  // feedback text changes (FLOOR/stem/JSON contract are locale-invariant).
   const guide = await getActiveSmarttGuide();
-  const systemPrompt = composeSystemPrompt(guide);
+  const locale = await getLocale();
+  const systemPrompt = composeSystemPrompt(guide, locale);
 
   let message: Anthropic.Message;
   try {

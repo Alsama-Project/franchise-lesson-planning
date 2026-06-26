@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import type { EditorCurriculumContext } from '@/lib/editor/load-plan';
 
 /**
@@ -9,6 +10,8 @@ import type { EditorCurriculumContext } from '@/lib/editor/load-plan';
  * stack in the narrower right column.
  */
 export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumContext | null }) {
+  const t = useTranslations('wizard.curriculum');
+
   if (!curriculum) return null;
 
   const hasContext = !!(curriculum.weekLO || curriculum.monthlyLO || curriculum.monthLO);
@@ -18,28 +21,28 @@ export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumCon
       {/* Daily outcome — dominant, spans both rows */}
       <div className="rounded-[11px] border border-given-border bg-given px-[15px] py-[13px] md:row-span-2">
         <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-given-label">
-          Daily outcome
+          {t('dailyOutcome')}
         </div>
-        <div className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
+        <div dir="auto" className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
           {curriculum.dailyLO || '—'}
         </div>
         {hasContext ? (
           <div className="mt-[12px] flex flex-col gap-[6px] border-t border-given-border pt-[11px] text-[12px] leading-[1.45] text-neutral-700">
             {curriculum.weekLO ? (
-              <div>
-                <span className="font-semibold text-given-label">This week · </span>
+              <div dir="auto">
+                <span className="font-semibold text-given-label">{t('thisWeek')} · </span>
                 {curriculum.weekLO}
               </div>
             ) : null}
             {curriculum.monthlyLO ? (
-              <div>
-                <span className="font-semibold text-given-label">Monthly objective · </span>
+              <div dir="auto">
+                <span className="font-semibold text-given-label">{t('monthlyObjective')} · </span>
                 {curriculum.monthlyLO}
               </div>
             ) : null}
             {curriculum.monthLO ? (
-              <div>
-                <span className="font-semibold text-given-label">This month · </span>
+              <div dir="auto">
+                <span className="font-semibold text-given-label">{t('thisMonth')} · </span>
                 {curriculum.monthLO}
               </div>
             ) : null}
@@ -50,9 +53,9 @@ export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumCon
       {/* Grammar & vocabulary */}
       <div className="rounded-[11px] border border-given-border bg-given px-[13px] py-[11px]">
         <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
-          Grammar &amp; vocabulary
+          {t('grammarVocab')}
         </div>
-        <div className="mt-[5px] text-[12.5px] leading-[1.5] text-neutral-800">
+        <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.5] text-neutral-800">
           {curriculum.grammarVocab || '—'}
         </div>
       </div>
@@ -60,9 +63,9 @@ export function CurriculumBand({ curriculum }: { curriculum: EditorCurriculumCon
       {/* Theme */}
       <div className="rounded-[11px] border border-given-border bg-given px-[13px] py-[11px]">
         <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
-          Theme
+          {t('theme')}
         </div>
-        <div className="mt-[5px] text-[12.5px] leading-[1.45] text-neutral-800">
+        <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.45] text-neutral-800">
           {curriculum.theme || '—'}
         </div>
       </div>

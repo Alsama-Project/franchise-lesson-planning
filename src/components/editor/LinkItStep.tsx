@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { LinkItTechnique } from '@/types/lesson';
 import type { ActivityBankItem } from '@/lib/editor/load-plan';
 import type { LinkIt } from '@/lib/editor/link-it';
@@ -50,12 +51,13 @@ function Section({
  * matching the DAILY OUTCOME panel on the Objective step).
  */
 function PreviousOutcomePanel({ outcome }: { outcome: string }) {
+  const t = useTranslations('wizard.curriculum');
   return (
     <div className="mb-[12px] rounded-[11px] border border-given-border bg-given px-[15px] py-[13px]">
       <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-given-label">
-        Yesterday&apos;s learning outcome
+        {t('yesterdayOutcome')}
       </div>
-      <div className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
+      <div dir="auto" className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
         {outcome}
       </div>
     </div>
@@ -72,6 +74,7 @@ function AddTechnique({
   selected: LinkItTechnique[];
   onAdd: (id: string) => void;
 }) {
+  const t = useTranslations('wizard.linkIt');
   const [open, setOpen] = useState(false);
   // An already-added technique drops out of the list.
   const available = activities.filter((a) => !selected.some((s) => s.technique === a.id));
@@ -85,16 +88,16 @@ function AddTechnique({
         className="inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-teal-tint-border bg-teal-tint px-[12px] py-[8px] text-[13px] font-semibold text-teal hover:bg-[#d8ebe6]"
       >
         <PlusIcon />
-        Add
+        {t('add')}
       </button>
       {open ? (
         <>
           {/* Click-away backdrop. */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-[calc(100%+6px)] z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)]">
+          <div className="absolute start-0 top-[calc(100%+6px)] z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)]">
             {available.length === 0 ? (
               <div className="px-[10px] py-[12px] text-center text-[12.5px] text-neutral-400">
-                All techniques added.
+                {t('allAdded')}
               </div>
             ) : (
               available.map((a) => (
@@ -105,7 +108,8 @@ function AddTechnique({
                     onAdd(a.id);
                     setOpen(false);
                   }}
-                  className="block w-full rounded-[8px] px-[11px] py-[9px] text-left text-[13.5px] font-medium text-ink hover:bg-teal-tint"
+                  dir="auto"
+                  className="block w-full rounded-[8px] px-[11px] py-[9px] text-start text-[13.5px] font-medium text-ink hover:bg-teal-tint"
                 >
                   {a.name}
                 </button>
@@ -130,16 +134,17 @@ function TechniqueRow({
   onNote: (note: string) => void;
   onRemove: () => void;
 }) {
+  const t = useTranslations('wizard.linkIt');
   return (
     <div className="rounded-[11px] border border-teal-tint-border bg-[#F3F8F7] p-[11px]">
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center rounded-badge bg-teal-tint px-[10px] py-[4px] text-[13px] font-semibold text-[#186155]">
+        <span dir="auto" className="inline-flex items-center rounded-badge bg-teal-tint px-[10px] py-[4px] text-[13px] font-semibold text-[#186155]">
           {name}
         </span>
         <button
           type="button"
           onClick={onRemove}
-          aria-label={`Remove ${name}`}
+          aria-label={t('remove', { name })}
           className="shrink-0 rounded-full p-1 text-neutral-400 hover:text-pink"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -148,9 +153,10 @@ function TechniqueRow({
         </button>
       </div>
       <input
+        dir="auto"
         value={note}
         onChange={(e) => onNote(e.target.value)}
-        placeholder="Add a note…"
+        placeholder={t('notePlaceholder')}
         className={`mt-[9px] ${NOTE_FIELD}`}
       />
     </div>
@@ -167,6 +173,7 @@ function TechniqueGroup({
   selected: LinkItTechnique[];
   onChange: (next: LinkItTechnique[]) => void;
 }) {
+  const t = useTranslations('wizard.linkIt');
   const nameById = new Map(activities.map((a) => [a.id, a.name]));
 
   const add = (id: string) => onChange([...selected, { technique: id, note: '' }]);
@@ -179,7 +186,7 @@ function TechniqueGroup({
       {selected.map((s) => (
         <TechniqueRow
           key={s.technique}
-          name={nameById.get(s.technique) ?? 'Technique'}
+          name={nameById.get(s.technique) ?? t('techniqueFallback')}
           note={s.note}
           onNote={(note) => setNote(s.technique, note)}
           onRemove={() => remove(s.technique)}
@@ -214,20 +221,22 @@ export function LinkItStep({
   previousDailyLO?: string;
   onChange: (next: LinkIt) => void;
 }) {
+  const t = useTranslations('wizard.linkIt');
   return (
     <div className="mt-[22px] rounded-[14px] border border-border bg-surface px-[18px] py-[16px]">
-      <Section title="Recap">
+      <Section title={t('recap')}>
         {previousDailyLO ? <PreviousOutcomePanel outcome={previousDailyLO} /> : null}
         <textarea
+          dir="auto"
           rows={3}
           value={linkIt.recap}
           onChange={(e) => onChange({ ...linkIt, recap: e.target.value })}
-          placeholder="Write the recap…"
+          placeholder={t('recapPlaceholder')}
           className={`resize-y ${NOTE_FIELD}`}
         />
       </Section>
 
-      <Section title="Check for understanding" divider>
+      <Section title={t('checkForUnderstanding')} divider>
         <TechniqueGroup
           activities={cfuActivities}
           selected={linkIt.checkForUnderstanding}
@@ -235,7 +244,7 @@ export function LinkItStep({
         />
       </Section>
 
-      <Section title="Exit ticket" divider>
+      <Section title={t('exitTicket')} divider>
         <TechniqueGroup
           activities={exitActivities}
           selected={linkIt.exitTicket}

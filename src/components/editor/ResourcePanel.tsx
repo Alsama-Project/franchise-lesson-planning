@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatNumber } from '@/lib/format';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
 import {
   addResourceToFolderAction,
@@ -32,9 +34,9 @@ import {
 
 type Tab = 'search' | 'folders';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'search', label: 'Search' },
-  { id: 'folders', label: 'Folders' },
+const TABS: { id: Tab; labelKey: string }[] = [
+  { id: 'search', labelKey: 'panel.tabSearch' },
+  { id: 'folders', labelKey: 'panel.tabFolders' },
 ];
 
 /** The Search tab's filter chips are drawn from these vocabulary dimensions. */
@@ -62,6 +64,8 @@ function ResourceRow({
   onPreview: (r: ResourceWithTags) => void;
   onAdd: (r: ResourceWithTags) => void;
 }) {
+  const t = useTranslations('resources');
+  const locale = useLocale();
   const v = resourceView(resource);
   return (
     <div className="rounded-[11px] border border-border bg-surface p-[11px]">
@@ -69,7 +73,7 @@ function ResourceRow({
         <button
           type="button"
           onClick={() => onPreview(resource)}
-          className="flex min-w-0 flex-1 flex-col items-start gap-[6px] text-left"
+          className="flex min-w-0 flex-1 flex-col items-start gap-[6px] text-start"
         >
           <div className="flex flex-wrap items-center gap-[7px]">
             <span
@@ -79,10 +83,10 @@ function ResourceRow({
               {v.formatShort}
             </span>
             <span className="text-[11px] font-semibold text-[#B0651E]">
-              used {resource.usage_count}×
+              {t('panel.usedCount', { count: formatNumber(resource.usage_count, locale) })}
             </span>
           </div>
-          <div className="text-[13px] font-semibold leading-[1.3] text-ink">{resource.title}</div>
+          <div dir="auto" className="text-[13px] font-semibold leading-[1.3] text-ink">{resource.title}</div>
           {v.chips.length > 0 ? (
             <div className="flex flex-wrap gap-[5px]">
               {v.chips.slice(0, 3).map((chip, i) => (
@@ -100,7 +104,7 @@ function ResourceRow({
         <div className="flex-shrink-0">
           {added ? (
             <span className="inline-flex items-center gap-[4px] rounded-[7px] border border-[#C9E4D5] bg-[#E2F0E8] px-[9px] py-[6px] text-[11.5px] font-semibold text-[#2E7D5B]">
-              <CheckIcon size={13} strokeWidth={2.4} /> Added
+              <CheckIcon size={13} strokeWidth={2.4} /> {t('panel.added')}
             </span>
           ) : (
             <button
@@ -108,7 +112,7 @@ function ResourceRow({
               onClick={() => onAdd(resource)}
               className="inline-flex items-center gap-[3px] rounded-[7px] bg-teal px-[10px] py-[6px] text-[11.5px] font-semibold text-white hover:bg-[#1a6a5d]"
             >
-              <PlusIcon size={13} strokeWidth={2.4} /> Add
+              <PlusIcon size={13} strokeWidth={2.4} /> {t('panel.add')}
             </button>
           )}
         </div>
@@ -132,6 +136,7 @@ export function ResourcePanel({
   attachedIds,
   onAttach,
 }: ResourcePanelProps) {
+  const t = useTranslations('resources');
   const [tab, setTab] = useState<Tab>('search');
   const [preview, setPreview] = useState<ResourceWithTags | null>(null);
 
@@ -235,35 +240,35 @@ export function ResourcePanel({
     ));
 
   return (
-    <div className="flex h-full flex-col border-l border-[#EFE8DD] bg-surface-subtle">
+    <div className="flex h-full flex-col border-s border-[#EFE8DD] bg-surface-subtle">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-[18px] pb-[10px] pt-[18px]">
         <span className="text-[12px] font-bold uppercase tracking-[0.06em] text-neutral-700">
-          Resource bank
+          {t('panel.title')}
         </span>
         <Link
           href="/resources"
-          className="text-[12px] font-semibold text-teal hover:text-[#186155]"
+          className="inline-flex items-center gap-1 text-[12px] font-semibold text-teal hover:text-[#186155]"
         >
-          Open full →
+          {t('panel.openFull')} <span aria-hidden className="rtl:-scale-x-100">→</span>
         </Link>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-[3px] border-b border-[#EFE8DD] px-[14px]">
-        {TABS.map((t) => (
+        {TABS.map((tabItem) => (
           <button
-            key={t.id}
+            key={tabItem.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(tabItem.id)}
             className={
               'relative px-[10px] py-[9px] text-[12.5px] font-semibold ' +
-              (tab === t.id
+              (tab === tabItem.id
                 ? 'text-teal after:absolute after:inset-x-[6px] after:bottom-[-1px] after:h-[2px] after:rounded-full after:bg-teal'
                 : 'text-neutral-600 hover:text-ink')
             }
           >
-            {t.label}
+            {t(tabItem.labelKey)}
           </button>
         ))}
       </div>
@@ -277,7 +282,8 @@ export function ResourcePanel({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search the bank…"
+                placeholder={t('panel.searchPlaceholder')}
+                dir="auto"
                 className="w-full bg-transparent text-[13px] text-ink outline-none placeholder:text-neutral-400"
               />
             </div>
@@ -304,12 +310,12 @@ export function ResourcePanel({
               </div>
             ) : null}
             {searching && searchResults.length === 0 ? (
-              <EmptyState>Searching…</EmptyState>
+              <EmptyState>{t('panel.searching')}</EmptyState>
             ) : searchResults.length === 0 ? (
               <EmptyState>
                 {appliedQuery || selectedTagIds.size > 0
-                  ? 'Nothing matches those filters.'
-                  : 'Type to search, or pick a filter chip.'}
+                  ? t('panel.noMatches')
+                  : t('panel.searchHint')}
               </EmptyState>
             ) : (
               <div className="flex flex-col gap-[9px]">
@@ -327,14 +333,14 @@ export function ResourcePanel({
                 <button
                   type="button"
                   onClick={() => setFolderView(null)}
-                  className="self-start text-[12px] font-semibold text-teal hover:text-[#186155]"
+                  className="inline-flex items-center gap-1 self-start text-[12px] font-semibold text-teal hover:text-[#186155]"
                 >
-                  ← All folders
+                  <span aria-hidden className="rtl:-scale-x-100">←</span> {t('panel.allFolders')}
                 </button>
                 {loadingFolder && folderResults.length === 0 ? (
-                  <EmptyState>Loading…</EmptyState>
+                  <EmptyState>{t('panel.loading')}</EmptyState>
                 ) : folderResults.length === 0 ? (
-                  <EmptyState>This folder is empty.</EmptyState>
+                  <EmptyState>{t('panel.folderEmpty')}</EmptyState>
                 ) : (
                   renderRows(folderResults)
                 )}
@@ -344,27 +350,27 @@ export function ResourcePanel({
                 <button
                   type="button"
                   onClick={openMostUsed}
-                  className="flex items-center justify-between rounded-[11px] border border-border bg-surface px-[12px] py-[11px] text-left hover:border-teal"
+                  className="flex items-center justify-between rounded-[11px] border border-border bg-surface px-[12px] py-[11px] text-start hover:border-teal"
                 >
                   <span className="inline-flex items-center gap-[8px] text-[13px] font-semibold text-ink">
-                    <BarsIcon size={15} className="text-[#B0651E]" /> Most used
+                    <BarsIcon size={15} className="text-[#B0651E]" /> {t('panel.mostUsed')}
                   </span>
-                  <ChevronRight size={15} className="text-text-faint" />
+                  <ChevronRight size={15} className="text-text-faint rtl:-scale-x-100" />
                 </button>
                 {folders.length === 0 ? (
-                  <EmptyState>No folders yet — make some in the full bank.</EmptyState>
+                  <EmptyState>{t('panel.noFolders')}</EmptyState>
                 ) : (
                   folders.map((f) => (
                     <button
                       key={f.id}
                       type="button"
                       onClick={() => openFolder(f.id)}
-                      className="flex items-center justify-between rounded-[11px] border border-border bg-surface px-[12px] py-[11px] text-left hover:border-teal"
+                      className="flex items-center justify-between rounded-[11px] border border-border bg-surface px-[12px] py-[11px] text-start hover:border-teal"
                     >
-                      <span className="inline-flex items-center gap-[8px] text-[13px] font-semibold text-ink">
+                      <span dir="auto" className="inline-flex items-center gap-[8px] text-[13px] font-semibold text-ink">
                         <FolderIcon size={15} className="text-teal" /> {f.name}
                       </span>
-                      <ChevronRight size={15} className="text-text-faint" />
+                      <ChevronRight size={15} className="text-text-faint rtl:-scale-x-100" />
                     </button>
                   ))
                 )}

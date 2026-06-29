@@ -43,8 +43,17 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
 
   const t = await getTranslations('nav');
 
+  // The combined height of the fixed/sticky chrome above the content: the 64px
+  // (h-16) header, plus the 40px (h-10) TEST MODE bar when impersonating. Exposed
+  // as a CSS variable so sticky panes (e.g. the coordinator comments rail) can
+  // offset their `top` below the chrome and stay correct if it grows/shrinks.
+  const chromeHeight = impersonation.active ? '104px' : '64px';
+
   return (
-    <div className="flex min-h-screen flex-col">
+    <div
+      className="flex min-h-screen flex-col"
+      style={{ ['--app-chrome-height' as string]: chromeHeight }}
+    >
       {impersonation.active ? (
         <TestUserBar
           impersonating={impersonation.impersonating}

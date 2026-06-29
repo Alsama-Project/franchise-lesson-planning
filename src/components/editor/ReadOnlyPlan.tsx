@@ -199,7 +199,10 @@ export function ReadOnlyPlan({
           // `lg:self-start` keeps the wrapper its content height under the row's
           // `items-start`; `lg:mt-[22px]` matches the content block's top padding so
           // the rail's top lines up with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
-          <aside className="mt-6 lg:sticky lg:top-[80px] lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-start">
+          // `top` clears the full fixed chrome (header + TEST MODE bar when present)
+          // via the --app-chrome-height token set in AppShell, plus a 16px gap, so the
+          // "Coordinator comments" title sits fully below the nav and is never clipped.
+          <aside className="mt-6 lg:sticky lg:top-[calc(var(--app-chrome-height,64px)+16px)] lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-start">
             {rightRail}
           </aside>
         ) : null}

@@ -213,20 +213,23 @@ function stripBullet(line: string): string {
 }
 
 /**
- * Split a daily Learning Outcome into its individual LOs. The source marks each LO
- * with a line-leading ". " bullet (cleanLO strips only the first), so distinct LOs
- * are delimited by a newline that introduces a fresh ". "-led outcome. We split on
- * exactly that, leaving any non-bulleted continuation (e.g. an attached "Time
- * Distribution" note) joined to its LO.
+ * Split a daily Learning Outcome into its individual LOs. Two delimiters are
+ * honoured:
+ *  1. The source's line-leading ". " bullet (cleanLO strips only the first), so
+ *     distinct LOs are delimited by a newline introducing a fresh ". "-led outcome.
+ *  2. A ";" between LOs (confirmed in UI-fixes r5, e.g. Tue: "…tracking it; greet
+ *     the teacher by saying 'hello'/'goodbye'."), which the old data baked into one
+ *     line. This overrides the r4 choice to keep ";" joined.
  *
- * NB: a ";" is NOT a separator here — in the source it only ever appears mid-clause
- * (e.g. "Write a letter; explaining, apologising…"), so splitting on it would tear
- * a single outcome apart. A single segment renders as plain text (no orphan bullet).
+ * Each segment is trimmed and empty segments (trailing/double ";" or newline) are
+ * dropped, so no orphan/empty bullets are emitted. A single segment renders as
+ * plain text upstream (DailyOutcome).
  */
 function splitDailyLOs(text: string): string[] {
   if (!text) return [];
   return text
     .split(/\n(?=\s*\.\s)/)
+    .flatMap((s) => s.split(';'))
     .map((s) => stripBullet(s.trim()))
     .filter(Boolean);
 }

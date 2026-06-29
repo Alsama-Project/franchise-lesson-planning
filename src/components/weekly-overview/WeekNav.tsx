@@ -58,12 +58,14 @@ export function WeekNav({
   const label =
     weekNo > 0 ? t('weekNav.weekNumber', { n: formatNumber(weekNo, locale) }) : t('weekNav.empty');
 
-  // Fold the date (and the "current" marker) into the picker as muted secondary
-  // text — e.g. "· Dec 15", "· current", or "· Dec 15 · current".
+  // Date (and the "current" marker) ride as muted secondary text stacked beneath
+  // the "Week N" label — e.g. "Dec 15", "current", or "Dec 15 · current". No leading
+  // separator: it sits on its own line under the label, not inline after it.
+  const current = t('weekNav.current');
   let meta: string | undefined;
-  if (mondayLabel && isCurrent) meta = `· ${mondayLabel} ${t('weekNav.current')}`;
-  else if (mondayLabel) meta = `· ${mondayLabel}`;
-  else if (isCurrent) meta = t('weekNav.current');
+  if (mondayLabel && isCurrent) meta = `${mondayLabel} · ${current}`;
+  else if (mondayLabel) meta = mondayLabel;
+  else if (isCurrent) meta = current;
 
   const options: WeekPickerOption[] = weeks.map((w) => ({
     month: w.month,

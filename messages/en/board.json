@@ -21,7 +21,7 @@
       "nextWeek": "Next week",
       "unavailable": "{label} (unavailable)",
       "weekNumber": "Week {n}",
-      "current": "· current",
+      "current": "current",
       "empty": "—",
       "picker": {
         "month": "Month",

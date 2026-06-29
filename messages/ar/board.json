@@ -21,7 +21,7 @@
       "nextWeek": "الأسبوع التالي",
       "unavailable": "{label} (غير متاح)",
       "weekNumber": "الأسبوع {n}",
-      "current": "· الحالي",
+      "current": "الحالي",
       "empty": "—",
       "picker": {
         "month": "الشهر",

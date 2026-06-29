@@ -109,6 +109,8 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
               weekNo={data.weekNo}
               isCurrent={data.isCurrent}
               coordinateLabel={data.coordinateLabel}
+              coordinate={data.coordinate}
+              weeks={data.weeks}
               prev={data.prev}
               next={data.next}
               view={view}

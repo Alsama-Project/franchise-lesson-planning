@@ -155,10 +155,11 @@ export function ObjectiveStep({
             onClick={onCheck}
             disabled={checkDisabled}
             aria-label={t('askAriaLabel')}
+            aria-busy={checking || undefined}
             title={t('askTitle')}
             className="absolute end-[11px] top-[11px] inline-flex size-[30px] items-center justify-center rounded-full bg-teal text-white shadow-[0_1px_3px_rgba(31,122,108,0.35)] hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <SparkIcon size={15} />
+            {checking ? <Spinner size={15} /> : <SparkIcon size={15} />}
           </button>
           {/* Stem + remainder render as ONE wrapping paragraph: the teacher's
               text continues inline after the fixed stem rather than dropping to a

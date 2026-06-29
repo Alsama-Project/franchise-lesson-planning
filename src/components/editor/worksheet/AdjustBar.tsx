@@ -7,6 +7,7 @@
 // pre-adjustment content. Teal = tools/actions, per the project colour law.
 
 import { useTranslations } from 'next-intl';
+import { Spinner } from '@/components/ui/Spinner';
 
 const CHIP_KEYS = ['ai.adjustSimpler', 'ai.adjustWordBank', 'ai.adjustMoreItems', 'ai.adjustShorter'];
 
@@ -162,8 +163,13 @@ export function AdjustBar({
             cursor: adjusting || instruction.trim().length === 0 ? 'default' : 'pointer',
             opacity: adjusting || instruction.trim().length === 0 ? 0.6 : 1,
             whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
           }}
+          aria-busy={adjusting || undefined}
         >
+          {adjusting ? <Spinner size={13} /> : null}
           {adjusting ? t('ai.adjusting') : t('ai.apply')}
         </button>
       </div>

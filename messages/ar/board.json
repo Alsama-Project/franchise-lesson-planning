@@ -21,7 +21,11 @@
       "unavailable": "{label} (غير متاح)",
       "weekNumber": "الأسبوع {n}",
       "current": "· الحالي",
-      "empty": "—"
+      "empty": "—",
+      "picker": {
+        "month": "الشهر",
+        "week": "الأسبوع"
+      }
     },
     "viewToggle": {
       "calendar": "التقويم",
@@ -54,7 +58,8 @@
     },
     "statusView": {
       "none": "لا شيء",
-      "more": "{count, plural, other {+ {value} أخرى}}",
+      "showAll": "عرض الكل",
+      "showLess": "عرض أقل",
       "moveError": "تعذّر نقل الدرس.",
       "statusError": "تعذّر تحديث الحالة.",
       "openPlan": "افتح الخطة",
@@ -86,19 +91,12 @@
       "creating": "جارٍ الإنشاء…",
       "create": "إنشاء الدرس",
       "errors": {
-        "pickLesson": "اختر درساً لتخطيطه.",
-        "pickClass": "اختر صفاً لتخطّط له."
+        "pickLesson": "اختر درساً لتخطيطه."
       },
       "classStep": {
         "title": "أي صف؟",
         "yearGroup": "السنة الدراسية",
-        "year": "السنة {n}",
-        "planFor": "التخطيط لـ",
-        "oneClass": "صف واحد تُدرّسه",
-        "wholeCentre": "المركز بأكمله",
-        "wholeCentreSub": "كل صف لكل سنة في مركزك",
-        "allCentres": "كل المراكز",
-        "allCentresSub": "مشترَك بين جميع المراكز"
+        "year": "السنة {n}"
       },
       "lessonStep": {
         "title": "أي درس؟",

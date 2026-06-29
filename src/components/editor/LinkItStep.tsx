@@ -57,7 +57,7 @@ function PreviousOutcomePanel({ outcome }: { outcome: string }) {
       <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-given-label">
         {t('yesterdayOutcome')}
       </div>
-      <div dir="auto" className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
+      <div dir="auto" className="mt-[6px] text-[15px] leading-[1.4] text-neutral-900">
         {outcome}
       </div>
     </div>

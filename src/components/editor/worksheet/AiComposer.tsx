@@ -7,6 +7,7 @@
 // affordance.
 
 import { useTranslations } from 'next-intl';
+import { Spinner } from '@/components/ui/Spinner';
 
 function Sparkle({ size = 16 }: { size?: number }) {
   return (
@@ -86,8 +87,9 @@ export function AiComposer({
                 alignItems: 'center',
                 gap: 8,
               }}
+              aria-busy={generating || undefined}
             >
-              <Sparkle size={15} />
+              {generating ? <Spinner size={15} /> : <Sparkle size={15} />}
               {generating ? t('ai.generating') : t('ai.generate')}
             </button>
             <button

@@ -18,8 +18,7 @@
       "learningOutcome": "ناتج التعلّم",
       "skill": "المهارة",
       "topic": "الموضوع",
-      "resources": "الموارد",
-      "sameTopic": "{range} · الموضوع نفسه"
+      "resources": "الموارد"
     },
     "focus": {
       "inFocus": "قيد التركيز · {day}",

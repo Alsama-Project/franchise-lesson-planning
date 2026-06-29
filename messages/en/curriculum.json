@@ -18,8 +18,7 @@
       "learningOutcome": "Learning outcome",
       "skill": "Skill",
       "topic": "Topic",
-      "resources": "Resources",
-      "sameTopic": "{range} · same topic"
+      "resources": "Resources"
     },
     "focus": {
       "inFocus": "In focus · {day}",

@@ -2,11 +2,12 @@
 
 // The "NEW LESSON" two-step wizard launched from a day column's "+ Add lesson".
 //
-//   Step 1 — Class : pick the year group and the audience scope (a class the
-//     teacher teaches → class scope; the whole centre → centre scope; every
-//     centre → org scope). Subject and centre are fixed by the signed-in
-//     teacher's context, so they are not re-selected here. The OLD model's
-//     Years-with-Groups (A/B/C) taxonomy does NOT exist and is never offered.
+//   Step 1 — Class : pick the year group. Subject and centre are fixed by the
+//     signed-in teacher's context, so they are not re-selected here, and for the
+//     single-centre English pilot every plan defaults to whole-centre (`centre`)
+//     scope — the audience-scope chooser is intentionally omitted. The OLD
+//     model's Years-with-Groups (A/B/C) taxonomy does NOT exist and is never
+//     offered.
 //
 //   Step 2 — Lesson: pick one curriculum period for a (Month, Week). The Month
 //     dropdown + Week stepper drive a live curriculum query (Year + Month + Week
@@ -28,7 +29,6 @@ import { formatNumber } from '@/lib/format';
 import type { MonthNav, PickerCell } from '@/components/create-lesson/types';
 import type { AddYearOption } from '@/components/weekly-overview/ScopeChooser';
 import type { BoardClass } from '@/types/weekly-overview';
-import type { PlanScope } from '@/types/lesson';
 
 interface NewLessonModalProps {
   /** The Mon–Fri column (1..5) the "+ Add lesson" was pressed on. */
@@ -41,7 +41,12 @@ interface NewLessonModalProps {
   context: string | null;
   /** The board's current curriculum coordinate — the wizard opens here. */
   initialCoordinate: { month: string; week: number };
-  /** The teacher's own classes in this subject, keyed by year (the class-scope pool). */
+  /**
+   * The teacher's own classes per year. Currently unused by the modal — for the
+   * single-centre English pilot every plan defaults to whole-centre (`centre`)
+   * scope — but retained on the props so the board's ScopeChooser API stays
+   * stable if per-class scope is reinstated.
+   */
   classesByYear: Record<number, BoardClass[]>;
   onClose: () => void;
 }
@@ -55,7 +60,6 @@ export function NewLessonModal({
   subjectCode,
   context,
   initialCoordinate,
-  classesByYear,
   onClose,
 }: NewLessonModalProps) {
   const t = useTranslations('board');
@@ -63,8 +67,6 @@ export function NewLessonModal({
   const [step, setStep] = useState<Step>('class');
 
   const [year, setYear] = useState<number>(years[0]?.year ?? 0);
-  const [scope, setScope] = useState<PlanScope>('centre');
-  const [classId, setClassId] = useState<string | null>(null);
 
   const [nav, setNav] = useState<MonthNav[]>([]);
   const [month, setMonth] = useState<string>(initialCoordinate.month);
@@ -147,9 +149,6 @@ export function NewLessonModal({
   const onPickYear = (next: number) => {
     if (next === year) return;
     setYear(next);
-    // Class-scope selection is year-specific — fall back to centre on change.
-    setScope('centre');
-    setClassId(null);
     setError(null);
     setLoadingCells(true);
     void runForYear(next, month, week);
@@ -177,7 +176,6 @@ export function NewLessonModal({
     void runCells(year, month, target);
   };
 
-  const classes = classesByYear[year] ?? [];
   const placement = years.find((y) => y.year === year);
 
   const create = async () => {
@@ -185,16 +183,12 @@ export function NewLessonModal({
       setError(t('modal.errors.pickLesson'));
       return;
     }
-    if (scope === 'class' && !classId) {
-      setError(t('modal.errors.pickClass'));
-      return;
-    }
     setBusy(true);
     setError(null);
+    // Single-centre English pilot: every plan is created at whole-centre scope.
     const res = await createScopedPlan({
       lessonKey: selectedLessonKey,
-      scope,
-      classId: scope === 'class' ? classId ?? undefined : undefined,
+      scope: 'centre',
       weekday,
       period: placement?.period,
     });
@@ -257,14 +251,6 @@ export function NewLessonModal({
               years={years}
               year={year}
               onPickYear={onPickYear}
-              classes={classes}
-              scope={scope}
-              classId={classId}
-              onPickScope={(s, id) => {
-                setScope(s);
-                setClassId(id);
-                setError(null);
-              }}
             />
           ) : (
             <LessonStep
@@ -385,27 +371,23 @@ function Arrow() {
   );
 }
 
-/** Step 1 — year group + audience scope (class / centre / org). */
+/**
+ * Step 1 — year group only. The audience-scope chooser (class / centre / org)
+ * is omitted for the single-centre English pilot; plans default to whole-centre
+ * scope (set in `create`).
+ */
 function ClassStep({
   subjectName,
   context,
   years,
   year,
   onPickYear,
-  classes,
-  scope,
-  classId,
-  onPickScope,
 }: {
   subjectName: string;
   context: string | null;
   years: AddYearOption[];
   year: number;
   onPickYear: (year: number) => void;
-  classes: BoardClass[];
-  scope: PlanScope;
-  classId: string | null;
-  onPickScope: (scope: PlanScope, classId: string | null) => void;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
@@ -439,73 +421,7 @@ function ClassStep({
           ))}
         </div>
       </div>
-
-      {/* Audience scope — a class you teach, the whole centre, or every centre. */}
-      <div className="mt-[22px]">
-        <div className="mb-[9px] text-[11.5px] font-semibold uppercase tracking-[0.05em] text-text-faint">
-          {t('modal.classStep.planFor')}
-        </div>
-        <div className="grid grid-cols-1 gap-[8px] sm:grid-cols-2">
-          {classes.map((c) => (
-            <ScopeCard
-              key={c.id}
-              title={c.label}
-              subtitle={t('modal.classStep.oneClass')}
-              selected={scope === 'class' && classId === c.id}
-              onClick={() => onPickScope('class', c.id)}
-            />
-          ))}
-          <ScopeCard
-            title={t('modal.classStep.wholeCentre')}
-            subtitle={t('modal.classStep.wholeCentreSub')}
-            selected={scope === 'centre'}
-            onClick={() => onPickScope('centre', null)}
-          />
-          <ScopeCard
-            title={t('modal.classStep.allCentres')}
-            subtitle={t('modal.classStep.allCentresSub')}
-            selected={scope === 'org'}
-            onClick={() => onPickScope('org', null)}
-          />
-        </div>
-      </div>
     </div>
-  );
-}
-
-/** A selectable audience-scope card (teal when chosen). */
-function ScopeCard({
-  title,
-  subtitle,
-  selected,
-  onClick,
-}: {
-  title: string;
-  subtitle: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex flex-col items-start rounded-[12px] border px-[15px] py-[12px] text-start transition-colors',
-        selected
-          ? 'border-[1.5px] border-teal bg-teal-tint'
-          : 'border-given-border bg-given hover:bg-surface-subtle',
-      )}
-    >
-      <span className="flex items-center gap-[6px] text-[13.5px] font-semibold text-ink">
-        {selected ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-teal-deep)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
-        ) : null}
-        {title}
-      </span>
-      <span className="mt-[2px] text-[11.5px] text-text-muted">{subtitle}</span>
-    </button>
   );
 }
 
@@ -671,7 +587,7 @@ function PeriodCard({
   return (
     <div
       className={cn(
-        'flex min-w-[168px] flex-1 flex-col rounded-[14px] border p-[16px] transition-colors',
+        'flex h-[210px] min-w-[168px] flex-1 flex-col rounded-[14px] border p-[16px] transition-colors',
         selected ? 'border-[1.5px] border-teal bg-teal-tint' : 'border-given-border bg-given',
       )}
     >
@@ -683,7 +599,13 @@ function PeriodCard({
       >
         {t('modal.periodCard.period', { n: formatNumber(cell.period, locale) })}
       </div>
-      <p dir="auto" className="mt-[10px] text-[14px] font-medium leading-[1.4] text-ink">
+      {/* Clamp the Daily LO to keep every card the same height; the full text
+          stays available on hover via the native title tooltip. */}
+      <p
+        dir="auto"
+        title={cell.dailyOutcome || undefined}
+        className="mt-[10px] line-clamp-4 text-[14px] font-normal leading-[1.4] text-ink"
+      >
         {cell.dailyOutcome || t('modal.periodCard.untitled')}
       </p>
       <div className="mt-[14px] flex flex-1 flex-col justify-end">

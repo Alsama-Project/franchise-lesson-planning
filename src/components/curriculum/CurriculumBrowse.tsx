@@ -209,16 +209,20 @@ function OutcomePanels({ data }: { data: CurriculumBrowseData }) {
   const { month, week } = data.selected;
   const { monthly, weekly } = data;
 
-  // Per the agreed rule: prefer the split monthly pair when either side is
-  // populated, else fall back to the single combined block.
-  const monthlySplit = !!(monthly.knowledge || monthly.skills);
+  // The monthly outcome arrives as Skills/Knowledge learning outcomes (parsed from
+  // the split columns when present, else the single combined blob). Mirror the
+  // weekly two-heading layout, but render one bullet per LO rather than gluing the
+  // whole block into a single paragraph.
+  const monthlyLOs = useMemo(() => parseMonthlyOutcome(monthly), [monthly]);
+  const hasMonthlyLOs = monthlyLOs.skills.length > 0 || monthlyLOs.knowledge.length > 0;
 
   return (
     <div className="grid gap-[16px] md:grid-cols-2">
       <Panel label={t('monthlyOutcome', { month: month || '—' })}>
-        {monthlySplit ? (
-          <OutcomeColumns knowledge={monthly.knowledge} skills={monthly.skills} />
+        {hasMonthlyLOs ? (
+          <OutcomeBulletColumns knowledge={monthlyLOs.knowledge} skills={monthlyLOs.skills} />
         ) : (
+          // Fallback for a non-conforming blob with no parseable Skills/Knowledge.
           <OutcomeValue value={monthly.combined} />
         )}
       </Panel>
@@ -227,6 +231,68 @@ function OutcomePanels({ data }: { data: CurriculumBrowseData }) {
       </Panel>
     </div>
   );
+}
+
+// ── Monthly-outcome parsing ──────────────────────────────────────────────────────
+//
+// The source "Monthly Learning Outcome" is one combined blob shaped as
+//   Skills\n. <LO>\n. <LO> … Knowledge\n. <LO> …
+// — a literal `Skills` / `Knowledge` heading line, then one `. `-led line per LO.
+// We split it into its two sections, then into individual LOs (one per `. ` item).
+
+/** Strip a leading ". " bullet stem from a single LO line. */
+function stripBullet(line: string): string {
+  return line.replace(/^\.\s*/, '').trim();
+}
+
+/** Split a section body into individual LOs — one per non-empty line. */
+function splitSectionLOs(body: string): string[] {
+  return body
+    .split('\n')
+    .map((l) => stripBullet(l))
+    .filter(Boolean);
+}
+
+/** Parse the combined blob into its Skills / Knowledge LO lists. */
+function parseMonthlyBlob(blob: string): { skills: string[]; knowledge: string[] } {
+  const acc = { skills: [] as string[], knowledge: [] as string[] };
+  let section: 'skills' | 'knowledge' | null = null;
+  for (const raw of blob.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const heading = stripBullet(line).toLowerCase();
+    if (heading === 'skills') {
+      section = 'skills';
+      continue;
+    }
+    if (heading === 'knowledge') {
+      section = 'knowledge';
+      continue;
+    }
+    if (!section) continue;
+    const lo = stripBullet(line);
+    if (lo) acc[section].push(lo);
+  }
+  return acc;
+}
+
+/**
+ * Resolve the monthly outcome to its Skills / Knowledge LO lists. Prefer the split
+ * columns when either is populated, else parse the single combined blob.
+ */
+function parseMonthlyOutcome(monthly: {
+  combined: string | null;
+  skills: string | null;
+  knowledge: string | null;
+}): { skills: string[]; knowledge: string[] } {
+  if (monthly.skills || monthly.knowledge) {
+    return {
+      skills: monthly.skills ? splitSectionLOs(monthly.skills) : [],
+      knowledge: monthly.knowledge ? splitSectionLOs(monthly.knowledge) : [],
+    };
+  }
+  if (monthly.combined) return parseMonthlyBlob(monthly.combined);
+  return { skills: [], knowledge: [] };
 }
 
 function Panel({ label, children }: { label: string; children: React.ReactNode }) {
@@ -264,6 +330,52 @@ function OutcomeColumns({
   );
 }
 
+/**
+ * Like `OutcomeColumns`, but renders each side as a bulleted list of LOs (one
+ * <li> per learning outcome) instead of a single paragraph. Heading colours match
+ * `OutcomeColumns` exactly so the monthly panel mirrors the weekly one.
+ */
+function OutcomeBulletColumns({
+  knowledge,
+  skills,
+}: {
+  knowledge: string[];
+  skills: string[];
+}) {
+  const t = useTranslations('curriculum');
+  return (
+    <div className="grid gap-[18px] sm:grid-cols-2">
+      <div>
+        {/* teal accent = "Knowledge"; categorical, not an action */}
+        <p className="text-[12px] font-semibold text-teal">{t('knowledge')}</p>
+        <OutcomeList items={knowledge} className="mt-[6px]" />
+      </div>
+      <div>
+        {/* rose accent = "Skills"; deliberately NOT the editable-pink #b62a5c */}
+        <p className="text-[12px] font-semibold text-[#b8366b]">{t('skills')}</p>
+        <OutcomeList items={skills} className="mt-[6px]" />
+      </div>
+    </div>
+  );
+}
+
+function OutcomeList({ items, className }: { items: string[]; className?: string }) {
+  const t = useTranslations('curriculum');
+  if (items.length === 0) {
+    return <p className={cn('text-[14px] text-text-faint', className)}>{t('empty')}</p>;
+  }
+  return (
+    <ul className={cn('space-y-[6px]', className)}>
+      {items.map((item, i) => (
+        <li key={i} dir="auto" className="flex gap-[8px] text-[14px] leading-[1.5] text-ink">
+          <span aria-hidden className="mt-[8px] size-[4px] shrink-0 rounded-full bg-[#a6794f]" />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function OutcomeValue({ value, className }: { value: string | null; className?: string }) {
   const t = useTranslations('curriculum');
   if (!value) {
@@ -285,9 +397,13 @@ function WeekGrid({ data }: { data: CurriculumBrowseData }) {
   const focusRow = data.rows[safeIndex];
 
   return (
-    <div className="mt-[20px] grid gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="mt-[20px] grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]">
       <WeekTable rows={data.rows} selected={safeIndex} onSelect={setSelected} />
-      <FocusCard row={focusRow} />
+      {/* Sticky so the IN FOCUS card stays in view while the day table scrolls.
+          top offset clears the 64px (h-16) sticky shell header + a small gap. */}
+      <div className="lg:sticky lg:top-[80px]">
+        <FocusCard row={focusRow} />
+      </div>
     </div>
   );
 }
@@ -296,8 +412,6 @@ function WeekGrid({ data }: { data: CurriculumBrowseData }) {
 interface TopicCell {
   theme: string;
   rowSpan: number;
-  /** Day-range sublabel for runs longer than one period; null otherwise. */
-  range: string | null;
 }
 
 function WeekTable({
@@ -311,43 +425,41 @@ function WeekTable({
 }) {
   const t = useTranslations('curriculum');
 
-  // Compute the topic spans once. A run of equal non-empty Theme merges into one
-  // cell (rendered at the run's first row); blank Theme is its own single cell.
+  // Compute the topic spans once. Contiguous days merge into one cell ONLY when
+  // their Theme is exactly equal (themes are already whitespace-trimmed upstream in
+  // curriculum-browse.ts) — driven off the actual per-day data, never an assumed
+  // Mon–Fri block. A run of equal non-empty Theme is rendered at its first row;
+  // blank Theme is its own single cell.
   const topicCells = useMemo<(TopicCell | null)[]>(() => {
     const cells: (TopicCell | null)[] = new Array(rows.length).fill(null);
     let i = 0;
     while (i < rows.length) {
       const theme = rows[i].theme;
       if (!theme) {
-        cells[i] = { theme: '', rowSpan: 1, range: null };
+        cells[i] = { theme: '', rowSpan: 1 };
         i += 1;
         continue;
       }
       let j = i + 1;
       while (j < rows.length && rows[j].theme === theme) j += 1;
-      const len = j - i;
-      const range =
-        len > 1
-          ? t('table.sameTopic', {
-              range: `${t(`daysShort.${rows[i].weekday}`)}–${t(`daysShort.${rows[j - 1].weekday}`)}`,
-            })
-          : null;
-      cells[i] = { theme, rowSpan: len, range };
+      cells[i] = { theme, rowSpan: j - i };
       i = j;
     }
     return cells;
-  }, [rows, t]);
+  }, [rows]);
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-border">
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="bg-surface-cream">
-            <Th className="w-[88px]">{t('table.day')}</Th>
-            <Th>{t('table.learningOutcome')}</Th>
-            <Th className="w-[110px]">{t('table.skill')}</Th>
-            <Th className="w-[180px]">{t('table.topic')}</Th>
-            <Th className="w-[190px]">{t('table.resources')}</Th>
+            {/* LEARNING OUTCOME holds the long, most-read text — let it take all the
+                remaining width; the other columns are squeezed to fixed widths. */}
+            <Th className="w-[76px]">{t('table.day')}</Th>
+            <Th className="w-auto">{t('table.learningOutcome')}</Th>
+            <Th className="w-[88px]">{t('table.skill')}</Th>
+            <Th className="w-[132px]">{t('table.topic')}</Th>
+            <Th className="w-[140px]">{t('table.resources')}</Th>
           </tr>
         </thead>
         <tbody>
@@ -396,16 +508,9 @@ function WeekTable({
                     className="border-s border-border bg-surface-subtle px-[16px] py-[14px] align-top"
                   >
                     {topic.theme ? (
-                      <>
-                        <span dir="auto" className="text-[13px] font-semibold text-teal-deep">
-                          {topic.theme}
-                        </span>
-                        {topic.range ? (
-                          <span className="mt-[3px] block text-[11px] text-neutral-500">
-                            {topic.range}
-                          </span>
-                        ) : null}
-                      </>
+                      <span dir="auto" className="text-[13px] font-semibold text-teal-deep">
+                        {topic.theme}
+                      </span>
                     ) : null}
                   </td>
                 ) : null}

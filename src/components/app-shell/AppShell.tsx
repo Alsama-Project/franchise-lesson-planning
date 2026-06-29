@@ -8,7 +8,6 @@ import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
 import { NotificationBell } from '@/components/app-shell/NotificationBell';
 import { TestUserBar } from '@/components/app-shell/TestUserBar';
-import { isAdmin, getMyMemberships } from '@/lib/auth';
 import { getBellNotifications } from '@/lib/notifications';
 import { getImpersonationState } from '@/lib/test-impersonation';
 
@@ -29,16 +28,10 @@ type AppShellProps = {
  * unread dot shows only when that list is non-empty.
  */
 export async function AppShell({ name, subtitle, children }: AppShellProps) {
-  // The "Settings" nav link is shown to admins and coordinators (anyone with
-  // console tabs beyond Profile); `/settings` is role-aware, so this is
-  // presentation only. Everyone reaches Settings via the avatar menu too.
-  const [admin, memberships, impersonation, notifications] = await Promise.all([
-    isAdmin(),
-    getMyMemberships(),
+  const [impersonation, notifications] = await Promise.all([
     getImpersonationState(),
     getBellNotifications(),
   ]);
-  const showSettings = admin || memberships.some((m) => m.role === 'coordinator');
 
   // Dev-only RTL preview toggle, surfaced in the user menu. Gated on an explicit
   // flag (NOT NODE_ENV) so it can be exercised in production, which doubles as
@@ -79,7 +72,7 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
           </span>
         </Link>
 
-        <TopNav showSettings={showSettings} />
+        <TopNav />
 
         {/* Right cluster: bell · user */}
         <div className="ms-auto flex items-center gap-[10px]">

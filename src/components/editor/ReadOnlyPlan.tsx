@@ -192,9 +192,16 @@ export function ReadOnlyPlan({
         </div>
 
         {rightRail ? (
-          // `lg:mt-[22px]` matches the content block's top padding so the rail's top
-          // lines up with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
-          <aside className="mt-6 lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0">{rightRail}</aside>
+          // The rail WRAPPER is the sticky element — its containing block is the
+          // flex row, whose height is driven by the (tall) plan content beside it,
+          // so the pane has room to travel and actually sticks. (Sticky on the inner
+          // card instead would pin it to this short wrapper and scroll away.)
+          // `lg:self-start` keeps the wrapper its content height under the row's
+          // `items-start`; `lg:mt-[22px]` matches the content block's top padding so
+          // the rail's top lines up with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
+          <aside className="mt-6 lg:sticky lg:top-[80px] lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-start">
+            {rightRail}
+          </aside>
         ) : null}
       </div>
     </div>

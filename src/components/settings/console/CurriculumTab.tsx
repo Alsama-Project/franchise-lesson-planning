@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import type { CurriculumSubjectStatus } from '@/lib/console';
 import { importCurriculumAction } from '@/lib/curriculum/actions';
 import { formatNumber } from '@/lib/format';
-import { GhostButton, MonoChip, SectionCard } from './ui';
+import { GhostButton, SectionCard } from './ui';
 import { Stat, UploadProgressBar, UploadStatusBadge, hhmm, timeAgo } from './upload';
 
 /**
@@ -113,11 +113,7 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
 
   return (
     <SectionCard
-      title={
-        <span className="flex items-center gap-2">
-          <span dir="auto">{status.name}</span> <MonoChip>{status.code}</MonoChip>
-        </span>
-      }
+      title={<span dir="auto">{status.name}</span>}
       action={<StateBadge state={state} lastSyncedIso={lastSyncedIso} />}
     >
       <div className="flex flex-wrap items-end justify-between gap-4 px-[18px] py-[16px]">

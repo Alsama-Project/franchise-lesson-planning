@@ -85,7 +85,7 @@ export function ReviewCommentsSidebar({
     setAdding(false);
   };
 
-  const decide = (decision: 'approve' | 'return' | 'reopen') => {
+  const decide = (decision: 'approve' | 'return' | 'reopen' | 'undo') => {
     setDecideError(null);
     startDeciding(async () => {
       const res = await decidePlan(planId, decision);
@@ -101,7 +101,7 @@ export function ReviewCommentsSidebar({
   return (
     <section
       aria-label={t('comments.title')}
-      className="flex flex-col overflow-hidden rounded-[16px] border border-border bg-surface lg:sticky lg:top-[80px] lg:max-h-[calc(100vh-96px)]"
+      className="flex flex-col overflow-hidden rounded-[16px] border border-border bg-surface lg:max-h-[calc(100vh-96px)]"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border px-[18px] py-[14px]">
@@ -168,6 +168,7 @@ export function ReviewCommentsSidebar({
         busy={deciding}
         error={decideError}
         onApprove={() => decide('approve')}
+        onUndo={() => decide('undo')}
         onReopen={() => decide('reopen')}
         onOpenReturn={() => {
           setDecideError(null);
@@ -235,13 +236,14 @@ function CommentCard({
 }
 
 /** Status-dependent decision footer. submitted → Return(gated)+Approve; approved →
- *  Undo; needs_review → Reopen. */
+ *  Undo (reverts to `submitted`, so Return+Approve come back); needs_review → Reopen. */
 function DecisionFooter({
   status,
   hasComments,
   busy,
   error,
   onApprove,
+  onUndo,
   onReopen,
   onOpenReturn,
 }: {
@@ -250,6 +252,7 @@ function DecisionFooter({
   busy: boolean;
   error: string | null;
   onApprove: () => void;
+  onUndo: () => void;
   onReopen: () => void;
   onOpenReturn: () => void;
 }) {
@@ -287,7 +290,7 @@ function DecisionFooter({
         <div className="flex justify-end">
           <button
             type="button"
-            onClick={onReopen}
+            onClick={onUndo}
             disabled={busy}
             className="inline-flex items-center justify-center rounded-[10px] border border-border-strong bg-surface px-[14px] py-[9px] text-[13px] font-semibold text-ink transition-colors hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >

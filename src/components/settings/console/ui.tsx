@@ -135,15 +135,6 @@ export function Avatar({ name }: { name: string }) {
   );
 }
 
-/** A code/mono chip (subject codes). */
-export function MonoChip({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-[6px] bg-[#F3ECE2] px-[8px] py-[2px] font-mono text-[12px] text-[#7A7068]">
-      {children}
-    </span>
-  );
-}
-
 /** A pink input block (bg #FBF2F5 / border #F1D8E1) holding a white field. */
 export function PinkField({
   value,

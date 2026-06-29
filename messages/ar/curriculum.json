@@ -8,6 +8,7 @@
     "weekWithMonth": "الأسبوع {n} · <m>{month}</m>",
     "week": "الأسبوع {n}",
     "monthLabel": "الشهر",
+    "weekHeading": "الأسبوع",
     "prevWeek": "الأسبوع السابق",
     "nextWeek": "الأسبوع التالي",
     "monthlyOutcome": "الناتج الشهري · {month}",

@@ -111,9 +111,18 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
           </div>
           <div className="flex flex-wrap items-center gap-[14px]">
             <YearFilter years={yearOptions} value={yearGroup} onChange={setYearGroup} />
+            {/* §1 — the shown week's real Monday (from `term_week`) is folded into
+                the picker as muted secondary text ("Week 36 · Dec 15"); no separate
+                "Week of …" label. Null while the table is empty (no fabricated
+                dates), in which case the picker just shows the week number. */}
             <WeekNav
               weekNo={data.weekNo}
               isCurrent={data.isCurrent}
+              mondayLabel={
+                data.mondayDate
+                  ? formatDate(data.mondayDate, locale, { month: 'short', day: 'numeric' })
+                  : null
+              }
               coordinateLabel={data.coordinateLabel}
               coordinate={data.coordinate}
               weeks={data.weeks}
@@ -121,34 +130,21 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
               next={data.next}
               view={view}
             />
-            {/* §3 — the shown week's real Monday from `term_week`, or a neutral
-                placeholder while the table is empty (no fabricated dates). */}
-            <span className="text-[13px] text-neutral-600">
-              {data.mondayDate
-                ? t.rich('weekOf', {
-                    date: formatDate(data.mondayDate, locale, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    }),
-                    b: (chunks) => (
-                      <b className="font-semibold text-neutral-800">{chunks}</b>
-                    ),
-                  })
-                : t('weekOfEmpty')}
-            </span>
             <ViewToggle view={view} onChange={changeView} />
+            {/* §1 — compact icon button (download glyph) with the explanatory copy
+                moved into the tooltip / aria-label, instead of a wide labelled button. */}
             {canDownloadWeek ? (
               <a
                 href={weekPdfHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 title={t('downloadWeekTitle')}
-                className="inline-flex items-center gap-1.5 rounded-[9px] border border-border bg-surface px-[14px] py-[7px] text-[13px] font-medium text-neutral-700 transition-colors hover:text-ink"
+                aria-label={t('downloadWeek')}
+                className="inline-flex size-8 items-center justify-center rounded-[8px] border border-border bg-surface text-neutral-700 transition-colors hover:bg-surface-subtle hover:text-ink"
               >
                 <svg
-                  width="14"
-                  height="14"
+                  width="15"
+                  height="15"
                   viewBox="0 0 16 16"
                   fill="none"
                   stroke="currentColor"
@@ -159,7 +155,6 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
                 >
                   <path d="M8 1.5v8.5M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
                 </svg>
-                {t('downloadWeek')}
               </a>
             ) : null}
           </div>

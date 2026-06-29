@@ -8,6 +8,7 @@
     "weekWithMonth": "Week {n} · <m>{month}</m>",
     "week": "Week {n}",
     "monthLabel": "Month",
+    "weekHeading": "Week",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
     "monthlyOutcome": "Monthly outcome · {month}",

@@ -13,12 +13,12 @@
 // selecting a DAY is pure client state that re-points the focus card.
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
 import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { WeekPicker } from '@/components/common/WeekPicker';
 import { SKILL_PILL, SKILL_TEXT } from '@/components/curriculum/skill';
 import type {
   BrowseCoordinate,
@@ -69,12 +69,6 @@ function Header({ data }: { data: CurriculumBrowseData }) {
   const coordHref = (c: BrowseCoordinate) =>
     `/curriculum?subject=${encodeURIComponent(subjectCode)}&year=${year}&month=${encodeURIComponent(c.month)}&week=${c.week}`;
 
-  // Picking a month jumps to its first available week (the scheme-of-work order).
-  const onMonth = (m: string) => {
-    const firstWeek = data.nav.find((n) => n.month === m)?.weeks[0] ?? week;
-    router.push(coordHref({ month: m, week: firstWeek }));
-  };
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] px-[22px] py-[15px]">
       <div className="flex flex-wrap items-center gap-[12px]">
@@ -93,23 +87,30 @@ function Header({ data }: { data: CurriculumBrowseData }) {
             label: t('year', { n: formatNumber(y, locale) }),
           }))}
         />
-        {/* Month picker + week selector — mirrors the new-lesson modal's
-            "January ▾" + "‹ Week N ›" pattern, both driving ?month=&week=. */}
-        {data.nav.length > 0 ? (
-          <Selector
-            ariaLabel={t('monthLabel')}
-            value={month}
-            onChange={onMonth}
-            options={data.nav.map((n) => ({ value: n.month, label: n.month }))}
-          />
-        ) : null}
-        <div className="flex items-center gap-[6px]">
-          <NavArrow href={data.prev ? coordHref(data.prev) : null} label={t('prevWeek')} dir="left" />
-          <span className="min-w-[88px] text-center text-[15px] font-semibold tracking-[-0.01em]">
-            {month ? t('week', { n: formatNumber(week, locale) }) : '—'}
-          </span>
-          <NavArrow href={data.next ? coordHref(data.next) : null} label={t('nextWeek')} dir="right" />
-        </div>
+        {/* Combined month → week picker — the SAME control as the weekly board
+            (src/components/common/WeekPicker), driving ?month=&week=. */}
+        <WeekPicker
+          label={month ? t('week', { n: formatNumber(week, locale) }) : t('empty')}
+          defaultMonth={month || null}
+          options={data.nav.flatMap((n) =>
+            n.weeks.map((w) => ({
+              month: n.month,
+              week: w,
+              label: t('week', { n: formatNumber(w, locale) }),
+              href: coordHref({ month: n.month, week: w }),
+              active: n.month === month && w === week,
+            })),
+          )}
+          prevHref={data.prev ? coordHref(data.prev) : null}
+          nextHref={data.next ? coordHref(data.next) : null}
+          labels={{
+            previousWeek: t('prevWeek'),
+            nextWeek: t('nextWeek'),
+            unavailable: (label) => label,
+            monthHeading: t('monthLabel'),
+            weekHeading: t('weekHeading'),
+          }}
+        />
         {data.topicChip ? (
           <span
             dir="auto"
@@ -164,53 +165,6 @@ function Selector({
         <path d="M6 9l6 6 6-6" />
       </svg>
     </div>
-  );
-}
-
-function NavArrow({
-  href,
-  label,
-  dir,
-}: {
-  href: string | null;
-  label: string;
-  dir: 'left' | 'right';
-}) {
-  const arrow = (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="rtl:-scale-x-100"
-    >
-      {dir === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
-    </svg>
-  );
-  if (!href) {
-    return (
-      <span
-        aria-disabled="true"
-        aria-label={label}
-        className="inline-flex size-8 cursor-not-allowed items-center justify-center rounded-[8px] border border-border bg-surface text-text-faint opacity-40"
-      >
-        {arrow}
-      </span>
-    );
-  }
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      className="inline-flex size-8 items-center justify-center rounded-[8px] border border-border bg-surface text-ink transition-colors hover:bg-surface-subtle"
-    >
-      {arrow}
-    </Link>
   );
 }
 

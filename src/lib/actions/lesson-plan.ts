@@ -209,7 +209,7 @@ export async function canCoordinatePlan(planId: string): Promise<boolean> {
 }
 
 /** A coordinator decision on a submitted/decided plan. */
-type PlanDecision = 'approve' | 'return' | 'reopen';
+type PlanDecision = 'approve' | 'return' | 'reopen' | 'undo';
 
 /**
  * Apply a coordinator decision to a plan, stamping the workflow timestamps to
@@ -218,10 +218,18 @@ type PlanDecision = 'approve' | 'return' | 'reopen';
  *
  *   • approve → `approved`,      stamps `reviewed_at`.
  *   • return  → `needs_review`,  stamps `reviewed_at`.
- *   • reopen  → `in_progress`,   clears `submitted_at` + `reviewed_at` (clean draft).
+ *   • undo    → `submitted`,     clears `reviewed_at` (back to the PRE-APPROVAL
+ *                                state, keeping `submitted_at`, so the original
+ *                                Approve / Return controls reappear). Approval is
+ *                                only ever reached from `submitted`, so that is the
+ *                                unambiguous state to restore.
+ *   • reopen  → `in_progress`,   clears `submitted_at` + `reviewed_at` (clean draft;
+ *                                sends a returned plan back to the teacher to edit).
  *
  * Authorisation rides on RLS + the `enforce_approval_role` trigger; the pre-check
- * mirrors them so the UI gets a friendly error rather than a raw DB exception.
+ * mirrors them so the UI gets a friendly error rather than a raw DB exception. The
+ * trigger only role-gates moves INTO `approved` / `needs_review`, so the undo's
+ * move to `submitted` is permitted just like the existing reopen → `in_progress`.
  * Kept separate from the teacher `setPlanStatus` board-drag path on purpose.
  */
 export async function decidePlan(planId: string, decision: PlanDecision): Promise<ActionResult> {
@@ -239,7 +247,9 @@ export async function decidePlan(planId: string, decision: PlanDecision): Promis
       ? { status: 'approved' as const, reviewed_at: now }
       : decision === 'return'
         ? { status: 'needs_review' as const, reviewed_at: now }
-        : { status: 'in_progress' as const, submitted_at: null, reviewed_at: null };
+        : decision === 'undo'
+          ? { status: 'submitted' as const, reviewed_at: null }
+          : { status: 'in_progress' as const, submitted_at: null, reviewed_at: null };
 
   const { data, error } = await supabase
     .from('lesson_plans')

@@ -23,26 +23,17 @@ const ITEMS: NavItem[] = [
   { key: 'resources', href: '/resources', isActive: (p) => p.startsWith('/resources') },
 ];
 
-/**
- * The settings/console entry, shown to admins and coordinators (the people who
- * have console tabs beyond Profile). The route itself is role-aware at
- * `/settings`; this is presentation only. Everyone can still reach Settings via
- * the avatar menu.
- */
-const SETTINGS_ITEM: NavItem = {
-  key: 'settings',
-  href: '/settings',
-  isActive: (p) => p.startsWith('/settings'),
-};
+// Settings is intentionally NOT a primary nav pill — it is reached through the
+// avatar menu (UserMenu), which every role can open. Keeping it out of the top
+// nav declutters the bar without stranding any role.
 
-export function TopNav({ showSettings = false }: { showSettings?: boolean }) {
+export function TopNav() {
   const pathname = usePathname();
   const t = useTranslations('nav');
-  const items = showSettings ? [...ITEMS, SETTINGS_ITEM] : ITEMS;
 
   return (
     <nav className="flex items-center gap-1">
-      {items.map((item) => {
+      {ITEMS.map((item) => {
         const active = item.isActive(pathname);
         return (
           <Link

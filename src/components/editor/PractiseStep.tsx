@@ -21,6 +21,7 @@ export function PractiseStep({
   onWorksheetChange,
   context,
   vocabulary,
+  locked = false,
 }: {
   block: Block;
   onPatch: (patch: Partial<Block>) => void;
@@ -28,10 +29,13 @@ export function PractiseStep({
   onWorksheetChange: (worksheet: Worksheet) => void;
   context: WorksheetContext;
   vocabulary: TagsByDimension;
+  /** When true the plan is submitted/approved: every control inside (incl. the
+   *  worksheet builder's toolbar) is disabled via a single `disabled` fieldset. */
+  locked?: boolean;
 }) {
   const t = useTranslations('wizard');
   return (
-    <div className="mt-[22px] overflow-hidden rounded-[16px] border border-border bg-surface">
+    <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
       {/* Block header */}
       <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
         <span className="text-[20px] font-semibold">{t('practise.title')}</span>
@@ -74,6 +78,6 @@ export function PractiseStep({
         context={context}
         vocabulary={vocabulary}
       />
-    </div>
+    </fieldset>
   );
 }

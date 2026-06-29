@@ -49,17 +49,23 @@ export default async function PlanViewPage({
 
   const status = data.plan.status;
   const isReviewable = status !== 'in_progress';
-  const showSidebar = canDecide && isReviewable;
 
-  // For the sidebar: the plan's existing comments and the author (teacher) name —
-  // only loaded when the sidebar will actually render.
-  const [comments, authorName] = showSidebar
-    ? await Promise.all([getPlanComments(id), resolveAuthorName(supabase, data.plan.created_by)])
-    : [[], ''];
+  // Comments are loaded for any coordinator of the plan, in every status: their
+  // display is EXISTENCE-gated, not status-gated, so a plan returned to draft
+  // (in_progress) still shows the feedback that was left on it. The sidebar mounts
+  // when the plan is reviewable OR any comment exists; the decision bar inside
+  // keeps its own status gating. (Loaded only for a coordinator — a non-coordinator
+  // reads [] by RLS and never sees the sidebar.)
+  const comments = canDecide ? await getPlanComments(id) : [];
+  const hasComments = comments.length > 0;
+  const showSidebar = canDecide && (isReviewable || hasComments);
+  const authorName = showSidebar ? await resolveAuthorName(supabase, data.plan.created_by) : '';
 
-  // Draft (in_progress) coordinator note — the neutral "nothing to review yet" state.
+  // The neutral "nothing to review yet" note appears only when there is genuinely
+  // nothing — a draft with no comments. Once any comment exists it gives way to the
+  // sidebar, so returned feedback is never hidden behind the draft message.
   let draftNote: ReactNode = null;
-  if (canDecide && !isReviewable) {
+  if (canDecide && !isReviewable && !hasComments) {
     const t = await getTranslations('review');
     draftNote = (
       <div className="border-b border-[#EFE8DD] bg-surface-subtle px-[22px] py-[14px] lg:px-[30px]">

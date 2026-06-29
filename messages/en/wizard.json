@@ -89,6 +89,7 @@
       "removeMaterial": "Remove {name}",
       "materialPlaceholder": "Material name…",
       "addMaterial": "＋ Add material",
+      "noMaterials": "No materials listed.",
       "colPart": "Lesson part",
       "colPhase": "Phase",
       "colTime": "Time",
@@ -110,8 +111,21 @@
       "submittedAwaiting": "Submitted · awaiting review",
       "resubmit": "Resubmit",
       "submit": "Submit",
+      "submitForApproval": "Submit for approval",
       "submitting": "Submitting…",
+      "unlock": "Unlock for editing",
+      "unlocking": "Unlocking…",
       "needObjective": "Add a SMARTT objective first"
+    },
+    "lockedBanner": {
+      "title": "Submitted — view only",
+      "approvedTitle": "Approved — view only",
+      "link": "Unlock on the Review step"
+    },
+    "feedback": {
+      "title": "Coordinator feedback",
+      "subtitle": "Review these notes, make your changes, then resubmit.",
+      "coordinator": "Coordinator"
     },
     "timeStepper": {
       "ariaMinutes": "Minutes",
@@ -119,7 +133,8 @@
       "min": "min"
     },
     "errors": {
-      "couldNotSubmit": "Could not submit."
+      "couldNotSubmit": "Could not submit.",
+      "couldNotUnlock": "Could not unlock."
     }
   }
 }

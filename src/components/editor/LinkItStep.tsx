@@ -213,6 +213,7 @@ export function LinkItStep({
   exitActivities,
   previousDailyLO,
   onChange,
+  locked = false,
 }: {
   linkIt: LinkIt;
   cfuActivities: ActivityBankItem[];
@@ -220,10 +221,13 @@ export function LinkItStep({
   /** Previous lesson's daily outcome; empty when there is no preceding lesson. */
   previousDailyLO?: string;
   onChange: (next: LinkIt) => void;
+  /** When true the plan is submitted/approved: the recap field and all technique
+   *  controls are disabled via a single `disabled` fieldset. */
+  locked?: boolean;
 }) {
   const t = useTranslations('wizard.linkIt');
   return (
-    <div className="mt-[22px] rounded-[14px] border border-border bg-surface px-[18px] py-[16px]">
+    <fieldset disabled={locked} className="mt-[22px] min-w-0 rounded-[14px] border border-border bg-surface px-[18px] py-[16px] disabled:opacity-75">
       <Section title={t('recap')}>
         {previousDailyLO ? <PreviousOutcomePanel outcome={previousDailyLO} /> : null}
         <textarea
@@ -251,6 +255,6 @@ export function LinkItStep({
           onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
         />
       </Section>
-    </div>
+    </fieldset>
   );
 }

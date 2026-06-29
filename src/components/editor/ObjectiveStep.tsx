@@ -61,6 +61,7 @@ export function ObjectiveStep({
   checking,
   checkError,
   onCheck,
+  locked = false,
 }: {
   remainder: string;
   onChange: (next: string) => void;
@@ -68,9 +69,13 @@ export function ObjectiveStep({
   checking: boolean;
   checkError: string | null;
   onCheck: () => void;
+  /** When true the plan is submitted/approved: the objective is read-only and the
+   *  AI check is disabled. The contentEditable region is not a form control, so it
+   *  is gated here directly rather than via the disabled fieldset. */
+  locked?: boolean;
 }) {
   const t = useTranslations('wizard.objective');
-  const checkDisabled = checking || remainder.trim().length === 0;
+  const checkDisabled = checking || locked || remainder.trim().length === 0;
 
   // The remainder is an inline, flowing editable region (so the teacher's text
   // continues on the same line as the fixed stem and wraps as one paragraph). It
@@ -129,6 +134,7 @@ export function ObjectiveStep({
             clicked in" is unmistakable. */}
         <div
           onMouseDown={(e) => {
+            if (locked) return;
             const el = editableRef.current;
             const target = e.target as HTMLElement;
             if (el && (target === el || el.contains(target))) return;
@@ -137,10 +143,11 @@ export function ObjectiveStep({
             focusEditableAtEnd();
           }}
           className={
-            'relative cursor-text rounded-[11px] border bg-surface px-[15px] py-[14px] transition-colors ' +
-            (focused
-              ? 'border-pink ring-2 ring-pink/30'
-              : 'border-mine-field')
+            'relative rounded-[11px] border bg-surface px-[15px] py-[14px] transition-colors ' +
+            (locked
+              ? 'cursor-default border-mine-field'
+              : 'cursor-text ' +
+                (focused ? 'border-pink ring-2 ring-pink/30' : 'border-mine-field'))
           }
         >
           <button
@@ -167,10 +174,10 @@ export function ObjectiveStep({
               dir="auto"
               aria-multiline="true"
               aria-label={t('fieldAria')}
-              contentEditable
               suppressContentEditableWarning
               data-placeholder={t('placeholder')}
               data-empty={showPlaceholder ? 'true' : 'false'}
+              contentEditable={!locked}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onInput={(e) => onChange(e.currentTarget.textContent ?? '')}

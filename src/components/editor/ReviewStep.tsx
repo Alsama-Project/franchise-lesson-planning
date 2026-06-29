@@ -11,7 +11,9 @@ import { normalizeLinkIt, resolveTechniques } from '@/lib/editor/link-it';
 import { phaseLabel } from '@/lib/editor/phase';
 import { TimeStepper } from '@/components/editor/TimeStepper';
 import { PartContent } from '@/components/editor/PartContent';
+import { TeacherCommentsPanel } from '@/components/editor/TeacherCommentsPanel';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
+import type { PlanComment } from '@/lib/review/comments';
 
 const PHASE_TAG: Record<TeachingPhase, string> = {
   i_do: 'text-[#1F7A6C] bg-[#E4F0ED]',
@@ -51,6 +53,8 @@ export function ReviewStep({
   attachedFor,
   onMaterialsChange,
   onBlockMinutes,
+  locked = false,
+  comments = [],
 }: {
   planId: string;
   status: PlanStatus;
@@ -67,6 +71,12 @@ export function ReviewStep({
   attachedFor: (block: Block | undefined) => ResourceWithTags[];
   onMaterialsChange: (next: string[]) => void;
   onBlockMinutes: (type: LessonBlockType, next: number) => void;
+  /** When true the plan is submitted/approved: the materials editor and the time
+   *  steppers become read-only (the row expanders stay live so the plan can still
+   *  be reviewed). The Submit/Unlock control lives in the wizard header, not here. */
+  locked?: boolean;
+  /** Coordinator→teacher feedback, rendered existence-gated above the table. */
+  comments?: PlanComment[];
 }) {
   const t = useTranslations('wizard');
   const locale = useLocale();
@@ -160,6 +170,9 @@ export function ReviewStep({
         </div>
       </div>
 
+      {/* Coordinator feedback (existence-gated; renders nothing when empty). */}
+      <TeacherCommentsPanel comments={comments} />
+
       {/* Required materials */}
       <div className="mt-4 rounded-[13px] border border-border px-4 py-[15px]">
         <div className="mb-2.5 flex items-center justify-between gap-2.5">
@@ -176,17 +189,22 @@ export function ReviewStep({
               className="inline-flex items-center gap-1.5 rounded-[8px] border border-border bg-surface-subtle px-[11px] py-[6px] text-[12.5px] text-neutral-900"
             >
               {m}
-              <button
-                type="button"
-                onClick={() => removeMaterial(i)}
-                aria-label={t('review.removeMaterial', { name: m })}
-                className="text-neutral-300 hover:text-pink"
-              >
-                ✕
-              </button>
+              {locked ? null : (
+                <button
+                  type="button"
+                  onClick={() => removeMaterial(i)}
+                  aria-label={t('review.removeMaterial', { name: m })}
+                  className="text-neutral-300 hover:text-pink"
+                >
+                  ✕
+                </button>
+              )}
             </span>
           ))}
-          {adding ? (
+          {locked && materials.length === 0 ? (
+            <span className="text-[12.5px] text-neutral-400">{t('review.noMaterials')}</span>
+          ) : null}
+          {locked ? null : adding ? (
             <input
               autoFocus
               dir="auto"
@@ -260,7 +278,7 @@ export function ReviewStep({
                   ) : null}
                 </div>
                 <div className="flex items-center justify-end px-3 py-[9px]">
-                  {editable ? (
+                  {editable && !locked ? (
                     <TimeStepper
                       small
                       value={p.minutes}

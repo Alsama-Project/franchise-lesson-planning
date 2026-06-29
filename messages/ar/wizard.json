@@ -89,6 +89,7 @@
       "removeMaterial": "إزالة {name}",
       "materialPlaceholder": "اسم المستلزَم…",
       "addMaterial": "＋ إضافة مستلزَم",
+      "noMaterials": "لا توجد مستلزمات.",
       "colPart": "جزء الدرس",
       "colPhase": "المرحلة",
       "colTime": "الوقت",
@@ -110,8 +111,21 @@
       "submittedAwaiting": "مُرسَل · بانتظار المراجعة",
       "resubmit": "إعادة الإرسال",
       "submit": "إرسال",
+      "submitForApproval": "إرسال للاعتماد",
       "submitting": "جارٍ الإرسال…",
+      "unlock": "فتح للتعديل",
+      "unlocking": "جارٍ الفتح…",
       "needObjective": "أضف هدف SMARTT أولاً"
+    },
+    "lockedBanner": {
+      "title": "مُرسَل — للعرض فقط",
+      "approvedTitle": "مُعتمَد — للعرض فقط",
+      "link": "افتح من خطوة المراجعة"
+    },
+    "feedback": {
+      "title": "ملاحظات المنسّق",
+      "subtitle": "راجِع هذه الملاحظات، أجرِ تعديلاتك، ثم أعِد الإرسال.",
+      "coordinator": "المنسّق"
     },
     "timeStepper": {
       "ariaMinutes": "الدقائق",
@@ -119,7 +133,8 @@
       "min": "دقيقة"
     },
     "errors": {
-      "couldNotSubmit": "تعذّر الإرسال."
+      "couldNotSubmit": "تعذّر الإرسال.",
+      "couldNotUnlock": "تعذّر الفتح."
     }
   }
 }

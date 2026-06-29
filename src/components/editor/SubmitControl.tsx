@@ -6,25 +6,32 @@ import { cn } from '@/lib/cn';
 import { Spinner } from '@/components/ui/Spinner';
 
 /**
- * The Step 5 primary action. It reflects what the viewer can DO next, never an
- * echo of the current status:
- *  - in_progress → "Submit for review" (pink; the teacher submits).
- *  - needs_review → "Resubmit" (pink; the teacher re-submits after changes).
- *  - submitted → a non-clickable "Submitted · awaiting review" badge. The
- *    coordinator review action (Approve / Request changes) is deferred to the
- *    review-view slice, so no Approve button is shown to anyone here yet.
- *  - approved → a display-only "Approved" badge (no action).
+ * The Step 5 primary action — the single way the teacher moves a plan in and out
+ * of the locked review state. It reflects what the viewer can DO next, never a
+ * passive echo of the current status. Colour semantic: teal = action (submit /
+ * unlock); `approved` keeps its own green display-only badge.
+ *
+ *  - in_progress / needs_review → "Submit for approval" (teal; submits → locked).
+ *  - submitted → "Unlock for editing" (teal; recalls → in_progress, unlocking the
+ *    whole plan). This is the only exit from the locked state, so it stays
+ *    interactive even while every other surface is locked.
+ *  - approved → a display-only "Approved" badge. The teacher cannot unlock an
+ *    approved plan — only a coordinator/admin can move it off `approved`.
  */
 export function SubmitControl({
   status,
   canSubmit,
   submitting,
+  unlocking,
   onSubmit,
+  onUnlock,
 }: {
   status: PlanStatus;
   canSubmit: boolean;
   submitting: boolean;
+  unlocking: boolean;
   onSubmit: () => void;
+  onUnlock: () => void;
 }) {
   const t = useTranslations('wizard.submit');
 
@@ -41,17 +48,27 @@ export function SubmitControl({
 
   if (status === 'submitted') {
     return (
-      <span className="inline-flex items-center justify-center gap-[7px] rounded-[9px] border border-border-strong bg-surface-subtle px-4 py-[9px] text-[13px] font-semibold text-neutral-600">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-        {t('submittedAwaiting')}
-      </span>
+      <button
+        type="button"
+        onClick={onUnlock}
+        disabled={unlocking}
+        aria-busy={unlocking || undefined}
+        className={cn(
+          'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-teal-deep disabled:cursor-not-allowed disabled:opacity-60',
+        )}
+      >
+        {unlocking ? (
+          <Spinner size={15} />
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="11" width="16" height="9" rx="2" />
+            <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+          </svg>
+        )}
+        {unlocking ? t('unlocking') : t('unlock')}
+      </button>
     );
   }
-
-  const label = status === 'needs_review' ? t('resubmit') : t('submit');
 
   return (
     <button
@@ -61,11 +78,11 @@ export function SubmitControl({
       aria-busy={submitting || undefined}
       title={!canSubmit ? t('needObjective') : undefined}
       className={cn(
-        'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-pink px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#a3234f] disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-teal-deep disabled:cursor-not-allowed disabled:opacity-60',
       )}
     >
       {submitting ? <Spinner size={15} /> : null}
-      {submitting ? t('submitting') : label}
+      {submitting ? t('submitting') : t('submitForApproval')}
     </button>
   );
 }

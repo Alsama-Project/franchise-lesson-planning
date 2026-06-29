@@ -20,11 +20,13 @@ import {
   ObjectiveCheckRequestError,
   type ObjectiveCheckResult,
 } from '@/lib/editor/objective-check';
-import { saveLessonPlan, submitLessonPlan } from '@/lib/actions/lesson-plan';
+import { saveLessonPlan, submitLessonPlan, unsubmitLessonPlan } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
+import type { PlanComment } from '@/lib/review/comments';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
+import { LockedBanner } from '@/components/editor/LockedBanner';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { CurriculumPanel } from '@/components/editor/CurriculumPanel';
 import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
@@ -61,7 +63,16 @@ function SaveIndicator({ state }: { state: SaveState }) {
   );
 }
 
-export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
+export function LessonPlanEditor({
+  data,
+  comments,
+}: {
+  data: EditorPlanData;
+  /** Coordinator→teacher feedback on this plan. Rendered existence-gated on the
+   *  Review step regardless of status, so a returned plan shows what to fix. Empty
+   *  until the teacher-SELECT comments policy (migration 0025) is applied. */
+  comments: PlanComment[];
+}) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
 
@@ -90,13 +101,28 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
   const [status, setStatus] = useState<PlanStatus>(plan.status);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [submitting, setSubmitting] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // The single source of truth for "the plan is locked": one derived value, not a
+  // status check scattered across steps. `submitted` and `approved` both lock the
+  // whole wizard; `in_progress` and `needs_review` leave it editable. Threaded into
+  // every step so each renders read-only consistently, and used to short-circuit
+  // autosave so nothing persists while locked.
+  const locked = status === 'submitted' || status === 'approved';
 
   const total = useMemo(() => inSessionMinutes(blocks), [blocks]);
 
   // Autosave: debounce edits to objective / blocks / materials / check result.
   const firstRender = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The latest `locked` for the debounced writer to read. Kept in a ref (not a
+  // dep) so flipping the lock never re-runs the autosave effect — only genuine
+  // edits do — which avoids a save flicker on submit/unlock.
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
 
   useEffect(() => {
     if (firstRender.current) {
@@ -106,6 +132,13 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
     setSaveState('saving');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
+      // Locked plans never persist — the wizard is read-only in `submitted` /
+      // `approved`, so a stray state change (e.g. a non-form control slipping past
+      // the disabled fieldsets) must not write back to the row.
+      if (lockedRef.current) {
+        setSaveState('idle');
+        return;
+      }
       const res = await saveLessonPlan({
         id: plan.id,
         smartt_objective: composeObjective(remainder),
@@ -213,12 +246,30 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
     }
   }
 
+  // Recall a submitted plan back to `in_progress`, unlocking the whole wizard. The
+  // teacher always lands in `in_progress` (never the prior `needs_review`): the
+  // persisted comments carry the "changes requested" context, so the status need
+  // not. Only reachable from `submitted` — an `approved` plan shows no unlock.
+  async function handleUnlock() {
+    setUnlocking(true);
+    setSubmitError(null);
+    const res = await unsubmitLessonPlan({ id: plan.id });
+    setUnlocking(false);
+    if (res.ok) {
+      setStatus('in_progress');
+    } else {
+      setSubmitError(res.error ?? t('errors.couldNotUnlock'));
+    }
+  }
+
   const submitControl = (
     <SubmitControl
       status={status}
       canSubmit={canSubmit}
       submitting={submitting}
+      unlocking={unlocking}
       onSubmit={handleSubmit}
+      onUnlock={handleUnlock}
     />
   );
 
@@ -287,6 +338,15 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
       />
 
       <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
+        {/* While locked, the four content steps show a light "view only" banner
+            routing to the Review step, where the unlock control lives. The Review
+            step (5) carries the unlock control itself, so it gets no banner. */}
+        {locked && step < STEP_COUNT ? (
+          <div className="mb-[18px]">
+            <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
+          </div>
+        ) : null}
+
         {step === 1 ? <CurriculumBand curriculum={curriculum} /> : null}
 
         {/* Past Step 1 the cream curriculum context persists alongside the pink
@@ -307,6 +367,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             checking={checking}
             checkError={checkError}
             onCheck={handleCheck}
+            locked={locked}
           />
         ) : null}
 
@@ -321,6 +382,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             attachedResources={attachedFor(newContentBlock)}
             onAttach={(resource) => attachResource('new_content', resource)}
             onRemove={(resourceId) => detachResource('new_content', resourceId)}
+            locked={locked}
           />
         ) : null}
 
@@ -332,6 +394,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             onWorksheetChange={setWorksheet}
             context={worksheetContext}
             vocabulary={resourceBank.vocabulary}
+            locked={locked}
           />
         ) : null}
 
@@ -342,6 +405,7 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             exitActivities={activitiesByBlock.exit_ticket ?? []}
             previousDailyLO={curriculum?.previousDailyLO ?? ''}
             onChange={onLinkItChange}
+            locked={locked}
           />
         ) : null}
 
@@ -358,6 +422,8 @@ export function LessonPlanEditor({ data }: { data: EditorPlanData }) {
             attachedFor={attachedFor}
             onMaterialsChange={setMaterials}
             onBlockMinutes={setBlockMinutes}
+            locked={locked}
+            comments={comments}
           />
         ) : null}
 

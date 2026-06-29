@@ -26,6 +26,7 @@ export function WritingStep({
   onAttach,
   onRemove,
   worksheetSlot,
+  locked = false,
 }: {
   title: string;
   block: Block;
@@ -38,10 +39,13 @@ export function WritingStep({
   onRemove: (resourceId: string) => void;
   /** The student worksheet builder, rendered on the Practise step only. */
   worksheetSlot?: ReactNode;
+  /** When true the plan is submitted/approved: every control inside is disabled
+   *  via a single `disabled` fieldset, so the step is read-only. */
+  locked?: boolean;
 }) {
   const t = useTranslations('wizard.teach');
   return (
-    <div className="mt-[22px] overflow-hidden rounded-[16px] border border-border">
+    <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border disabled:opacity-75">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
         <div>
@@ -108,6 +112,6 @@ export function WritingStep({
           onAttach={onAttach}
         />
       </div>
-    </div>
+    </fieldset>
   );
 }

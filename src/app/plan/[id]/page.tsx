@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { LessonPlanEditor } from '@/components/editor/LessonPlanEditor';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
+import { getPlanComments } from '@/lib/review/comments';
 import { createClient } from '@/lib/supabase/server';
 
 // Rendered per-request: the plan is loaded with the auth'd client (RLS).
@@ -17,9 +18,13 @@ export default async function PlanEditorPage({
   // The plan load and the shell-chrome identity are independent, so run them in
   // parallel rather than waterfalling.
   const supabase = await createClient();
-  const [data, { data: { user } }] = await Promise.all([
+  // Comments load in parallel: coordinator→teacher feedback the teacher needs to
+  // see on a returned plan. RLS scopes the read — it returns [] (degrading
+  // gracefully) until the teacher-SELECT comments policy (migration 0025) lands.
+  const [data, { data: { user } }, comments] = await Promise.all([
     loadPlanForEditor(id),
     supabase.auth.getUser(),
+    getPlanComments(id),
   ]);
   if (!data) notFound();
 
@@ -33,7 +38,7 @@ export default async function PlanEditorPage({
 
   return (
     <AppShell name={name} subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}>
-      <LessonPlanEditor data={data} />
+      <LessonPlanEditor data={data} comments={comments} />
     </AppShell>
   );
 }

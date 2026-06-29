@@ -14,11 +14,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from 'react';
 import { cn } from '@/lib/cn';
 import type { TermRow } from '@/lib/console';
@@ -139,6 +141,27 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
   const pos = useCallback(
     (iso: string) => (totalDays > 0 ? daysBetween(anchorISO, iso) / totalDays : 0),
     [anchorISO, totalDays],
+  );
+
+  // Band geometry clamped to the timeline window [0, 1]. A term that runs past
+  // either edge of the displayed academic year is kept inside the track bounds
+  // and flagged so the band can show a "continues beyond range" cue instead of
+  // spilling out and hard-clipping at the panel edge. This is purely visual —
+  // the underlying start date / week count are untouched.
+  const bandGeom = useCallback(
+    (term: TermRow) => {
+      const startFrac = pos(term.startsOn);
+      const endFrac = pos(addDays(term.startsOn, term.numWeeks * 7));
+      const leftFrac = Math.min(Math.max(startFrac, 0), 1);
+      const rightFrac = Math.min(Math.max(endFrac, 0), 1);
+      return {
+        leftFrac,
+        widthFrac: Math.max(rightFrac - leftFrac, 0),
+        overflowLeft: startFrac < 0,
+        overflowRight: endFrac > 1,
+      };
+    },
+    [pos],
   );
 
   const selected = terms.find((t) => t.id === selectedId) ?? null;
@@ -385,10 +408,11 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
 
           {/* Bands */}
           {terms.map((term, i) => {
-            const left = pos(term.startsOn) * 100;
-            const endISO = addDays(term.startsOn, term.numWeeks * 7);
-            const width = Math.max(pos(endISO) * 100 - left, 2);
+            const geom = bandGeom(term);
+            const left = geom.leftFrac * 100;
+            const width = Math.max(geom.widthFrac * 100, 2);
             const isSel = term.id === selectedId;
+            const bandBg = isSel ? '#D9EEE8' : '#E4F0ED';
             const top = BAND_TOP + i * ROW_STEP;
             return (
               <div
@@ -411,17 +435,42 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
                 <span className="ml-auto whitespace-nowrap text-[11px] text-[#5E8C84]">
                   {term.numWeeks} weeks
                 </span>
-                {/* Resize handle */}
-                <div
-                  onPointerDown={(e) => onBandPointerDown(e, term, 'resize')}
-                  onPointerMove={onBandPointerMove}
-                  onPointerUp={(e) => onBandPointerUp(e, term)}
-                  className="absolute right-0 top-0 flex h-full w-[12px] items-center justify-center touch-none"
-                  style={{ cursor: 'ew-resize' }}
-                  aria-label="Resize term"
-                >
-                  <span className="h-[16px] w-[2px] rounded-full bg-[#5E8C84]/60" />
-                </div>
+                {/* Continues-beyond-range cue: the term runs past the start of the
+                    displayed academic year. Fade + chevron, no hard clip. */}
+                {geom.overflowLeft ? (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 left-0 flex w-[24px] items-center justify-start pl-[3px]"
+                    style={{ background: `linear-gradient(to left, transparent, ${bandBg})` }}
+                  >
+                    <span className="text-[12px] font-bold text-[#15564B]/70">‹</span>
+                  </div>
+                ) : null}
+                {/* Continues-beyond-range cue: the term extends past the end of the
+                    displayed academic-year window. */}
+                {geom.overflowRight ? (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 right-0 flex w-[24px] items-center justify-end pr-[3px]"
+                    style={{ background: `linear-gradient(to right, transparent, ${bandBg})` }}
+                  >
+                    <span className="text-[12px] font-bold text-[#15564B]/70">›</span>
+                  </div>
+                ) : null}
+                {/* Resize handle — hidden when the band is clamped at the right
+                    edge, since its end isn't on screen to grab. */}
+                {geom.overflowRight ? null : (
+                  <div
+                    onPointerDown={(e) => onBandPointerDown(e, term, 'resize')}
+                    onPointerMove={onBandPointerMove}
+                    onPointerUp={(e) => onBandPointerUp(e, term)}
+                    className="absolute right-0 top-0 flex h-full w-[12px] items-center justify-center touch-none"
+                    style={{ cursor: 'ew-resize' }}
+                    aria-label="Resize term"
+                  >
+                    <span className="h-[16px] w-[2px] rounded-full bg-[#5E8C84]/60" />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -431,8 +480,9 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
             <SelectedPopover
               term={selected}
               index={terms.findIndex((t) => t.id === selected.id)}
-              leftFrac={pos(selected.startsOn)}
-              trackWidth={trackWidth}
+              leftFrac={bandGeom(selected).leftFrac}
+              widthFrac={bandGeom(selected).widthFrac}
+              trackRef={trackRef}
               onChangeName={changeName}
               onCommitName={commitName}
               onChangeStart={changeStart}
@@ -559,11 +609,15 @@ function StatusChip({ status }: { status: TermStatus }) {
   );
 }
 
+const POPOVER_WIDTH = 286;
+const POPOVER_MARGIN = 8;
+
 function SelectedPopover({
   term,
   index,
   leftFrac,
-  trackWidth,
+  widthFrac,
+  trackRef,
   onChangeName,
   onCommitName,
   onChangeStart,
@@ -573,23 +627,72 @@ function SelectedPopover({
   term: TermRow;
   index: number;
   leftFrac: number;
-  trackWidth: number;
+  widthFrac: number;
+  trackRef: RefObject<HTMLDivElement | null>;
   onChangeName: (term: TermRow, value: string) => void;
   onCommitName: (term: TermRow, prevName: string) => void;
   onChangeStart: (term: TermRow, value: string) => void;
   onChangeWeeks: (term: TermRow, delta: number) => void;
   onRemove: () => void;
 }) {
-  const WIDTH = 286;
   const nameAtFocus = useRef(term.name);
-  const top = BAND_TOP + index * ROW_STEP + BAND_H + 8;
-  const rawLeft = leftFrac * trackWidth;
-  const left = trackWidth > 0 ? Math.max(0, Math.min(rawLeft, trackWidth - WIDTH)) : 0;
+  const popRef = useRef<HTMLDivElement | null>(null);
+  // Fixed viewport coordinates, computed from the live position of the band this
+  // popover edits. Anchored to the band, flipped above it when there's no room
+  // below, and shifted to stay fully inside the viewport. Null until measured so
+  // the first paint doesn't flash at the origin.
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    const pop = popRef.current;
+    if (!track || !pop) return;
+
+    const reposition = () => {
+      const tr = track.getBoundingClientRect();
+      const popH = pop.offsetHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      const bandLeft = tr.left + leftFrac * tr.width;
+      const bandTop = tr.top + BAND_TOP + index * ROW_STEP;
+      const bandBottom = bandTop + BAND_H;
+
+      // Horizontal: anchor to the band's left edge, then shift to stay on screen.
+      let left = bandLeft;
+      left = Math.min(left, vw - POPOVER_WIDTH - POPOVER_MARGIN);
+      left = Math.max(left, POPOVER_MARGIN);
+
+      // Vertical: below the band by default; flip above if it would overflow the
+      // bottom of the viewport and there's room above.
+      let top = bandBottom + POPOVER_MARGIN;
+      if (top + popH > vh - POPOVER_MARGIN) {
+        const above = bandTop - POPOVER_MARGIN - popH;
+        top = above >= POPOVER_MARGIN ? above : Math.max(POPOVER_MARGIN, vh - POPOVER_MARGIN - popH);
+      }
+
+      setPlace({ left, top });
+    };
+
+    reposition();
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [index, leftFrac, widthFrac, trackRef, term.numWeeks, term.startsOn]);
 
   return (
     <div
-      className="absolute z-30 rounded-[12px] border border-[#E2D9CC] bg-white p-[14px] shadow-[0_8px_24px_rgba(48,40,32,0.14)]"
-      style={{ top, left, width: WIDTH }}
+      ref={popRef}
+      className="fixed z-30 rounded-[12px] border border-[#E2D9CC] bg-white p-[14px] shadow-[0_8px_24px_rgba(48,40,32,0.14)]"
+      style={{
+        top: place?.top ?? 0,
+        left: place?.left ?? 0,
+        width: POPOVER_WIDTH,
+        visibility: place ? 'visible' : 'hidden',
+      }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <input

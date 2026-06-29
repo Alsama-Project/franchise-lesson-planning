@@ -8,6 +8,7 @@ import 'server-only';
 // used on this path.
 
 import { createClient } from '@/lib/supabase/server';
+import type { PlanEvent, PlanEventType } from '@/lib/review/timeline';
 
 export interface PlanComment {
   id: string;
@@ -62,5 +63,55 @@ export async function getPlanComments(planId: string): Promise<PlanComment[]> {
     createdAt: r.created_at,
     authorId: r.author_id,
     authorName: nameById.get(r.author_id) ?? '',
+  }));
+}
+
+interface EventRow {
+  id: string;
+  type: PlanEventType;
+  created_at: string;
+  actor_id: string | null;
+}
+
+/**
+ * The plan's recorded lifecycle events (migration 0027 `plan_events`), oldest →
+ * newest, with actor names resolved the same way as comments. RLS scopes the read
+ * to plans the viewer may see (`plan_events_member_select`).
+ *
+ * DEGRADES GRACEFULLY before the migration is applied: if `plan_events` does not
+ * exist yet the query returns a PostgREST error (not a throw), which we treat as an
+ * empty timeline — so the pane renders comments-only and never crashes pre-migration.
+ */
+export async function getPlanEvents(planId: string): Promise<PlanEvent[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('plan_events')
+    .select('id, type, created_at, actor_id')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return [];
+  const rows = data as unknown as EventRow[];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.actor_id).filter(Boolean))] as string[];
+  const nameById = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', ids);
+    for (const p of (profiles ?? []) as Array<{ id: string; full_name: string | null }>) {
+      if (p.full_name) nameById.set(p.id, p.full_name);
+    }
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    createdAt: r.created_at,
+    actorId: r.actor_id,
+    actorName: r.actor_id ? nameById.get(r.actor_id) ?? '' : '',
   }));
 }

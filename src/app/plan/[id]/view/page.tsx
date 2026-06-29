@@ -5,7 +5,7 @@ import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
 import { ReviewCommentsSidebar } from '@/components/review/ReviewCommentsSidebar';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
-import { getPlanComments } from '@/lib/review/comments';
+import { getPlanComments, getPlanEvents } from '@/lib/review/comments';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { createClient } from '@/lib/supabase/server';
 
@@ -56,16 +56,18 @@ export default async function PlanViewPage({
   // when the plan is reviewable OR any comment exists; the decision bar inside
   // keeps its own status gating. (Loaded only for a coordinator — a non-coordinator
   // reads [] by RLS and never sees the sidebar.)
-  const comments = canDecide ? await getPlanComments(id) : [];
+  const [comments, events] = canDecide
+    ? await Promise.all([getPlanComments(id), getPlanEvents(id)])
+    : [[], []];
   const hasComments = comments.length > 0;
-  const showSidebar = canDecide && (isReviewable || hasComments);
+  const showSidebar = canDecide && (isReviewable || hasComments || events.length > 0);
   const authorName = showSidebar ? await resolveAuthorName(supabase, data.plan.created_by) : '';
 
   // The neutral "nothing to review yet" note appears only when there is genuinely
   // nothing — a draft with no comments. Once any comment exists it gives way to the
   // sidebar, so returned feedback is never hidden behind the draft message.
   let draftNote: ReactNode = null;
-  if (canDecide && !isReviewable && !hasComments) {
+  if (canDecide && !isReviewable && !hasComments && events.length === 0) {
     const t = await getTranslations('review');
     draftNote = (
       <div className="border-b border-[#EFE8DD] bg-surface-subtle px-[22px] py-[14px] lg:px-[30px]">
@@ -93,6 +95,7 @@ export default async function PlanViewPage({
               authorName={authorName}
               viewerName={viewerName}
               initialComments={comments}
+              initialEvents={events}
             />
           ) : null
         }

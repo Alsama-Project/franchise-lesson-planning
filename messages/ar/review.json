@@ -35,6 +35,15 @@
         "confirm": "إعادة إلى {author}",
         "confirmGeneric": "إعادة إلى المعلّم"
       }
+    },
+    "timeline": {
+      "event": {
+        "submitted": "أُرسلت للمراجعة",
+        "approved": "اعتُمدت",
+        "returned": "أُعيدت للتعديل",
+        "reopened": "أُعيد فتحها كمسودة",
+        "undone": "أُلغي الاعتماد"
+      }
     }
   }
 }

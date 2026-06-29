@@ -23,6 +23,7 @@ import {
 import { saveLessonPlan, submitLessonPlan, unsubmitLessonPlan } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
 import type { PlanComment } from '@/lib/review/comments';
+import type { PlanEvent } from '@/lib/review/timeline';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
@@ -68,12 +69,16 @@ function SaveIndicator({ state }: { state: SaveState }) {
 export function LessonPlanEditor({
   data,
   comments,
+  events,
 }: {
   data: EditorPlanData;
   /** Coordinator→teacher feedback on this plan. Rendered existence-gated on the
    *  Review step regardless of status, so a returned plan shows what to fix. Empty
    *  until the teacher-SELECT comments policy (migration 0025) is applied. */
   comments: PlanComment[];
+  /** Recorded lifecycle events, interleaved with comments in the read-only rail.
+   *  Empty until migration 0027 (`plan_events`) is applied. */
+  events: PlanEvent[];
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
@@ -268,7 +273,7 @@ export function LessonPlanEditor({
   // existence-gated (any comment exists), mirroring the coordinator view's sidebar.
   // Scoped to the Review step so the wider content steps (worksheet builder, etc.)
   // keep their full width.
-  const showCommentsRail = step === STEP_COUNT && comments.length > 0;
+  const showCommentsRail = step === STEP_COUNT && (comments.length > 0 || events.length > 0);
 
   const submitControl = (
     <SubmitControl
@@ -444,7 +449,7 @@ export function LessonPlanEditor({
 
         {showCommentsRail ? (
           <aside className="mt-6 lg:mt-0 lg:w-[360px] lg:flex-shrink-0">
-            <TeacherCommentsSidebar comments={comments} />
+            <TeacherCommentsSidebar comments={comments} events={events} />
           </aside>
         ) : null}
       </div>

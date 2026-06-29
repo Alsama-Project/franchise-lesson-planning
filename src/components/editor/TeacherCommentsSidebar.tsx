@@ -15,14 +15,26 @@ import { useLocale, useTranslations } from 'next-intl';
 import { APP_TIME_ZONE, formatDate, formatNumber } from '@/lib/format';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { PlanComment } from '@/lib/review/comments';
+import { mergeTimeline, type PlanEvent } from '@/lib/review/timeline';
+import { PlanEventRow } from '@/components/review/PlanEventRow';
 
-export function TeacherCommentsSidebar({ comments }: { comments: PlanComment[] }) {
+export function TeacherCommentsSidebar({
+  comments,
+  events,
+}: {
+  comments: PlanComment[];
+  /** Recorded lifecycle events, interleaved with comments. Empty until migration
+   *  0027 (`plan_events`) is applied. */
+  events: PlanEvent[];
+}) {
   const t = useTranslations('wizard.feedback');
   const locale = useLocale();
 
+  const timeline = mergeTimeline(comments, events);
+
   // Existence-gated by the caller, but keep a defensive guard so this never renders
   // an empty shell.
-  if (comments.length === 0) return null;
+  if (timeline.length === 0) return null;
 
   return (
     <section
@@ -40,12 +52,17 @@ export function TeacherCommentsSidebar({ comments }: { comments: PlanComment[] }
         <p className="mt-[6px] text-[12.5px] leading-[1.4] text-text-muted">{t('subtitle')}</p>
       </div>
 
-      {/* Thread — read-only (no composer, no decision footer). */}
+      {/* Thread — read-only chronological stream of comments + lifecycle events
+          (no composer, no decision footer). */}
       <div className="min-h-0 flex-1 overflow-y-auto px-[18px] py-[16px]">
         <ul className="flex flex-col gap-[14px]">
-          {comments.map((c) => (
-            <CommentCard key={c.id} comment={c} chipLabel={t('coordinator')} locale={locale} />
-          ))}
+          {timeline.map((item) =>
+            item.kind === 'comment' ? (
+              <CommentCard key={item.id} comment={item.comment} chipLabel={t('coordinator')} locale={locale} />
+            ) : (
+              <PlanEventRow key={item.id} event={item.event} />
+            ),
+          )}
         </ul>
       </div>
     </section>

@@ -15,7 +15,7 @@
 // The plan body (`ReadOnlyPlan`) is untouched — this is its independent right
 // sibling, mounted via the reserved `rightRail` slot.
 
-import { useRef, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { APP_TIME_ZONE, formatDate, formatNumber } from '@/lib/format';
@@ -23,6 +23,8 @@ import { initialsOf } from '@/components/weekly-overview/avatar';
 import { addPlanComment } from '@/lib/actions/plan-comments';
 import { decidePlan } from '@/lib/actions/lesson-plan';
 import type { PlanComment } from '@/lib/review/comments';
+import { mergeTimeline, type PlanEvent } from '@/lib/review/timeline';
+import { PlanEventRow } from '@/components/review/PlanEventRow';
 import type { PlanStatus } from '@/types/lesson';
 
 export function ReviewCommentsSidebar({
@@ -31,6 +33,7 @@ export function ReviewCommentsSidebar({
   authorName,
   viewerName,
   initialComments,
+  initialEvents,
 }: {
   planId: string;
   status: PlanStatus;
@@ -39,12 +42,19 @@ export function ReviewCommentsSidebar({
   /** The signed-in coordinator's name — labels their own optimistic comments. */
   viewerName: string;
   initialComments: PlanComment[];
+  /** Recorded lifecycle events, merged with comments into the chronological stream.
+   *  Empty until migration 0027 (`plan_events`) is applied. */
+  initialEvents: PlanEvent[];
 }) {
   const t = useTranslations('review');
   const locale = useLocale();
   const router = useRouter();
 
   const [comments, setComments] = useState<PlanComment[]>(initialComments);
+
+  // The timeline interleaves comments (live state, so optimistic inserts appear at
+  // once) with the static lifecycle events, oldest → newest.
+  const timeline = useMemo(() => mergeTimeline(comments, initialEvents), [comments, initialEvents]);
   const [draft, setDraft] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -111,13 +121,22 @@ export function ReviewCommentsSidebar({
         </span>
       </div>
 
-      {/* Thread */}
+      {/* Thread — one chronological stream of comments + lifecycle events. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-[18px] py-[16px]">
-        {hasComments ? (
+        {timeline.length > 0 ? (
           <ul className="flex flex-col gap-[14px]">
-            {comments.map((c) => (
-              <CommentCard key={c.id} comment={c} chipLabel={t('comments.coordinatorChip')} locale={locale} />
-            ))}
+            {timeline.map((item) =>
+              item.kind === 'comment' ? (
+                <CommentCard
+                  key={item.id}
+                  comment={item.comment}
+                  chipLabel={t('comments.coordinatorChip')}
+                  locale={locale}
+                />
+              ) : (
+                <PlanEventRow key={item.id} event={item.event} />
+              ),
+            )}
           </ul>
         ) : (
           <div className="py-[18px] text-center">

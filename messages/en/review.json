@@ -35,6 +35,15 @@
         "confirm": "Return to {author}",
         "confirmGeneric": "Return to teacher"
       }
+    },
+    "timeline": {
+      "event": {
+        "submitted": "Submitted for review",
+        "approved": "Approved",
+        "returned": "Returned for edits",
+        "reopened": "Reopened as draft",
+        "undone": "Approval undone"
+      }
     }
   }
 }

@@ -39,9 +39,6 @@ export function CalendarLessonCard({
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
       <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
-      <div className="mt-[3px] text-[14px] font-semibold">
-        {t('card.year', { n: formatNumber(card.year, locale) })}
-      </div>
       {readOnly && card.owner ? (
         <div dir="auto" className="mt-[2px] truncate text-[11.5px] text-text-muted">
           {t('card.authorPeriod', {

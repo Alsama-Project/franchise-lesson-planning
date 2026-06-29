@@ -38,6 +38,11 @@
       "today": "Today"
     },
     "addLesson": "Add lesson",
+    "add": {
+      "chooseYear": "Choose a year group",
+      "noLesson": "No lesson",
+      "opening": "Opening…"
+    },
     "downloadWeek": "Download week",
     "downloadWeekTitle": "Download every plan for this week as a PDF",
     "card": {
@@ -79,44 +84,6 @@
       "cancel": "Cancel",
       "starting": "Starting…",
       "start": "Start planning"
-    },
-    "modal": {
-      "ariaLabel": "New lesson",
-      "badge": "New lesson",
-      "close": "Close",
-      "tabClass": "Class",
-      "tabLesson": "Lesson",
-      "cancel": "Cancel",
-      "back": "Back",
-      "continue": "Continue",
-      "creating": "Creating…",
-      "create": "Create lesson",
-      "errors": {
-        "pickLesson": "Pick a lesson to plan."
-      },
-      "classStep": {
-        "title": "Which class?",
-        "yearGroup": "Year group",
-        "year": "Year {n}"
-      },
-      "lessonStep": {
-        "title": "Which lesson?",
-        "breadcrumbYear": "Year {n}",
-        "breadcrumbWeek": "Week {n}",
-        "thisSubject": "this subject",
-        "week": "Week {n}",
-        "previousWeek": "Previous week",
-        "nextWeek": "Next week",
-        "emptyWithMonth": "No curriculum lessons synced for <s>{subject}</s>, Year {year}, <m>{month}</m> · Week {week}.",
-        "emptyNoMonth": "No curriculum lessons synced for <s>{subject}</s>, Year {year}."
-      },
-      "periodCard": {
-        "period": "Period {n}",
-        "untitled": "Untitled lesson",
-        "focus": "Focus · ",
-        "selected": "Selected",
-        "select": "Select"
-      }
     }
   }
 }

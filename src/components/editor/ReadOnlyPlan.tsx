@@ -7,7 +7,8 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { PartContent } from '@/components/editor/PartContent';
-import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
+import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES, ROUTINE_BLOCK_TYPES } from '@/lib/blocks';
+import { routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
 import type { Block, TeachingPhase } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
@@ -43,6 +44,13 @@ export function ReadOnlyPlan({
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
   const onTarget = total === IN_SESSION_TARGET_MINUTES;
+
+  // The fixed opening routines (anthem · warm-up · cool down) aren't planned, so
+  // they render as one grouped, non-editable strip at the start of the blocks —
+  // not as individual blocks with empty planning areas. Everything else is a
+  // genuinely plannable block, rendered individually below.
+  const routineBlocks = plan.blocks.filter((b) => ROUTINE_BLOCK_TYPES.has(b.type));
+  const contentBlocks = plan.blocks.filter((b) => !ROUTINE_BLOCK_TYPES.has(b.type));
 
   // "Link it together" selections, resolved to display rows for the cfu / exit blocks.
   const linkIt = normalizeLinkIt(plan.blocks);
@@ -157,7 +165,29 @@ export function ReadOnlyPlan({
             Lesson blocks
           </h2>
           <div className="flex flex-col gap-[10px]">
-            {plan.blocks.map((block, i) => (
+            {routineBlocks.length > 0 ? (
+              <div className="rounded-[11px] border border-given-border bg-given px-[15px] py-[12px]">
+                <div className="flex items-center gap-[8px]">
+                  <span className="rounded-badge bg-surface px-[7px] py-[2px] text-[10px] font-bold uppercase tracking-[0.03em] text-neutral-600">
+                    {PHASE_LABEL.we_do}
+                  </span>
+                  <span className="text-[13px] font-semibold text-ink">Standard routines</span>
+                  <span className="ml-auto text-[12.5px] font-semibold text-text-faint">
+                    {routinesMinutes(plan.blocks)} min
+                  </span>
+                </div>
+                <div className="mt-[7px] flex flex-wrap items-center gap-x-[8px] gap-y-[3px] text-[12.5px] text-neutral-700">
+                  {routineBlocks.map((b, i) => (
+                    <span key={b.type} className="inline-flex items-center gap-[8px]">
+                      {i > 0 ? <span className="text-neutral-300">·</span> : null}
+                      <span className="font-medium text-ink">{b.title}</span>
+                      <span className="text-text-faint">{blockMinutes(b)} min</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {contentBlocks.map((block, i) => (
               <div
                 key={`${block.type}-${i}`}
                 className="rounded-[11px] border border-border bg-surface px-[15px] py-[12px]"

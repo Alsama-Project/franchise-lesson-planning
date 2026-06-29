@@ -38,6 +38,11 @@
       "today": "اليوم"
     },
     "addLesson": "إضافة درس",
+    "add": {
+      "chooseYear": "اختر مجموعة السنة",
+      "noLesson": "لا يوجد درس",
+      "opening": "جارٍ الفتح…"
+    },
     "downloadWeek": "تنزيل الأسبوع",
     "downloadWeekTitle": "تنزيل جميع خطط هذا الأسبوع بصيغة PDF",
     "card": {
@@ -79,44 +84,6 @@
       "cancel": "إلغاء",
       "starting": "جارٍ البدء…",
       "start": "ابدأ التخطيط"
-    },
-    "modal": {
-      "ariaLabel": "درس جديد",
-      "badge": "درس جديد",
-      "close": "إغلاق",
-      "tabClass": "الصف",
-      "tabLesson": "الدرس",
-      "cancel": "إلغاء",
-      "back": "رجوع",
-      "continue": "متابعة",
-      "creating": "جارٍ الإنشاء…",
-      "create": "إنشاء الدرس",
-      "errors": {
-        "pickLesson": "اختر درساً لتخطيطه."
-      },
-      "classStep": {
-        "title": "أي صف؟",
-        "yearGroup": "السنة الدراسية",
-        "year": "السنة {n}"
-      },
-      "lessonStep": {
-        "title": "أي درس؟",
-        "breadcrumbYear": "السنة {n}",
-        "breadcrumbWeek": "الأسبوع {n}",
-        "thisSubject": "هذه المادة",
-        "week": "الأسبوع {n}",
-        "previousWeek": "الأسبوع السابق",
-        "nextWeek": "الأسبوع التالي",
-        "emptyWithMonth": "لا توجد دروس منهاج مُزامَنة لـ <s>{subject}</s>، السنة {year}، <m>{month}</m> · الأسبوع {week}.",
-        "emptyNoMonth": "لا توجد دروس منهاج مُزامَنة لـ <s>{subject}</s>، السنة {year}."
-      },
-      "periodCard": {
-        "period": "الحصة {n}",
-        "untitled": "درس بلا عنوان",
-        "focus": "التركيز · ",
-        "selected": "محدَّد",
-        "select": "تحديد"
-      }
     }
   }
 }

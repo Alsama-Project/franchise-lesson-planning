@@ -235,9 +235,21 @@ export function ReviewStep({
         {parts.map((p) => {
           const open = !!expanded[p.key];
           const editable = !!p.type;
+          // The Standard-routines part has no editable block — it's the fixed
+          // opening strip (anthem · warm-up · cool down), so it doesn't expand or
+          // carry a planning area; its stock description sits inline instead.
+          const isRoutine = !p.type;
           return (
             <div key={p.key} className="border-b border-[#F0EAE1]">
               <div className="grid grid-cols-[1fr_92px_96px] items-center">
+                {isRoutine ? (
+                  <div className="flex flex-col gap-[2px] px-4 py-[11px]">
+                    <span className="text-[13.5px] font-semibold">{p.name}</span>
+                    {p.detail ? (
+                      <span dir="auto" className="text-[12px] text-neutral-500">{p.detail}</span>
+                    ) : null}
+                  </div>
+                ) : (
                 <button
                   type="button"
                   onClick={() => setExpanded((e) => ({ ...e, [p.key]: !e[p.key] }))}
@@ -260,6 +272,7 @@ export function ReviewStep({
                   </svg>
                   <span className="text-[13.5px] font-semibold">{p.name}</span>
                 </button>
+                )}
                 <div className="px-2 py-[11px] text-center">
                   {p.phase ? (
                     <span
@@ -283,7 +296,7 @@ export function ReviewStep({
                   )}
                 </div>
               </div>
-              {open ? (
+              {open && !isRoutine ? (
                 <div className="px-4 pb-[13px] ps-[37px]">
                   <PartContent
                     block={p.block}

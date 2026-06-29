@@ -8,7 +8,8 @@
 // Nothing here is editable. For New content it surfaces the Teach-it writing plus
 // any bank resources; for Independent practice it surfaces the Practise writing
 // plus the student worksheet (rendered inline, collapsed behind a toggle). Genuinely
-// empty parts show a clear "not planned yet" state rather than a bare dash.
+// empty parts render nothing (no placeholder box) so an unplanned block stays
+// compact in both the teacher Review step and the coordinator read-only view.
 
 import type { Block } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
@@ -73,13 +74,10 @@ export function PartContent({
     ? techniques.length > 0 || attachedResources.length > 0
     : hasWriting || attachedResources.length > 0 || hasWorksheet;
 
-  if (!hasAnything) {
-    return (
-      <div className="rounded-[10px] border border-dashed border-border-strong px-3 py-[12px] text-center text-[12px] text-text-faint">
-        Not planned yet.
-      </div>
-    );
-  }
+  // An unplanned part renders nothing — no dashed placeholder box. The block's
+  // header (name · phase · minutes) still shows on each surface, so an empty
+  // block stays compact rather than carrying a large empty area.
+  if (!hasAnything) return null;
 
   return (
     <div className="flex flex-col gap-[10px]">

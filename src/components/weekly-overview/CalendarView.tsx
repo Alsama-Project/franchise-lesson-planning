@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -22,7 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { CalendarLessonCard } from '@/components/weekly-overview/LessonCard';
-import { useScopeChooser, type AddYearOption } from '@/components/weekly-overview/ScopeChooser';
+import { AddLessonMenu, type AddYearChoice } from '@/components/weekly-overview/AddLessonMenu';
 import type { PlanCard } from '@/components/weekly-overview/cards';
 import { WEEKDAYS, addDays, todayISO } from '@/lib/week';
 import { formatDate, formatNumber } from '@/lib/format';
@@ -63,7 +63,6 @@ export function CalendarView({
   readOnly?: boolean;
 }) {
   const t = useTranslations('board');
-  const { openAdd } = useScopeChooser();
   const [byDay, setByDay] = useState<ByDay>(() => buildByDay(years));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,24 +83,19 @@ export function CalendarView({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  // The curriculum lessons already placed somewhere this week, per year — the pool
-  // the "+ Add lesson" picker excludes.
-  const placedByYear = useMemo(() => {
-    const m = new Map<number, Set<string>>();
-    for (const band of years) m.set(band.year, new Set(band.plans.map((p) => p.lessonKey)));
-    return m;
-  }, [years]);
-
-  /** Build the "+ Add lesson" year options for a column (unplaced lessons + next ordinal). */
-  const addOptionsFor = (weekday: number): AddYearOption[] =>
-    years.map((band) => {
-      const placed = placedByYear.get(band.year) ?? new Set<string>();
-      return {
-        year: band.year,
-        period: byDay[weekday].filter((p) => p.year === band.year).length + 1,
-        lessons: band.lessons.filter((l) => !placed.has(l.lessonKey)),
-      };
-    });
+  /**
+   * The lightweight year-group dropdown's choices for a column. The column IS a
+   * curriculum period (Mon = Period 1 … Fri = Period 5), so each year resolves to
+   * the single curriculum lesson for (year, this period) in the current month/week.
+   * A year with no such lesson is offered disabled (graceful empty state). The
+   * day-ordinal is the next slot in that year's stack on this column.
+   */
+  const addChoicesFor = (weekday: number): AddYearChoice[] =>
+    years.map((band) => ({
+      year: band.year,
+      lessonKey: band.lessons.find((l) => l.period === weekday)?.lessonKey ?? null,
+      period: byDay[weekday].filter((p) => p.year === band.year).length + 1,
+    }));
 
   const activePlan = activeId
     ? [byDay[1], byDay[2], byDay[3], byDay[4], byDay[5]].flat().find((p) => p.id === activeId) ?? null
@@ -204,7 +198,7 @@ export function CalendarView({
                 subjectName={subjectName}
                 dragEnabled={dragEnabled}
                 readOnly={readOnly}
-                onAddLesson={() => openAdd({ weekday, years: addOptionsFor(weekday) })}
+                addChoices={addChoicesFor(weekday)}
               />
             ))}
           </div>
@@ -296,7 +290,7 @@ function DayColumn({
   subjectName,
   dragEnabled,
   readOnly,
-  onAddLesson,
+  addChoices,
 }: {
   weekday: number;
   mondayDate: string | null;
@@ -305,7 +299,8 @@ function DayColumn({
   subjectName: string;
   dragEnabled: boolean;
   readOnly: boolean;
-  onAddLesson: () => void;
+  /** Resolved year-group choices for this column's "+ Add lesson" dropdown. */
+  addChoices: AddYearChoice[];
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
@@ -372,16 +367,7 @@ function DayColumn({
 
         {/* Coordinators review existing plans; they don't author, so no add affordance. */}
         {readOnly ? null : (
-          <button
-            type="button"
-            onClick={onAddLesson}
-            className="inline-flex items-center justify-center gap-[5px] rounded-[10px] border border-dashed border-border-strong px-[12px] py-[10px] text-[11.5px] font-semibold text-text-muted transition-colors hover:border-teal hover:text-teal"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            {t('addLesson')}
-          </button>
+          <AddLessonMenu weekday={weekday} choices={addChoices} />
         )}
       </div>
     </div>

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { PSEUDO_RTL_COOKIE } from '@/i18n/config';
-import { Wordmark } from '@/components/ui/Wordmark';
+import { Logo } from '@/components/ui/Logo';
 import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
 import { NotificationBell } from '@/components/app-shell/NotificationBell';
@@ -65,7 +65,7 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
           aria-label={t('brandAria')}
           className="flex items-center gap-[11px] rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
         >
-          <Wordmark size="sm" tone="brand" className="leading-[0.7]" />
+          <Logo size="sm" tone="dark" />
           <span className="h-[22px] w-px bg-neutral-200" />
           <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-neutral-600">
             {t('lockup')}

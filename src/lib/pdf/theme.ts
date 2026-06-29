@@ -71,13 +71,25 @@ export const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: COLORS.pink,
   },
-  brand: {
+  // Brand line: the Alsama logo (raster, since react-pdf can't render our SVG)
+  // followed by the document descriptor. The logo keeps its aspect ratio
+  // (cropped source ≈ 2.74:1, so 16h × 44w).
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  brandLogo: {
+    height: 16,
+    width: 44,
+    marginRight: 7,
+  },
+  brandLabel: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 9,
     letterSpacing: 1.5,
     color: COLORS.pink,
     textTransform: 'uppercase',
-    marginBottom: 4,
   },
   classTitle: {
     fontFamily: 'Helvetica-Bold',

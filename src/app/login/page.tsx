@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { MicrosoftSignInButton } from "@/components/auth/MicrosoftSignInButton";
-import { Wordmark } from "@/components/ui/Wordmark";
+import { Logo } from "@/components/ui/Logo";
 
 export const metadata: Metadata = {
   title: "Sign in · Alsama Lesson Planner",
@@ -19,7 +19,7 @@ export default function LoginPage() {
         <div className="grid overflow-hidden rounded-lg border border-border shadow-card md:h-[620px] md:grid-cols-[1.15fr_1fr]">
           {/* Brand / welcome panel */}
           <div className="stripe relative flex flex-col justify-between gap-12 bg-pink p-12 sm:p-[52px]">
-            <Wordmark size="lg" tone="cream" />
+            <Logo size="lg" tone="light" />
             <div>
               <div className="mb-[14px] text-xs font-semibold uppercase tracking-[0.16em] text-cream/70">
                 Lesson Planning

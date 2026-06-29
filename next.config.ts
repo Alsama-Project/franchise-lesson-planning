@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   // into the deployed bundle so the filesystem read also works in production.
   outputFileTracingIncludes: {
     "/**": ["./messages/**/*.json"],
+    // The PDF routes read the raster logo from disk at render time (react-pdf
+    // can't render our SVG), so trace it into the serverless function bundle.
+    "/api/pdf/**": ["./public/brand/alsama-logo.png"],
   },
 };
 

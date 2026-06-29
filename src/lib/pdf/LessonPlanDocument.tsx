@@ -11,11 +11,36 @@
 //   • LessonPlanDocument       — a single plan (one page).
 //   • WeekLessonPlansDocument  — many plans, one per page, for batch printing.
 
-import { Document, Page, Text, View } from '@react-pdf/renderer';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { Document, Image, Page, Text, View } from '@react-pdf/renderer';
 import { inSessionMinutes } from '@/lib/blocks';
 import { formatLongDate } from '@/lib/week';
 import { COLORS, phaseLabel, statusLabel, styles } from './theme';
 import type { PdfAttachment, PlanPdfModel } from './types';
+
+// react-pdf cannot render our SVG wordmark, so the brand mark uses the raster
+// PNG. Read it once from the bundled public asset (traced via next.config) and
+// reuse the bytes across every page. Node runtime only — these routes set it.
+let brandLogoData: Buffer | undefined;
+function brandLogoSrc(): { data: Buffer; format: 'png' } {
+  brandLogoData ??= readFileSync(
+    path.join(process.cwd(), 'public', 'brand', 'alsama-logo.png'),
+  );
+  return { data: brandLogoData, format: 'png' };
+}
+
+/** Logo + document descriptor, replacing the former "Alsama · …" text line. */
+function BrandLine({ label }: { label: string }) {
+  return (
+    <View style={styles.brandRow}>
+      {/* react-pdf's <Image> is a PDF primitive, not an HTML <img> — no alt prop. */}
+      {/* eslint-disable-next-line jsx-a11y/alt-text */}
+      <Image src={brandLogoSrc()} style={styles.brandLogo} />
+      <Text style={styles.brandLabel}>{label}</Text>
+    </View>
+  );
+}
 
 function classHeadline(c: PlanPdfModel['classContext']): string {
   return `Year ${c.year}`;
@@ -27,7 +52,7 @@ function Header({ model }: { model: PlanPdfModel }) {
 
   return (
     <View style={styles.header}>
-      <Text style={styles.brand}>Alsama · Lesson Plan</Text>
+      <BrandLine label="Lesson Plan" />
       <Text style={styles.classTitle}>{classHeadline(c)}</Text>
       <View style={styles.metaRow}>
         {plan.lesson_date ? (
@@ -294,7 +319,7 @@ export function WeekLessonPlansDocument({
       <Document title={title} author="Alsama" subject="Lesson plans">
         <Page size="A4" style={styles.page}>
           <View style={styles.header}>
-            <Text style={styles.brand}>Alsama · Lesson Plans</Text>
+            <BrandLine label="Lesson Plans" />
             {subjectLabel ? <Text style={styles.classTitle}>{subjectLabel}</Text> : null}
             <Text style={[styles.metaItem, { marginTop: 2 }]}>{weekLabel}</Text>
           </View>

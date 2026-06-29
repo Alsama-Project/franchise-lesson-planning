@@ -1,4 +1,4 @@
-import { Wordmark } from '@/components/ui/Wordmark';
+import { Logo } from '@/components/ui/Logo';
 import { getOnboardingData } from '@/lib/onboarding';
 import { OnboardingForm } from '@/components/onboarding/OnboardingForm';
 
@@ -29,7 +29,7 @@ function OnboardingHeader() {
   return (
     <header className="flex h-[58px] items-center gap-[18px] border-b border-border bg-surface px-5">
       <div className="flex items-center gap-[9px]">
-        <Wordmark size="sm" tone="brand" className="leading-[0.7]" />
+        <Logo size="sm" tone="dark" />
         <span className="h-[19px] w-px bg-[#E2D9CC]" />
         <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-neutral-600">
           Lesson Planning

@@ -36,6 +36,8 @@ import { PractiseStep } from '@/components/editor/PractiseStep';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
+import { TeacherCommentsSidebar } from '@/components/editor/TeacherCommentsSidebar';
+import { cn } from '@/lib/cn';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -262,6 +264,12 @@ export function LessonPlanEditor({
     }
   }
 
+  // Coordinator feedback shows as a sticky read-only right rail on the Review step,
+  // existence-gated (any comment exists), mirroring the coordinator view's sidebar.
+  // Scoped to the Review step so the wider content steps (worksheet builder, etc.)
+  // keep their full width.
+  const showCommentsRail = step === STEP_COUNT && comments.length > 0;
+
   const submitControl = (
     <SubmitControl
       status={status}
@@ -337,7 +345,8 @@ export function LessonPlanEditor({
         submitSlot={submitControl}
       />
 
-      <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
+      <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px] lg:flex lg:items-start lg:gap-6">
+       <div className={cn('min-w-0', showCommentsRail && 'lg:flex-1 lg:max-w-[940px]')}>
         {/* While locked, the four content steps show a light "view only" banner
             routing to the Review step, where the unlock control lives. The Review
             step (5) carries the unlock control itself, so it gets no banner. */}
@@ -423,7 +432,6 @@ export function LessonPlanEditor({
             onMaterialsChange={setMaterials}
             onBlockMinutes={setBlockMinutes}
             locked={locked}
-            comments={comments}
           />
         ) : null}
 
@@ -431,6 +439,13 @@ export function LessonPlanEditor({
           <div className="mt-4 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-3 text-[13px] text-pink">
             {submitError}
           </div>
+        ) : null}
+       </div>
+
+        {showCommentsRail ? (
+          <aside className="mt-6 lg:mt-0 lg:w-[360px] lg:flex-shrink-0">
+            <TeacherCommentsSidebar comments={comments} />
+          </aside>
         ) : null}
       </div>
     </div>

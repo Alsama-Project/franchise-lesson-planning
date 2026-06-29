@@ -100,9 +100,12 @@ function Detail({ label, value }: { label: string; value: string }) {
 function BlockRow({
   block,
   linkIt,
+  previousDailyLO = '',
 }: {
   block: PlanPdfModel['plan']['blocks'][number];
   linkIt?: PlanPdfModel['linkIt'];
+  /** Previous lesson's daily outcome — rendered as a cream panel above the recap. */
+  previousDailyLO?: string;
 }) {
   const phase = phaseLabel(block.phase);
 
@@ -137,7 +140,15 @@ function BlockRow({
           </Text>
         ))
       ) : block.type === 'recap' ? (
-        recapText !== '' ? <Text style={styles.detailValue}>{recapText}</Text> : null
+        <>
+          {previousDailyLO.trim() !== '' ? (
+            <View style={styles.recapPrevPanel}>
+              <Text style={styles.recapPrevLabel}>Yesterday&apos;s learning outcome</Text>
+              <Text style={styles.recapPrevValue}>{previousDailyLO.trim()}</Text>
+            </View>
+          ) : null}
+          {recapText !== '' ? <Text style={styles.detailValue}>{recapText}</Text> : null}
+        </>
       ) : (
         <>
           {block.activity_title.trim() !== '' ? (
@@ -199,7 +210,12 @@ function LessonPlanPage({
       <View style={styles.section}>
         <Text style={styles.blocksHeading}>Lesson Blocks</Text>
         {model.plan.blocks.map((block, i) => (
-          <BlockRow key={`${block.type}-${i}`} block={block} linkIt={model.linkIt} />
+          <BlockRow
+            key={`${block.type}-${i}`}
+            block={block}
+            linkIt={model.linkIt}
+            previousDailyLO={model.curriculum?.previousDailyLO ?? ''}
+          />
         ))}
         <View style={styles.totalRow}>
           <Text style={styles.totalText}>In-session total: {total} min</Text>

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 import {
   SMARTT_LETTERS,
+  smarttDimensionLabel,
   type ObjectiveCheckResult,
 } from '@/lib/editor/objective-check';
 import { Spinner } from '@/components/ui/Spinner';
@@ -150,24 +151,13 @@ export function ObjectiveStep({
                 (focused ? 'border-pink ring-2 ring-pink/30' : 'border-mine-field'))
           }
         >
-          <button
-            type="button"
-            onClick={onCheck}
-            disabled={checkDisabled}
-            aria-label={t('askAriaLabel')}
-            aria-busy={checking || undefined}
-            title={t('askTitle')}
-            className="absolute end-[11px] top-[11px] inline-flex size-[30px] items-center justify-center rounded-full bg-teal text-white shadow-[0_1px_3px_rgba(31,122,108,0.35)] hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {checking ? <Spinner size={15} /> : <SparkIcon size={15} />}
-          </button>
           {/* Stem + remainder render as ONE wrapping paragraph: the teacher's
               text continues inline after the fixed stem rather than dropping to a
               second line. The remainder is a flowing contentEditable span (a
               replaced <textarea> cannot wrap inline with preceding text). The stem
               stays muted (text-stem) so it reads as a fixed label; the teacher's
               text renders in body ink (text-ink), clearly distinct from the stem. */}
-          <p className="pe-[34px] text-[16px] leading-[1.55]">
+          <p className="text-[16px] leading-[1.55]">
             <span className="text-stem">{OBJECTIVE_STEM} </span>
             <span
               ref={editableRef}
@@ -198,59 +188,58 @@ export function ObjectiveStep({
             {checking ? t('checking') : t('check')}
           </button>
         </div>
+
+        {/* Feedback lives INSIDE the pink (teacher-editable) box, beneath "Check
+            my objective": a "+ Feedback" disclosure that surfaces only once a check
+            has returned a result, closed by default. Each bullet opens with the
+            SMARTT dimension it addresses in bold. */}
+        {checkResult ? (
+          <div className="mt-[14px] border-t border-mine-field pt-[14px]">
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen((open) => !open)}
+              aria-expanded={feedbackOpen}
+              className="inline-flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]"
+            >
+              <span
+                aria-hidden
+                className="inline-flex size-[16px] items-center justify-center rounded-full border border-[#CFE6E0] text-[13px] leading-none"
+              >
+                {feedbackOpen ? '−' : '+'}
+              </span>
+              {t('feedback')}
+            </button>
+
+            {feedbackOpen ? (
+              <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
+                {checkResult.suggestions.length > 0 ? (
+                  <ul dir="auto" className="flex flex-col gap-[7px] text-[13px] leading-[1.55] text-neutral-900">
+                    {checkResult.suggestions.map((s, i) => (
+                      <li key={i}>
+                        <span className="font-bold text-ink">{smarttDimensionLabel(s.dimension)}</span>
+                        {' — '}
+                        {s.note}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
+                    {t('suggestedRewrite')}
+                  </div>
+                  <div dir="auto" className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
+                    {checkResult.improved_objective}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {checkError ? (
         <div className="mt-3 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-3 text-[13px] text-pink">
           {checkError}
-        </div>
-      ) : null}
-
-      {/* Feedback collapses behind a "+ FEEDBACK" disclosure — it surfaces only
-          once a check has returned a result, closed by default. The revealed
-          content is the unchanged ObjectiveCheckResult render. */}
-      {checkResult ? (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setFeedbackOpen((open) => !open)}
-            aria-expanded={feedbackOpen}
-            className="inline-flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]"
-          >
-            <span
-              aria-hidden
-              className="inline-flex size-[16px] items-center justify-center rounded-full border border-[#CFE6E0] text-[13px] leading-none"
-            >
-              {feedbackOpen ? '−' : '+'}
-            </span>
-            {t('feedback')}
-          </button>
-
-          {feedbackOpen ? (
-            <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
-              <div className="mb-[9px] flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#186155]">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="#1F7A6C">
-                  <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" />
-                </svg>
-                {t('feedbackHeading')}
-              </div>
-              {checkResult.suggestions.length > 0 ? (
-                <ul dir="auto" className="ms-[18px] list-disc text-[13px] leading-[1.55] text-neutral-900">
-                  {checkResult.suggestions.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
-                  {t('suggestedRewrite')}
-                </div>
-                <div dir="auto" className="mt-1 text-[13.5px] leading-[1.5] text-neutral-900">
-                  {checkResult.improved_objective}
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>

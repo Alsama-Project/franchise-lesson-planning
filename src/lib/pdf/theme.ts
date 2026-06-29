@@ -187,6 +187,28 @@ export const styles = StyleSheet.create({
     color: COLORS.muted,
     marginBottom: 3,
   },
+
+  // ---- Recap: "Yesterday's learning outcome" cream panel ------------------
+  // Mirrors the editor's Link-it Recap panel (cream = curriculum/locked). The
+  // outcome text is deliberately NOT bold (parity with the de-bolded editor panel).
+  recapPrevPanel: {
+    backgroundColor: COLORS.cream,
+    borderRadius: 4,
+    padding: 8,
+    marginBottom: 5,
+  },
+  recapPrevLabel: {
+    fontSize: 7.5,
+    fontFamily: 'Helvetica-Bold',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  recapPrevValue: {
+    fontSize: 9.5,
+    color: COLORS.ink,
+  },
   detailRow: {
     flexDirection: 'row',
     marginTop: 2,

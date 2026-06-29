@@ -511,10 +511,10 @@ function WeekTable({
                 remaining width; the other columns are squeezed to tight fixed widths
                 so the LO column is clearly the widest. */}
             <Th className="w-[56px]">{t('table.day')}</Th>
-            <Th className="w-auto">{t('table.learningOutcome')}</Th>
-            <Th className="w-[76px]">{t('table.skill')}</Th>
-            <Th className="w-[96px]">{t('table.topic')}</Th>
-            <Th className="w-[104px]">{t('table.resources')}</Th>
+            <Th className="w-auto border-s border-border">{t('table.learningOutcome')}</Th>
+            <Th className="w-[76px] border-s border-border">{t('table.skill')}</Th>
+            <Th className="w-[96px] border-s border-border">{t('table.topic')}</Th>
+            <Th className="w-[104px] border-s border-border">{t('table.resources')}</Th>
           </tr>
         </thead>
         <tbody>
@@ -545,14 +545,14 @@ function WeekTable({
                 >
                   {t(`daysShort.${row.weekday}`)}
                 </td>
-                <td className={cn('px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
+                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
                   {row.dailyOutcome ? (
                     <DailyOutcome text={row.dailyOutcome} />
                   ) : (
                     <span>{t('empty')}</span>
                   )}
                 </td>
-                <td className={cn('px-[16px] py-[14px] align-top text-[13px] font-medium', tint)}>
+                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] font-medium', tint)}>
                   {row.linguisticSkill ? (
                     <span dir="auto" className={SKILL_TEXT[row.skillKey]}>
                       {row.linguisticSkill}
@@ -562,21 +562,24 @@ function WeekTable({
                   )}
                 </td>
                 {topic ? (
+                  // The merged Topic cell spans its same-Theme run. Vertical dividers
+                  // (border-s here + border-s on Resources) frame its full height and
+                  // the row separators close its top/bottom, so the merge reads as an
+                  // intentional merged cell rather than empty white space. Topic text
+                  // stays de-emphasised (same weight/colour as other cells — no teal,
+                  // no highlight); only borders carry the structure.
                   <td
                     rowSpan={topic.rowSpan}
-                    className="px-[16px] py-[14px] align-top"
+                    className="border-s border-border px-[16px] py-[14px] align-top"
                   >
                     {topic.theme ? (
-                      // Topic is curriculum content, not a tool/action — render it at
-                      // the same weight/colour as the other content cells (no teal,
-                      // no highlighted column background).
                       <span dir="auto" className="text-[13px] text-neutral-700">
                         {topic.theme}
                       </span>
                     ) : null}
                   </td>
                 ) : null}
-                <td className={cn('px-[16px] py-[14px] align-top text-[13px] text-neutral-700', tint)}>
+                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] text-neutral-700', tint)}>
                   {row.resources.length > 0 ? (
                     <span dir="auto">{row.resources.map((r) => r.label).join(' · ')}</span>
                   ) : (

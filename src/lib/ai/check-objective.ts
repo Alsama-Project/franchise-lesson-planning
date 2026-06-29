@@ -56,6 +56,36 @@ export interface SmarttLetterAssessment {
   note: string;
 }
 
+/** The six canonical SMARTT dimension keys, the values a suggestion may be tagged with. */
+export type SmarttDimensionKey =
+  | 'specific'
+  | 'measurable'
+  | 'achievable'
+  | 'relevant'
+  | 'time_bound'
+  | 'tangible';
+
+const SMARTT_DIMENSION_KEYS: readonly SmarttDimensionKey[] = [
+  'specific',
+  'measurable',
+  'achievable',
+  'relevant',
+  'time_bound',
+  'tangible',
+];
+
+/**
+ * One overall suggestion to tighten the objective, tagged with the single SMARTT
+ * dimension it addresses so the editor can lead each feedback bullet with that
+ * dimension in bold.
+ */
+export interface SmarttSuggestion {
+  /** Which SMARTT dimension this note relates to. */
+  dimension: SmarttDimensionKey;
+  /** The teacher-facing suggestion text. */
+  note: string;
+}
+
 /**
  * Structured result of checking an objective. The six SMARTT letters each get a
  * status + note; ALSAMA's final "T" is **Tangible** — relatable to students'
@@ -74,8 +104,8 @@ export interface ObjectiveCheckResult {
   time_bound: SmarttLetterAssessment;
   /** T — Tangible: relatable to students' real lives. */
   tangible: SmarttLetterAssessment;
-  /** One or two overall suggestions to tighten the objective. */
-  suggestions: string[];
+  /** One or two overall suggestions, each tagged with the SMARTT dimension it addresses. */
+  suggestions: SmarttSuggestion[];
   /** A rewrite that keeps the fixed {@link OBJECTIVE_STEM}. */
   improved_objective: string;
 }
@@ -114,7 +144,21 @@ const RESPONSE_SCHEMA = {
     relevant: LETTER_SCHEMA,
     time_bound: LETTER_SCHEMA,
     tangible: LETTER_SCHEMA,
-    suggestions: { type: 'array', items: { type: 'string' } },
+    suggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          dimension: {
+            type: 'string',
+            enum: ['specific', 'measurable', 'achievable', 'relevant', 'time_bound', 'tangible'],
+          },
+          note: { type: 'string' },
+        },
+        required: ['dimension', 'note'],
+      },
+    },
     improved_objective: { type: 'string' },
   },
   required: [
@@ -150,7 +194,7 @@ const SMARTT_FLOOR = `SMARTT is the fixed anchor — judge the objective against
 
 The objective — and your suggested rewrite — must use the exact stem "${OBJECTIVE_STEM}" followed by an observable, student-facing action.
 
-Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; then one or two overall suggestions to tighten the objective; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
+Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; then one or two overall suggestions to tighten the objective — each suggestion is an object with a "note" (the one-line advice) and a "dimension" naming the single SMARTT dimension it addresses, exactly one of "specific", "measurable", "achievable", "relevant", "time_bound", "tangible"; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
 
 /**
  * Language directive appended ONLY when the teacher's UI locale is Arabic.
@@ -162,8 +206,8 @@ Return ONLY a JSON object: for each of the six letters a status ("strong" or "ne
  * JSON contract: the keys, the structure, and the status enum values stay
  * exactly as the FLOOR specifies, and the rewrite keeps the fixed English stem.
  */
-const ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" and every entry in "suggestions" — in Modern Standard Arabic (الفصحى).
-Do NOT translate or alter the JSON contract: keep all JSON keys in English, and keep each "status" value as the exact English literal "strong" or "needs work". The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
+const ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" (the per-letter notes and each suggestion's "note") — in Modern Standard Arabic (الفصحى).
+Do NOT translate or alter the JSON contract: keep all JSON keys in English, keep each "status" value as the exact English literal "strong" or "needs work", and keep each suggestion's "dimension" value as the exact English literal key ("specific", "measurable", "achievable", "relevant", "time_bound" or "tangible"). The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
 
 /**
  * Compose the system prompt: hardcoded role framing → the active (or default)
@@ -241,13 +285,23 @@ function isLetter(value: unknown): value is SmarttLetterAssessment {
   return (v.status === 'strong' || v.status === 'needs work') && typeof v.note === 'string';
 }
 
+/** Narrow an unknown value to a {@link SmarttSuggestion} (dimension-tagged note). */
+function isSuggestion(value: unknown): value is SmarttSuggestion {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.note === 'string' &&
+    SMARTT_DIMENSION_KEYS.includes(v.dimension as SmarttDimensionKey)
+  );
+}
+
 /** Runtime guard mirroring {@link ObjectiveCheckResult}. */
 function isObjectiveCheckResult(value: unknown): value is ObjectiveCheckResult {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   const letters = ['specific', 'measurable', 'achievable', 'relevant', 'time_bound', 'tangible'];
   if (!letters.every((key) => isLetter(v[key]))) return false;
-  if (!Array.isArray(v.suggestions) || !v.suggestions.every((s) => typeof s === 'string')) return false;
+  if (!Array.isArray(v.suggestions) || !v.suggestions.every(isSuggestion)) return false;
   if (typeof v.improved_objective !== 'string') return false;
   return true;
 }

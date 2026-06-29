@@ -11,9 +11,7 @@ import { normalizeLinkIt, resolveTechniques } from '@/lib/editor/link-it';
 import { phaseLabel } from '@/lib/editor/phase';
 import { TimeStepper } from '@/components/editor/TimeStepper';
 import { PartContent } from '@/components/editor/PartContent';
-import { TeacherCommentsPanel } from '@/components/editor/TeacherCommentsPanel';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
-import type { PlanComment } from '@/lib/review/comments';
 
 const PHASE_TAG: Record<TeachingPhase, string> = {
   i_do: 'text-[#1F7A6C] bg-[#E4F0ED]',
@@ -54,7 +52,6 @@ export function ReviewStep({
   onMaterialsChange,
   onBlockMinutes,
   locked = false,
-  comments = [],
 }: {
   planId: string;
   status: PlanStatus;
@@ -75,8 +72,6 @@ export function ReviewStep({
    *  steppers become read-only (the row expanders stay live so the plan can still
    *  be reviewed). The Submit/Unlock control lives in the wizard header, not here. */
   locked?: boolean;
-  /** Coordinator→teacher feedback, rendered existence-gated above the table. */
-  comments?: PlanComment[];
 }) {
   const t = useTranslations('wizard');
   const locale = useLocale();
@@ -169,9 +164,6 @@ export function ReviewStep({
           </div>
         </div>
       </div>
-
-      {/* Coordinator feedback (existence-gated; renders nothing when empty). */}
-      <TeacherCommentsPanel comments={comments} />
 
       {/* Required materials */}
       <div className="mt-4 rounded-[13px] border border-border px-4 py-[15px]">

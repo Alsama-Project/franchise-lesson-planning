@@ -23,6 +23,13 @@ export interface PdfCurriculumContext {
   /** Focus area = the curriculum's linguistic skill (e.g. "Reading"). */
   focusArea: string;
   theme: string;
+  /**
+   * The previous lesson's daily outcome (the curriculum slot immediately before
+   * this plan's). Rendered as a cream "Yesterday's learning outcome" panel above
+   * the Recap block, mirroring the editor's Link-it Recap panel. Empty when this
+   * is the first lesson of its year.
+   */
+  previousDailyLO: string;
 }
 
 /**

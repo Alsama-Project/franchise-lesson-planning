@@ -14,6 +14,26 @@ export interface SmarttLetterAssessment {
   note: string;
 }
 
+/** The six canonical SMARTT dimension keys (the result's per-letter fields). */
+export type SmarttDimensionKey =
+  | 'specific'
+  | 'measurable'
+  | 'achievable'
+  | 'relevant'
+  | 'time_bound'
+  | 'tangible';
+
+/**
+ * One overall suggestion, tagged with the single SMARTT dimension it addresses so
+ * the editor can open each feedback bullet with that dimension in bold (item 4).
+ */
+export interface SmarttSuggestion {
+  /** Which SMARTT dimension this note relates to. */
+  dimension: SmarttDimensionKey;
+  /** The teacher-facing suggestion text. */
+  note: string;
+}
+
 /** Structured result of checking an objective (mirrors the API response). */
 export interface ObjectiveCheckResult {
   specific: SmarttLetterAssessment;
@@ -22,12 +42,12 @@ export interface ObjectiveCheckResult {
   relevant: SmarttLetterAssessment;
   time_bound: SmarttLetterAssessment;
   tangible: SmarttLetterAssessment;
-  suggestions: string[];
+  suggestions: SmarttSuggestion[];
   improved_objective: string;
 }
 
 /** The six SMARTT letters, in display order, keyed to the result shape. */
-export const SMARTT_LETTERS: { key: keyof ObjectiveCheckResult; label: string }[] = [
+export const SMARTT_LETTERS: { key: SmarttDimensionKey; label: string }[] = [
   { key: 'specific', label: 'Specific' },
   { key: 'measurable', label: 'Measurable' },
   { key: 'achievable', label: 'Achievable' },
@@ -35,6 +55,23 @@ export const SMARTT_LETTERS: { key: keyof ObjectiveCheckResult; label: string }[
   { key: 'time_bound', label: 'Time-bound' },
   { key: 'tangible', label: 'Tangible' },
 ];
+
+/** Display label for a SMARTT dimension key (e.g. `time_bound` → "Time-bound"). */
+export function smarttDimensionLabel(key: SmarttDimensionKey): string {
+  return SMARTT_LETTERS.find((l) => l.key === key)?.label ?? key;
+}
+
+/** The valid SMARTT dimension keys, for runtime validation. */
+const SMARTT_DIMENSION_KEYS: readonly SmarttDimensionKey[] = SMARTT_LETTERS.map((l) => l.key);
+
+function isSuggestion(value: unknown): value is SmarttSuggestion {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.note === 'string' &&
+    SMARTT_DIMENSION_KEYS.includes(v.dimension as SmarttDimensionKey)
+  );
+}
 
 /** Surrounding lesson context that sharpens the check. */
 export interface ObjectiveCheckRequestContext {
@@ -63,7 +100,7 @@ export function isObjectiveCheckResult(value: unknown): value is ObjectiveCheckR
     'tangible',
   ];
   if (!letters.every((key) => isLetter(v[key]))) return false;
-  if (!Array.isArray(v.suggestions) || !v.suggestions.every((s) => typeof s === 'string')) {
+  if (!Array.isArray(v.suggestions) || !v.suggestions.every(isSuggestion)) {
     return false;
   }
   return typeof v.improved_objective === 'string';

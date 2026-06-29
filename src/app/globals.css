@@ -181,6 +181,21 @@ html:lang(ar) body {
 }
 
 /*
+ * Activity pane thread scrollbar (from the "Activity Pane" design export). A slim
+ * pale-teal thumb on the internally-scrolling timeline; the 2px border matches the
+ * pane's #F3F7F5 surface so the thumb reads as inset. WebKit only — other engines
+ * fall back to their native scrollbar, which is acceptable.
+ */
+.activity-thread::-webkit-scrollbar {
+  width: 9px;
+}
+.activity-thread::-webkit-scrollbar-thumb {
+  background: #cfe0da;
+  border-radius: 99px;
+  border: 2px solid #f3f7f5;
+}
+
+/*
  * Diagonal stripe wash used on the login brand panel (from the Login design).
  * It's a painted texture, not a token, so it lives here as a utility.
  */

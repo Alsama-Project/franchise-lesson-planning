@@ -37,7 +37,7 @@ import { PractiseStep } from '@/components/editor/PractiseStep';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
-import { TeacherCommentsSidebar } from '@/components/editor/TeacherCommentsSidebar';
+import { ActivityPane } from '@/components/review/ActivityPane';
 import { cn } from '@/lib/cn';
 
 const AUTOSAVE_DELAY_MS = 1500;
@@ -458,7 +458,7 @@ export function LessonPlanEditor({
           // in AppShell (underscores → literal spaces so Tailwind v4 doesn't mis-parse
           // the `+` inside calc()). Mirrors the coordinator review rail in ReadOnlyPlan.
           <aside className="mt-6 lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)] lg:mt-0 lg:w-[360px] lg:flex-shrink-0 lg:self-start">
-            <TeacherCommentsSidebar comments={comments} events={events} />
+            <ActivityPane mode="teacher" teacherId={plan.created_by} comments={comments} events={events} />
           </aside>
         ) : null}
       </div>

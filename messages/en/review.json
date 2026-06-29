@@ -44,6 +44,35 @@
         "reopened": "Reopened as draft",
         "undone": "Approval undone"
       }
+    },
+    "activity": {
+      "title": "Activity",
+      "count": "{count, plural, =0 {No comments} one {# comment} other {# comments}}",
+      "composer": {
+        "placeholder": "Add a comment…",
+        "send": "Send"
+      },
+      "hint": "Comments are shared with the teacher when you return the plan.",
+      "actions": {
+        "return": "Return",
+        "approve": "Approve plan",
+        "undo": "Undo approval",
+        "reopen": "Reopen as draft",
+        "working": "Working…",
+        "returnHint": "Add at least one comment before returning the plan."
+      },
+      "role": {
+        "coordinator": "Coordinator",
+        "teacher": "Teacher"
+      },
+      "event": {
+        "submitted": "Submitted for review",
+        "resubmitted": "Resubmitted",
+        "returned": "Returned for changes",
+        "approved": "Approved",
+        "reopened": "Reopened as draft",
+        "undone": "Approval undone"
+      }
     }
   }
 }

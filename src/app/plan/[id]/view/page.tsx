@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
-import { ReviewCommentsSidebar } from '@/components/review/ReviewCommentsSidebar';
+import { ActivityPane } from '@/components/review/ActivityPane';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { getPlanComments, getPlanEvents } from '@/lib/review/comments';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
@@ -89,13 +89,15 @@ export default async function PlanViewPage({
         decisionBar={draftNote}
         rightRail={
           showSidebar ? (
-            <ReviewCommentsSidebar
+            <ActivityPane
+              mode="coordinator"
               planId={id}
               status={status}
+              teacherId={data.plan.created_by}
               authorName={authorName}
               viewerName={viewerName}
-              initialComments={comments}
-              initialEvents={events}
+              comments={comments}
+              events={events}
             />
           ) : null
         }

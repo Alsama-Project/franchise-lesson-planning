@@ -92,6 +92,18 @@ export interface BoardCoordinate {
   week: number;
 }
 
+/**
+ * One entry in the month → week picker: a curriculum coordinate plus its flat
+ * teaching-week number. `weekNo` is the SAME 1-based number the board shows
+ * (`weekNo = index + 1` in the ordered scheme of work), so the picker and the
+ * prev/next arrows share one numbering — no remapping.
+ */
+export interface BoardWeekOption {
+  month: string;
+  week: number;
+  weekNo: number;
+}
+
 /** A class the teacher teaches, for the scope chooser's "My class" option. */
 export interface BoardClass {
   id: string;
@@ -130,6 +142,13 @@ export interface BoardData {
   prev: BoardCoordinate | null;
   /** The next coordinate (or null at the end of the scheme of work). */
   next: BoardCoordinate | null;
+  /**
+   * Every curriculum coordinate in scheme-of-work order, each carrying its flat
+   * `weekNo` — the month → week picker's option list. Empty when no curriculum is
+   * synced. Built from the same ordered list that derives `weekNo`, so picker and
+   * arrows agree on the numbering.
+   */
+  weeks: BoardWeekOption[];
   /** One band per year the teacher teaches, in ascending year order. */
   years: BoardYear[];
   /** Distinct plan owners across the visible plans — the people-filter options. */

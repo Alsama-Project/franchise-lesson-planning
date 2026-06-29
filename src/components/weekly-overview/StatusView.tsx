@@ -44,9 +44,6 @@ interface BoardError {
   planId: string | null;
 }
 
-// How many "Not started" cards to show before collapsing to a "+N more" note.
-const NOT_STARTED_CAP = 8;
-
 /**
  * Status view — a five-column kanban (Not started · In progress · Submitted ·
  * Needs Review · Approved). Every plan is a card in its status column (year +
@@ -244,31 +241,48 @@ function ColumnHeader({ status, count }: { status: SlotStatus; count: number }) 
   );
 }
 
-/** The "Not started" column: capped, never a drop target, cards never draggable. */
+/**
+ * The "Not started" column: a compact summary, not a long card list. A long roster
+ * of identical "Year N · Plan" cards isn't actionable, so by default this collapses
+ * to the count plus a "Show all" affordance; the individual cards (each opens the
+ * scope chooser) only render on demand. Never a drop target, cards never draggable.
+ */
 function NotStartedColumn({ cards, subjectName }: { cards: EmptySlotCard[]; subjectName: string }) {
   const t = useTranslations('board');
   const locale = useLocale();
-  const visible = cards.slice(0, NOT_STARTED_CAP);
-  const hidden = cards.length - visible.length;
+  const [expanded, setExpanded] = useState(false);
+  const count = cards.length;
 
   return (
     <div>
-      <ColumnHeader status="not_started" count={cards.length} />
-      <div className="flex flex-col gap-2">
-        {visible.map((card) => (
-          <NotStartedLessonCard key={card.key} card={card} subjectName={subjectName} />
-        ))}
-        {hidden > 0 ? (
-          <div className="py-[6px] text-center text-[11.5px] text-text-faint">
-            {t('statusView.more', { count: hidden, value: formatNumber(hidden, locale) })}
+      <ColumnHeader status="not_started" count={count} />
+      {count === 0 ? (
+        <div className="py-[8px] text-center text-[11.5px] text-text-faint">
+          {t('statusView.none')}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px]">
+            <p className="text-[18px] font-semibold leading-none text-ink">
+              {formatNumber(count, locale)}
+            </p>
+            <p className="mt-[4px] text-[11.5px] text-text-muted">{t('status.not_started')}</p>
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="mt-[8px] text-[11.5px] font-semibold text-teal transition-colors hover:text-teal-deep"
+            >
+              {expanded ? t('statusView.showLess') : t('statusView.showAll')}
+            </button>
           </div>
-        ) : null}
-        {cards.length === 0 ? (
-          <div className="py-[8px] text-center text-[11.5px] text-text-faint">
-            {t('statusView.none')}
-          </div>
-        ) : null}
-      </div>
+          {expanded
+            ? cards.map((card) => (
+                <NotStartedLessonCard key={card.key} card={card} subjectName={subjectName} />
+              ))
+            : null}
+        </div>
+      )}
     </div>
   );
 }

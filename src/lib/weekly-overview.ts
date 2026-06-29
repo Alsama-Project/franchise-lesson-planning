@@ -21,6 +21,7 @@ import type {
   BoardData,
   BoardLesson,
   BoardPlan,
+  BoardWeekOption,
   BoardYear,
   PlanOwner,
 } from '@/types/weekly-overview';
@@ -102,6 +103,7 @@ function emptyBoard(teacherName: string, subjectName = '', subjectCode = ''): Bo
     isCurrent: false,
     prev: null,
     next: null,
+    weeks: [],
     years: [],
     owners: [],
     planCount: 0,
@@ -296,6 +298,15 @@ export async function getBoardData(input: {
     };
   }
 
+  // The month → week picker's options: every coordinate in scheme-of-work order,
+  // each tagged with its flat teaching-week number (position + 1). This is the
+  // SAME ordering that derives `weekNo` below, so picker and arrows never disagree.
+  const weeks: BoardWeekOption[] = coords.map((c, i) => ({
+    month: c.month,
+    week: c.week,
+    weekNo: i + 1,
+  }));
+
   // Resolve the selected coordinate from the params (snap to a real one).
   let index = coords.findIndex((c) => c.month === input.month && c.week === input.week);
   if (index === -1) index = 0;
@@ -414,6 +425,7 @@ export async function getBoardData(input: {
     isCurrent,
     prev,
     next,
+    weeks,
     years: yearBands,
     owners,
     planCount: planRows.length,

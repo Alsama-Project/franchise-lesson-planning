@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -23,7 +23,6 @@ import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { CalendarLessonCard } from '@/components/weekly-overview/LessonCard';
 import { AddLessonMenu, type AddYearChoice } from '@/components/weekly-overview/AddLessonMenu';
-import { useScopeChooser, type AddYearOption } from '@/components/weekly-overview/ScopeChooser';
 import type { PlanCard } from '@/components/weekly-overview/cards';
 import { WEEKDAYS, addDays, todayISO } from '@/lib/week';
 import { formatDate, formatNumber } from '@/lib/format';
@@ -64,7 +63,6 @@ export function CalendarView({
   readOnly?: boolean;
 }) {
   const t = useTranslations('board');
-  const { openAdd } = useScopeChooser();
   const [byDay, setByDay] = useState<ByDay>(() => buildByDay(years));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,25 +82,6 @@ export function CalendarView({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
-
-  // The curriculum lessons already placed somewhere this week, per year — the pool
-  // the "+ Add lesson" picker excludes.
-  const placedByYear = useMemo(() => {
-    const m = new Map<number, Set<string>>();
-    for (const band of years) m.set(band.year, new Set(band.plans.map((p) => p.lessonKey)));
-    return m;
-  }, [years]);
-
-  /** Build the "+ Add lesson" year options for a column (unplaced lessons + next ordinal). */
-  const addOptionsFor = (weekday: number): AddYearOption[] =>
-    years.map((band) => {
-      const placed = placedByYear.get(band.year) ?? new Set<string>();
-      return {
-        year: band.year,
-        period: byDay[weekday].filter((p) => p.year === band.year).length + 1,
-        lessons: band.lessons.filter((l) => !placed.has(l.lessonKey)),
-      };
-    });
 
   /**
    * The lightweight year-group dropdown's choices for a column. The column IS a
@@ -220,7 +199,6 @@ export function CalendarView({
                 dragEnabled={dragEnabled}
                 readOnly={readOnly}
                 addChoices={addChoicesFor(weekday)}
-                onMoreOptions={() => openAdd({ weekday, years: addOptionsFor(weekday) })}
               />
             ))}
           </div>
@@ -313,7 +291,6 @@ function DayColumn({
   dragEnabled,
   readOnly,
   addChoices,
-  onMoreOptions,
 }: {
   weekday: number;
   mondayDate: string | null;
@@ -324,8 +301,6 @@ function DayColumn({
   readOnly: boolean;
   /** Resolved year-group choices for this column's "+ Add lesson" dropdown. */
   addChoices: AddYearChoice[];
-  /** Opens the full NEW LESSON popup (all-centres / other-week planning). */
-  onMoreOptions: () => void;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
@@ -392,7 +367,7 @@ function DayColumn({
 
         {/* Coordinators review existing plans; they don't author, so no add affordance. */}
         {readOnly ? null : (
-          <AddLessonMenu weekday={weekday} choices={addChoices} onMoreOptions={onMoreOptions} />
+          <AddLessonMenu weekday={weekday} choices={addChoices} />
         )}
       </div>
     </div>

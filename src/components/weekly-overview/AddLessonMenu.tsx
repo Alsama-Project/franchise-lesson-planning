@@ -7,9 +7,8 @@
 // year-group dropdown: pick a year, the lesson for (subject, year, current month,
 // current week, this period) is created/opened directly at whole-centre scope.
 //
-// The full popup is NOT retired — it is the entry point for all-centres planning
-// and other weeks, reached here via "More options". (Whether all-centres planning
-// still needs an entry point is a separate call; until then the popup stays.)
+// This replaced the old NEW LESSON popup entirely — every per-column add resolves
+// its curriculum lesson here, and all-centres planning needs no separate entry.
 //
 // The menu opens inline (in the column's flow) rather than as an absolute overlay:
 // the board scrolls horizontally (`overflow-x-auto`), which makes vertical overflow
@@ -35,14 +34,11 @@ export interface AddYearChoice {
 export function AddLessonMenu({
   weekday,
   choices,
-  onMoreOptions,
 }: {
   /** The Mon–Fri column (1..5) — also the curriculum period the lessons resolve to. */
   weekday: number;
   /** The teacher's year groups, each resolved to this column's curriculum lesson. */
   choices: AddYearChoice[];
-  /** Opens the full NEW LESSON popup — the entry for all-centres / other-week planning. */
-  onMoreOptions: () => void;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
@@ -121,19 +117,6 @@ export function AddLessonMenu({
               </button>
             );
           })}
-
-          <div className="mt-[4px] border-t border-[#F0EAE1] pt-[4px]">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onMoreOptions();
-              }}
-              className="flex w-full items-center gap-[6px] rounded-[8px] px-[9px] py-[7px] text-start text-[12px] font-medium text-neutral-600 transition-colors hover:bg-surface-subtle hover:text-ink"
-            >
-              {t('add.moreOptions')}
-            </button>
-          </div>
 
           {error ? (
             <p className="mx-[5px] mb-[4px] mt-[3px] rounded-[7px] bg-status-review-bg px-[9px] py-[6px] text-[11.5px] text-status-review">

@@ -92,7 +92,6 @@
       "empty": "No subjects yet. Create the first one above.",
       "col": {
         "name": "Name",
-        "code": "Code",
         "classes": "Classes",
         "status": "Status",
         "actions": "Actions"

@@ -17,7 +17,6 @@ import {
   ErrorText,
   GhostButton,
   Modal,
-  MonoChip,
   PinkField,
   PrimaryButton,
   SectionCard,
@@ -105,7 +104,6 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
             head={
               <tr>
                 <Th>{t('subjects.col.name')}</Th>
-                <Th>{t('subjects.col.code')}</Th>
                 <Th className="text-end">{t('subjects.col.classes')}</Th>
                 <Th>{t('subjects.col.status')}</Th>
                 <Th className="text-end">{t('subjects.col.actions')}</Th>
@@ -130,9 +128,6 @@ export function SubjectsTab({ subjects }: { subjects: SubjectRow[] }) {
                     ) : (
                       s.name
                     )}
-                  </Td>
-                  <Td>
-                    <MonoChip>{s.code}</MonoChip>
                   </Td>
                   <Td className="text-end tabular-nums text-[#7A7068]">
                     {formatNumber(s.activeClassCount, locale)}

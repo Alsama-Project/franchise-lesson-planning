@@ -448,7 +448,16 @@ export function LessonPlanEditor({
        </div>
 
         {showCommentsRail ? (
-          <aside className="mt-6 lg:mt-0 lg:w-[360px] lg:flex-shrink-0">
+          // The aside WRAPPER is the sticky element (not the inner card): its
+          // containing block is the flex row, whose height is driven by the tall
+          // plan content beside it, so the pane has room to travel and actually
+          // sticks. `lg:self-start` keeps the wrapper at its content height under
+          // the row's `items-start` so it does NOT stretch to the column's full
+          // height (a stretched sticky element has no travel room and scrolls away).
+          // `top` clears the full fixed chrome via the --app-chrome-height token set
+          // in AppShell (underscores → literal spaces so Tailwind v4 doesn't mis-parse
+          // the `+` inside calc()). Mirrors the coordinator review rail in ReadOnlyPlan.
+          <aside className="mt-6 lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)] lg:mt-0 lg:w-[360px] lg:flex-shrink-0 lg:self-start">
             <TeacherCommentsSidebar comments={comments} events={events} />
           </aside>
         ) : null}

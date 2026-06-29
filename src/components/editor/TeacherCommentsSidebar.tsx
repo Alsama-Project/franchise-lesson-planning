@@ -9,7 +9,9 @@
 //
 // Existence-gated: the editor mounts this only when coordinator comments exist, so
 // it appears for a returned plan (which carries comments) but not for a fresh one,
-// independent of status. Sticky so it stays in view as the plan scrolls (item 8).
+// independent of status. The STICKY behaviour lives on the wrapping <aside> in
+// LessonPlanEditor (which can travel within the tall flex row); this card only caps
+// its own height so a long thread scrolls internally rather than past the viewport.
 
 import { useLocale, useTranslations } from 'next-intl';
 import { APP_TIME_ZONE, formatDate, formatNumber } from '@/lib/format';
@@ -39,7 +41,7 @@ export function TeacherCommentsSidebar({
   return (
     <section
       aria-label={t('title')}
-      className="flex flex-col overflow-hidden rounded-[16px] border border-border bg-surface lg:sticky lg:top-[80px] lg:max-h-[calc(100vh-96px)]"
+      className="flex flex-col overflow-hidden rounded-[16px] border border-border bg-surface lg:max-h-[calc(100vh-var(--app-chrome-height,64px)-32px)]"
     >
       {/* Header — title + count, mirroring the coordinator sidebar. */}
       <div className="border-b border-border px-[18px] py-[14px]">

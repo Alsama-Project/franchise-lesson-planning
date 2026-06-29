@@ -135,11 +135,18 @@ function PickerTrigger({
     [options, activeMonth],
   );
 
-  // Date (and any "current" marker) is stacked as secondary text directly ABOVE
-  // the "Week N" label rather than below or inlined after it ("Dec 15" over "Week 1").
+  // "Week N" is the primary label and the ONLY in-flow element, so it sits on the
+  // shared vertical centreline of the flanking ‹ › arrows. The date (and any
+  // "current" marker) floats just ABOVE it, absolutely positioned so it does not
+  // grow the line box and push "Week N" off that centreline ("Dec 15" hovering over
+  // a centred "Week 1").
   const triggerLabel = (
-    <span className="inline-flex flex-col items-center leading-tight">
-      {meta ? <span className="text-[11px] font-normal text-neutral-500">{meta}</span> : null}
+    <span className="relative inline-flex items-center leading-none">
+      {meta ? (
+        <span className="absolute bottom-full left-1/2 mb-[2px] -translate-x-1/2 whitespace-nowrap text-[11px] font-normal leading-none text-neutral-500">
+          {meta}
+        </span>
+      ) : null}
       <span>{label}</span>
     </span>
   );

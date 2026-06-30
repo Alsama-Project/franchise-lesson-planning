@@ -120,9 +120,16 @@ export const BODY_PAD_BOTTOM = 16;
 export function MasterFrame({
   ctx,
   children,
+  pageLabel,
+  bodyRef,
 }: {
   ctx: WorksheetContext;
   children: ReactNode;
+  /** Footer page indicator. Defaults to page 1 of 1 for a single-page render. */
+  pageLabel?: { index: number; total: number };
+  /** Optional handle on the editable BODY element — used only by the pagination
+   *  measurer to derive the per-page content height (chrome = page − body). */
+  bodyRef?: React.Ref<HTMLDivElement>;
 }) {
   const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
 
@@ -243,6 +250,7 @@ export function MasterFrame({
 
       {/* BODY — the editable exercise area (relative: anchors the floating layer) */}
       <div
+        ref={bodyRef}
         style={{
           flex: 1,
           minHeight: 560,
@@ -274,7 +282,9 @@ export function MasterFrame({
         <span style={{ fontFamily: 'var(--font-sacramento), cursive', fontSize: 22, lineHeight: 0.7, color: '#C58FA4' }}>
           Alsama
         </span>
-        <span style={{ fontSize: 12, color: '#93826B' }}>Page 1 of 1</span>
+        <span style={{ fontSize: 12, color: '#93826B' }}>
+          Page {pageLabel?.index ?? 1} of {pageLabel?.total ?? 1}
+        </span>
       </div>
     </div>
   );

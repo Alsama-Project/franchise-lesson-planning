@@ -336,13 +336,20 @@ html:lang(ar) body {
   .ws-print-scale {
     transform: none !important;
   }
-  /* The A4 frame keeps its one-sheet minimum but must let overflowing content
-   * flow onto additional sheets — overflow:hidden would clip it to page 1. */
+  /* Each .ws-page is one paginated A4 sheet (the shared measurer packs whole
+   * blocks to fit). Drop the screen shadow; let content show. */
   .ws-page {
     overflow: visible !important;
     box-shadow: none !important;
   }
-  /* Keep an exercise on a single sheet rather than splitting it mid-line. */
+  /* Force every page after the first onto a fresh sheet so the printed page
+   * breaks line up exactly with the on-screen pages. */
+  .ws-print-area .ws-page + .ws-page {
+    break-before: page;
+    page-break-before: always;
+  }
+  /* Belt-and-braces: keep an exercise on a single sheet rather than splitting it
+   * mid-line if a page ends up marginally over. */
   .ws-print-block {
     break-inside: avoid;
     page-break-inside: avoid;

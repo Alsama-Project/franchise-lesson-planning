@@ -52,6 +52,7 @@ import {
 } from '@/lib/editor/worksheet';
 import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
 import { getResourcesByIdsAction, recordUsageAction } from '@/lib/actions/resources';
+import type { PaginationResult } from '@/lib/editor/pagination';
 import type { WorksheetContext } from './context';
 import { MasterFrame } from './MasterFrame';
 import { AddExerciseMenu } from './AddExerciseMenu';
@@ -59,6 +60,7 @@ import { SortableBlock } from './SortableBlock';
 import { ResourceBankModal } from './ResourceBankModal';
 import { WordToolbar } from './WordToolbar';
 import { WorksheetPrintView } from './WorksheetPrintView';
+import { WorksheetMeasurer } from './WorksheetMeasurer';
 import type { ScreenRect } from './FloatingElementView';
 import type { ActiveBlock } from './FreeBlock';
 
@@ -133,6 +135,56 @@ export function WorksheetBuilder({
     (activeId: string) => setActive((cur) => (cur && cur.activeId === activeId ? null : cur)),
     [],
   );
+
+  // ── Pagination (whole-block flow onto A4 pages) ───────────────────────────
+  // The hidden WorksheetMeasurer reports which block goes on which page, using
+  // the SAME paginateBlocks the print render uses, so screen and PDF match.
+  //
+  // Apply policy:
+  //  • dedupe — a result is applied only when the assignment actually CHANGES, so
+  //    ordinary keystrokes (same packing) never re-render or re-home blocks;
+  //  • structural changes (a block added/removed → block count differs) apply
+  //    immediately, even mid-focus, so adding a block never collapses the view;
+  //  • a pure height change while a block is focused (you're typing and the block
+  //    grew past the page) is DEFERRED until blur, so re-homing never drops the
+  //    caret — the page just grows until you click away, then it re-flows.
+  const [pagination, setPagination] = useState<PaginationResult>({ pages: [], overflow: [] });
+  const lastPagesSigRef = useRef('');
+  const appliedCountRef = useRef(0);
+  const pendingPaginationRef = useRef<{ result: PaginationResult; count: number } | null>(null);
+  const activeRef = useRef(false);
+
+  const applyPagination = useCallback((result: PaginationResult, count: number) => {
+    appliedCountRef.current = count;
+    const sig = JSON.stringify(result.pages) + '#' + JSON.stringify(result.overflow);
+    if (sig === lastPagesSigRef.current) return;
+    lastPagesSigRef.current = sig;
+    setPagination(result);
+  }, []);
+
+  const onMeasureResult = useCallback(
+    (result: PaginationResult) => {
+      const count = result.pages.reduce((n, g) => n + g.length, 0);
+      const structural = count !== appliedCountRef.current;
+      if (structural || !activeRef.current) {
+        pendingPaginationRef.current = null;
+        applyPagination(result, count);
+      } else {
+        pendingPaginationRef.current = { result, count };
+      }
+    },
+    [applyPagination],
+  );
+
+  // On blur (no block focused), flush the deferred page assignment.
+  useEffect(() => {
+    activeRef.current = active !== null;
+    if (active === null && pendingPaginationRef.current) {
+      const { result, count } = pendingPaginationRef.current;
+      pendingPaginationRef.current = null;
+      applyPagination(result, count);
+    }
+  }, [active, applyPagination]);
 
   // Latest worksheet, so editor-captured callbacks (a block's onUpdate / float
   // handler are bound once by tiptap) always mutate the current state, not a
@@ -495,6 +547,16 @@ export function WorksheetBuilder({
   );
 
   const empty = isWorksheetEmpty(ws);
+  // Page groups from the measurer, validated against the current blocks. If the
+  // assignment doesn't cover exactly the current blocks (a transient mismatch
+  // right after add/remove, or any drift), fall back to a single page holding
+  // every block — never a blank or overlapping page.
+  const measuredPages = pagination.pages;
+  const coversAll =
+    measuredPages.length > 0 &&
+    measuredPages.reduce((n, g) => n + g.length, 0) === ws.blocks.length;
+  const pageGroups = coversAll ? measuredPages : [ws.blocks.map((_, i) => i)];
+  const overflow = pagination.overflow;
   const scaledWidth = Math.round(PAGE_WIDTH * zoom);
   const scaledHeight = Math.round(pageHeight * zoom);
   // origin top-center: offset the (unscaled) page so its scaled box fills the sizer.
@@ -624,8 +686,8 @@ export function WorksheetBuilder({
                 transformOrigin: 'top center',
               }}
             >
-              <MasterFrame ctx={context}>
-                {empty ? (
+              {empty ? (
+                <MasterFrame ctx={context}>
                   <div style={{ flex: 1, minHeight: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, border: '2px dashed #D9CDBB', borderRadius: 16, background: '#FCFAF6' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#5C544E' }}>{t('empty')}</div>
                     <AddExerciseMenu
@@ -636,60 +698,97 @@ export function WorksheetBuilder({
                       onCreateNew={() => createNewAt(0)}
                     />
                   </div>
-                ) : (
-                  <>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                      <SortableContext items={ws.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          {ws.blocks.map((block, i) => (
-                            <Fragment key={block.id}>
-                              {/* Insert-between affordance: a hover teal divider that
-                                  inserts a block at index `i` (any position). */}
-                              <AddExerciseMenu
-                                variant="divider"
-                                open={menuAt === i}
-                                onToggle={() => setMenuAt((cur) => (cur === i ? null : i))}
-                                onChooseBank={() => chooseBankAt(i)}
-                                onCreateNew={() => createNewAt(i)}
-                              />
-                              <SortableBlock
-                                block={block}
-                                index={i}
-                                ctx={context}
-                                resource={block.kind === 'resource' ? resolved[block.resourceId] ?? null : null}
-                                resourceLoading={block.kind === 'resource' && !attempted.has(block.resourceId)}
-                                onChangeFree={changeFree}
-                                onElementsChange={onElementsChange}
-                                onDelete={deleteBlock}
-                                onDuplicateFree={duplicateFree}
-                                onActivate={onActivate}
-                                onDeactivate={onDeactivate}
-                                selectedElementId={selectedEl}
-                                onSelectElement={setSelectedEl}
-                                onElementDrop={onElementDrop}
-                                registerBox={registerBox}
-                              />
-                            </Fragment>
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
-                    <AddExerciseMenu
-                      variant="another"
-                      open={menuAt === ws.blocks.length}
-                      onToggle={() =>
-                        setMenuAt((cur) => (cur === ws.blocks.length ? null : ws.blocks.length))
-                      }
-                      onChooseBank={() => chooseBankAt(ws.blocks.length)}
-                      onCreateNew={() => createNewAt(ws.blocks.length)}
-                    />
-                  </>
-                )}
-              </MasterFrame>
+                </MasterFrame>
+              ) : (
+                // One DndContext spans every page so blocks reorder across page
+                // boundaries; the page frames are produced from the shared
+                // measurement so the screen matches the printed/PDF layout.
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                  <SortableContext items={ws.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                      {pageGroups.map((indices, p) => {
+                        const isLastPage = p === pageGroups.length - 1;
+                        return (
+                          <MasterFrame
+                            key={p}
+                            ctx={context}
+                            pageLabel={{ index: p + 1, total: pageGroups.length }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              {indices.map((i) => {
+                                const block = ws.blocks[i];
+                                if (!block) return null;
+                                return (
+                                  <Fragment key={block.id}>
+                                    {/* Insert-between affordance: a hover teal
+                                        divider that inserts a block at index `i`. */}
+                                    <AddExerciseMenu
+                                      variant="divider"
+                                      open={menuAt === i}
+                                      onToggle={() => setMenuAt((cur) => (cur === i ? null : i))}
+                                      onChooseBank={() => chooseBankAt(i)}
+                                      onCreateNew={() => createNewAt(i)}
+                                    />
+                                    {overflow[i] ? (
+                                      <div
+                                        className="ws-no-print"
+                                        style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '2px 0 8px', padding: '7px 11px', borderRadius: 8, background: '#FBF1E7', border: '1px solid #EAD7BF', color: '#9A6B22', fontSize: 11.5, fontWeight: 600 }}
+                                      >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
+                                        {t('pagination.tallBlock')}
+                                      </div>
+                                    ) : null}
+                                    <SortableBlock
+                                      block={block}
+                                      index={i}
+                                      ctx={context}
+                                      resource={block.kind === 'resource' ? resolved[block.resourceId] ?? null : null}
+                                      resourceLoading={block.kind === 'resource' && !attempted.has(block.resourceId)}
+                                      onChangeFree={changeFree}
+                                      onElementsChange={onElementsChange}
+                                      onDelete={deleteBlock}
+                                      onDuplicateFree={duplicateFree}
+                                      onActivate={onActivate}
+                                      onDeactivate={onDeactivate}
+                                      selectedElementId={selectedEl}
+                                      onSelectElement={setSelectedEl}
+                                      onElementDrop={onElementDrop}
+                                      registerBox={registerBox}
+                                    />
+                                  </Fragment>
+                                );
+                              })}
+                              {/* The bottom "add another" lives on the last page,
+                                  appending at the end of the worksheet. */}
+                              {isLastPage ? (
+                                <AddExerciseMenu
+                                  variant="another"
+                                  open={menuAt === ws.blocks.length}
+                                  onToggle={() =>
+                                    setMenuAt((cur) => (cur === ws.blocks.length ? null : ws.blocks.length))
+                                  }
+                                  onChooseBank={() => chooseBankAt(ws.blocks.length)}
+                                  onCreateNew={() => createNewAt(ws.blocks.length)}
+                                />
+                              ) : null}
+                            </div>
+                          </MasterFrame>
+                        );
+                      })}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Hidden, off-screen measurement of the print layout — the single source
+          of the page assignment, shared with the print/PDF render. */}
+      {!empty ? (
+        <WorksheetMeasurer ws={ws} ctx={context} resolved={resolved} onResult={onMeasureResult} />
+      ) : null}
 
       {modalOpen ? (
         <ResourceBankModal

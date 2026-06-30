@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/loader-register.mjs --test src/lib/curriculum/__tests__/columnMatcher.test.ts src/lib/curriculum/__tests__/parse.test.ts",
+    "test": "node --import ./scripts/loader-register.mjs --test src/lib/curriculum/__tests__/columnMatcher.test.ts src/lib/curriculum/__tests__/parse.test.ts src/lib/editor/__tests__/pagination.test.ts",
     "ingest:curriculum": "node --import ./scripts/loader-register.mjs scripts/ingest-curriculum.ts",
     "gen:types": "supabase gen types typescript --local > src/types/database.types.ts"
   },

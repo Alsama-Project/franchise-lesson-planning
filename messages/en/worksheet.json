@@ -37,6 +37,9 @@
       "exitFullScreenTitle": "Exit full screen (Esc)"
     },
     "empty": "This worksheet is empty",
+    "pagination": {
+      "tallBlock": "This exercise is taller than one page — it won't fit on a single printed sheet."
+    },
     "print": {
       "title": "Print preview",
       "subtitle": "A4 portrait · prints at true size",

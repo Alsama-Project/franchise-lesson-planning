@@ -61,7 +61,7 @@ export function SettingsConsole(props: SettingsConsoleProps) {
       </div>
 
       {/* Tab row */}
-      <div className="flex flex-wrap gap-1 border-b border-[#F0EAE1] px-[14px] pt-[12px]">
+      <div className="flex flex-wrap items-end gap-x-1 gap-y-1 border-b border-[#F0EAE1] px-[14px] pt-[12px] pb-1">
         {access.tabs.map((tabId) => {
           const active = tabId === tab;
           return (

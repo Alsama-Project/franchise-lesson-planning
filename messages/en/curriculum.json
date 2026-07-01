@@ -7,44 +7,42 @@
     "year": "Year {n}",
     "weekWithMonth": "Week {n} · <m>{month}</m>",
     "week": "Week {n}",
+    "period": "Period {n}",
     "monthLabel": "Month",
     "weekHeading": "Week",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "view": {
+      "label": "View",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    },
+    "monthGrid": {
+      "inFocus": "in focus",
+      "noLessons": "No lessons for this month."
+    },
     "monthlyOutcome": "Monthly outcome · {month}",
     "weeklyOutcome": "Weekly outcome · Week {n}",
     "knowledge": "Knowledge",
     "skills": "Skills",
     "empty": "—",
     "table": {
-      "day": "Day",
+      "period": "Period",
       "learningOutcome": "Learning outcome",
       "skill": "Skill",
       "topic": "Topic",
       "resources": "Resources"
     },
     "focus": {
-      "inFocus": "In focus · {day}",
+      "inFocus": "In focus · {value}",
       "dailyOutcome": "Daily learning outcome",
       "resources": "Resources",
       "plan": "Plan this lesson",
       "planning": "Starting…",
       "notMember": "You can only plan lessons for subjects you teach.",
       "genericError": "Couldn’t start a plan. Please try again."
-    },
-    "daysShort": {
-      "1": "Mon",
-      "2": "Tue",
-      "3": "Wed",
-      "4": "Thu",
-      "5": "Fri"
-    },
-    "daysLong": {
-      "1": "Monday",
-      "2": "Tuesday",
-      "3": "Wednesday",
-      "4": "Thursday",
-      "5": "Friday"
     },
     "noLessons": "No lessons for this week.",
     "emptyState": {

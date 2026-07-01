@@ -417,6 +417,24 @@ export async function getCurriculumWeekRows(
     .sort((a, b) => (a.period ?? 0) - (b.period ?? 0));
 }
 
+/**
+ * The full active rows for one (subject_code, year, month) — every week and
+ * period in the month — sorted by (week, period). Backs the monthly calendar
+ * grid (Task 6). Same cached read as the week/nav helpers.
+ */
+export async function getCurriculumMonthRows(
+  subjectCode: string,
+  year: number,
+  month: string,
+): Promise<CurriculumLessonRow[]> {
+  const rows = await fetchActiveRows();
+  return rows
+    .filter(
+      (r) => r.subject_code === subjectCode && r.year === year && r.month === month,
+    )
+    .sort((a, b) => (a.week - b.week) || ((a.period ?? 0) - (b.period ?? 0)));
+}
+
 /** A curriculum row's natural coordinates, resolved from its `lesson_key`. */
 export interface CurriculumKeyCoords {
   subjectCode: string;

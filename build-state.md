@@ -2,6 +2,55 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
+## Curriculum browser — period labels, rail overflow, monthly view ✅ (this phase)
+
+Goal: relabel the weekly viewer by curriculum **period**, contain the detail
+rail's overflow, and add a **Monthly** calendar view behind a Weekly/Monthly
+toggle. Read-only reference only — no plan-editing / permissions touched.
+
+### Done
+
+- **Period labels (Task 2)** — the weekly table's day rows now read "Period 1"…
+  "Period 5" and the header column is "Period", both bound to
+  `curriculum_lesson.period` (never derived from weekday). The rail header is
+  "In focus · Period N". New i18n key `curriculum.period` ("Period {n}", numbered
+  via `formatNumber`); `table.day`→`table.period`; `focus.inFocus` param
+  `{day}`→`{value}`. The now-unused `daysShort`/`daysLong` keys were removed.
+- **Rail overflow (Task 3)** — `FocusCard` resource rows are `flex items-start
+  min-w-0`; resource labels (often raw URLs, e.g. langeek.co/…) use `break-all`,
+  the daily-outcome block uses `break-words [overflow-wrap:anywhere]`, and the LO
+  bullet lists carry `min-w-0 [overflow-wrap:anywhere]`. Long URLs no longer bleed
+  past the card edge.
+- **Monthly view + toggle (Task 6)** — segmented `[Weekly | Monthly]` control
+  (teal active) at the selector row's right, before the read-only badge; the view
+  rides in the URL (`?view=`) so month navigation stays monthly and links are
+  shareable. Weekly = existing table + `WeekPicker`; Monthly = a weeks×periods
+  calendar grid + a `MonthNav` month stepper. Grid cells are colour-coded skills
+  (shared `SKILL_TEXT` tokens), a clamped daily LO, and the topic; the selected
+  week lifts into a teal-bordered focus box and the selected cell drives the SAME
+  `FocusCard`. "Plan this lesson →" reuses `createScopedPlan` unchanged.
+  - Data: `getCurriculumBrowseData` now also returns `monthGrid`
+    (`BrowseMonthWeek[]`) + `prevMonth`/`nextMonth` coordinates, built from the new
+    `getCurriculumMonthRows(subject, year, month)` helper. `MonthlyBody` is keyed on
+    the resolved coordinate so its grid selection re-initialises on month change.
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes · `eslint` clean.
+
+### Notes / follow-ups
+
+- **Arabic flagged for Kadria's review** — the new `curriculum` strings in
+  `messages/ar/curriculum.json` (`period` = "الحصة {n}", `view.*`, `prevMonth`/
+  `nextMonth`, `monthGrid.*`) are machine-translated and need the native-speaker
+  pass, per the standing convention.
+- **Skill colours** — the design mock draws Speaking `#b62a5c` / Writing `#7a6e62`,
+  but those are the editable-pink and a grey the codebase keeps for other roles.
+  To honour the locked "never repurpose" rule and stay consistent with the weekly
+  Skill column, the grid reuses the canonical `--color-skill-*` tokens
+  (Reading/Listening match the design exactly; Speaking `#b8366b`, Writing
+  `#8a6a3a`). Flag for design if an exact hex match is required.
+
 ## Lesson Plan editor rebuild — Part 1 ✅ (this phase)
 
 Goal: rebuild `/plan/[id]` to the approved 5-step wizard design. This phase

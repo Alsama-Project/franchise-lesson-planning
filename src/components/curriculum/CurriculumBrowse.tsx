@@ -1,18 +1,32 @@
 'use client';
 
-// The read-only Curriculum browse screen — a single-week, "zoomed-in" view of the
-// curriculum table teachers already know, filtered to one Subject → Year → Week.
+// The read-only Curriculum browse screen. Two structures share one selector row and
+// one detail card (the teal "IN FOCUS" FocusCard):
+//   • Weekly  — a single-week table (outcome / skill / topic / resources) + the card.
+//   • Monthly — the whole month as a weeks × periods calendar grid + the card.
+// A segmented [Weekly | Monthly] toggle switches between them; the choice rides in
+// the URL (?view=) so month navigation stays in the monthly view and the screen is
+// linkable.
+//
+// PERIODS, NOT WEEKDAYS. Alsama schools don't pin curriculum periods to fixed
+// weekdays, so every day/column label reads off `curriculum_lesson.period` (1–5) —
+// "Period 1"…"Period 5" — never a derived Mon–Fri name.
 //
 // COLOUR SEMANTICS (locked): everything here is curriculum-provided content, so it
 // reads as cream/locked. The only teal is the "Plan this lesson" CTA and the
-// selected-row / focus-card accent. There are NO teacher-editable zones, so the
-// editable-pink (`--color-pink` #b62a5c) never appears; the rose accents on the
-// "Skills" sub-labels and the Speaking skill are a distinct categorical hue.
+// selected-row / focus-card / selected-cell accent. There are NO teacher-editable
+// zones, so the editable-pink (`--color-pink` #b62a5c) never appears; the skill
+// hues come from the shared categorical `--color-skill-*` tokens (SKILL_TEXT), the
+// SAME mapping the weekly Skill column already uses — Reading teal and Listening
+// orange match the design exactly, and Speaking/Writing use the codebase's canonical
+// categorical hues rather than repurposing the editable-pink.
 //
-// Selecting Subject / Year / Week navigates (the server re-fetches the week);
-// selecting a DAY is pure client state that re-points the focus card.
+// Selecting Subject / Year / Week / Month / View navigates (the server re-fetches);
+// selecting a period (weekly) or a grid cell (monthly) is pure client state that
+// re-points the focus card.
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
@@ -22,13 +36,21 @@ import { WeekPicker } from '@/components/common/WeekPicker';
 import { SKILL_PILL, SKILL_TEXT } from '@/components/curriculum/skill';
 import type {
   BrowseCoordinate,
+  BrowseMonthWeek,
   BrowseRow,
   CurriculumBrowseData,
 } from '@/types/curriculum-browse';
 
-export function CurriculumBrowse({ data }: { data: CurriculumBrowseData }) {
-  const t = useTranslations('curriculum');
+/** Which structure the screen shows; carried in the URL as `?view=`. */
+export type CurriculumView = 'weekly' | 'monthly';
 
+export function CurriculumBrowse({
+  data,
+  view,
+}: {
+  data: CurriculumBrowseData;
+  view: CurriculumView;
+}) {
   if (data.subjects.length === 0) {
     return <EmptyState />;
   }
@@ -36,38 +58,64 @@ export function CurriculumBrowse({ data }: { data: CurriculumBrowseData }) {
   return (
     // No `overflow-hidden` here: an overflow-clipping ancestor would trap the
     // IN-FOCUS panel's `position: sticky` inside this card. The rounded corners are
-    // still respected by the bordered header / inner table, which clip their own.
+    // still respected by the bordered header / inner content, which clip their own.
     <div className="rounded-[18px] border border-border bg-surface shadow-card">
-      <Header data={data} />
+      <Header data={data} view={view} />
       <div className="border-t border-border p-[22px]">
-        <OutcomePanels data={data} />
-        {data.rows.length === 0 ? (
-          <p className="mt-[20px] rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted">
-            {t('noLessons')}
-          </p>
+        {view === 'monthly' ? (
+          // Key on the resolved coordinate so the grid selection re-initialises when
+          // the month changes (month nav / subject / year) — the component otherwise
+          // stays mounted across navigation and would hold stale cell indices.
+          <MonthlyBody
+            key={`${data.selected.subjectCode}-${data.selected.year}-${data.selected.month}`}
+            data={data}
+          />
         ) : (
-          <WeekGrid data={data} />
+          <WeeklyBody data={data} />
         )}
       </div>
     </div>
   );
 }
 
-// ── Header: selectors + week nav + topic chip + read-only badge ─────────────────
+// ── Header: selectors + week/month nav + view toggle + read-only badge ───────────
 
-function Header({ data }: { data: CurriculumBrowseData }) {
+function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumView }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
   const router = useRouter();
   const { subjectCode, year, month, week } = data.selected;
 
-  const onSubject = (code: string) =>
-    router.push(`/curriculum?subject=${encodeURIComponent(code)}`);
-  const onYear = (y: string) =>
-    router.push(`/curriculum?subject=${encodeURIComponent(subjectCode)}&year=${y}`);
+  // One href builder for every navigation on this screen: it always pins the
+  // resolved subject + year, then overlays whichever of month / week / view the
+  // caller changes, preserving the rest (so the view survives week/month steps).
+  const buildHref = (patch: {
+    subject?: string;
+    year?: number;
+    month?: string;
+    week?: number;
+    view?: CurriculumView;
+  }) => {
+    const sp = new URLSearchParams();
+    sp.set('subject', patch.subject ?? subjectCode);
+    sp.set('year', String(patch.year ?? year));
+    const m = patch.month ?? month;
+    const w = patch.week ?? week;
+    if (m) sp.set('month', m);
+    if (w) sp.set('week', String(w));
+    const v = patch.view ?? view;
+    if (v === 'monthly') sp.set('view', 'monthly');
+    return `/curriculum?${sp.toString()}`;
+  };
 
-  const coordHref = (c: BrowseCoordinate) =>
-    `/curriculum?subject=${encodeURIComponent(subjectCode)}&year=${year}&month=${encodeURIComponent(c.month)}&week=${c.week}`;
+  // Changing subject / year snaps month+week server-side, so drop them here but keep
+  // the active view.
+  const onSubject = (code: string) =>
+    router.push(buildHref({ subject: code, month: '', week: 0 }));
+  const onYear = (y: string) =>
+    router.push(buildHref({ year: Number(y), month: '', week: 0 }));
+
+  const coordHref = (c: BrowseCoordinate) => buildHref({ month: c.month, week: c.week });
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] px-[22px] py-[15px]">
@@ -87,31 +135,41 @@ function Header({ data }: { data: CurriculumBrowseData }) {
             label: t('year', { n: formatNumber(y, locale) }),
           }))}
         />
-        {/* Combined month → week picker — the SAME control as the weekly board
-            (src/components/common/WeekPicker), driving ?month=&week=. */}
-        <WeekPicker
-          label={month ? t('week', { n: formatNumber(week, locale) }) : t('empty')}
-          defaultMonth={month || null}
-          options={data.nav.flatMap((n) =>
-            n.weeks.map((w) => ({
-              month: n.month,
-              week: w,
-              label: t('week', { n: formatNumber(w, locale) }),
-              href: coordHref({ month: n.month, week: w }),
-              active: n.month === month && w === week,
-            })),
-          )}
-          prevHref={data.prev ? coordHref(data.prev) : null}
-          nextHref={data.next ? coordHref(data.next) : null}
-          labels={{
-            previousWeek: t('prevWeek'),
-            nextWeek: t('nextWeek'),
-            unavailable: (label) => label,
-            monthHeading: t('monthLabel'),
-            weekHeading: t('weekHeading'),
-          }}
-        />
-        {data.topicChip ? (
+        {view === 'monthly' ? (
+          <MonthNav
+            label={month || t('empty')}
+            prevHref={data.prevMonth ? coordHref(data.prevMonth) : null}
+            nextHref={data.nextMonth ? coordHref(data.nextMonth) : null}
+            prevLabel={t('prevMonth')}
+            nextLabel={t('nextMonth')}
+          />
+        ) : (
+          /* Combined month → week picker — the SAME control as the weekly board
+             (src/components/common/WeekPicker), driving ?month=&week=. */
+          <WeekPicker
+            label={month ? t('week', { n: formatNumber(week, locale) }) : t('empty')}
+            defaultMonth={month || null}
+            options={data.nav.flatMap((n) =>
+              n.weeks.map((w) => ({
+                month: n.month,
+                week: w,
+                label: t('week', { n: formatNumber(w, locale) }),
+                href: coordHref({ month: n.month, week: w }),
+                active: n.month === month && w === week,
+              })),
+            )}
+            prevHref={data.prev ? coordHref(data.prev) : null}
+            nextHref={data.next ? coordHref(data.next) : null}
+            labels={{
+              previousWeek: t('prevWeek'),
+              nextWeek: t('nextWeek'),
+              unavailable: (label) => label,
+              monthHeading: t('monthLabel'),
+              weekHeading: t('weekHeading'),
+            }}
+          />
+        )}
+        {view === 'weekly' && data.topicChip ? (
           <span
             dir="auto"
             className="inline-flex items-center rounded-full border border-[#ece4d7] bg-surface-cream px-[11px] py-[4px] text-[12.5px] font-medium text-[#8a6a3a]"
@@ -120,8 +178,115 @@ function Header({ data }: { data: CurriculumBrowseData }) {
           </span>
         ) : null}
       </div>
-      <span className="text-[13px] text-text-faint">{t('readOnly')}</span>
+      <div className="flex items-center gap-[14px]">
+        <ViewToggle weeklyHref={buildHref({ view: 'weekly' })} monthlyHref={buildHref({ view: 'monthly' })} view={view} />
+        <span className="text-[13px] text-text-faint">{t('readOnly')}</span>
+      </div>
     </div>
+  );
+}
+
+/** Segmented [Weekly | Monthly] control; the active segment fills teal. */
+function ViewToggle({
+  weeklyHref,
+  monthlyHref,
+  view,
+}: {
+  weeklyHref: string;
+  monthlyHref: string;
+  view: CurriculumView;
+}) {
+  const t = useTranslations('curriculum');
+  const seg = (active: boolean) =>
+    cn(
+      'rounded-[7px] px-[13px] py-[6px] text-[13px] font-semibold transition-colors',
+      active ? 'bg-teal text-white shadow-[0_2px_6px_-3px_rgba(31,122,108,0.6)]' : 'text-text-muted hover:text-ink',
+    );
+  return (
+    <div
+      role="group"
+      aria-label={t('view.label')}
+      className="inline-flex items-center gap-[2px] rounded-[10px] border border-border bg-surface-subtle p-[3px]"
+    >
+      <Link href={weeklyHref} aria-current={view === 'weekly'} className={seg(view === 'weekly')}>
+        {t('view.weekly')}
+      </Link>
+      <Link href={monthlyHref} aria-current={view === 'monthly'} className={seg(view === 'monthly')}>
+        {t('view.monthly')}
+      </Link>
+    </div>
+  );
+}
+
+/** Month stepper (‹ Month ›) for the monthly view — parallels WeekPicker's arrows. */
+function MonthNav({
+  label,
+  prevHref,
+  nextHref,
+  prevLabel,
+  nextLabel,
+}: {
+  label: string;
+  prevHref: string | null;
+  nextHref: string | null;
+  prevLabel: string;
+  nextLabel: string;
+}) {
+  return (
+    <div className="flex items-center gap-[10px]">
+      <MonthArrow href={prevHref} label={prevLabel} dir="left" />
+      <span dir="auto" className="min-w-[110px] text-center text-[16px] font-semibold">
+        {label}
+      </span>
+      <MonthArrow href={nextHref} label={nextLabel} dir="right" />
+    </div>
+  );
+}
+
+function MonthArrow({
+  href,
+  label,
+  dir,
+}: {
+  href: string | null;
+  label: string;
+  dir: 'left' | 'right';
+}) {
+  const arrow = (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="rtl:-scale-x-100"
+    >
+      {dir === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+    </svg>
+  );
+  if (!href) {
+    return (
+      <span
+        aria-label={label}
+        aria-disabled="true"
+        className="inline-flex size-[30px] cursor-not-allowed items-center justify-center rounded-[8px] border border-border bg-surface text-text-faint opacity-40"
+      >
+        {arrow}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="inline-flex size-[30px] items-center justify-center rounded-[8px] border border-border bg-surface text-ink transition-colors hover:bg-surface-subtle"
+    >
+      {arrow}
+    </Link>
   );
 }
 
@@ -168,35 +333,246 @@ function Selector({
   );
 }
 
-// ── Outcome panels (cream, locked) ──────────────────────────────────────────────
+// ── Weekly body: outcome panels + week table + focus card ────────────────────────
 
-function OutcomePanels({ data }: { data: CurriculumBrowseData }) {
+function WeeklyBody({ data }: { data: CurriculumBrowseData }) {
+  const t = useTranslations('curriculum');
+  return (
+    <>
+      <div className="grid gap-[16px] md:grid-cols-2">
+        <MonthlyPanel data={data} />
+        <WeeklyPanel data={data} />
+      </div>
+      {data.rows.length === 0 ? (
+        <p className="mt-[20px] rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted">
+          {t('noLessons')}
+        </p>
+      ) : (
+        <WeekGrid data={data} />
+      )}
+    </>
+  );
+}
+
+// ── Monthly body: monthly outcome + calendar grid + focus card ───────────────────
+
+/** Locate the initial grid selection: the URL-selected week's first lesson, else the
+ *  first lesson anywhere in the month. Null when the month has no lessons. */
+function initialSelection(
+  grid: BrowseMonthWeek[],
+  selectedWeek: number,
+): { weekIdx: number; periodIdx: number } | null {
+  if (grid.length === 0) return null;
+  const found = grid.findIndex((w) => w.week === selectedWeek);
+  const weekIdx = found === -1 ? 0 : found;
+  const pi = grid[weekIdx].cells.findIndex(Boolean);
+  if (pi !== -1) return { weekIdx, periodIdx: pi };
+  for (let w = 0; w < grid.length; w += 1) {
+    const p = grid[w].cells.findIndex(Boolean);
+    if (p !== -1) return { weekIdx: w, periodIdx: p };
+  }
+  return null;
+}
+
+function MonthlyBody({ data }: { data: CurriculumBrowseData }) {
+  const t = useTranslations('curriculum');
+  const grid = data.monthGrid;
+  const [sel, setSel] = useState(() => initialSelection(grid, data.selected.week));
+
+  const isEmpty = grid.length === 0 || grid.every((w) => w.cells.every((c) => !c));
+  const focusRow = sel ? grid[sel.weekIdx]?.cells[sel.periodIdx] ?? null : null;
+
+  return (
+    <>
+      <MonthlyPanel data={data} />
+      {isEmpty ? (
+        <p className="mt-[20px] rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted">
+          {t('monthGrid.noLessons')}
+        </p>
+      ) : (
+        <div className="mt-[20px] grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_320px]">
+          <MonthCalendar
+            grid={grid}
+            selectedWeek={data.selected.week}
+            selected={sel}
+            onSelect={(weekIdx, periodIdx) => setSel({ weekIdx, periodIdx })}
+          />
+          <div className="lg:sticky lg:top-[80px]">
+            {focusRow ? <FocusCard row={focusRow} /> : null}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Monthly calendar grid ────────────────────────────────────────────────────────
+
+const GRID_COLS = 'grid grid-cols-[84px_repeat(5,minmax(0,1fr))] gap-[10px]';
+
+function MonthCalendar({
+  grid,
+  selectedWeek,
+  selected,
+  onSelect,
+}: {
+  grid: BrowseMonthWeek[];
+  selectedWeek: number;
+  selected: { weekIdx: number; periodIdx: number } | null;
+  onSelect: (weekIdx: number, periodIdx: number) => void;
+}) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
-  const { month, week } = data.selected;
-  const { monthly, weekly } = data;
+
+  return (
+    <div className="flex flex-col gap-[14px]">
+      {/* Period column headers (source of truth = curriculum_lesson.period). */}
+      <div className={GRID_COLS}>
+        <div />
+        {[1, 2, 3, 4, 5].map((p) => (
+          <div
+            key={p}
+            className="text-center text-[11px] font-semibold uppercase tracking-[0.05em] text-text-faint"
+          >
+            {t('period', { n: formatNumber(p, locale) })}
+          </div>
+        ))}
+      </div>
+
+      {grid.map((weekRow, weekIdx) => {
+        const isFocusWeek = weekRow.week === selectedWeek;
+        const cells = weekRow.cells.map((cell, periodIdx) => (
+          <GridCell
+            key={periodIdx}
+            cell={cell}
+            selected={selected?.weekIdx === weekIdx && selected?.periodIdx === periodIdx}
+            onSelect={() => onSelect(weekIdx, periodIdx)}
+          />
+        ));
+
+        if (isFocusWeek) {
+          // The in-focus week lifts into a teal-bordered box with a header line.
+          return (
+            <div
+              key={weekRow.week}
+              className="rounded-[13px] border border-teal-tint-border bg-surface-subtle p-[11px]"
+            >
+              <div className="mb-[8px] flex flex-wrap items-center gap-[10px] px-[2px]">
+                <span dir="auto" className="text-[13px] font-bold text-teal-deep">
+                  {t('week', { n: formatNumber(weekRow.week, locale) })}
+                  {weekRow.themeLabel ? ` · ${weekRow.themeLabel}` : ''}
+                </span>
+                <span className="rounded-[6px] border border-teal-tint-border bg-surface px-[8px] py-[2px] text-[11px] text-neutral-600">
+                  {t('monthGrid.inFocus')}
+                </span>
+              </div>
+              <div className={cn(GRID_COLS, 'items-stretch')}>
+                <div />
+                {cells}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={weekRow.week} className={cn(GRID_COLS, 'items-stretch')}>
+            <div className="flex flex-col justify-center">
+              <span className="text-[13px] font-semibold text-ink">
+                {t('week', { n: formatNumber(weekRow.week, locale) })}
+              </span>
+              {weekRow.themeLabel ? (
+                <span dir="auto" className="text-[11px] text-text-faint">
+                  {weekRow.themeLabel}
+                </span>
+              ) : null}
+            </div>
+            {cells}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A single period cell in the calendar grid — skill (colour-coded), LO, topic. */
+function GridCell({
+  cell,
+  selected,
+  onSelect,
+}: {
+  cell: BrowseRow | null;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  if (!cell) {
+    return <div className="rounded-[10px] border border-dashed border-border bg-surface-subtle" />;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        'flex min-w-0 flex-col rounded-[10px] border bg-surface px-[10px] py-[9px] text-start outline-none transition-colors focus-visible:ring-2 focus-visible:ring-teal/40',
+        selected
+          ? 'border-[1.5px] border-teal ring-[3px] ring-teal/10'
+          : 'border-border hover:border-teal-tint-border',
+      )}
+    >
+      {cell.linguisticSkill ? (
+        <span dir="auto" className={cn('text-[10.5px] font-semibold', SKILL_TEXT[cell.skillKey])}>
+          {cell.linguisticSkill}
+        </span>
+      ) : null}
+      <span
+        dir="auto"
+        className="mt-[3px] line-clamp-2 text-[12px] leading-[1.3] text-neutral-900 [overflow-wrap:anywhere]"
+      >
+        {cell.dailyOutcome || '—'}
+      </span>
+      {cell.theme ? (
+        <span dir="auto" className="mt-[6px] text-[10.5px] text-neutral-500 [overflow-wrap:anywhere]">
+          {cell.theme}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+// ── Outcome panels (cream, locked) ──────────────────────────────────────────────
+
+/** The month's learning outcome (Skills / Knowledge). Shared by both views. */
+function MonthlyPanel({ data }: { data: CurriculumBrowseData }) {
+  const t = useTranslations('curriculum');
+  const { month } = data.selected;
 
   // The monthly outcome arrives as Skills/Knowledge learning outcomes (parsed from
   // the split columns when present, else the single combined blob). Mirror the
   // weekly two-heading layout, but render one bullet per LO rather than gluing the
   // whole block into a single paragraph.
-  const monthlyLOs = useMemo(() => parseMonthlyOutcome(monthly), [monthly]);
+  const monthlyLOs = useMemo(() => parseMonthlyOutcome(data.monthly), [data.monthly]);
   const hasMonthlyLOs = monthlyLOs.skills.length > 0 || monthlyLOs.knowledge.length > 0;
 
   return (
-    <div className="grid gap-[16px] md:grid-cols-2">
-      <Panel label={t('monthlyOutcome', { month: month || '—' })}>
-        {hasMonthlyLOs ? (
-          <OutcomeBulletColumns knowledge={monthlyLOs.knowledge} skills={monthlyLOs.skills} />
-        ) : (
-          // Fallback for a non-conforming blob with no parseable Skills/Knowledge.
-          <OutcomeValue value={monthly.combined} />
-        )}
-      </Panel>
-      <Panel label={t('weeklyOutcome', { n: formatNumber(week, locale) })}>
-        <OutcomeColumns knowledge={weekly.knowledge} skills={weekly.skills} />
-      </Panel>
-    </div>
+    <Panel label={t('monthlyOutcome', { month: month || '—' })}>
+      {hasMonthlyLOs ? (
+        <OutcomeBulletColumns knowledge={monthlyLOs.knowledge} skills={monthlyLOs.skills} />
+      ) : (
+        // Fallback for a non-conforming blob with no parseable Skills/Knowledge.
+        <OutcomeValue value={data.monthly.combined} />
+      )}
+    </Panel>
+  );
+}
+
+/** The selected week's learning outcome (Skills / Knowledge). Weekly view only. */
+function WeeklyPanel({ data }: { data: CurriculumBrowseData }) {
+  const t = useTranslations('curriculum');
+  const locale = useLocale();
+  return (
+    <Panel label={t('weeklyOutcome', { n: formatNumber(data.selected.week, locale) })}>
+      <OutcomeColumns knowledge={data.weekly.knowledge} skills={data.weekly.skills} />
+    </Panel>
   );
 }
 
@@ -365,7 +741,7 @@ function OutcomeList({ items, className }: { items: string[]; className?: string
       {items.map((item, i) => (
         <li key={i} dir="auto" className="flex gap-[8px] text-[14px] leading-[1.5] text-ink">
           <span aria-hidden className="mt-[8px] size-[4px] shrink-0 rounded-full bg-[#a6794f]" />
-          <span>{item}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{item}</span>
         </li>
       ))}
     </ul>
@@ -378,7 +754,7 @@ function OutcomeValue({ value, className }: { value: string | null; className?: 
     return <p className={cn('text-[14px] text-text-faint', className)}>{t('empty')}</p>;
   }
   return (
-    <p dir="auto" className={cn('text-[14px] leading-[1.5] text-ink', className)}>
+    <p dir="auto" className={cn('text-[14px] leading-[1.5] text-ink [overflow-wrap:anywhere]', className)}>
       {value}
     </p>
   );
@@ -399,7 +775,7 @@ function DailyOutcome({ text }: { text: string }) {
       {los.map((lo, i) => (
         <li key={i} dir="auto" className="flex gap-[8px]">
           <span aria-hidden className="mt-[8px] size-[4px] shrink-0 rounded-full bg-[#a6794f]" />
-          <span>{lo}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{lo}</span>
         </li>
       ))}
     </ul>
@@ -442,12 +818,12 @@ function WeekTable({
   onSelect: (i: number) => void;
 }) {
   const t = useTranslations('curriculum');
+  const locale = useLocale();
 
-  // Compute the topic spans once. Contiguous days merge into one cell ONLY when
+  // Compute the topic spans once. Contiguous periods merge into one cell ONLY when
   // their Theme is exactly equal (themes are already whitespace-trimmed upstream in
-  // curriculum-browse.ts) — driven off the actual per-day data, never an assumed
-  // Mon–Fri block. A run of equal non-empty Theme is rendered at its first row;
-  // blank Theme is its own single cell.
+  // curriculum-browse.ts) — driven off the actual per-period data. A run of equal
+  // non-empty Theme is rendered at its first row; blank Theme is its own single cell.
   const topicCells = useMemo<(TopicCell | null)[]>(() => {
     const cells: (TopicCell | null)[] = new Array(rows.length).fill(null);
     let i = 0;
@@ -474,7 +850,7 @@ function WeekTable({
             {/* LEARNING OUTCOME holds the long, most-read text — let it take all the
                 remaining width; the other columns are squeezed to tight fixed widths
                 so the LO column is clearly the widest. */}
-            <Th className="w-[56px]">{t('table.day')}</Th>
+            <Th className="w-[80px]">{t('table.period')}</Th>
             <Th className="w-auto border-s border-border">{t('table.learningOutcome')}</Th>
             <Th className="w-[76px] border-s border-border">{t('table.skill')}</Th>
             <Th className="w-[96px] border-s border-border">{t('table.topic')}</Th>
@@ -507,7 +883,7 @@ function WeekTable({
                     tint,
                   )}
                 >
-                  {t(`daysShort.${row.weekday}`)}
+                  {t('period', { n: formatNumber(row.period, locale) })}
                 </td>
                 <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
                   {row.dailyOutcome ? (
@@ -576,6 +952,7 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 function FocusCard({ row }: { row: BrowseRow }) {
   const t = useTranslations('curriculum');
+  const locale = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -602,7 +979,7 @@ function FocusCard({ row }: { row: BrowseRow }) {
   return (
     <div>
       <p className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
-        {t('focus.inFocus', { day: t(`daysLong.${row.weekday}`) })}
+        {t('focus.inFocus', { value: t('period', { n: formatNumber(row.period, locale) }) })}
       </p>
       <div className="rounded-[16px] border border-teal bg-surface p-[18px]">
         <div className="flex flex-wrap items-center gap-[8px]">
@@ -630,7 +1007,7 @@ function FocusCard({ row }: { row: BrowseRow }) {
         <p className="mt-[14px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
           {t('focus.dailyOutcome')}
         </p>
-        <div className="mt-[6px] text-[16px] font-semibold leading-[1.35] text-ink">
+        <div className="mt-[6px] text-[16px] font-semibold leading-[1.35] text-ink break-words [overflow-wrap:anywhere]">
           {row.dailyOutcome ? <DailyOutcome text={row.dailyOutcome} /> : t('empty')}
         </div>
 
@@ -641,9 +1018,12 @@ function FocusCard({ row }: { row: BrowseRow }) {
             </p>
             <ul className="mt-[8px] space-y-[8px]">
               {row.resources.map((r, i) => (
-                <li key={`${r.label}-${i}`} className="flex items-center gap-[9px]">
+                <li key={`${r.label}-${i}`} className="flex min-w-0 items-start gap-[9px]">
                   <ResourceIcon label={r.label} />
-                  <span dir="auto" className="text-[13.5px] text-ink">
+                  {/* Resource labels are often raw URLs (e.g. langeek.co/…) — break
+                      inside the string with break-all so they can't bleed past the
+                      card edge. min-w-0 lets the flex child actually shrink. */}
+                  <span dir="auto" className="min-w-0 break-all text-[13.5px] text-ink">
                     {r.label}
                   </span>
                 </li>
@@ -700,7 +1080,7 @@ function ResourceIcon({ label }: { label: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className="shrink-0 text-teal"
+      className="mt-[2px] shrink-0 text-teal"
     >
       {kind === 'audio' ? (
         <>

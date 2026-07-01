@@ -7,44 +7,42 @@
     "year": "السنة {n}",
     "weekWithMonth": "الأسبوع {n} · <m>{month}</m>",
     "week": "الأسبوع {n}",
+    "period": "الحصة {n}",
     "monthLabel": "الشهر",
     "weekHeading": "الأسبوع",
     "prevWeek": "الأسبوع السابق",
     "nextWeek": "الأسبوع التالي",
+    "prevMonth": "الشهر السابق",
+    "nextMonth": "الشهر التالي",
+    "view": {
+      "label": "العرض",
+      "weekly": "أسبوعي",
+      "monthly": "شهري"
+    },
+    "monthGrid": {
+      "inFocus": "قيد التركيز",
+      "noLessons": "لا توجد دروس لهذا الشهر."
+    },
     "monthlyOutcome": "الناتج الشهري · {month}",
     "weeklyOutcome": "الناتج الأسبوعي · الأسبوع {n}",
     "knowledge": "المعرفة",
     "skills": "المهارات",
     "empty": "—",
     "table": {
-      "day": "اليوم",
+      "period": "الحصة",
       "learningOutcome": "ناتج التعلّم",
       "skill": "المهارة",
       "topic": "الموضوع",
       "resources": "الموارد"
     },
     "focus": {
-      "inFocus": "قيد التركيز · {day}",
+      "inFocus": "قيد التركيز · {value}",
       "dailyOutcome": "ناتج التعلّم اليومي",
       "resources": "الموارد",
       "plan": "خطّط لهذا الدرس",
       "planning": "جارٍ البدء…",
       "notMember": "يمكنك التخطيط للدروس في المواد التي تُدرّسها فقط.",
       "genericError": "تعذّر بدء الخطة. حاول مرة أخرى."
-    },
-    "daysShort": {
-      "1": "الإثنين",
-      "2": "الثلاثاء",
-      "3": "الأربعاء",
-      "4": "الخميس",
-      "5": "الجمعة"
-    },
-    "daysLong": {
-      "1": "الإثنين",
-      "2": "الثلاثاء",
-      "3": "الأربعاء",
-      "4": "الخميس",
-      "5": "الجمعة"
     },
     "noLessons": "لا توجد دروس لهذا الأسبوع.",
     "emptyState": {

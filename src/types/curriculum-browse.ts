@@ -29,6 +29,19 @@ export interface BrowseMonthNav {
   weeks: number[];
 }
 
+/**
+ * One week-row of the monthly calendar grid: its week number, a theme label
+ * (predominant theme of the week, shown under "Week N"), and up to five period
+ * cells indexed 0..4 for periods 1..5. A cell is null where that period has no
+ * lesson. Each cell is a full `BrowseRow`, so the shared FocusCard renders it
+ * without a server round-trip.
+ */
+export interface BrowseMonthWeek {
+  week: number;
+  themeLabel: string;
+  cells: (BrowseRow | null)[];
+}
+
 /** The four macro linguistic skills, plus a neutral fallback for anything else. */
 export type SkillKey = 'reading' | 'writing' | 'listening' | 'speaking' | 'other';
 
@@ -97,4 +110,11 @@ export interface CurriculumBrowseData {
   monthly: MonthlyOutcome;
   /** The week's rows, one per period, ascending. Empty when the week has none. */
   rows: BrowseRow[];
+  /** The selected month's calendar grid — one entry per week, each with its five
+   *  period cells (Task 6 monthly view). Empty when the month has no lessons. */
+  monthGrid: BrowseMonthWeek[];
+  /** First coordinate of the adjacent months (null at the ends) — the monthly
+   *  view's month navigator steps to these, snapping to each month's first week. */
+  prevMonth: BrowseCoordinate | null;
+  nextMonth: BrowseCoordinate | null;
 }

@@ -14,6 +14,7 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import {
   cleanLO,
+  getCurriculumMonthRows,
   getCurriculumNav,
   getCurriculumSubjectCodes,
   getCurriculumWeekRows,
@@ -23,10 +24,27 @@ import type { CurriculumLessonRow } from '@/lib/curriculum/types';
 import type {
   BrowseCoordinate,
   BrowseMonthNav,
+  BrowseMonthWeek,
   BrowseRow,
   BrowseSubject,
   CurriculumBrowseData,
 } from '@/types/curriculum-browse';
+
+/** Map a raw curriculum row to the `BrowseRow` view-model (table row / grid cell). */
+function toBrowseRow(r: CurriculumLessonRow): BrowseRow {
+  return {
+    period: r.period,
+    weekday: r.period,
+    dailyOutcome: cleanLO(r.daily_outcome ?? ''),
+    linguisticSkill: r.linguistic_skill ?? '',
+    skillKey: skillKeyOf(r.linguistic_skill ?? ''),
+    theme: (r.theme ?? '').trim(),
+    resources: (r.resources ?? [])
+      .filter((res) => res.label && res.label.trim())
+      .map((res) => ({ label: res.label.trim(), url: res.url })),
+    lessonKey: r.lesson_key,
+  };
+}
 
 /** Calendar-month order so the week stepper walks the scheme of work in sequence. */
 const MONTH_ORDER = [
@@ -131,6 +149,9 @@ const EMPTY: CurriculumBrowseData = {
   weekly: { skills: null, knowledge: null },
   monthly: { combined: null, knowledge: null, skills: null },
   rows: [],
+  monthGrid: [],
+  prevMonth: null,
+  nextMonth: null,
 };
 
 /**
@@ -195,22 +216,39 @@ export async function getCurriculumBrowseData(input: {
     coordinate.week,
   );
 
-  // Only daily-grain periods (1–5) populate the Mon–Fri grid; non-instructional /
-  // weekly-grain rows (null or out-of-range period) have no weekday slot.
-  const rows: BrowseRow[] = weekRows
-    .filter((r) => r.period != null && r.period >= 1 && r.period <= 5)
-    .map((r) => ({
-      period: r.period,
-      weekday: r.period,
-      dailyOutcome: cleanLO(r.daily_outcome ?? ''),
-      linguisticSkill: r.linguistic_skill ?? '',
-      skillKey: skillKeyOf(r.linguistic_skill ?? ''),
-      theme: (r.theme ?? '').trim(),
-      resources: (r.resources ?? [])
-        .filter((res) => res.label && res.label.trim())
-        .map((res) => ({ label: res.label.trim(), url: res.url })),
-      lessonKey: r.lesson_key,
-    }));
+  // Only daily-grain periods (1–5) populate the period grid; non-instructional /
+  // weekly-grain rows (null or out-of-range period) have no slot.
+  const isDailyRow = (r: CurriculumLessonRow) =>
+    r.period != null && r.period >= 1 && r.period <= 5;
+  const rows: BrowseRow[] = weekRows.filter(isDailyRow).map(toBrowseRow);
+
+  // Monthly calendar grid: every week of the selected month × periods 1–5. Each
+  // cell is a full BrowseRow (null where a period has no lesson) so the shared
+  // FocusCard renders any selected cell without a server round-trip.
+  const nav = navFromCoords(coords);
+  const monthRows = await getCurriculumMonthRows(subject.code, year, coordinate.month);
+  const weeksInMonth = nav.find((n) => n.month === coordinate.month)?.weeks ?? [];
+  const monthGrid: BrowseMonthWeek[] = weeksInMonth.map((week) => {
+    const weekRowsForGrid = monthRows.filter((r) => r.week === week);
+    const cells = [1, 2, 3, 4, 5].map((p) => {
+      const cell = weekRowsForGrid.find((r) => r.period === p);
+      return cell && isDailyRow(cell) ? toBrowseRow(cell) : null;
+    });
+    return { week, themeLabel: predominantTheme(weekRowsForGrid) ?? '', cells };
+  });
+
+  // Month navigator: step to the first week of the adjacent month in the scheme
+  // of work. `nav` is already in calendar-month order.
+  const firstCoordOfMonth = (month: string): BrowseCoordinate | null => {
+    const weeks = nav.find((n) => n.month === month)?.weeks ?? [];
+    return weeks.length > 0 ? { month, week: weeks[0] } : null;
+  };
+  const monthIdx = nav.findIndex((n) => n.month === coordinate.month);
+  const prevMonth = monthIdx > 0 ? firstCoordOfMonth(nav[monthIdx - 1].month) : null;
+  const nextMonth =
+    monthIdx >= 0 && monthIdx < nav.length - 1
+      ? firstCoordOfMonth(nav[monthIdx + 1].month)
+      : null;
 
   return {
     subjects,
@@ -224,7 +262,7 @@ export async function getCurriculumBrowseData(input: {
     },
     prev,
     next,
-    nav: navFromCoords(coords),
+    nav,
     topicChip: predominantTheme(weekRows),
     weekly: {
       skills: firstOutcome(weekRows, (r) => r.weekly_skills_lo),
@@ -236,5 +274,8 @@ export async function getCurriculumBrowseData(input: {
       skills: firstOutcome(weekRows, (r) => r.monthly_skills_lo),
     },
     rows,
+    monthGrid,
+    prevMonth,
+    nextMonth,
   };
 }

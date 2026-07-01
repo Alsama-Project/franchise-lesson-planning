@@ -22,14 +22,11 @@ export interface FinishOnboardingInput {
  * Persist the onboarding choices, then send the user into the app.
  *
  * 1. Update `profiles.full_name` when it changed.
- * 2. Self-join one `subject_membership` per (centre, subject) as role 'teacher'
- *    via the `complete_onboarding` SECURITY DEFINER RPC — the only self-service
- *    write path. Idempotent, so re-running onboarding never duplicates.
- * 3. Best-effort `class_teachers` self-assign for any ticked classes.
- *
- * Classes are an optional feature and `class_teachers` has no self-insert RLS
- * policy in the current schema, so a class write may be rejected; that is
- * surfaced as a non-fatal warning rather than blocking onboarding.
+ * 2. Self-provision via the `complete_onboarding` SECURITY DEFINER RPC — the only
+ *    self-service write path for `subject_membership` and `class_teachers`
+ *    (neither has a permissive client INSERT policy). It joins one membership per
+ *    (centre, subject) as role 'teacher' and self-assigns the ticked classes,
+ *    scoped to those spaces. Idempotent, so re-running never duplicates.
  */
 export async function finishOnboarding(input: FinishOnboardingInput): Promise<ActionResult> {
   const name = input.fullName.trim();
@@ -54,27 +51,18 @@ export async function finishOnboarding(input: FinishOnboardingInput): Promise<Ac
     if (error) return { ok: false, error: error.message };
   }
 
-  // 2. Subject memberships — via the SECURITY DEFINER RPC (the only self-service
-  // write path; `subject_membership` has no permissive client INSERT policy).
-  // Role is hardcoded to 'teacher' inside the function; idempotent on re-run.
-  const { error: memberErr } = await supabase.rpc('complete_onboarding', {
+  // 2. Memberships + class assignments — via the SECURITY DEFINER RPC (the only
+  // self-service write path; neither `subject_membership` nor `class_teachers`
+  // has a permissive client INSERT policy). Role is hardcoded to 'teacher' and
+  // classes are scoped to the joined spaces inside the function; idempotent.
+  const { error: rpcErr } = await supabase.rpc('complete_onboarding', {
     p_centre_id: input.schoolId,
     p_subject_ids: input.subjectIds,
+    p_class_ids: input.classIds,
   });
-  if (memberErr) return { ok: false, error: memberErr.message };
-
-  // 3. Classes (best-effort).
-  let warning: string | undefined;
-  if (input.classIds.length > 0) {
-    const ct = input.classIds.map((classId) => ({ class_id: classId, teacher_id: user.id }));
-    const { error: ctErr } = await supabase
-      .from('class_teachers')
-      .upsert(ct, { onConflict: 'class_id,teacher_id', ignoreDuplicates: true });
-    if (ctErr) warning = 'Your spaces were saved; classes could not be saved yet.';
-  }
+  if (rpcErr) return { ok: false, error: rpcErr.message };
 
   revalidatePath('/');
-  if (warning) return { ok: true, warning };
   redirect('/');
 }
 

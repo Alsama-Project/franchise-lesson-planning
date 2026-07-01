@@ -6,22 +6,24 @@
 -- auth users and are handled in the auth phase.
 
 insert into public.schools (name) values
-  ('Shatila Centre'),
-  ('Bourj al-Barajneh Centre');
+  ('Shatila 1'),
+  ('Shatila 2'),
+  ('Bourj 1'),
+  ('Bourj 2');
 
 insert into public.subjects (name, code) values
   ('English', 'english');
 
--- classes (school · subject English · year · group · literacy)
-insert into public.classes (school_id, subject_id, year, group_label, literacy)
-select s.id, sub.id, c.year, c.group_label, c.literacy::public.literacy
-from (values
-  ('Shatila Centre',           1, 'A', 'illiterate'),
-  ('Shatila Centre',           2, 'A', 'mixed'),
-  ('Bourj al-Barajneh Centre', 3, 'A', 'literate')
-) as c(school_name, year, group_label, literacy)
-join public.schools s on s.name = c.school_name
-join public.subjects sub on sub.code = 'english';
+-- classes (school · subject English · year). Post-0018 a class is keyed by
+-- (school, subject, year) with no group letter. The curriculum runs Years 1–6,
+-- so every centre gets one English class per year. `literacy` is left at the
+-- column default ('mixed'); adjust per real class if a centre streams by literacy.
+insert into public.classes (school_id, subject_id, year)
+select s.id, sub.id, y.year
+from public.schools s
+cross join public.subjects sub
+cross join generate_series(1, 6) as y(year)
+where sub.code = 'english';
 
 -- activity_bank — the full pre-approved sets for the two blocks that have menus
 -- (Check for Understanding + Exit Ticket). Upserted on the (block_type, name)

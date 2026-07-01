@@ -18,6 +18,13 @@
 -- `sm_coord_write` (0012). Idempotent: `on conflict do nothing` on the natural
 -- key so re-running onboarding (or joining a space twice from settings) is safe.
 --
+-- The same RPC also self-assigns the caller's picked CLASSES (`class_teachers`),
+-- which likewise has no client INSERT policy (0006 is select-only). Teachers pick
+-- their classes during onboarding; a coordinator/admin can adjust later. Class
+-- assignment is scoped to classes inside a space the caller is joining in this
+-- same call (this centre + a chosen subject), so a client can never self-assign
+-- into a class outside its onboarded spaces.
+--
 -- With the RPC in place we DROP `sm_self_join`, so `subject_membership` has no
 -- permissive client INSERT policy at all — writes flow only through this definer
 -- RPC, admins (`sm_admin_write`), or coordinators (`sm_coord_write`). Self-delete
@@ -31,12 +38,19 @@
 -- Idempotent (CREATE OR REPLACE / DROP … IF EXISTS): safe to re-run.
 
 -- ── complete_onboarding ──────────────────────────────────────────────────────
--- Self-join one `subject_membership` per subject at the given centre, always as
--- 'teacher'. Returns void. The caller is taken from auth.uid() — never a client
--- argument — so this cannot provision membership for anyone but the caller.
+-- Self-join one `subject_membership` per subject at the given centre (always as
+-- 'teacher'), then self-assign the caller to the picked classes. Returns void.
+-- The caller is taken from auth.uid() — never a client argument — so this cannot
+-- provision access for anyone but the caller.
+--
+-- An earlier draft of this migration defined a 2-arg (uuid, uuid[]) version; drop
+-- it so only the classes-aware 3-arg function remains (no stale overload).
+drop function if exists public.complete_onboarding(uuid, uuid[]);
+
 create or replace function public.complete_onboarding(
-  p_centre_id  uuid,
-  p_subject_ids uuid[]
+  p_centre_id   uuid,
+  p_subject_ids uuid[],
+  p_class_ids   uuid[] default '{}'
 )
 returns void
 language plpgsql
@@ -66,11 +80,25 @@ begin
     values (v_uid, p_centre_id, v_subject, 'teacher')
     on conflict (profile_id, school_id, subject_id) do nothing;
   end loop;
+
+  -- Self-assign the caller to each picked class, but ONLY classes that live in a
+  -- space we just joined (this centre + a chosen subject). Out-of-space or bogus
+  -- ids are silently dropped by the filter, so a client can never self-assign
+  -- into a class outside its onboarded spaces. Idempotent on (class_id, teacher_id).
+  if p_class_ids is not null and array_length(p_class_ids, 1) is not null then
+    insert into public.class_teachers (class_id, teacher_id)
+    select c.id, v_uid
+    from public.classes c
+    where c.id = any(p_class_ids)
+      and c.school_id = p_centre_id
+      and c.subject_id = any(p_subject_ids)
+    on conflict (class_id, teacher_id) do nothing;
+  end if;
 end;
 $$;
 
-revoke execute on function public.complete_onboarding(uuid, uuid[]) from public;
-grant  execute on function public.complete_onboarding(uuid, uuid[]) to authenticated;
+revoke execute on function public.complete_onboarding(uuid, uuid[], uuid[]) from public;
+grant  execute on function public.complete_onboarding(uuid, uuid[], uuid[]) to authenticated;
 
 -- ── lock subject_membership: drop the permissive self-insert policy ──────────
 -- The RPC above is now the sole self-service INSERT path. Remaining write

@@ -121,12 +121,16 @@ export async function createScopedPlan(
     }
   }
 
-  // Open, don't duplicate: an existing plan at the SAME scope for this slot is
-  // opened instead of inserting a second one. Done in app code because the
-  // class-scope unique index may be deferred (not guaranteed to exist).
+  // Open, don't duplicate — but only the caller's OWN plan. A lesson plan is a
+  // per-teacher artefact: the lookup MUST be scoped to `created_by = me`, else the
+  // first teacher to open a slot owns the only row and every other teacher at the
+  // same scope is routed into it (content bleed) and later locked out of it (the
+  // edit gate keys on `created_by == auth.uid()`). Matches the per-teacher unique
+  // indexes in migration 0028.
   const dupQuery = supabase
     .from('lesson_plans')
     .select('id')
+    .eq('created_by', user.id)
     .eq('curriculum_lesson_id', input.lessonKey)
     .eq('scope', input.scope);
   if (input.scope === 'class' && classId) dupQuery.eq('class_id', classId);
@@ -158,10 +162,14 @@ export async function createScopedPlan(
 
   if (error) {
     // Lost a race on a unique constraint — resolve the now-existing row and open it.
+    // Same owner scoping as the dedup lookup: the per-teacher unique indexes (0028)
+    // fire only on the caller's own duplicate, so we resolve back to THAT row, never
+    // a colleague's.
     if (error.code === '23505') {
       const raceQuery = supabase
         .from('lesson_plans')
         .select('id')
+        .eq('created_by', user.id)
         .eq('curriculum_lesson_id', input.lessonKey)
         .eq('scope', input.scope);
       if (input.scope === 'class' && classId) raceQuery.eq('class_id', classId);

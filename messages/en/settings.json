@@ -49,7 +49,13 @@
         "school": "School",
         "subject": "Subject",
         "class": "Class",
+        "testBar": "Test bar",
         "actions": "Actions"
+      },
+      "testBar": {
+        "toggleLabel": "Test-bar access for {name}",
+        "adminLabel": "Test-bar access for {name} (admin — always on)",
+        "adminHint": "Admins always have test-bar access."
       },
       "edit": "Edit",
       "remove": "Remove",

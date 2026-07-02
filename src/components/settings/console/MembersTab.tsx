@@ -10,6 +10,7 @@ import {
   coordRemoveMember,
   removeMembership,
   saveMembership,
+  setUserImpersonation,
 } from '@/lib/actions/console';
 import {
   Avatar,
@@ -24,6 +25,7 @@ import {
   SectionCard,
   Td,
   Th,
+  Toggle,
 } from './ui';
 import { cn } from '@/lib/cn';
 
@@ -65,6 +67,9 @@ export function AdminMembersTab({ data }: { data: AdminMembersData }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Person | null>(null);
+  // Optimistic per-person overrides for test-bar access, keyed by profileId, so a
+  // toggle reflects instantly and reverts on a failed write.
+  const [impOverrides, setImpOverrides] = useState<Record<string, boolean>>({});
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, onDone?: () => void) {
     setError(null);
@@ -79,8 +84,28 @@ export function AdminMembersTab({ data }: { data: AdminMembersData }) {
     });
   }
 
+  const impValue = (p: Person) => impOverrides[p.profileId] ?? p.canImpersonate;
+
+  function toggleImpersonation(p: Person, next: boolean) {
+    const prev = impValue(p);
+    setError(null);
+    setImpOverrides((o) => ({ ...o, [p.profileId]: next }));
+    startTransition(async () => {
+      const res = await setUserImpersonation({ targetUserId: p.profileId, enabled: next });
+      if (!res.ok) {
+        setImpOverrides((o) => ({ ...o, [p.profileId]: prev }));
+        setError(res.error ?? t('common.somethingWrong'));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   const rows = flatten(data.people);
   const dash = t('common.dash');
+  // The test-bar toggle is rendered ONCE per person; the table is flattened per
+  // membership, so track which profileIds have already shown their toggle.
+  const impSeen = new Set<string>();
 
   return (
     <div className="space-y-[18px]">
@@ -96,11 +121,18 @@ export function AdminMembersTab({ data }: { data: AdminMembersData }) {
                 <Th>{t('members.col.school')}</Th>
                 <Th>{t('members.col.subject')}</Th>
                 <Th>{t('members.col.class')}</Th>
+                <Th>{t('members.col.testBar')}</Th>
                 <Th className="text-end">{t('members.col.actions')}</Th>
               </tr>
             }
           >
-            {rows.map((r, i) => (
+            {rows.map((r, i) => {
+              // Show the per-person test-bar toggle only on this person's first
+              // flattened row; later membership rows leave the cell empty.
+              const showToggle = !impSeen.has(r.person.profileId);
+              if (showToggle) impSeen.add(r.person.profileId);
+              const isAdmin = r.person.role === 'admin';
+              return (
               <tr key={`${r.person.profileId}:${r.membershipId ?? 'none'}:${i}`}>
                 <Td>
                   <div className="flex items-center gap-[10px]">
@@ -116,6 +148,27 @@ export function AdminMembersTab({ data }: { data: AdminMembersData }) {
                 <Td className="text-[#7A7068]" dir="auto">{r.schoolName ?? dash}</Td>
                 <Td className="text-[#7A7068]" dir="auto">{r.subjectName ?? dash}</Td>
                 <Td className="text-[#7A7068]" dir="auto">{r.homeClass ?? dash}</Td>
+                <Td>
+                  {showToggle ? (
+                    isAdmin ? (
+                      // Admins are always eligible (can_impersonate OR admin), so
+                      // the flag is moot — render implied-on, not a false off-state.
+                      <Toggle
+                        checked
+                        readOnly
+                        aria-label={t('members.testBar.adminLabel', { name: r.person.name })}
+                        title={t('members.testBar.adminHint')}
+                      />
+                    ) : (
+                      <Toggle
+                        checked={impValue(r.person)}
+                        disabled={pending}
+                        onChange={(next) => toggleImpersonation(r.person, next)}
+                        aria-label={t('members.testBar.toggleLabel', { name: r.person.name })}
+                      />
+                    )
+                  ) : null}
+                </Td>
                 <Td className="text-end">
                   {r.membershipId ? (
                     <div className="flex items-center justify-end gap-3">
@@ -137,7 +190,8 @@ export function AdminMembersTab({ data }: { data: AdminMembersData }) {
                   )}
                 </Td>
               </tr>
-            ))}
+              );
+            })}
           </ConsoleTable>
         )}
         <div className="px-[18px]">

@@ -428,6 +428,35 @@ export async function coordPromoteMember(input: { membershipId: string }): Promi
   return ok();
 }
 
+// ── Test-bar access (admin) ───────────────────────────────────────────────────
+
+/**
+ * Admin: grant or revoke a user's test-bar access (`profiles.can_impersonate` —
+ * who may USE the impersonation bar). Wraps the `set_user_impersonation` definer
+ * RPC, which re-asserts `is_admin()` and is column-scoped to `can_impersonate`
+ * alone. The `requireAdmin()` check here is defence in depth — the grant is never
+ * gated only by the UI hiding the control. Scope is `can_impersonate` only;
+ * `is_test_persona` (who may BE impersonated) stays seed-managed.
+ */
+export async function setUserImpersonation(input: {
+  targetUserId: string;
+  enabled: boolean;
+}): Promise<ConsoleResult> {
+  const guard = await requireAdmin();
+  if (isFail(guard)) return guard;
+
+  if (!input.targetUserId) return fail('Pick a person.');
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_user_impersonation', {
+    target_uid: input.targetUserId,
+    enabled: input.enabled,
+  });
+  if (error) return fail(error.message);
+  revalidateConsole();
+  return ok();
+}
+
 // ── Term calendar (admin) ─────────────────────────────────────────────────────
 // Autosave-on-settle writes for the Option B timeline. The UI mutates optimistically
 // and calls these only when an interaction settles (pointer-up after a move/resize,

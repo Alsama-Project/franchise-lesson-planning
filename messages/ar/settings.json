@@ -21,6 +21,9 @@
     "language": {
       "label": "اللغة"
     },
+    "profile": {
+      "classesSaveError": "تعذّر حفظ اختيار صفوفك. يرجى المحاولة مرة أخرى."
+    },
     "common": {
       "somethingWrong": "حدث خطأ ما.",
       "dash": "—",

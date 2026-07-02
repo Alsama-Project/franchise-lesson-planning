@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { createClient } from '@/lib/supabase/server';
 
 export interface ActionResult {
@@ -72,8 +73,12 @@ export interface SaveSettingsInput {
   addSpaces: Array<{ schoolId: string; subjectId: string }>;
   /** `subject_membership` ids to leave. */
   removeSpaceIds: string[];
-  addClassIds: string[];
-  removeClassIds: string[];
+  /**
+   * The FULL set of class ids the caller should be assigned to — declarative,
+   * reconciled by `set_my_classes` within the caller's own subject spaces. Omit
+   * (undefined) to leave class assignments untouched (e.g. a name-only save).
+   */
+  classIds?: string[];
 }
 
 /**
@@ -137,25 +142,20 @@ export async function saveSettings(input: SaveSettingsInput): Promise<ActionResu
     }
   }
 
-  // Classes (best-effort; see finishOnboarding note).
-  let warning: string | undefined;
-  if (input.removeClassIds.length > 0) {
-    const { error } = await supabase
-      .from('class_teachers')
-      .delete()
-      .in('class_id', input.removeClassIds)
-      .eq('teacher_id', user.id);
-    if (error) warning = 'Saved, but class changes could not be applied yet.';
-  }
-  if (input.addClassIds.length > 0) {
-    const ct = input.addClassIds.map((classId) => ({ class_id: classId, teacher_id: user.id }));
-    const { error } = await supabase
-      .from('class_teachers')
-      .upsert(ct, { onConflict: 'class_id,teacher_id', ignoreDuplicates: true });
-    if (error) warning = 'Saved, but class changes could not be applied yet.';
+  // Classes — reconcile the caller's assignments to the ticked set through the
+  // `set_my_classes` SECURITY DEFINER RPC. `class_teachers` has no client-write
+  // policy (0006 is select-only); this definer RPC is the sole self-service
+  // path, scoped to the caller's own subject spaces (mirrors onboarding). A
+  // failure here is a real error — surfaced, not swallowed into a soft warning.
+  if (input.classIds !== undefined) {
+    const { error } = await supabase.rpc('set_my_classes', { p_class_ids: input.classIds });
+    if (error) {
+      const t = await getTranslations('settings');
+      return { ok: false, error: t('profile.classesSaveError') };
+    }
   }
 
   revalidatePath('/settings');
   revalidatePath('/');
-  return warning ? { ok: true, warning } : { ok: true };
+  return { ok: true };
 }

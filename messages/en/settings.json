@@ -21,6 +21,9 @@
     "language": {
       "label": "Language"
     },
+    "profile": {
+      "classesSaveError": "Couldn’t save your class selection. Please try again."
+    },
     "common": {
       "somethingWrong": "Something went wrong.",
       "dash": "—",

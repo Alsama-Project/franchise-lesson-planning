@@ -192,13 +192,19 @@ export function SettingsForm(props: SettingsFormProps) {
   function onSave() {
     setError(null);
     setToast(null);
+    // Send the FULL ticked set (declarative reconcile via set_my_classes), but
+    // only when the class selection actually changed — a name/space-only save
+    // leaves class assignments untouched.
+    const classesDirty = addClassIds.size > 0 || removeClassIds.size > 0;
+    const classIds = classesDirty
+      ? classGroups.flatMap((g) => g.list).filter((c) => isClassTicked(c.id)).map((c) => c.id)
+      : undefined;
     startTransition(async () => {
       const res = await saveSettings({
         fullName: name.trim() !== props.fullName.trim() ? name.trim() : undefined,
         addSpaces,
         removeSpaceIds: [...removeSpaceIds],
-        addClassIds: [...addClassIds],
-        removeClassIds: [...removeClassIds],
+        classIds,
       });
       if (!res.ok) {
         setError(res.error ?? 'Could not save your changes.');

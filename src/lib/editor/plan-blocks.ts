@@ -61,9 +61,33 @@ export const REVIEW_EDITABLE_TYPES: LessonBlockType[] = [
   'exit_ticket',
 ];
 
-/** Total minutes of the three fixed opening routines (anthem · warm-up · cool down). */
+/** The three opening-routine block types, in lesson order. */
+const ROUTINE_TYPES: LessonBlockType[] = ['anthem', 'warm_up', 'cool_down'];
+
+/** Total minutes of the three opening routines (anthem · warm-up · cool down). */
 export function routinesMinutes(blocks: Block[]): number {
   return blocks
-    .filter((b) => b.type === 'anthem' || b.type === 'warm_up' || b.type === 'cool_down')
+    .filter((b) => ROUTINE_TYPES.includes(b.type))
     .reduce((t, b) => t + blockMinutes(b), 0);
+}
+
+/**
+ * Return a new blocks array with the opening routines' total minutes set to
+ * `total`, distributed as evenly as possible across the routine blocks present
+ * (remainder to the earliest blocks) so their sum stays exactly `total`. The
+ * routine content stays standard — only the time changes. Negative inputs clamp
+ * to 0. If no routine blocks exist the array is returned unchanged.
+ */
+export function setRoutinesMinutes(blocks: Block[], total: number): Block[] {
+  const present = ROUTINE_TYPES.filter((type) => blockIndex(blocks, type) !== -1);
+  if (present.length === 0) return blocks;
+  const safe = Math.max(0, Math.round(total));
+  const base = Math.floor(safe / present.length);
+  const remainder = safe % present.length;
+  const minutesByType = new Map<LessonBlockType, number>(
+    present.map((type, i) => [type, base + (i < remainder ? 1 : 0)]),
+  );
+  return blocks.map((b) =>
+    minutesByType.has(b.type) ? { ...b, minutes: minutesByType.get(b.type)! } : b,
+  );
 }

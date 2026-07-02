@@ -36,8 +36,9 @@ interface PartRow {
  * Step 5 — Review: the collapsed objective banner is rendered by the wizard
  * frame above this. Here: editable Required materials chips, then a lesson-parts
  * table (Lesson part · Phase · Time) with click-to-expand rows, phase read-only,
- * and time steppers for the editable blocks. Standard routines are fixed (3 min)
- * and Homework (excluded from the 50) is shown separately.
+ * and time steppers for the editable blocks. Standard routines keep standard
+ * content (anthem · warm-up · cool down) but their time is editable, and
+ * Homework (excluded from the 50) is shown separately.
  */
 export function ReviewStep({
   planId,
@@ -51,6 +52,7 @@ export function ReviewStep({
   attachedFor,
   onMaterialsChange,
   onBlockMinutes,
+  onRoutinesMinutes,
   locked = false,
 }: {
   planId: string;
@@ -68,6 +70,8 @@ export function ReviewStep({
   attachedFor: (block: Block | undefined) => ResourceWithTags[];
   onMaterialsChange: (next: string[]) => void;
   onBlockMinutes: (type: LessonBlockType, next: number) => void;
+  /** Set the Standard-routines total minutes (spread across anthem/warm-up/cool-down). */
+  onRoutinesMinutes: (next: number) => void;
   /** When true the plan is submitted/approved: the materials editor and the time
    *  steppers become read-only (the row expanders stay live so the plan can still
    *  be reviewed). The Submit/Unlock control lives in the wizard header, not here. */
@@ -235,9 +239,11 @@ export function ReviewStep({
         {parts.map((p) => {
           const open = !!expanded[p.key];
           const editable = !!p.type;
-          // The Standard-routines part has no editable block — it's the fixed
+          // The Standard-routines part maps to no single block — it's the
           // opening strip (anthem · warm-up · cool down), so it doesn't expand or
-          // carry a planning area; its stock description sits inline instead.
+          // carry a planning area; its stock description sits inline. Its content
+          // stays standard, but its total time is editable (spread across the
+          // three routine blocks).
           const isRoutine = !p.type;
           return (
             <div key={p.key} className="border-b border-[#F0EAE1]">
@@ -283,7 +289,13 @@ export function ReviewStep({
                   ) : null}
                 </div>
                 <div className="flex items-center justify-end px-3 py-[9px]">
-                  {editable && !locked ? (
+                  {isRoutine && !locked ? (
+                    <TimeStepper
+                      small
+                      value={p.minutes}
+                      onChange={(next) => onRoutinesMinutes(next)}
+                    />
+                  ) : editable && !locked ? (
                     <TimeStepper
                       small
                       value={p.minutes}

@@ -7,7 +7,7 @@ import type { ResourceWithTags } from '@/types/resource';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
 import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
-import { deriveMaterials, getBlock, patchBlock } from '@/lib/editor/plan-blocks';
+import { deriveMaterials, getBlock, patchBlock, setRoutinesMinutes } from '@/lib/editor/plan-blocks';
 import {
   normalizeLinkIt,
   applyLinkIt,
@@ -173,6 +173,13 @@ export function LessonPlanEditor({
   const setBlockMinutes = useCallback(
     (type: LessonBlockType, next: number) => patchType(type, { minutes: Math.max(0, next) }),
     [patchType],
+  );
+
+  // The Standard-routines row edits a single total; spread it across the three
+  // opening routine blocks so their sum (and thus the in-session total) tracks it.
+  const setRoutinesMin = useCallback(
+    (next: number) => setBlocks((bs) => setRoutinesMinutes(bs, next)),
+    [],
   );
 
   // Attach a resource to a section: cache it, write its id onto the block (the
@@ -437,6 +444,7 @@ export function LessonPlanEditor({
             attachedFor={attachedFor}
             onMaterialsChange={setMaterials}
             onBlockMinutes={setBlockMinutes}
+            onRoutinesMinutes={setRoutinesMin}
             locked={locked}
           />
         ) : null}

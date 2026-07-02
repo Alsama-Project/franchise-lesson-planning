@@ -36,8 +36,9 @@ export function blockMinutes(block: Block): number {
 }
 
 /**
- * The three opening routines (anthem · warm-up · cool down) are a fixed 3-minute
- * block in the editor — their time is not adjustable.
+ * The three opening routines (anthem · warm-up · cool down). Their content is
+ * standard, but the Review step lets the teacher edit their combined time (see
+ * `setRoutinesMinutes`), which is spread across these blocks.
  */
 export const ROUTINE_BLOCK_TYPES: ReadonlySet<LessonBlockType> = new Set([
   'anthem',

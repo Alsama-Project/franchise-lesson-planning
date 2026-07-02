@@ -81,3 +81,34 @@ centres by **name** and ABORT if any resolved id equals a real centre id.
    thing back — nothing partial.
 
 Run both in the Supabase SQL editor (service-role). Never from a user request.
+
+## `report_test_data.sql` → `reset_test_data.sql`
+
+A two-step, **read-then-reset** one-off that resets the whole (centre, class) layer
+to a clean, uniform test set. Final state: exactly five centres — `Shatila 1`,
+`Shatila 2`, `Bourj 1`, `Bourj 2`, `Homs` — each with **English Year 0-6** classes
+(7 per centre; the `year between 0 and 6` CHECK accepts Year 0). Only English is
+seeded — add other subjects' classes from the admin page afterwards.
+
+This DB currently holds **only the two REAL centres**, so there are no
+seed-duplicate centres to delete. The five are reached by **renaming** the two real
+centres (ids preserved, so every persona/tester `subject_membership` stays valid)
+and **creating** the other three:
+
+- **RENAME** Shatila Centre `42c11721-…` → `Shatila 1`
+- **RENAME** Bourj al-Barajneh Centre `c87896b6-…` → `Bourj 1`
+- **CREATE** `Shatila 2`, `Bourj 2`, `Homs` (only if missing)
+
+1. **`report_test_data.sql`** — read-only. Shows all current centres and the global
+   class/plan data the reset will **wipe** (all `lesson_plans`, `class_teachers`,
+   `classes`), plus the `resource_usage` rows it will NULL. **Run this first.**
+2. **`reset_test_data.sql`** — ⚠️ destructive, ONE transaction. NULLs
+   `resource_usage.lesson_plan_id` (a no-cascade FK that would otherwise block the
+   plan wipe; history rows survive) → wipes all `lesson_plans`
+   (`plan_comments`/`plan_events` cascade) → `class_teachers` → `classes` → renames
+   the two real centres → creates the three new centres → creates English Year 0-6
+   across all five. **Never deletes a centre or any `subject_membership`.**
+   Abort-guards (missing real id, missing English subject, or a centre name that
+   resolves to >1 row) and any unexpected FK roll the whole thing back.
+
+Run both in the Supabase SQL editor (service-role). Never from a user request.

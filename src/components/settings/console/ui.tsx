@@ -229,6 +229,54 @@ export function GhostButton({
   );
 }
 
+/**
+ * A small on/off switch in the console's control palette (teal #1F7A6C on,
+ * neutral #D8CFC2 off — matching the checkbox row), not the semantic status
+ * system. When `readOnly` it renders as a static, non-interactive state (used for
+ * an implied-on control); otherwise it toggles on click and is disabled while a
+ * write is in flight.
+ */
+export function Toggle({
+  checked,
+  onChange,
+  disabled,
+  readOnly,
+  'aria-label': ariaLabel,
+  title,
+}: {
+  checked: boolean;
+  onChange?: (next: boolean) => void;
+  disabled?: boolean;
+  readOnly?: boolean;
+  'aria-label'?: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      aria-readonly={readOnly || undefined}
+      title={title}
+      disabled={disabled || readOnly}
+      onClick={readOnly ? undefined : () => onChange?.(!checked)}
+      className={cn(
+        'relative inline-flex h-[20px] w-[34px] shrink-0 items-center rounded-full transition-colors',
+        checked ? 'bg-[#1F7A6C]' : 'bg-[#D8CFC2]',
+        readOnly ? 'cursor-default opacity-90' : 'disabled:opacity-50',
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block size-[14px] rounded-full bg-white shadow-sm transition-transform',
+          checked ? 'translate-x-[17px]' : 'translate-x-[3px]',
+        )}
+      />
+    </button>
+  );
+}
+
 /** A modal dialog over a dimmed page. */
 export function Modal({
   open,

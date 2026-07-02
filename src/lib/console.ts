@@ -6,16 +6,19 @@ import 'server-only';
 // here. The permission boundary is the (centre, subject) space modelled by
 // `subject_membership` — see src/lib/auth.ts.
 //
-// RLS NOTE (admin Members): there is no admin-wide `profiles` SELECT policy in
-// the current schema (only `profiles_select_own` + `profiles_select_comember`),
-// so an admin can only read the display name of people they share a space with,
-// and profiles with zero memberships ("No access") are not visible at all. These
-// reads therefore degrade gracefully (names fall back to a placeholder) and the
-// "No access" list is best-effort. Adding `profiles_admin_select` would close the
-// gap, but RLS changes are out of scope for this slice.
+// ROSTER NOTE (admin Members): the admin roster is read through the
+// `admin_list_users()` SECURITY DEFINER RPC (0023, extended in 0036), NOT a direct
+// `profiles` read. Direct reads are RLS-bound to own-row + co-members, so a user
+// the admin shares no (centre, subject) space with — e.g. a zero-membership
+// newcomer or a test-bar candidate — would be invisible. The RPC is hard-gated on
+// `is_admin()` and returns EVERY user (incl. those with no membership, as an empty
+// set), plus each user's global `role` and `can_impersonate` flag. Home-class
+// ("Year N") is still derived from the auth'd `class_teachers` read, which stays
+// RLS-bound (own-mostly) exactly as before — the roster source changed, that
+// derivation did not.
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentProfile, getMyMemberships, type MembershipRole } from '@/lib/auth';
+import { getCurrentProfile, getMyMemberships, type AppRole, type MembershipRole } from '@/lib/auth';
 
 // ── Role / access resolution ────────────────────────────────────────────────
 
@@ -268,6 +271,14 @@ export interface PersonMembership {
 export interface Person {
   profileId: string;
   name: string;
+  /** Global role on `profiles.role`. Admins are always test-bar eligible. */
+  role: AppRole;
+  /**
+   * Whether this user may USE the test bar (`profiles.can_impersonate`). Note
+   * real admins are eligible regardless (eligibility is `can_impersonate` OR
+   * admin), so the toggle renders as implied-on for them.
+   */
+  canImpersonate: boolean;
   /** Empty → "No access" (no subject_membership rows). */
   memberships: PersonMembership[];
 }
@@ -295,63 +306,66 @@ function buildHomeClassMap(
   return map;
 }
 
+/** One membership entry inside `admin_list_users`' aggregated `memberships` jsonb. */
+interface RosterMembership {
+  membership_id: string;
+  school_id: string;
+  school_name: string | null;
+  subject_id: string;
+  subject_name: string | null;
+  role: MembershipRole;
+}
+
+/** A row of the `admin_list_users()` RPC (0023, extended in 0036). */
+interface RosterRow {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  role: AppRole | null;
+  can_impersonate: boolean | null;
+  memberships: RosterMembership[] | null;
+}
+
 export async function getAdminMembers(): Promise<AdminMembersData> {
   const supabase = await createClient();
-  const [{ data: memberships }, { data: profiles }, { data: ct }, { data: schools }, { data: subjects }] =
-    await Promise.all([
-      supabase
-        .from('subject_membership')
-        .select('id, profile_id, school_id, subject_id, role, schools ( name ), subjects ( name )'),
-      supabase.from('profiles').select('id, full_name'),
-      supabase
-        .from('class_teachers')
-        .select('teacher_id, classes ( school_id, subject_id, year )'),
-      supabase.from('schools').select('id, name').is('archived_at', null).order('name'),
-      supabase.from('subjects').select('id, name').is('archived_at', null).order('name'),
-    ]);
+  // The roster comes from the admin-gated definer RPC so EVERY user is present
+  // (incl. zero-membership newcomers and cross-space testers the RLS-bound
+  // `profiles` read could never see). Home-class + the modal's centre/subject
+  // pickers still read reference/`class_teachers` data via the auth'd client.
+  const [{ data: roster }, { data: ct }, { data: schools }, { data: subjects }] = await Promise.all([
+    supabase.rpc('admin_list_users'),
+    supabase
+      .from('class_teachers')
+      .select('teacher_id, classes ( school_id, subject_id, year )'),
+    supabase.from('schools').select('id, name').is('archived_at', null).order('name'),
+    supabase.from('subjects').select('id, name').is('archived_at', null).order('name'),
+  ]);
 
-  const membershipRows = (memberships ?? []) as unknown as Array<{
-    id: string;
-    profile_id: string;
-    school_id: string;
-    subject_id: string;
-    role: MembershipRole;
-    schools: { name: string } | null;
-    subjects: { name: string } | null;
-  }>;
-  const profileRows = (profiles ?? []) as Array<{ id: string; full_name: string | null }>;
+  const rosterRows = (roster ?? []) as unknown as RosterRow[];
   const homeClasses = buildHomeClassMap(
     (ct ?? []) as unknown as Parameters<typeof buildHomeClassMap>[0],
   );
 
-  const nameById = new Map<string, string>();
-  for (const p of profileRows) nameById.set(p.id, p.full_name ?? 'Unnamed');
-
-  // Group memberships by person.
-  const byPerson = new Map<string, Person>();
-  // Seed people from any profile we can read so zero-membership rows surface
-  // (limited by RLS — see file note).
-  for (const p of profileRows) {
-    byPerson.set(p.id, { profileId: p.id, name: p.full_name ?? 'Unnamed', memberships: [] });
-  }
-  for (const m of membershipRows) {
-    let person = byPerson.get(m.profile_id);
-    if (!person) {
-      person = { profileId: m.profile_id, name: nameById.get(m.profile_id) ?? 'Unnamed', memberships: [] };
-      byPerson.set(m.profile_id, person);
-    }
-    person.memberships.push({
-      membershipId: m.id,
+  const people: Person[] = rosterRows.map((r) => {
+    const memberships: PersonMembership[] = (r.memberships ?? []).map((m) => ({
+      membershipId: m.membership_id,
       schoolId: m.school_id,
       subjectId: m.subject_id,
-      schoolName: m.schools?.name ?? null,
-      subjectName: m.subjects?.name ?? null,
+      schoolName: m.school_name,
+      subjectName: m.subject_name,
       role: m.role,
-      homeClass: homeClasses.get(`${m.profile_id}:${m.school_id}:${m.subject_id}`) ?? null,
-    });
-  }
+      homeClass: homeClasses.get(`${r.user_id}:${m.school_id}:${m.subject_id}`) ?? null,
+    }));
+    return {
+      profileId: r.user_id,
+      name: r.full_name?.trim() || 'Unnamed',
+      role: r.role ?? 'teacher',
+      canImpersonate: r.can_impersonate === true,
+      memberships,
+    };
+  });
 
-  const people = [...byPerson.values()].sort((a, b) => a.name.localeCompare(b.name));
+  people.sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     people,

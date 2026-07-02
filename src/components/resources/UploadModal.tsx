@@ -1,16 +1,12 @@
 'use client';
 
 // The upload modal (also reused for editing). A resource is backed by either an
-// uploaded file or an external link, and EVERY applicable tag must be set before
-// it can be saved: subject, year, and one tag per applicable dimension (format,
-// theme, exercise type, lesson stage, localisation, plus the subject-specific
-// skill type & grammar content once a subject is chosen). A progress chip shows
-// "X of N set" and Save stays disabled until complete.
-//
-// "Applicable" means a dimension that actually has vocabulary to choose from:
-// the coordinator-managed vocabulary seeds theme/grammar empty, so those only
-// become required once a coordinator has added tags. Uploaded-by, popularity and
-// the NEW badge are set automatically server-side and never appear here.
+// uploaded file or an external link. The teacher sets ONE thing by hand — the
+// Year — and everything else is auto-attributed: the Format is derived from the
+// file extension (or pasted link), the Subject from the bank's context, and the
+// Title is pre-filled from a cleaned filename (still editable). Uploaded-by,
+// popularity and the NEW badge are set server-side. Save is gated only on:
+// a file/link present + a title + a year.
 
 import { useMemo, useState, useTransition } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
@@ -22,19 +18,20 @@ import {
   RESOURCE_BUCKET,
   buildResourceStoragePath,
 } from '@/lib/resources/storage';
-import type { ResourceWithTags, TagDimension, TagsByDimension } from '@/types/resource';
+import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import {
-  SUBJECT_SPECIFIC_DIMENSIONS,
-  UPLOAD_GLOBAL_DIMENSIONS,
   YEAR_OPTIONS,
+  cleanFileNameToTitle,
+  formatLabelForFileName,
+  formatLabelForUrl,
 } from '@/components/resources/config';
-import { CheckIcon, LinkIcon, LockIcon, SparkleIcon, XIcon } from '@/components/resources/icons';
+import { CheckIcon, LinkIcon, LockIcon, XIcon } from '@/components/resources/icons';
 
 interface UploadModalProps {
   mode: 'create' | 'edit';
   /** The signed-in user's id — keys the direct-upload object path. */
   currentUserId: string;
-  subjects: { id: string; name: string }[];
+  /** The bank's subject scope — auto-attributed to new uploads. */
   defaultSubjectId: string | null;
   vocabulary: TagsByDimension;
   existing?: ResourceWithTags;
@@ -94,7 +91,6 @@ function TagSelect({
 export function UploadModal({
   mode,
   currentUserId,
-  subjects,
   defaultSubjectId,
   vocabulary,
   existing,
@@ -106,17 +102,6 @@ export function UploadModal({
   const locale = useLocale();
   const isEdit = mode === 'edit';
 
-  // Seed tag selections from the existing resource (one per dimension) in edit mode.
-  const initialTagByDim = useMemo(() => {
-    const map: Partial<Record<TagDimension, string>> = {};
-    if (existing) {
-      for (const tag of existing.tags) {
-        if (!map[tag.dimension]) map[tag.dimension] = tag.id;
-      }
-    }
-    return map;
-  }, [existing]);
-
   const [sourceMode, setSourceMode] = useState<'file' | 'link'>(
     existing?.external_url ? 'link' : 'file'
   );
@@ -124,43 +109,51 @@ export function UploadModal({
   const [link, setLink] = useState(existing?.external_url ?? '');
   const [title, setTitle] = useState(existing?.title ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
-  const [subjectId, setSubjectId] = useState(existing?.subject_id ?? defaultSubjectId ?? '');
   const [year, setYear] = useState<string>(existing?.year != null ? String(existing.year) : '');
-  const [tagByDim, setTagByDim] = useState<Partial<Record<TagDimension, string>>>(initialTagByDim);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const subjectChosen = !!subjectId;
+  // Subject is auto-attributed from context: an existing resource keeps its own
+  // subject; a new upload inherits the bank's subject scope. If neither is known
+  // we can't infer it — save is blocked rather than silently dropping it.
+  const inferredSubjectId = (isEdit ? existing?.subject_id : null) ?? defaultSubjectId ?? null;
+  const canInferSubject = !!inferredSubjectId;
 
-  // Which dimensions are applicable (have vocabulary to pick from)?
-  const applicableGlobal = UPLOAD_GLOBAL_DIMENSIONS.filter((d) => (vocabulary[d]?.length ?? 0) > 0);
-  const applicableSubject = subjectChosen
-    ? SUBJECT_SPECIFIC_DIMENSIONS.filter((d) => (vocabulary[d]?.length ?? 0) > 0)
-    : [];
-  const requiredDims = [...applicableGlobal, ...applicableSubject];
+  // Format is auto-attributed too — derived from the file extension or the pasted
+  // link — and shown read-only. On edit the source is fixed, so we surface the
+  // format already attached to the resource.
+  const derivedFormatLabel = useMemo<string | null>(() => {
+    if (isEdit) return existing?.tags.find((tag) => tag.dimension === 'format')?.label ?? null;
+    if (sourceMode === 'file') return file ? formatLabelForFileName(file.name) : null;
+    return link.trim() ? formatLabelForUrl(link.trim()) : null;
+  }, [isEdit, existing, sourceMode, file, link]);
 
-  // Progress: subject + year + one tag per applicable dimension.
-  const total = 2 + requiredDims.length;
-  const setCount =
-    (subjectChosen ? 1 : 0) +
-    (year ? 1 : 0) +
-    requiredDims.filter((d) => !!tagByDim[d]).length;
-  const remaining = total - setCount;
+  // The tag id for the derived format label (null if the vocabulary has no such
+  // tag, e.g. an unrecognised extension) — the only tag a new upload attaches.
+  const formatTagId = useMemo<string | null>(() => {
+    if (!derivedFormatLabel) return null;
+    return (vocabulary.format ?? []).find((tag) => tag.label === derivedFormatLabel)?.id ?? null;
+  }, [derivedFormatLabel, vocabulary]);
 
   const sourceReady = isEdit || (sourceMode === 'file' ? !!file : link.trim().length > 0);
-  const complete = remaining === 0 && !!title.trim() && sourceReady;
 
-  function setDim(dim: TagDimension, value: string) {
-    setTagByDim((prev) => ({ ...prev, [dim]: value }));
-  }
+  // Reduced required set: file/link + title + year. Progress counts these three.
+  const total = 3;
+  const setCount = (sourceReady ? 1 : 0) + (title.trim() ? 1 : 0) + (year ? 1 : 0);
+  const remaining = total - setCount;
+  const complete = remaining === 0 && canInferSubject;
 
   function chosenTagIds(): string[] {
-    return requiredDims.map((d) => tagByDim[d]).filter((v): v is string => !!v);
+    // Edit keeps the resource's existing tags untouched (the modal no longer edits
+    // them); create attaches only the auto-derived format tag, when recognised.
+    if (isEdit && existing) return existing.tags.map((tag) => tag.id);
+    return formatTagId ? [formatTagId] : [];
   }
 
   function handleFile(f: File | null) {
     setFile(f);
-    if (f && !title.trim()) setTitle(f.name.replace(/\.[^.]+$/, ''));
+    // Pre-fill (don't lock) the title from a cleaned filename, keeping any edit.
+    if (f && !title.trim()) setTitle(cleanFileNameToTitle(f.name));
   }
 
   function submit() {
@@ -172,7 +165,7 @@ export function UploadModal({
         const res = await onSubmitEdit(existing.id, {
           title: title.trim(),
           description: description.trim() || null,
-          subjectId: subjectId || null,
+          subjectId: inferredSubjectId,
           year: year ? Number(year) : null,
           tagIds: chosenTagIds(),
         });
@@ -194,7 +187,7 @@ export function UploadModal({
       const fd = new FormData();
       fd.set('title', title.trim());
       if (description.trim()) fd.set('description', description.trim());
-      if (subjectId) fd.set('subjectId', subjectId);
+      if (inferredSubjectId) fd.set('subjectId', inferredSubjectId);
       if (year) fd.set('year', year);
       for (const id of chosenTagIds()) fd.append('tagIds', id);
 
@@ -355,11 +348,9 @@ export function UploadModal({
             </div>
           </div>
 
-          {/* Tag-it header + progress */}
+          {/* The one manual field is Year (pink); format & subject are auto. */}
           <div className="mb-[11px] flex items-center justify-between">
-            <div className="text-[13px] font-semibold text-ink">
-              {t('upload.tagIt')} <span className="font-normal text-text-faint">{t('upload.tagItHint')}</span>
-            </div>
+            <div className="text-[13px] text-text-muted">{t('upload.detailsHint')}</div>
             <span
               className={`rounded-full px-[10px] py-[3px] text-[11px] font-semibold ${
                 complete ? 'bg-[#E2F0E8] text-[#2E7D5B]' : 'bg-[#F6ECDA] text-[#B0651E]'
@@ -374,62 +365,32 @@ export function UploadModal({
 
           <div className="grid grid-cols-2 gap-[10px]">
             <TagSelect
-              label={t('upload.subject')}
-              required
-              value={subjectId}
-              options={subjects.map((s) => ({ id: s.id, label: s.name }))}
-              onChange={setSubjectId}
-            />
-            <TagSelect
               label={t('upload.year')}
               required
               value={year}
               options={YEAR_OPTIONS.map((y) => ({ id: String(y), label: t('sidebar.yearOption', { year: y }) }))}
               onChange={setYear}
             />
-            {applicableGlobal.map((dim) => (
-              <div key={dim} className={dim === 'localisation' ? 'col-span-2' : undefined}>
-                <TagSelect
-                  label={t(`dimensions.${dim}`)}
-                  required
-                  value={tagByDim[dim] ?? ''}
-                  options={(vocabulary[dim] ?? []).map((t) => ({ id: t.id, label: t.label }))}
-                  onChange={(v) => setDim(dim, v)}
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* Subject-specific group */}
-          {subjectChosen && applicableSubject.length > 0 ? (
-            <div className="mt-3 rounded-[12px] border border-[#D2E7E1] bg-[#F1F8F6] p-[13px]">
-              <div className="mb-[10px] flex items-center gap-[7px]">
-                <SparkleIcon size={13} className="text-teal" />
-                <span className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-teal">
-                  {t('upload.subjectSpecificTags', {
-                    subject: subjects.find((s) => s.id === subjectId)?.name ?? t('upload.subjectFallback'),
-                  })}
-                </span>
-                <span className="text-[10.5px] text-[#6E9890]">{t('upload.subjectSpecificHint')}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-[10px]">
-                {applicableSubject.map((dim) => (
-                  <TagSelect
-                    key={dim}
-                    label={t(`dimensions.${dim}`)}
-                    required
-                    value={tagByDim[dim] ?? ''}
-                    options={(vocabulary[dim] ?? []).map((t) => ({ id: t.id, label: t.label }))}
-                    onChange={(v) => setDim(dim, v)}
-                  />
-                ))}
+            {/* Format: auto-detected, read-only. */}
+            <div>
+              <div className="mb-[5px] text-[11px] font-semibold text-text-muted">{t('upload.format')}</div>
+              <div className="flex w-full items-center gap-2 rounded-[9px] border border-[#CFE6E0] bg-[#F4FAF8] px-[11px] py-[9px] text-[13px] text-ink">
+                {derivedFormatLabel ? (
+                  <>
+                    <span className="font-medium">{derivedFormatLabel}</span>
+                    <span className="text-[11px] text-text-faint">· {t('upload.autoDetected')}</span>
+                  </>
+                ) : (
+                  <span className="text-text-faint">{t('upload.formatPending')}</span>
+                )}
               </div>
             </div>
-          ) : null}
+          </div>
 
-          <div className="mt-[14px] flex items-center gap-2 text-[11.5px] text-text-muted">
+          <div className="mt-[14px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-text-muted">
             <LockIcon size={13} className="text-text-faint" />
-            {t('upload.setAutomatically')} <b className="text-neutral-800">{t('upload.uploadedBy')}</b> ·{' '}
+            {t('upload.setAutomatically')} <b className="text-neutral-800">{t('upload.format')}</b> ·{' '}
+            <b className="text-neutral-800">{t('upload.subject')}</b> · <b className="text-neutral-800">{t('upload.uploadedBy')}</b> ·{' '}
             <b className="text-neutral-800">{t('upload.popularity')}</b> · <b className="text-neutral-800">{t('upload.newBadge')}</b>
           </div>
 
@@ -443,13 +404,11 @@ export function UploadModal({
         {/* Footer */}
         <div className="sticky bottom-0 flex items-center gap-3 border-t border-[#EFE8DD] bg-surface px-[22px] py-[15px]">
           <span className="text-[12px] font-medium text-[#B5566A]">
-            {complete
-              ? t('upload.readyToSave')
-              : remaining > 0
-                ? t('upload.setMoreToSave', { remaining, remainingText: formatNumber(remaining, locale) })
-                : !title.trim()
-                  ? t('upload.addTitleToSave')
-                  : t('upload.attachToSave')}
+            {!canInferSubject
+              ? t('upload.subjectMissing')
+              : complete
+                ? t('upload.readyToSave')
+                : t('upload.setMoreToSave', { remaining, remainingText: formatNumber(remaining, locale) })}
           </span>
           <div className="ms-auto flex gap-[9px]">
             <button

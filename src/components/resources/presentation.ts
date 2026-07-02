@@ -49,8 +49,14 @@ const EXERCISE_SWATCH: Swatch = { c: '#5C544E', bg: '#F3ECE2' };
 const GRAMMAR_SWATCH: Swatch = { c: '#6A5AA0', bg: '#EEEAF6' };
 
 /** Number of days within which a resource still shows the NEW badge. */
-const NEW_WINDOW_DAYS = 14;
+const NEW_WINDOW_DAYS = 7;
 
+/**
+ * The NEW badge is purely time-based: it shows only while a resource's
+ * `created_at` is within the last {@link NEW_WINDOW_DAYS} days, evaluated against
+ * the current date at render time — so it ages off on its own, with no persisted
+ * flag and no cron.
+ */
 export function isNewResource(createdAt: string): boolean {
   const created = new Date(createdAt).getTime();
   if (Number.isNaN(created)) return false;

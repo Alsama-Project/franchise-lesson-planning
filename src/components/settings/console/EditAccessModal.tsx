@@ -11,6 +11,7 @@ import {
   setUserMembership,
   type UsersActionResult,
 } from '@/lib/actions/users';
+import { setUserImpersonation } from '@/lib/actions/console';
 import { avatarColors, initialsOf } from '@/components/weekly-overview/avatar';
 import { Checkbox } from './ui';
 import { cn } from '@/lib/cn';
@@ -20,6 +21,14 @@ function ShieldIcon({ size = 16, className }: { size?: number; className?: strin
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}
+function EyeIcon({ size = 16, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -62,6 +71,7 @@ export function EditAccessModal({
   // reverts the specific field and shows the server's raised message.
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [isDeactivated, setIsDeactivated] = useState(user.isDeactivated);
+  const [canImpersonate, setCanImpersonate] = useState(user.canImpersonate);
   const [spaceRoles, setSpaceRoles] = useState<Map<string, MembershipRole>>(() => {
     const m = new Map<string, MembershipRole>();
     for (const s of user.spaces) {
@@ -124,6 +134,17 @@ export function EditAccessModal({
       () => write(next),
       () => write(current),
       () => setUserMembership(user.userId, schoolId, subjectId, next),
+    );
+  }
+
+  function toggleImpersonation(next: boolean) {
+    // Reuse the existing definer RPC (0036) via the console action — it re-asserts
+    // is_admin() and is column-scoped to can_impersonate. Real admins are eligible
+    // regardless, so this row is shown implied-on for them and never toggled.
+    persist(
+      () => setCanImpersonate(next),
+      () => setCanImpersonate(!next),
+      () => setUserImpersonation({ targetUserId: user.userId, enabled: next }),
     );
   }
 
@@ -279,6 +300,52 @@ export function EditAccessModal({
               </span>
             </div>
           ) : null}
+
+          {/* Impersonation — a clone of the Admin row above. Grants test-bar
+              access (profiles.can_impersonate). Real admins are always eligible
+              (eligibility is can_impersonate OR admin), so for an admin the row is
+              rendered implied-on and non-interactive, exactly like the Members
+              roster's toggle. */}
+          <div
+            className={cn(
+              'mt-[10px] flex items-center gap-[12px] rounded-[11px] border px-[14px] py-[12px]',
+              isAdmin || canImpersonate ? 'border-[#CFE6E0] bg-[#F7FBFA]' : 'border-[#E7DECF] bg-white',
+            )}
+          >
+            <Checkbox
+              checked={isAdmin ? true : canImpersonate}
+              locked={isAdmin}
+              onChange={toggleImpersonation}
+              aria-label={
+                isAdmin
+                  ? t('members.testBar.adminLabel', { name })
+                  : t('members.testBar.toggleLabel', { name })
+              }
+            />
+            <span
+              className={cn(
+                'inline-flex size-[34px] shrink-0 items-center justify-center rounded-[9px]',
+                isAdmin || canImpersonate ? 'bg-[#E4F0ED] text-[#186155]' : 'bg-[#F3ECE2] text-[#8A8178]',
+              )}
+            >
+              <EyeIcon />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-ink">{t('users.impersonation')}</div>
+              <div
+                className={cn(
+                  'text-[12px]',
+                  isAdmin || canImpersonate ? 'text-[#186155]' : 'text-[#8A8178]',
+                )}
+              >
+                {isAdmin
+                  ? t('users.impersonationAdmin')
+                  : canImpersonate
+                    ? t('users.impersonationOn')
+                    : t('users.impersonationOff')}
+              </div>
+            </div>
+          </div>
 
           {/* Subject spaces */}
           <div className="mb-[10px] mt-[22px] flex items-center gap-[9px]">

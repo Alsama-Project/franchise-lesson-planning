@@ -400,6 +400,10 @@ export interface AdminUser {
   email: string | null;
   isAdmin: boolean;
   isDeactivated: boolean;
+  /** Whether this user may USE the test bar (`profiles.can_impersonate`). Real
+   *  admins are eligible regardless (eligibility is `can_impersonate` OR admin),
+   *  so the flag is moot for them — the modal renders admins implied-on. */
+  canImpersonate: boolean;
   spaces: UserSpace[];
 }
 
@@ -443,6 +447,7 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     email: string | null;
     is_admin: boolean;
     is_deactivated: boolean;
+    can_impersonate: boolean | null;
     spaces:
       | Array<{
           membership_id: string | null;
@@ -461,6 +466,7 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     email: r.email,
     isAdmin: r.is_admin,
     isDeactivated: r.is_deactivated,
+    canImpersonate: r.can_impersonate === true,
     spaces: (r.spaces ?? []).map((s) => ({
       membershipId: s.membership_id,
       schoolId: s.school_id,

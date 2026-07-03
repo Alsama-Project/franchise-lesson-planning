@@ -1,4 +1,4 @@
--- 0039_active_subject_space.sql
+-- 0042_active_subject_space.sql
 --
 -- One canonical "active subject space" per user. Until now three surfaces each
 -- resolved the signed-in user's subject independently (the header chip by earliest

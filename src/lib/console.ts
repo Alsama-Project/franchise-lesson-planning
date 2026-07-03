@@ -432,6 +432,55 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
   }));
 }
 
+// ── Pending coordinator requests (admin-only) ─────────────────────────────────
+// The triage list for the Users tab: users who self-requested coordinator access
+// and are awaiting an admin decision. Email lives in auth.users, so this can only
+// come from the `list_pending_coordinator_requests()` SECURITY DEFINER function,
+// which hard-gates on is_admin(). Approve/reject mint (or don't) a
+// coordinator_subject row through the paired definer RPCs.
+
+export interface PendingCoordinatorRequest {
+  requestId: string;
+  profileId: string;
+  fullName: string | null;
+  email: string | null;
+  subjectId: string;
+  subjectName: string | null;
+  createdAt: string;
+}
+
+/**
+ * Pending coordinator-access requests, newest first. Returns `[]` on any read
+ * failure (the section simply doesn't render) rather than throwing — the Users
+ * tab must still load if this optional triage list can't be fetched. The RPC
+ * itself raises for non-admins (belt-and-braces with the admin-gated tab).
+ */
+export async function getPendingCoordinatorRequests(): Promise<PendingCoordinatorRequest[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('list_pending_coordinator_requests');
+  if (error) return [];
+
+  const rows = (data ?? []) as Array<{
+    request_id: string;
+    profile_id: string;
+    full_name: string | null;
+    email: string | null;
+    subject_id: string;
+    subject_name: string | null;
+    created_at: string;
+  }>;
+
+  return rows.map((r) => ({
+    requestId: r.request_id,
+    profileId: r.profile_id,
+    fullName: r.full_name,
+    email: r.email,
+    subjectId: r.subject_id,
+    subjectName: r.subject_name,
+    createdAt: r.created_at,
+  }));
+}
+
 // ── Members & roles (coordinator) ──────────────────────────────────────────────
 
 export interface CoordSpaceMember {

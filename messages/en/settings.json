@@ -248,7 +248,17 @@
       "orgWideNote": "Manages every centre, subject, class, and user.",
       "lastAdminNote": "Last active admin — promote another admin before removing this one.",
       "lastAdminRoleNote": "Last active admin — promote another admin before changing this role.",
-      "selfDeactivateNote": "You can’t deactivate your own account."
+      "selfDeactivateNote": "You can’t deactivate your own account.",
+      "pending": {
+        "title": "Pending coordinator approvals",
+        "count": "{count, plural, one {# request} other {# requests}}",
+        "requestedOn": "Requested {date}",
+        "subject": "Coordinator · {subject}",
+        "approve": "Approve",
+        "reject": "Reject",
+        "working": "Working…",
+        "error": "Couldn’t update the request. Please try again."
+      }
     },
     "aiGuide": {
       "title": "AI resource guide",

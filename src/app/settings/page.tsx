@@ -14,6 +14,7 @@ import {
   getConsoleClasses,
   getCoordinatorMembers,
   getCurriculumStatus,
+  getPendingCoordinatorRequests,
   getSubjects,
   getSubjectSpaceAxes,
   getTerms,
@@ -23,6 +24,7 @@ import {
   type ConsoleClassesData,
   type CoordSpaceMembers,
   type CurriculumSubjectStatus,
+  type PendingCoordinatorRequest,
   type ResourceGuideVersion,
   type SmarttGuideVersion,
   type SubjectRow,
@@ -85,9 +87,11 @@ export default async function SettingsPage() {
   let users: AdminUser[] | null | undefined;
   // Grid axes for the Users-tab Edit-access matrix (active centres × subjects).
   let userAxes: SubjectSpaceAxes | undefined;
+  // Pending coordinator-access requests for the Users-tab triage section.
+  let pendingCoordinatorRequests: PendingCoordinatorRequest[] | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, curriculum, resourceGuide, smarttGuide, terms, users, userAxes] =
+    [centres, subjects, classesData, curriculum, resourceGuide, smarttGuide, terms, users, userAxes, pendingCoordinatorRequests] =
       await Promise.all([
         getCentres(),
         getSubjects(),
@@ -98,6 +102,7 @@ export default async function SettingsPage() {
         getTerms(),
         getUsersAdmin().catch(() => null),
         getSubjectSpaceAxes(),
+        getPendingCoordinatorRequests(),
       ]);
   } else if (access.isCoordinator) {
     const subjectIds = [...new Set(access.coordinatorSpaces.map((s) => s.subjectId))];
@@ -133,6 +138,7 @@ export default async function SettingsPage() {
           terms={terms}
           users={users}
           userAxes={userAxes}
+          pendingCoordinatorRequests={pendingCoordinatorRequests}
         />
       </div>
     </AppShell>

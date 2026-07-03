@@ -77,6 +77,34 @@ export async function setUserDeactivated(
   return { ok: true };
 }
 
+/** Approve a pending coordinator request → mints the coordinator_subject row via
+ *  the admin-gated definer RPC. Idempotent (re-approving an already-decided
+ *  request raises "not found" from the RPC, surfaced as an error). */
+export async function approveCoordinatorRequest(requestId: string): Promise<UsersActionResult> {
+  const guard = await requireAdmin();
+  if (guard) return guard;
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('approve_coordinator_request', { p_request_id: requestId });
+  if (error) return fail(error.message);
+
+  revalidatePath('/settings');
+  return { ok: true };
+}
+
+/** Reject a pending coordinator request → marks it rejected; grants nothing. */
+export async function rejectCoordinatorRequest(requestId: string): Promise<UsersActionResult> {
+  const guard = await requireAdmin();
+  if (guard) return guard;
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('reject_coordinator_request', { p_request_id: requestId });
+  if (error) return fail(error.message);
+
+  revalidatePath('/settings');
+  return { ok: true };
+}
+
 /**
  * Set a user's access to exactly one role, reconciling BOTH membership models in a
  * single write. This is the sole writer behind the role-first "Edit access" modal;

@@ -12,28 +12,48 @@ export interface ActionResult {
   warning?: string;
 }
 
+export type OnboardingRole = 'teacher' | 'coordinator';
+
 export interface FinishOnboardingInput {
   fullName: string;
+  role: OnboardingRole;
   schoolId: string;
   subjectIds: string[];
   classIds: string[];
 }
 
 /**
- * Persist the onboarding choices, then send the user into the app.
+ * Persist the onboarding choices, then route the user.
  *
- * 1. Update `profiles.full_name` when it changed.
- * 2. Self-provision via the `complete_onboarding` SECURITY DEFINER RPC — the only
- *    self-service write path for `subject_membership` and `class_teachers`
- *    (neither has a permissive client INSERT policy). It joins one membership per
- *    (centre, subject) as role 'teacher' and self-assigns the ticked classes,
- *    scoped to those spaces. Idempotent, so re-running never duplicates.
+ * Common: update `profiles.full_name` when it changed.
+ *
+ * Teacher (unchanged): self-provision via the `complete_onboarding` SECURITY
+ * DEFINER RPC — the only self-service write path for `subject_membership` and
+ * `class_teachers` (neither has a permissive client INSERT policy). It joins one
+ * membership per (centre, subject) as role 'teacher' and self-assigns the ticked
+ * classes, scoped to those spaces. Idempotent, so re-running never duplicates.
+ * Redirects into the app.
+ *
+ * Coordinator (new): grants NO access. File a pending request for the single
+ * chosen subject via `request_coordinator_access` (centre/classes ignored —
+ * coordinators are school-agnostic), then redirect back to `/onboarding`, where
+ * the page renders the "pending approval" screen. Only an admin approval mints
+ * coordinator access.
  */
 export async function finishOnboarding(input: FinishOnboardingInput): Promise<ActionResult> {
   const name = input.fullName.trim();
   if (!name) return { ok: false, error: 'Enter your name.' };
-  if (!input.schoolId) return { ok: false, error: 'Choose your centre.' };
-  if (input.subjectIds.length === 0) return { ok: false, error: 'Choose at least one subject.' };
+
+  const isCoordinator = input.role === 'coordinator';
+
+  if (isCoordinator) {
+    if (input.subjectIds.length !== 1) {
+      return { ok: false, error: 'Choose the subject you coordinate.' };
+    }
+  } else {
+    if (!input.schoolId) return { ok: false, error: 'Choose your centre.' };
+    if (input.subjectIds.length === 0) return { ok: false, error: 'Choose at least one subject.' };
+  }
 
   const supabase = await createClient();
   const {
@@ -41,7 +61,7 @@ export async function finishOnboarding(input: FinishOnboardingInput): Promise<Ac
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: 'Not signed in.' };
 
-  // 1. Name (only write when it actually changed).
+  // Name (only write when it actually changed).
   const { data: profile } = await supabase
     .from('profiles')
     .select('full_name')
@@ -52,10 +72,24 @@ export async function finishOnboarding(input: FinishOnboardingInput): Promise<Ac
     if (error) return { ok: false, error: error.message };
   }
 
-  // 2. Memberships + class assignments — via the SECURITY DEFINER RPC (the only
-  // self-service write path; neither `subject_membership` nor `class_teachers`
-  // has a permissive client INSERT policy). Role is hardcoded to 'teacher' and
-  // classes are scoped to the joined spaces inside the function; idempotent.
+  if (isCoordinator) {
+    // Coordinator: file a pending request only — grants nothing. The request
+    // lives in `coordinator_request` (a separate table invisible to every access
+    // reader), so no access is granted until an admin approves.
+    const { error: reqErr } = await supabase.rpc('request_coordinator_access', {
+      p_subject_id: input.subjectIds[0],
+    });
+    if (reqErr) return { ok: false, error: reqErr.message };
+
+    revalidatePath('/onboarding');
+    redirect('/onboarding');
+  }
+
+  // Teacher: memberships + class assignments — via the SECURITY DEFINER RPC (the
+  // only self-service write path; neither `subject_membership` nor
+  // `class_teachers` has a permissive client INSERT policy). Role is hardcoded to
+  // 'teacher' and classes are scoped to the joined spaces inside the function;
+  // idempotent.
   const { error: rpcErr } = await supabase.rpc('complete_onboarding', {
     p_centre_id: input.schoolId,
     p_subject_ids: input.subjectIds,

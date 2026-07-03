@@ -1,0 +1,57 @@
+{
+  "onboarding": {
+    "title": "Set up your planning space",
+    "name": {
+      "label": "Your name",
+      "placeholder": "Your full name"
+    },
+    "roleToggle": {
+      "label": "I'm joining as",
+      "teacher": "Teacher",
+      "coordinator": "Coordinator"
+    },
+    "centre": {
+      "label": "Your centre",
+      "none": "No centres available."
+    },
+    "subjects": {
+      "teacherLabel": "Subjects you teach{centre}",
+      "coordinatorLabel": "The subject you coordinate",
+      "coordinatorHint": "Coordinators manage their subject across all centres.",
+      "selectedCount": "{count} selected",
+      "select": "Select",
+      "teacherCount": "{count, plural, one {# teacher} other {# teachers}}",
+      "none": "No subjects available."
+    },
+    "classes": {
+      "label": "Your classes",
+      "optional": "Optional",
+      "chooseSubjectFirst": "Choose a subject above to pick the classes you teach.",
+      "selectedCount": "{count, plural, one {# class selected} other {# classes selected}}",
+      "noneYet": "None yet — open the picker to add classes.",
+      "edit": "Edit",
+      "done": "Done",
+      "noneForSelection": "No classes exist yet for the selected subject(s) at this centre.",
+      "yearGroup": "Year {year}",
+      "yearLabel": "Year {year}"
+    },
+    "errors": {
+      "name": "Enter your name.",
+      "centre": "Choose your centre.",
+      "subject": "Choose at least one subject.",
+      "coordinatorSubject": "Choose the subject you coordinate.",
+      "generic": "Something went wrong."
+    },
+    "finish": {
+      "teacher": "Finish — go to planning",
+      "coordinator": "Request coordinator access",
+      "saving": "Saving…"
+    },
+    "pending": {
+      "title": "Your request is awaiting approval",
+      "body": "You've asked to coordinate {subject}. An administrator needs to approve this before you get coordinator access. You'll be able to sign in and start once it's approved.",
+      "badge": "Pending approval",
+      "signOut": "Sign out"
+    }
+  }
+}

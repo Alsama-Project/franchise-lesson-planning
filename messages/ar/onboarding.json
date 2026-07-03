@@ -1,0 +1,57 @@
+{
+  "onboarding": {
+    "title": "أنشئ مساحة التخطيط الخاصة بك",
+    "name": {
+      "label": "اسمك",
+      "placeholder": "اسمك الكامل"
+    },
+    "roleToggle": {
+      "label": "أنضمّ بصفة",
+      "teacher": "معلّم",
+      "coordinator": "منسّق"
+    },
+    "centre": {
+      "label": "مركزك",
+      "none": "لا توجد مراكز متاحة."
+    },
+    "subjects": {
+      "teacherLabel": "المواد التي تدرّسها{centre}",
+      "coordinatorLabel": "المادة التي تنسّقها",
+      "coordinatorHint": "ينسّق المنسّقون مادّتهم في جميع المراكز.",
+      "selectedCount": "{count} محدّدة",
+      "select": "اختر",
+      "teacherCount": "{count, plural, zero {# معلّم} one {# معلّم} two {معلّمان} few {# معلّمين} many {# معلّمًا} other {# معلّم}}",
+      "none": "لا توجد مواد متاحة."
+    },
+    "classes": {
+      "label": "صفوفك",
+      "optional": "اختياري",
+      "chooseSubjectFirst": "اختر مادة أعلاه لتحديد الصفوف التي تدرّسها.",
+      "selectedCount": "{count, plural, zero {# صف محدّد} one {صف واحد محدّد} two {صفّان محدّدان} few {# صفوف محدّدة} many {# صفًّا محدّدًا} other {# صف محدّد}}",
+      "noneYet": "لا شيء بعد — افتح المُحدِّد لإضافة الصفوف.",
+      "edit": "تعديل",
+      "done": "تم",
+      "noneForSelection": "لا توجد صفوف بعد للمواد المحددة في هذا المركز.",
+      "yearGroup": "السنة {year}",
+      "yearLabel": "السنة {year}"
+    },
+    "errors": {
+      "name": "أدخل اسمك.",
+      "centre": "اختر مركزك.",
+      "subject": "اختر مادة واحدة على الأقل.",
+      "coordinatorSubject": "اختر المادة التي تنسّقها.",
+      "generic": "حدث خطأ ما."
+    },
+    "finish": {
+      "teacher": "إنهاء — إلى التخطيط",
+      "coordinator": "طلب صلاحية منسّق",
+      "saving": "جارٍ الحفظ…"
+    },
+    "pending": {
+      "title": "طلبك قيد الموافقة",
+      "body": "لقد طلبت تنسيق مادة {subject}. يجب أن يوافق أحد المشرفين على ذلك قبل حصولك على صلاحية المنسّق. ستتمكّن من تسجيل الدخول والبدء بمجرد الموافقة.",
+      "badge": "بانتظار الموافقة",
+      "signOut": "تسجيل الخروج"
+    }
+  }
+}

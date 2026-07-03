@@ -85,11 +85,11 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     }
   }
 
-  // Onboarding gate: an authenticated user with no subject_membership rows is
-  // sent to /onboarding before any other app route; once they have a space, the
-  // gate lets them through and /onboarding bounces back to the home grid. Only
-  // evaluated for page navigations (see shouldEvaluateGate) and skipped on the
-  // public auth surface, so it never loops or fires on data requests.
+  // Onboarding gate: an authenticated user with no active space is sent to
+  // /onboarding before any other app route; once they have a space, the gate lets
+  // them through and /onboarding bounces back to the home grid. Only evaluated for
+  // page navigations (see shouldEvaluateGate) and skipped on the public auth
+  // surface, so it never loops or fires on data requests.
   if (user && shouldEvaluateGate(request) && !isPublicPath(request.nextUrl.pathname)) {
     const { pathname } = request.nextUrl;
     const onOnboarding = pathname === '/onboarding' || pathname.startsWith('/onboarding/');
@@ -103,6 +103,21 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // gate — let the request through and let the page handle it.
     if (error) return supabaseResponse;
     let hasSpace = (count ?? 0) > 0;
+
+    // An approved coordinator holds only a `coordinator_subject` row (school-
+    // agnostic; no subject_membership), so counting memberships alone would loop
+    // them back to /onboarding. Treat "has an active space" as membership OR
+    // coordinator_subject. Checked ONLY when there's no membership, so the common
+    // teacher path adds no round-trip. A pending coordinator has neither and
+    // correctly stays on /onboarding (where the page shows the pending screen).
+    if (!hasSpace) {
+      const { count: coordCount, error: coordError } = await supabase
+        .from('coordinator_subject')
+        .select('profile_id', { count: 'exact', head: true })
+        .eq('profile_id', user.id);
+      if (coordError) return supabaseResponse; // fail-open, same as above
+      if ((coordCount ?? 0) > 0) hasSpace = true;
+    }
 
     // Admins are org-wide and hold no subject_membership by design, so the
     // membership count alone would misroute them into the (teacher) onboarding

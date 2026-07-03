@@ -3,8 +3,9 @@
 import { useCallback, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import type { AdminUser, SubjectSpaceAxes, UserSpace } from '@/lib/console';
-import { formatNumber } from '@/lib/format';
+import type { AdminUser, PendingCoordinatorRequest, SubjectSpaceAxes, UserSpace } from '@/lib/console';
+import { formatDate, formatNumber } from '@/lib/format';
+import { approveCoordinatorRequest, rejectCoordinatorRequest } from '@/lib/actions/users';
 import { avatarColors, initialsOf } from '@/components/weekly-overview/avatar';
 import { EditAccessModal } from './EditAccessModal';
 import { cn } from '@/lib/cn';
@@ -132,10 +133,12 @@ export function UsersTab({
   users,
   currentUserId,
   axes,
+  pendingRequests,
 }: {
   users: AdminUser[] | null;
   currentUserId: string | null;
   axes: SubjectSpaceAxes;
+  pendingRequests: PendingCoordinatorRequest[];
 }) {
   const t = useTranslations('settings');
   const locale = useLocale();
@@ -204,6 +207,8 @@ export function UsersTab({
 
   return (
     <div>
+      <PendingApprovals requests={pendingRequests} />
+
       {/* Title + total-count pill */}
       <div className="mb-[16px] flex items-center gap-[12px]">
         <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-ink">{t('users.title')}</h2>
@@ -396,6 +401,99 @@ function UserRow({
           className="rounded-[8px] border border-teal-tint-border px-[12px] py-[7px] text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal-tint"
         >
           {t('users.editAccess')}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+// ── pending coordinator approvals ─────────────────────────────────────────────
+function PendingApprovals({ requests }: { requests: PendingCoordinatorRequest[] }) {
+  const t = useTranslations('settings');
+  const locale = useLocale();
+  if (requests.length === 0) return null;
+
+  return (
+    <section className="mb-[22px] rounded-[13px] border border-teal-tint-border bg-teal-tint/40 p-[16px_18px]">
+      <div className="mb-[12px] flex items-center gap-[10px]">
+        <h3 className="text-[14.5px] font-semibold text-teal-deep">{t('users.pending.title')}</h3>
+        <span className="rounded-full bg-teal-tint px-[9px] py-[2px] text-[11.5px] font-semibold text-teal-deep">
+          {t('users.pending.count', { count: formatNumber(requests.length, locale) })}
+        </span>
+      </div>
+      <div className="flex flex-col gap-[8px]">
+        {requests.map((r) => (
+          <PendingRow key={r.requestId} request={r} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PendingRow({ request }: { request: PendingCoordinatorRequest }) {
+  const t = useTranslations('settings');
+  const locale = useLocale();
+  const router = useRouter();
+  const [working, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const name = request.fullName ?? request.email ?? '—';
+
+  const decide = (action: (id: string) => Promise<{ ok: boolean; error?: string }>) => {
+    setError(null);
+    startTransition(async () => {
+      const res = await action(request.requestId);
+      if (!res.ok) {
+        setError(res.error ?? t('users.pending.error'));
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-[12px] rounded-[10px] border border-teal-tint-border bg-white px-[14px] py-[11px]">
+      <RowAvatar id={request.profileId} name={name} />
+      <span className="flex min-w-[180px] flex-1 flex-col leading-[1.3]">
+        <span className="text-[13.5px] font-semibold text-ink" dir="auto">
+          {name}
+        </span>
+        <span className="text-[12px] text-[#A79E94]" dir="ltr">
+          {request.email}
+        </span>
+      </span>
+
+      <span className="flex flex-col items-start gap-[3px]">
+        <span
+          className="rounded-[6px] bg-teal-tint px-[8px] py-[3px] text-[11px] font-semibold text-teal-deep"
+          dir="auto"
+        >
+          {t('users.pending.subject', { subject: request.subjectName ?? '—' })}
+        </span>
+        <span className="text-[11px] text-[#A79E94]">
+          {t('users.pending.requestedOn', { date: formatDate(request.createdAt, locale) })}
+        </span>
+      </span>
+
+      <span className="flex items-center gap-[8px]">
+        {error ? <span className="text-[11.5px] font-medium text-[#B23A2E]">{error}</span> : null}
+        <button
+          type="button"
+          disabled={working}
+          onClick={() => decide(rejectCoordinatorRequest)}
+          className="rounded-[8px] border px-[12px] py-[7px] text-[12.5px] font-semibold transition-colors disabled:opacity-60"
+          style={{ borderColor: '#E4C4BF', color: '#B23A2E' }}
+        >
+          {working ? t('users.pending.working') : t('users.pending.reject')}
+        </button>
+        <button
+          type="button"
+          disabled={working}
+          onClick={() => decide(approveCoordinatorRequest)}
+          className="rounded-[8px] px-[12px] py-[7px] text-[12.5px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
+          style={{ background: '#1F7A6C' }}
+        >
+          {working ? t('users.pending.working') : t('users.pending.approve')}
         </button>
       </span>
     </div>

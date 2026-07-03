@@ -11,6 +11,7 @@ import type {
   ConsoleTab,
   CoordSpaceMembers,
   CurriculumSubjectStatus,
+  PendingCoordinatorRequest,
   ResourceGuideVersion,
   SmarttGuideVersion,
   SubjectRow,
@@ -44,6 +45,8 @@ export interface SettingsConsoleProps {
   users?: AdminUser[] | null;
   /** Subject-space grid axes for the Users-tab Edit-access matrix (admin only). */
   userAxes?: SubjectSpaceAxes;
+  /** Pending coordinator-access requests for the Users-tab triage (admin only). */
+  pendingCoordinatorRequests?: PendingCoordinatorRequest[];
 }
 
 export function SettingsConsole(props: SettingsConsoleProps) {
@@ -115,6 +118,7 @@ export function SettingsConsole(props: SettingsConsoleProps) {
             users={props.users ?? null}
             currentUserId={access.profileId}
             axes={props.userAxes ?? { centres: [], subjects: [] }}
+            pendingRequests={props.pendingCoordinatorRequests ?? []}
           />
         ) : null}
       </div>

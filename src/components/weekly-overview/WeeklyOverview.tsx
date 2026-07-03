@@ -8,7 +8,9 @@ import { WeekNav } from '@/components/weekly-overview/WeekNav';
 import { ViewToggle } from '@/components/weekly-overview/ViewToggle';
 import { YearFilter, ALL_YEARS } from '@/components/weekly-overview/YearFilter';
 import { ScopeChooserProvider } from '@/components/weekly-overview/ScopeChooser';
+import { BoardReturnProvider } from '@/components/weekly-overview/BoardReturn';
 import { DownloadWeek } from '@/components/weekly-overview/DownloadWeek';
+import { boardWeekQuery } from '@/lib/board-nav';
 import { formatDate, formatNumber } from '@/lib/format';
 import type { BoardData } from '@/types/weekly-overview';
 
@@ -73,7 +75,13 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
     return n;
   }, [visibleYears, data.planCount, yearGroup]);
 
+  // The board's current coordinate as a URL query, so every link into a plan can
+  // return to this exact week. Tracks the view toggle (which `changeView` also folds
+  // into the URL), so a "back to overview" restores calendar/status too.
+  const returnQuery = useMemo(() => boardWeekQuery(data.coordinate, view), [data.coordinate, view]);
+
   return (
+    <BoardReturnProvider query={returnQuery}>
     <ScopeChooserProvider>
       <div>
         {/* Header: context + filters + week nav + view toggle */}
@@ -153,6 +161,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
         )}
       </div>
     </ScopeChooserProvider>
+    </BoardReturnProvider>
   );
 }
 

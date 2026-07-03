@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
+import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
 import { formatNumber } from '@/lib/format';
 
 /** One band offered for this column, resolved to its curriculum lesson. */
@@ -53,6 +54,7 @@ export function AddLessonMenu({
   const t = useTranslations('board');
   const locale = useLocale();
   const router = useRouter();
+  const planHref = usePlanHref();
   const [open, setOpen] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,8 @@ export function AddLessonMenu({
       period: choice.period,
     });
     if (res.ok) {
-      router.push(`/plan/${res.planId}`);
+      // Carry the current week so the new plan's "back to overview" returns here.
+      router.push(planHref(`/plan/${res.planId}`));
       return; // keep the menu up through the navigation
     }
     setError(res.error);

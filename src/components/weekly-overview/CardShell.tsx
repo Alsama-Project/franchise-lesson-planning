@@ -1,7 +1,10 @@
+'use client';
+
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/cn';
 import { LinkPending } from '@/components/ui/LinkPending';
+import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
 
 const BASE = 'block rounded-[12px] border border-border bg-surface px-[13px] py-[12px]';
 
@@ -30,11 +33,14 @@ export function CardShell({
   readOnly?: boolean;
   children: ReactNode;
 }) {
+  // Round-trip the board's current week: a plan opened from a card carries the week
+  // in its URL so the plan's "back to overview" returns to the same week.
+  const planHref = usePlanHref();
   if (!planId) {
     return <div className={BASE}>{children}</div>;
   }
 
-  const href = canEdit && !readOnly ? `/plan/${planId}` : `/plan/${planId}/view`;
+  const href = planHref(canEdit && !readOnly ? `/plan/${planId}` : `/plan/${planId}/view`);
 
   return (
     <Link

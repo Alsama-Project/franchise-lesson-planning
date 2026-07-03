@@ -9,9 +9,12 @@ import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { getPlanAnnotations } from '@/lib/review/annotations';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { createClient } from '@/lib/supabase/server';
+import { boardHref, toBoardCoordinate, toBoardView } from '@/lib/board-nav';
 
 // Rendered per-request: the plan is loaded with the auth'd client (RLS).
 export const dynamic = 'force-dynamic';
+
+type SearchParams = { month?: string; week?: string; view?: string };
 
 /**
  * The read-only view of a lesson plan and its inline coordinator-review annotation
@@ -27,10 +30,15 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PlanViewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  // The board threads its current week onto the plan link; return "‹ This week" there.
+  const { month, week, view } = await searchParams;
+  const backHref = boardHref(toBoardCoordinate(month, week), toBoardView(view));
 
   const supabase = await createClient();
   // The plan, the viewer, and whether the viewer may take a coordinator decision on
@@ -95,10 +103,10 @@ export default async function PlanViewPage({
           annotations={annotations}
           phaseTitles={phaseTitles}
         >
-          <ReadOnlyPlan data={data} decisionBar={null} rightRail={<AnnotationPane />} />
+          <ReadOnlyPlan data={data} decisionBar={null} rightRail={<AnnotationPane />} backHref={backHref} />
         </AnnotationProvider>
       ) : (
-        <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} />
+        <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} backHref={backHref} />
       )}
     </AppShell>
   );

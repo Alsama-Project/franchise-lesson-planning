@@ -68,6 +68,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
 export function LessonPlanEditor({
   data,
   hasFeedback,
+  backHref = '/',
 }: {
   data: EditorPlanData;
   /** Whether the plan carries any coordinator annotations (comments/suggestions).
@@ -75,6 +76,8 @@ export function LessonPlanEditor({
    *  /plan/[id]/view (one surface). When true, we show a lightweight pointer that
    *  links there; the accept/reject/resolve/reply pane lives only on the view. */
   hasFeedback: boolean;
+  /** Where "‹ This week" returns — the board week this plan was opened from. */
+  backHref?: string;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
@@ -353,6 +356,7 @@ export function LessonPlanEditor({
           lessonDate={plan.lesson_date}
           total={total}
           actions={<SaveIndicator state={saveState} />}
+          backHref={backHref}
         />
       </div>
 

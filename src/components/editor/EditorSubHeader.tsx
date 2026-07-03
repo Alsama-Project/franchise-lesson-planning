@@ -18,6 +18,7 @@ export function EditorSubHeader({
   total,
   actions,
   showTotal = true,
+  backHref = '/',
 }: {
   classContext: EditorClassContext;
   lessonDate: string | null;
@@ -26,6 +27,9 @@ export function EditorSubHeader({
   actions?: ReactNode;
   /** The in-session running total badge only belongs on the Review step. */
   showTotal?: boolean;
+  /** Where "‹ This week" returns — the board week the plan was opened from, so
+   *  returning lands on the same week. Defaults to the plain overview. */
+  backHref?: string;
 }) {
   const t = useTranslations('wizard');
   const locale = useLocale();
@@ -57,7 +61,7 @@ export function EditorSubHeader({
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
       <Link
-        href="/"
+        href={backHref}
         className="mb-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-600 transition-colors hover:text-ink"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rtl:-scale-x-100">

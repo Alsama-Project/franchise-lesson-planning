@@ -11,7 +11,7 @@
 // key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
-import { resolveTermWeek } from '@/lib/term-week';
+import { resolveCurrentTermWeekNo, resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav } from '@/lib/curriculumUtils';
 import { resolveWeekSlotKeys, selectWeekPlanRows } from '@/lib/weekly-overview-selection';
 import { initialsOf } from '@/components/weekly-overview/avatar';
@@ -400,9 +400,19 @@ export async function getBoardData(input: {
     weekNo: i + 1,
   }));
 
-  // Resolve the selected coordinate from the params (snap to a real one).
+  // Resolve the selected coordinate from the params (snap to a real one). With no
+  // (or an unrecognised) coordinate in the URL, land on the week containing today in
+  // Asia/Beirut — resolved via `term_week` — rather than always the first week. When
+  // today sits outside every seeded term (holidays, or an unseeded table), fall back
+  // to the first week as before.
   let index = coords.findIndex((c) => c.month === input.month && c.week === input.week);
-  if (index === -1) index = 0;
+  if (index === -1) {
+    const currentWeekNo = await resolveCurrentTermWeekNo(supabase);
+    index =
+      currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
+        ? currentWeekNo - 1
+        : 0;
+  }
   const coordinate = coords[index];
   const prev = index > 0 ? coords[index - 1] : null;
   const next = index < coords.length - 1 ? coords[index + 1] : null;

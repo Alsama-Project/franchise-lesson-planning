@@ -15,7 +15,7 @@
 // row produces a date or a "current" week.
 
 import type { createClient } from '@/lib/supabase/server';
-import { addDays, todayISO } from '@/lib/week';
+import { addDays, mondayOf, todayInBeirut } from '@/lib/week';
 
 /** The cookie-bound, RLS-scoped server client (never the service-role key). */
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
@@ -49,7 +49,30 @@ export async function resolveTermWeek(
   if (!mondayDate) return { mondayDate: null, isCurrent: false };
 
   // ISO `YYYY-MM-DD` strings compare lexicographically, so no Date math is needed.
-  const today = todayISO();
+  // "Today" is Beirut wall-clock (the app's timezone), not UTC.
+  const today = todayInBeirut();
   const isCurrent = today >= mondayDate && today <= addDays(mondayDate, 4);
   return { mondayDate, isCurrent };
+}
+
+/**
+ * The teaching-week number whose real week contains today (Asia/Beirut), or `null`
+ * when today falls outside every seeded term (holidays / gaps, or the table isn't
+ * seeded yet). Resolved by matching today's Monday against `term_week.starts_on`, so
+ * weekends resolve to their own Mon–Fri week. The board uses this to land on the
+ * current week when the URL names no coordinate.
+ */
+export async function resolveCurrentTermWeekNo(
+  supabase: ServerSupabase,
+): Promise<number | null> {
+  const monday = mondayOf(todayInBeirut());
+  const { data } = await supabase
+    .from('term_week')
+    .select('week_no')
+    .eq('starts_on', monday)
+    .order('week_no', { ascending: true })
+    .limit(1);
+
+  const weekNo = (data?.[0] as { week_no?: number | null } | undefined)?.week_no;
+  return typeof weekNo === 'number' ? weekNo : null;
 }

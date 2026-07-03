@@ -24,7 +24,7 @@ import { cn } from '@/lib/cn';
 import { CalendarLessonCard } from '@/components/weekly-overview/LessonCard';
 import { AddLessonMenu, type AddYearChoice } from '@/components/weekly-overview/AddLessonMenu';
 import type { PlanCard } from '@/components/weekly-overview/cards';
-import { WEEKDAYS, addDays, todayISO } from '@/lib/week';
+import { WEEKDAYS, addDays, todayInBeirut } from '@/lib/week';
 import { formatDate, formatNumber } from '@/lib/format';
 import { reorderPlans, type PlanPlacement } from '@/lib/actions/lesson-plan';
 import type { BoardPlan, BoardYear } from '@/types/weekly-overview';
@@ -326,7 +326,7 @@ function DayColumn({
   // … Fri+4), but ONLY when `term_week` gave us a Monday. With no row the header is
   // just "Period {p}" (no fabricated date), and "Today" can't be proven either.
   const colDate = mondayDate ? addDays(mondayDate, weekday - 1) : null;
-  const isToday = colDate !== null && colDate === todayISO();
+  const isToday = colDate !== null && colDate === todayInBeirut();
   const period = formatNumber(weekday, locale);
   // No year in the column header — `year: undefined` overrides formatDate's default
   // so it reads "Mon, Dec 15" rather than "Mon, Dec 15, 2025". The date rides on its

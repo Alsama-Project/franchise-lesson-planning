@@ -33,6 +33,7 @@ export function ReadOnlyPlan({
   data,
   decisionBar,
   rightRail,
+  backHref = '/',
 }: {
   data: EditorPlanData;
   /** Coordinator decision bar, rendered at the top of the content column when the
@@ -42,6 +43,8 @@ export function ReadOnlyPlan({
    *  slice; the content column is width-capped so adding it never reflows the
    *  plan body. Nothing is rendered here in this slice. */
   rightRail?: ReactNode;
+  /** Where "‹ This week" returns — the board week this plan was opened from. */
+  backHref?: string;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
@@ -117,7 +120,7 @@ export function ReadOnlyPlan({
         {decisionBar}
         <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
           <Link
-            href="/"
+            href={backHref}
             className="mb-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-600 transition-colors hover:text-ink"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

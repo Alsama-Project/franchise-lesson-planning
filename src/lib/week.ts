@@ -56,6 +56,24 @@ export function todayISO(): string {
   return toISO(new Date());
 }
 
+/**
+ * Today's date as `YYYY-MM-DD` in Asia/Beirut wall-clock time — the app's canonical
+ * "today". Use this (not `todayISO`) wherever the calendar day itself matters (which
+ * week is current, which column is today): near midnight UTC the Beirut date differs,
+ * and this app plans in Beirut. `en-CA` yields an ISO `YYYY-MM-DD`; Gregorian + Latin
+ * digits are pinned so it stays a valid ISO string under any locale default.
+ */
+export function todayInBeirut(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Beirut',
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 /** Add `days` to a `YYYY-MM-DD` string, returning a new `YYYY-MM-DD` string. */
 export function addDays(iso: string, days: number): string {
   const date = parseISO(iso) ?? new Date();

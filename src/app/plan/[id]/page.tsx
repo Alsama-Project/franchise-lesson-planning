@@ -5,16 +5,24 @@ import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { planHasAnnotations } from '@/lib/review/annotations';
 import { createClient } from '@/lib/supabase/server';
+import { boardHref, toBoardCoordinate, toBoardView } from '@/lib/board-nav';
 
 // Rendered per-request: the plan is loaded with the auth'd client (RLS).
 export const dynamic = 'force-dynamic';
 
+type SearchParams = { month?: string; week?: string; view?: string };
+
 export default async function PlanEditorPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  // The board threads its current week onto the plan link; return "‹ This week" there.
+  const { month, week, view } = await searchParams;
+  const backHref = boardHref(toBoardCoordinate(month, week), toBoardView(view));
 
   // The plan load and the shell-chrome identity are independent, so run them in
   // parallel rather than waterfalling.
@@ -38,7 +46,13 @@ export default async function PlanEditorPage({
   // the review/edit split holds at the page level and not only at the board's card.
   // The author keeps the editor even when they coordinate their own space.
   if (canCoordinate && data.plan.created_by !== user?.id) {
-    redirect(`/plan/${id}/view`);
+    // Preserve the board week across the review-route redirect so /view returns here.
+    const query = new URLSearchParams();
+    if (month) query.set('month', month);
+    if (week) query.set('week', week);
+    if (view) query.set('view', view);
+    const qs = query.toString();
+    redirect(qs ? `/plan/${id}/view?${qs}` : `/plan/${id}/view`);
   }
 
   // Display name for the shell chrome (depends on the resolved user).
@@ -51,7 +65,7 @@ export default async function PlanEditorPage({
 
   return (
     <AppShell name={name} subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}>
-      <LessonPlanEditor data={data} hasFeedback={hasFeedback} />
+      <LessonPlanEditor data={data} hasFeedback={hasFeedback} backHref={backHref} />
     </AppShell>
   );
 }

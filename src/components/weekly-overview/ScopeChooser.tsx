@@ -25,6 +25,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
+import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
 import { formatNumber } from '@/lib/format';
 
 /** A fixed curriculum lesson to plan, with the day placement to write. */
@@ -153,6 +154,7 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
   const t = useTranslations('board');
   const locale = useLocale();
   const router = useRouter();
+  const planHref = usePlanHref();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEscape(onClose);
@@ -168,7 +170,8 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
       period: target.period,
     });
     if (res.ok) {
-      router.push(`/plan/${res.planId}`);
+      // Carry the current week so the new plan's "back to overview" returns here.
+      router.push(planHref(`/plan/${res.planId}`));
       return; // keep the dialog up through the navigation
     }
     setError(res.error);

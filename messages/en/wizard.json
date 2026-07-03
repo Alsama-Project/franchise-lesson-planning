@@ -47,6 +47,7 @@
       "notWritten": "not written yet"
     },
     "curriculum": {
+      "sectionTitle": "Curriculum context",
       "dailyOutcome": "Daily outcome",
       "thisWeek": "This week",
       "monthlyObjective": "Monthly objective",

@@ -47,6 +47,7 @@
       "notWritten": "لم يُكتب بعد"
     },
     "curriculum": {
+      "sectionTitle": "سياق المنهج",
       "dailyOutcome": "الناتج اليومي",
       "thisWeek": "هذا الأسبوع",
       "monthlyObjective": "الهدف الشهري",

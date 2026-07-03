@@ -20,25 +20,26 @@ import {
   ObjectiveCheckRequestError,
   type ObjectiveCheckResult,
 } from '@/lib/editor/objective-check';
-import { saveLessonPlan, submitLessonPlan, unsubmitLessonPlan } from '@/lib/actions/lesson-plan';
+import {
+  saveLessonPlan,
+  saveWorksheet,
+  submitLessonPlan,
+  unsubmitLessonPlan,
+} from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
 import type { PlanComment } from '@/lib/review/comments';
 import type { PlanEvent } from '@/lib/review/timeline';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
-import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
-import { LockedBanner } from '@/components/editor/LockedBanner';
-import { CurriculumBand } from '@/components/editor/CurriculumBand';
-import { CurriculumPanel } from '@/components/editor/CurriculumPanel';
+import { CurriculumCard } from '@/components/editor/CurriculumCard';
 import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
-import { ObjectiveBanner } from '@/components/editor/ObjectiveBanner';
 import { WritingStep } from '@/components/editor/WritingStep';
 import { PractiseStep } from '@/components/editor/PractiseStep';
+import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
 import { ActivityPane } from '@/components/review/ActivityPane';
-import { cn } from '@/lib/cn';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -72,9 +73,10 @@ export function LessonPlanEditor({
   events,
 }: {
   data: EditorPlanData;
-  /** Coordinator→teacher feedback on this plan. Rendered existence-gated on the
-   *  Review step regardless of status, so a returned plan shows what to fix. Empty
-   *  until the teacher-SELECT comments policy (migration 0025) is applied. */
+  /** Coordinator→teacher feedback on this plan. Rendered existence-gated at the
+   *  foot of the lesson-plan pane regardless of status, so a returned plan shows
+   *  what to fix. Empty until the teacher-SELECT comments policy (migration 0025)
+   *  is applied. */
   comments: PlanComment[];
   /** Recorded lifecycle events, interleaved with comments in the read-only rail.
    *  Empty until migration 0027 (`plan_events`) is applied. */
@@ -83,7 +85,6 @@ export function LessonPlanEditor({
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
 
-  const [step, setStep] = useState(1);
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
   const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
   const [worksheet, setWorksheet] = useState<unknown>(() => plan.worksheet);
@@ -111,16 +112,19 @@ export function LessonPlanEditor({
   const [unlocking, setUnlocking] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // The single source of truth for "the plan is locked": one derived value, not a
-  // status check scattered across steps. `submitted` and `approved` both lock the
-  // whole wizard; `in_progress` and `needs_review` leave it editable. Threaded into
-  // every step so each renders read-only consistently, and used to short-circuit
-  // autosave so nothing persists while locked.
+  // The single source of truth for "the lesson PLAN is locked": one derived value.
+  // `submitted` and `approved` both lock the plan pane (objective, phases, link-it,
+  // review) read-only; `in_progress` and `needs_review` leave it editable. The
+  // student WORKSHEET pane is deliberately exempt — it stays editable at every
+  // status (its writes go through `saveWorksheet`, never gated here).
   const locked = status === 'submitted' || status === 'approved';
 
   const total = useMemo(() => inSessionMinutes(blocks), [blocks]);
 
-  // Autosave: debounce edits to objective / blocks / materials / check result.
+  // ── Plan autosave ──────────────────────────────────────────────────────────
+  // Debounce edits to objective / blocks / materials / check result. The student
+  // worksheet is NOT in this payload — it has its own always-on autosave below —
+  // so a locked plan can keep saving its worksheet without this path ever writing.
   const firstRender = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest `locked` for the debounced writer to read. Kept in a ref (not a
@@ -139,9 +143,9 @@ export function LessonPlanEditor({
     setSaveState('saving');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
-      // Locked plans never persist — the wizard is read-only in `submitted` /
-      // `approved`, so a stray state change (e.g. a non-form control slipping past
-      // the disabled fieldsets) must not write back to the row.
+      // Locked plans never persist their plan fields — the plan pane is read-only
+      // in `submitted` / `approved`, so a stray state change (e.g. a non-form
+      // control slipping past the disabled fieldsets) must not write back.
       if (lockedRef.current) {
         setSaveState('idle');
         return;
@@ -152,7 +156,6 @@ export function LessonPlanEditor({
         blocks,
         required_materials: materials,
         smartt_check: checkResult ?? undefined,
-        worksheet,
       });
       setSaveState(res.ok ? 'saved' : 'error');
     }, AUTOSAVE_DELAY_MS);
@@ -160,11 +163,31 @@ export function LessonPlanEditor({
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [remainder, blocks, materials, checkResult, worksheet, plan.id]);
+  }, [remainder, blocks, materials, checkResult, plan.id]);
 
-  const goStep = useCallback((n: number) => {
-    setStep(Math.max(1, Math.min(STEP_COUNT, n)));
-  }, []);
+  // ── Worksheet autosave (always on, every status) ───────────────────────────
+  // The student worksheet stays editable and savable regardless of `plan.status`.
+  // It patches ONLY the `worksheet` column (via `saveWorksheet`), so it never
+  // touches — and never clobbers — the locked plan fields, and it is NOT gated by
+  // `locked`. This is the one behaviour that differs from the plan-field lock.
+  const wsFirstRender = useRef(true);
+  const wsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (wsFirstRender.current) {
+      wsFirstRender.current = false;
+      return;
+    }
+    setSaveState('saving');
+    if (wsTimer.current) clearTimeout(wsTimer.current);
+    wsTimer.current = setTimeout(async () => {
+      const res = await saveWorksheet(plan.id, worksheet);
+      setSaveState(res.ok ? 'saved' : 'error');
+    }, AUTOSAVE_DELAY_MS);
+
+    return () => {
+      if (wsTimer.current) clearTimeout(wsTimer.current);
+    };
+  }, [worksheet, plan.id]);
 
   const patchType = useCallback((type: LessonBlockType, patch: Partial<Block>) => {
     setBlocks((bs) => patchBlock(bs, type, patch));
@@ -243,13 +266,14 @@ export function LessonPlanEditor({
     setSubmitting(true);
     setSubmitError(null);
     if (timer.current) clearTimeout(timer.current);
+    // The worksheet is persisted by its own autosave, so it is not part of the
+    // submit payload — submit only commits the plan fields + the status move.
     const res = await submitLessonPlan({
       id: plan.id,
       smartt_objective: composeObjective(remainder),
       blocks,
       required_materials: materials,
       smartt_check: checkResult ?? undefined,
-      worksheet,
     });
     setSubmitting(false);
     if (res.ok) {
@@ -260,8 +284,8 @@ export function LessonPlanEditor({
     }
   }
 
-  // Recall a submitted OR approved plan back to `in_progress`, unlocking the whole
-  // wizard. The author always lands in `in_progress` (never the prior
+  // Recall a submitted OR approved plan back to `in_progress`, unlocking the plan
+  // pane. The author always lands in `in_progress` (never the prior
   // `needs_review`): the persisted comments carry the "changes requested" context,
   // so the status need not. Reachable from both locked states — the author may now
   // reopen their own approved plan (SubmitControl renders a recall control there).
@@ -277,22 +301,7 @@ export function LessonPlanEditor({
     }
   }
 
-  // Coordinator feedback shows as a sticky read-only right rail on the Review step,
-  // existence-gated (any comment exists), mirroring the coordinator view's sidebar.
-  // Scoped to the Review step so the wider content steps (worksheet builder, etc.)
-  // keep their full width.
-  const showCommentsRail = step === STEP_COUNT && (comments.length > 0 || events.length > 0);
-
-  const submitControl = (
-    <SubmitControl
-      status={status}
-      canSubmit={canSubmit}
-      submitting={submitting}
-      unlocking={unlocking}
-      onSubmit={handleSubmit}
-      onUnlock={handleUnlock}
-    />
-  );
+  const showCommentsRail = comments.length > 0 || events.length > 0;
 
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
@@ -340,136 +349,159 @@ export function LessonPlanEditor({
   );
 
   return (
-    <div className="mx-auto -my-8 max-w-[1340px]">
-      <EditorSubHeader
-        classContext={classContext}
-        lessonDate={plan.lesson_date}
-        total={total}
-        actions={<SaveIndicator state={saveState} />}
-        showTotal={step === STEP_COUNT}
-      />
+    // Full-bleed, viewport-tall shell (past `lg`): the context strip + stage-action
+    // row pin to the top and the two panes fill the rest, each scrolling on its
+    // own. Below `lg` it falls back to normal document flow (panes stack, the page
+    // scrolls) so a narrow viewport isn't split into two tiny scroll regions.
+    <div className="-mx-6 -my-8 flex flex-col lg:-mx-10 lg:h-[calc(100vh-var(--app-chrome-height,64px))]">
+      <div className="shrink-0">
+        <EditorSubHeader
+          classContext={classContext}
+          lessonDate={plan.lesson_date}
+          total={total}
+          actions={<SaveIndicator state={saveState} />}
+        />
+      </div>
 
-      <Stepper
-        step={step}
-        onGo={goStep}
-        onBack={() => goStep(step - 1)}
-        onNext={() => goStep(step + 1)}
-        nextLabel={step === 4 ? t('nav.toReview') : t('nav.next')}
-        submitSlot={submitControl}
-      />
-
-      <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px] lg:flex lg:items-start lg:gap-6">
-       <div className={cn('min-w-0', showCommentsRail && 'lg:flex-1 lg:max-w-[940px]')}>
-        {/* While locked, the four content steps show a light "view only" banner
-            routing to the Review step, where the unlock control lives. The Review
-            step (5) carries the unlock control itself, so it gets no banner. */}
-        {locked && step < STEP_COUNT ? (
-          <div className="mb-[18px]">
-            <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
+      {/* Stage-action row: the plan's pipeline expressed as contextual actions
+          (Submit for approval → Unlock → Recall) plus the approved-only PDF export.
+          No content "next" — the wizard is gone; these are the status transitions. */}
+      <div className="shrink-0 border-b border-[#EFE8DD] px-[22px] py-[11px] lg:px-[30px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-h-[34px] flex items-center">
+            {locked ? (
+              <span className="inline-flex items-center gap-[8px] text-[13px] font-semibold text-[#186155]">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="4" y="11" width="16" height="9" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                {status === 'approved' ? t('lockedBanner.approvedTitle') : t('lockedBanner.title')}
+              </span>
+            ) : null}
           </div>
-        ) : null}
-
-        {step === 1 ? <CurriculumBand curriculum={curriculum} /> : null}
-
-        {/* Past Step 1 the cream curriculum context persists alongside the pink
-            objective banner, so the locked daily LO / theme / grammar-vocab stay
-            on screen on every stage. */}
-        {step > 1 ? (
-          <div className="flex flex-col gap-[14px]">
-            <ObjectiveBanner remainder={remainder} />
-            <CurriculumPanel curriculum={curriculum} />
+          <div className="flex flex-wrap items-center gap-[9px]">
+            {status === 'approved' ? (
+              <a
+                href={`/api/pdf/plan/${plan.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-[7px] rounded-[9px] border border-status-approved-border bg-status-approved-bg px-[13px] py-2 text-[13px] font-semibold text-status-approved hover:bg-[#d6ebe0]"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                </svg>
+                {t('review.downloadPdf')}
+              </a>
+            ) : null}
+            <SubmitControl
+              status={status}
+              canSubmit={canSubmit}
+              submitting={submitting}
+              unlocking={unlocking}
+              onSubmit={handleSubmit}
+              onUnlock={handleUnlock}
+            />
           </div>
-        ) : null}
-
-        {step === 1 ? (
-          <ObjectiveStep
-            remainder={remainder}
-            onChange={setRemainder}
-            checkResult={checkResult}
-            checking={checking}
-            checkError={checkError}
-            onCheck={handleCheck}
-            locked={locked}
-          />
-        ) : null}
-
-        {step === 2 && newContentBlock ? (
-          <WritingStep
-            title={t('teach.newContentTitle')}
-            block={newContentBlock}
-            onPatch={(patch) => patchType('new_content', patch)}
-            subjectId={resourceBank.subjectId}
-            vocabulary={resourceBank.vocabulary}
-            folders={resourceBank.folders}
-            attachedResources={attachedFor(newContentBlock)}
-            onAttach={(resource) => attachResource('new_content', resource)}
-            onRemove={(resourceId) => detachResource('new_content', resourceId)}
-            locked={locked}
-          />
-        ) : null}
-
-        {step === 3 && practiceBlock ? (
-          <PractiseStep
-            block={practiceBlock}
-            onPatch={(patch) => patchType('independent_practice', patch)}
-            worksheet={worksheet}
-            onWorksheetChange={setWorksheet}
-            context={worksheetContext}
-            vocabulary={resourceBank.vocabulary}
-            locked={locked}
-          />
-        ) : null}
-
-        {step === 4 ? (
-          <LinkItStep
-            linkIt={linkIt}
-            cfuActivities={activitiesByBlock.cfu ?? []}
-            exitActivities={activitiesByBlock.exit_ticket ?? []}
-            previousDailyLO={curriculum?.previousDailyLO ?? ''}
-            onChange={onLinkItChange}
-            locked={locked}
-          />
-        ) : null}
-
-        {step === 5 ? (
-          <ReviewStep
-            planId={plan.id}
-            status={status}
-            blocks={blocks}
-            total={total}
-            materials={materials}
-            worksheet={worksheet}
-            worksheetContext={worksheetContext}
-            techniqueLabels={techniqueLabels}
-            attachedFor={attachedFor}
-            onMaterialsChange={setMaterials}
-            onBlockMinutes={setBlockMinutes}
-            onRoutinesMinutes={setRoutinesMin}
-            locked={locked}
-          />
-        ) : null}
-
+        </div>
         {submitError ? (
-          <div className="mt-4 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-3 text-[13px] text-pink">
+          <div className="mt-2 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-2.5 text-[13px] text-pink">
             {submitError}
           </div>
         ) : null}
-       </div>
+      </div>
 
-        {showCommentsRail ? (
-          // The aside WRAPPER is the sticky element (not the inner card): its
-          // containing block is the flex row, whose height is driven by the tall
-          // plan content beside it, so the pane has room to travel and actually
-          // sticks. `lg:self-start` keeps the wrapper at its content height under
-          // the row's `items-start` so it does NOT stretch to the column's full
-          // height (a stretched sticky element has no travel room and scrolls away).
-          // `top` clears the full fixed chrome via the --app-chrome-height token set
-          // in AppShell (underscores → literal spaces so Tailwind v4 doesn't mis-parse
-          // the `+` inside calc()). Mirrors the coordinator review rail in ReadOnlyPlan.
-          <aside className="mt-6 lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)] lg:mt-0 lg:w-[360px] lg:flex-shrink-0 lg:self-start">
-            <ActivityPane mode="teacher" teacherId={plan.created_by} comments={comments} events={events} />
-          </aside>
-        ) : null}
+      {/* The working area: lesson plan (left) · student worksheet (right). */}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* LEFT — lesson plan, scrolls independently past `lg`. */}
+        <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
+          <div className="mx-auto max-w-[820px]">
+            <CurriculumCard curriculum={curriculum} />
+
+            <div className="mt-[22px]">
+              <ObjectiveStep
+                remainder={remainder}
+                onChange={setRemainder}
+                checkResult={checkResult}
+                checking={checking}
+                checkError={checkError}
+                onCheck={handleCheck}
+                locked={locked}
+              />
+            </div>
+
+            {newContentBlock ? (
+              <WritingStep
+                title={t('teach.newContentTitle')}
+                block={newContentBlock}
+                onPatch={(patch) => patchType('new_content', patch)}
+                subjectId={resourceBank.subjectId}
+                vocabulary={resourceBank.vocabulary}
+                folders={resourceBank.folders}
+                attachedResources={attachedFor(newContentBlock)}
+                onAttach={(resource) => attachResource('new_content', resource)}
+                onRemove={(resourceId) => detachResource('new_content', resourceId)}
+                locked={locked}
+              />
+            ) : null}
+
+            {practiceBlock ? (
+              <PractiseStep
+                block={practiceBlock}
+                onPatch={(patch) => patchType('independent_practice', patch)}
+                showWorksheet={false}
+                locked={locked}
+              />
+            ) : null}
+
+            <LinkItStep
+              linkIt={linkIt}
+              cfuActivities={activitiesByBlock.cfu ?? []}
+              exitActivities={activitiesByBlock.exit_ticket ?? []}
+              previousDailyLO={curriculum?.previousDailyLO ?? ''}
+              onChange={onLinkItChange}
+              locked={locked}
+            />
+
+            <ReviewStep
+              blocks={blocks}
+              total={total}
+              materials={materials}
+              worksheet={worksheet}
+              worksheetContext={worksheetContext}
+              techniqueLabels={techniqueLabels}
+              attachedFor={attachedFor}
+              onMaterialsChange={setMaterials}
+              onBlockMinutes={setBlockMinutes}
+              onRoutinesMinutes={setRoutinesMin}
+              locked={locked}
+            />
+
+            {showCommentsRail ? (
+              <div className="mt-[22px]">
+                <ActivityPane
+                  mode="teacher"
+                  teacherId={plan.created_by}
+                  comments={comments}
+                  events={events}
+                />
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        {/* RIGHT — student worksheet, embedded inline. Editable at EVERY status
+            (never wrapped in the plan-lock fieldset); its edits autosave through
+            `saveWorksheet`. Scrolls independently past `lg`. */}
+        <section className="min-w-0 flex-1 overflow-visible bg-surface-subtle px-[16px] py-[22px] lg:overflow-y-auto lg:px-[22px]">
+          <div className="mx-auto max-w-[900px]">
+            <WorksheetBuilder
+              value={worksheet}
+              onChange={setWorksheet}
+              context={worksheetContext}
+              vocabulary={resourceBank.vocabulary}
+            />
+          </div>
+        </section>
       </div>
     </div>
   );

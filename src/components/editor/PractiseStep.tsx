@@ -1,10 +1,10 @@
 'use client';
 
-// Step 3 (Practise) body. Unlike the two-pane "Teach it" step, Practise is a
-// single full-width card: the block header (phase), the two pink-
-// editable teacher/student textareas, and below them the full student-worksheet
-// builder (toolbar + inline A4 canvas). The resource bank is reached through the
-// builder's modal (not an embedded side panel), matching the mockup.
+// The Independent/Group practice writing card: the block header (phase) and the
+// two pink-editable teacher/student textareas. In the split editor the student
+// worksheet builder lives in its own right-hand pane (always editable), so this
+// card renders the writing only (`showWorksheet={false}`); the optional inline
+// worksheet is kept for any caller that still wants the single-card composition.
 
 import { useTranslations } from 'next-intl';
 import type { Block, TeachingPhase, Worksheet } from '@/types/lesson';
@@ -21,19 +21,24 @@ export function PractiseStep({
   onWorksheetChange,
   context,
   vocabulary,
+  showWorksheet = true,
   locked = false,
 }: {
   block: Block;
   onPatch: (patch: Partial<Block>) => void;
-  worksheet: unknown;
-  onWorksheetChange: (worksheet: Worksheet) => void;
-  context: WorksheetContext;
-  vocabulary: TagsByDimension;
+  worksheet?: unknown;
+  onWorksheetChange?: (worksheet: Worksheet) => void;
+  context?: WorksheetContext;
+  vocabulary?: TagsByDimension;
+  /** When false the inline worksheet builder is omitted (it lives in the split
+   *  editor's right pane instead); the card is then the writing textareas only. */
+  showWorksheet?: boolean;
   /** When true the plan is submitted/approved: every control inside (incl. the
    *  worksheet builder's toolbar) is disabled via a single `disabled` fieldset. */
   locked?: boolean;
 }) {
   const t = useTranslations('wizard');
+  const withWorksheet = showWorksheet && !!onWorksheetChange && !!context && !!vocabulary;
   return (
     <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
       {/* Block header */}
@@ -46,7 +51,12 @@ export function PractiseStep({
       </div>
 
       {/* Teacher / student writing (pink-editable) */}
-      <div className="grid grid-cols-1 gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px] md:grid-cols-2">
+      <div
+        className={
+          'grid grid-cols-1 gap-[14px] px-6 py-[18px] md:grid-cols-2' +
+          (withWorksheet ? ' border-b border-[#EFE8DD]' : '')
+        }
+      >
         <div>
           <FieldLabel>{t('teach.teacherDoes')}</FieldLabel>
           <Textarea
@@ -71,13 +81,16 @@ export function PractiseStep({
         </div>
       </div>
 
-      {/* Worksheet builder (toolbar + inline A4 canvas) */}
-      <WorksheetBuilder
-        value={worksheet}
-        onChange={onWorksheetChange}
-        context={context}
-        vocabulary={vocabulary}
-      />
+      {/* Worksheet builder (toolbar + inline A4 canvas) — only in the single-card
+          composition; the split editor renders the builder in its own pane. */}
+      {withWorksheet ? (
+        <WorksheetBuilder
+          value={worksheet}
+          onChange={onWorksheetChange!}
+          context={context!}
+          vocabulary={vocabulary!}
+        />
+      ) : null}
     </fieldset>
   );
 }

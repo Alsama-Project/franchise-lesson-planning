@@ -19,16 +19,13 @@ export interface SavePlanInput {
   smartt_check?: unknown;
   /** Required-materials chips. Optional; persisted to `required_materials`. */
   required_materials?: string[];
-  /**
-   * The student worksheet body — the versioned `Worksheet` envelope (an ordered
-   * exercise-block list; see @/types/lesson). Optional: only sent once the
-   * teacher has touched the worksheet. Stored verbatim in the unenforced
-   * `worksheet` JSONB column and normalised on read via `parseWorksheet`.
-   */
-  worksheet?: unknown;
 }
 
-/** Build the column patch, including the optional JSONB columns only when sent. */
+/** Build the column patch, including the optional JSONB columns only when sent.
+ *  The student `worksheet` column is deliberately NOT part of this patch — it is
+ *  written exclusively by {@link saveWorksheet} so the worksheet stays editable
+ *  at every status while the rest of the plan locks. Keeping the two write paths
+ *  disjoint means they never both touch the column (last-write-wins is fine). */
 function buildPatch(input: SavePlanInput): Record<string, unknown> {
   const patch: Record<string, unknown> = {
     smartt_objective: input.smartt_objective || null,
@@ -36,7 +33,6 @@ function buildPatch(input: SavePlanInput): Record<string, unknown> {
   };
   if (input.smartt_check !== undefined) patch.smartt_check = input.smartt_check;
   if (input.required_materials !== undefined) patch.required_materials = input.required_materials;
-  if (input.worksheet !== undefined) patch.worksheet = input.worksheet;
   return patch;
 }
 
@@ -68,6 +64,39 @@ export async function saveLessonPlan(input: SavePlanInput): Promise<ActionResult
   // Keep the board fresh so a returning teacher sees the card in the right place
   // (a new plan is created `in_progress`, so it has already left "Not started").
   revalidatePath('/');
+  return { ok: true, updated_at: data.updated_at };
+}
+
+/**
+ * Autosave ONLY the student worksheet — the dedicated write path that keeps the
+ * worksheet editable and savable at every plan status. Unlike `saveLessonPlan`
+ * (which is gated read-only in the client while the plan is locked), this patches
+ * just the `worksheet` column and is called at all statuses, so a teacher can keep
+ * building the student-facing sheet after the plan itself is submitted/approved.
+ *
+ * It patches a single column: the `updated_at` trigger stamps the row, and the
+ * rest of the plan is untouched, so a locked plan's objective/blocks are never
+ * clobbered. Authorisation rides entirely on RLS (`lp_member_all`), which already
+ * permits the author (and a subject coordinator) to update the row at any status —
+ * no status guard, no service-role, no schema change. Not revalidated: worksheet
+ * content never surfaces on the board.
+ */
+export async function saveWorksheet(
+  planId: string,
+  worksheet: unknown,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('lesson_plans')
+    .update({ worksheet })
+    .eq('id', planId)
+    .select('updated_at')
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
+
   return { ok: true, updated_at: data.updated_at };
 }
 

@@ -22,40 +22,52 @@ import { cn } from '@/lib/cn';
 import { createScopedPlan } from '@/lib/actions/create-lesson';
 import { formatNumber } from '@/lib/format';
 
-/** One year group offered for this column, resolved to its curriculum lesson. */
+/** One band offered for this column, resolved to its curriculum lesson. */
 export interface AddYearChoice {
+  /** Stable band identity (`centreId|subjectCode|year`) — the choice key. */
+  bandKey: string;
   year: number;
-  /** The lesson for this (year, period), or null when the curriculum has none. */
+  /** The subject this choice creates against (board can span subjects). */
+  subjectName: string;
+  /** The centre to create against; label shown only when the board spans centres. */
+  centreId: string;
+  centreName: string | null;
+  /** The lesson for this (band, period), or null when the curriculum has none. */
   lessonKey: string | null;
-  /** The day-ordinal sort hint to write (next in this year's stack for the column). */
+  /** The day-ordinal sort hint to write (next in this band's stack for the column). */
   period: number;
 }
 
 export function AddLessonMenu({
   weekday,
   choices,
+  spansMultipleSubjects,
 }: {
   /** The Mon–Fri column (1..5) — also the curriculum period the lessons resolve to. */
   weekday: number;
-  /** The teacher's year groups, each resolved to this column's curriculum lesson. */
+  /** The teacher's bands, each resolved to this column's curriculum lesson. */
   choices: AddYearChoice[];
+  /** Whether the board spans subjects — decides "Year N" vs "Subject · Year N" labels. */
+  spansMultipleSubjects: boolean;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busyYear, setBusyYear] = useState<number | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const choose = async (choice: AddYearChoice) => {
-    if (!choice.lessonKey || busyYear !== null) return;
-    setBusyYear(choice.year);
+    if (!choice.lessonKey || busyKey !== null) return;
+    setBusyKey(choice.bandKey);
     setError(null);
-    // Whole-centre scope: the column fixes the period/day, month and week, so the
-    // create action resolves subject/year/school server-side from the locked key.
+    // Whole-centre scope: the column fixes the period/day, month and week, and the
+    // slot names its own centre; the create action resolves subject/year server-side
+    // from the locked key and creates against the passed centre.
     const res = await createScopedPlan({
       lessonKey: choice.lessonKey,
       scope: 'centre',
+      schoolId: choice.centreId,
       weekday,
       period: choice.period,
     });
@@ -64,7 +76,7 @@ export function AddLessonMenu({
       return; // keep the menu up through the navigation
     }
     setError(res.error);
-    setBusyYear(null);
+    setBusyKey(null);
   };
 
   return (
@@ -89,15 +101,17 @@ export function AddLessonMenu({
       {open ? (
         <div className="rounded-[10px] border border-border bg-surface p-[5px] shadow-[0_10px_28px_-14px_rgba(0,0,0,0.4)]">
           <div className="px-[9px] pb-[4px] pt-[5px] text-[10px] font-bold uppercase tracking-[0.05em] text-text-faint">
-            {t('add.chooseYear')}
+            {spansMultipleSubjects ? t('add.chooseLesson') : t('add.chooseYear')}
           </div>
           {choices.map((c) => {
             const unavailable = !c.lessonKey;
-            const busy = busyYear === c.year;
-            const disabled = unavailable || busyYear !== null;
+            const busy = busyKey === c.bandKey;
+            const disabled = unavailable || busyKey !== null;
+            const yearLabel = t('card.year', { n: formatNumber(c.year, locale) });
+            const label = spansMultipleSubjects ? `${c.subjectName} · ${yearLabel}` : yearLabel;
             return (
               <button
-                key={c.year}
+                key={c.bandKey}
                 type="button"
                 onClick={() => choose(c)}
                 disabled={disabled}
@@ -108,7 +122,12 @@ export function AddLessonMenu({
                     : 'text-ink hover:bg-teal-tint hover:text-teal-deep',
                 )}
               >
-                <span>{t('card.year', { n: formatNumber(c.year, locale) })}</span>
+                <span className="min-w-0 truncate" dir="auto">
+                  {label}
+                  {c.centreName ? (
+                    <span className="font-normal text-text-faint"> · {c.centreName}</span>
+                  ) : null}
+                </span>
                 {busy ? (
                   <span className="text-[11px] font-medium text-text-muted">{t('add.opening')}</span>
                 ) : unavailable ? (

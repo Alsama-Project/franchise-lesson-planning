@@ -8,6 +8,7 @@ import { WeekNav } from '@/components/weekly-overview/WeekNav';
 import { ViewToggle } from '@/components/weekly-overview/ViewToggle';
 import { YearFilter, ALL_YEARS } from '@/components/weekly-overview/YearFilter';
 import { ScopeChooserProvider } from '@/components/weekly-overview/ScopeChooser';
+import { DownloadWeek } from '@/components/weekly-overview/DownloadWeek';
 import { formatDate, formatNumber } from '@/lib/format';
 import type { BoardData } from '@/types/weekly-overview';
 
@@ -52,28 +53,17 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
     () => (yearGroup === ALL_YEARS ? data.years : data.years.filter((b) => b.year === yearGroup)),
     [data.years, yearGroup],
   );
-  const yearOptions = useMemo(() => data.years.map((b) => b.year), [data.years]);
+  // Distinct taught years across every band (a year can appear in several subjects
+  // / centres on a user-wide board) — the year-group filter's options.
+  const yearOptions = useMemo(
+    () => [...new Set(data.years.map((b) => b.year))].sort((a, b) => a - b),
+    [data.years],
+  );
 
-  // "Download week" target: the board's currently-viewed coordinate, passed to the
-  // /api/pdf/week route exactly as state the board already holds (subject space,
-  // resolved years, month/week, and the teaching-week number for the date header).
-  // No new state, no coordinate picker — it mirrors what's on screen.
-  const weekPdfHref = useMemo(() => {
-    const params = new URLSearchParams({
-      subject: data.subjectCode,
-      subjectName: data.subjectName,
-      years: data.years.map((band) => band.year).join(','),
-      month: data.coordinate.month,
-      week: String(data.coordinate.week),
-      weekNo: String(data.weekNo),
-    });
-    return `/api/pdf/week?${params.toString()}`;
-  }, [data.subjectCode, data.subjectName, data.years, data.coordinate, data.weekNo]);
-
-  // Only offer the export when the board has a real coordinate with year bands to
+  // Only offer the export when the board has a real coordinate with subjects to
   // export (otherwise there is nothing on screen to download).
   const canDownloadWeek =
-    data.hasClasses && data.coordinate.month !== '' && data.years.length > 0;
+    data.hasClasses && data.coordinate.month !== '' && data.downloadSubjects.length > 0;
 
   // Plans shown after the year-group filter (Not started cards are unaffected).
   const planCount = useMemo(() => {
@@ -125,31 +115,16 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
               view={view}
             />
             <ViewToggle view={view} onChange={changeView} />
-            {/* §1 — compact icon button (download glyph) with the explanatory copy
-                moved into the tooltip / aria-label, instead of a wide labelled button. */}
+            {/* §1 — compact download control. A single-subject board keeps the plain
+                icon button; a user-wide board turns it into a subject picker (each
+                choice exports that subject's week via the same /api/pdf/week route). */}
             {canDownloadWeek ? (
-              <a
-                href={weekPdfHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={t('downloadWeekTitle')}
-                aria-label={t('downloadWeek')}
-                className="inline-flex size-8 items-center justify-center rounded-[8px] border border-border bg-surface text-neutral-700 transition-colors hover:bg-surface-subtle hover:text-ink"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M8 1.5v8.5M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11" />
-                </svg>
-              </a>
+              <DownloadWeek
+                subjects={data.downloadSubjects}
+                month={data.coordinate.month}
+                week={data.coordinate.week}
+                weekNo={data.weekNo}
+              />
             ) : null}
           </div>
         </div>
@@ -158,21 +133,22 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
         {!data.hasClasses ? (
           <EmptyClasses />
         ) : data.years.length === 0 || data.coordinate.month === '' ? (
-          <EmptyCurriculum subjectName={data.subjectName} />
+          <EmptyCurriculum subjectNames={data.subjectNames} />
         ) : view === 'status' ? (
           <StatusView
             years={visibleYears}
             ownerId={null}
-            subjectName={data.subjectName}
             readOnly={data.boardReadOnly}
+            spansMultipleCentres={data.spansMultipleCentres}
           />
         ) : (
           <CalendarView
             years={visibleYears}
             ownerId={null}
-            subjectName={data.subjectName}
             mondayDate={data.mondayDate}
             readOnly={data.boardReadOnly}
+            spansMultipleSubjects={data.spansMultipleSubjects}
+            spansMultipleCentres={data.spansMultipleCentres}
           />
         )}
       </div>
@@ -199,16 +175,20 @@ function EmptyClasses() {
   );
 }
 
-/** Shown when the teacher's subject/years have no synced curriculum yet. */
-function EmptyCurriculum({ subjectName }: { subjectName: string }) {
+/**
+ * Shown when NONE of the user's subjects have synced curriculum for the years they
+ * teach. User-wide: it names every subject the user is in (not a single "Arabic"),
+ * and keeps the coordinator-sync guidance.
+ */
+function EmptyCurriculum({ subjectNames }: { subjectNames: string[] }) {
   const t = useTranslations('board');
   return (
     <div className="rounded-[14px] border border-border px-6 py-16 text-center">
       <p className="text-[15px] font-semibold text-ink">{t('emptyCurriculum.title')}</p>
       <p className="mx-auto mt-2 max-w-[460px] text-[13.5px] text-text-muted">
         {t.rich('emptyCurriculum.body', {
-          hasSubject: subjectName ? 'yes' : 'no',
-          subject: subjectName,
+          count: subjectNames.length,
+          subjects: subjectNames.join(', '),
           s: (chunks) => <span dir="auto">{chunks}</span>,
         })}
       </p>

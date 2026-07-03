@@ -10,7 +10,7 @@
     },
     "emptyCurriculum": {
       "title": "No curriculum synced yet",
-      "body": "{hasSubject, select, yes {<s>{subject}</s> has} other {This subject has}} no curriculum lessons synced for the years you teach. Once a coordinator syncs the curriculum, your board will fill in."
+      "body": "{count, plural, =0 {No curriculum lessons are synced for the years you teach yet.} =1 {<s>{subjects}</s> has no curriculum lessons synced for the years you teach yet.} other {<s>{subjects}</s> have no curriculum lessons synced for the years you teach yet.}} Once a coordinator syncs the curriculum, your board will fill in."
     },
     "yearFilter": {
       "label": "Year group",
@@ -40,11 +40,15 @@
     "addLesson": "Add lesson",
     "add": {
       "chooseYear": "Choose a year group",
+      "chooseLesson": "Choose a subject and year",
       "noLesson": "No lesson",
       "opening": "Opening…"
     },
     "downloadWeek": "Download week",
     "downloadWeekTitle": "Download every plan for this week as a PDF",
+    "download": {
+      "chooseSubject": "Download a subject's week"
+    },
     "card": {
       "year": "Year {n}",
       "plan": "Plan",

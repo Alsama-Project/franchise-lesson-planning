@@ -24,21 +24,35 @@ import type { EmptySlotCard, PlanCard } from '@/components/weekly-overview/cards
 import { useScopeChooser } from '@/components/weekly-overview/ScopeChooser';
 import { formatNumber } from '@/lib/format';
 
+/** The subject (and, across centres, the centre) attribution line at a card's top. */
+function CardAttribution({
+  subjectName,
+  centreName,
+}: {
+  subjectName: string;
+  centreName: string | null;
+}) {
+  return (
+    <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">
+      {subjectName}
+      {centreName ? <span className="font-normal text-text-faint"> · {centreName}</span> : null}
+    </div>
+  );
+}
+
 /** Calendar-view planned card — restored CalendarCard (status badge + scope chip). */
 export function CalendarLessonCard({
   card,
-  subjectName,
   readOnly = false,
 }: {
   card: PlanCard;
-  subjectName: string;
   readOnly?: boolean;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
-      <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
+      <CardAttribution subjectName={card.subjectName} centreName={card.centreName} />
       {readOnly && card.owner ? (
         <div dir="auto" className="mt-[2px] truncate text-[11.5px] text-text-muted">
           {t('card.authorPeriod', {
@@ -60,11 +74,9 @@ export function CalendarLessonCard({
  *  teachers stay distinguishable. */
 export function StatusLessonCard({
   card,
-  subjectName,
   readOnly = false,
 }: {
   card: PlanCard;
-  subjectName: string;
   readOnly?: boolean;
 }) {
   const t = useTranslations('board');
@@ -73,7 +85,7 @@ export function StatusLessonCard({
     <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div dir="auto" className="text-[11.5px] font-semibold text-text-faint">{subjectName}</div>
+          <CardAttribution subjectName={card.subjectName} centreName={card.centreName} />
           <div className="mt-[3px] text-[14px] font-semibold">
             {t('card.year', { n: formatNumber(card.year, locale) })}
           </div>
@@ -97,7 +109,7 @@ export function StatusLessonCard({
  * the whole card (and its teal "Plan" chip) opens the scope chooser for this
  * curriculum lesson, defaulting it onto its natural day (the curriculum period).
  */
-export function NotStartedLessonCard({ card, subjectName }: { card: EmptySlotCard; subjectName: string }) {
+export function NotStartedLessonCard({ card }: { card: EmptySlotCard }) {
   const t = useTranslations('board');
   const locale = useLocale();
   const { openChooser } = useScopeChooser();
@@ -105,6 +117,7 @@ export function NotStartedLessonCard({ card, subjectName }: { card: EmptySlotCar
     openChooser({
       lessonKey: card.lessonKey,
       year: card.year,
+      centreId: card.centreId,
       dailyOutcome: card.dailyOutcome,
       weekday: card.weekday,
       period: card.period,
@@ -116,7 +129,7 @@ export function NotStartedLessonCard({ card, subjectName }: { card: EmptySlotCar
       className="flex items-center justify-between gap-2 rounded-[12px] border border-border bg-surface-subtle px-[13px] py-[11px] text-start transition-colors hover:bg-surface-cream"
     >
       <div className="min-w-0">
-        <div dir="auto" className="text-[11px] font-semibold text-text-faint">{subjectName}</div>
+        <CardAttribution subjectName={card.subjectName} centreName={card.centreName} />
         <div className="mt-[2px] text-[14px] font-semibold">
           {t('card.year', { n: formatNumber(card.year, locale) })}
         </div>

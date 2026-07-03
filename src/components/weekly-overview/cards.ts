@@ -14,6 +14,10 @@ export interface PlanCard {
   key: string;
   planId: string;
   year: number;
+  /** The card's subject display name — the attribution label (board can span subjects). */
+  subjectName: string;
+  /** The centre name to show under the subject, or null to omit (single-centre / org). */
+  centreName: string | null;
   /** The displayed day-ordinal — the card's 1-based position in its day's stack. */
   period: number;
   status: PlanStatus;
@@ -30,6 +34,12 @@ export interface EmptySlotCard {
   key: string;
   lessonKey: string;
   year: number;
+  /** The subject this lesson belongs to — its display name and `code` for creation. */
+  subjectName: string;
+  subjectCode: string;
+  /** The centre a new plan is created against, and the label to show (null to omit). */
+  centreId: string;
+  centreName: string | null;
   /** Curriculum period — the card label and the default day to place it on. */
   period: number;
   /** The Mon–Fri column a fresh plan for this lesson defaults to (1..5). */
@@ -64,6 +74,8 @@ export function planCardsForYears(years: BoardYear[], ownerId: string | null): P
         key: p.id,
         planId: p.id,
         year: p.year,
+        subjectName: p.subjectName,
+        centreName: p.centreName,
         period: n,
         status: p.status,
         scope: p.scope,
@@ -76,17 +88,26 @@ export function planCardsForYears(years: BoardYear[], ownerId: string | null): P
   return out;
 }
 
-/** Curriculum lessons with no plan of any scope (always unfiltered) → "Not started" cards. */
-export function emptySlotCards(years: BoardYear[]): EmptySlotCard[] {
+/**
+ * Curriculum lessons with no plan of any scope (always unfiltered) → "Not started"
+ * cards. `showCentre` (the board's `spansMultipleCentres`) decides whether a card
+ * carries its centre label — matching how the data layer attributes planned cards.
+ */
+export function emptySlotCards(years: BoardYear[], showCentre: boolean): EmptySlotCard[] {
   const out: EmptySlotCard[] = [];
   for (const band of years) {
+    // De-dupe curriculum lessons already planned in THIS band by any scope.
     const planned = new Set(band.plans.map((p) => p.lessonKey));
     for (const lesson of band.lessons) {
       if (planned.has(lesson.lessonKey)) continue;
       out.push({
-        key: lesson.lessonKey,
+        key: `${band.key}:${lesson.lessonKey}`,
         lessonKey: lesson.lessonKey,
         year: band.year,
+        subjectName: band.subjectName,
+        subjectCode: band.subjectCode,
+        centreId: band.centreId,
+        centreName: showCentre ? band.centreName : null,
         period: lesson.period,
         weekday: defaultWeekday(lesson.period),
         dailyOutcome: lesson.dailyOutcome,

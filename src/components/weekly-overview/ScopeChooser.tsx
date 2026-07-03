@@ -31,6 +31,8 @@ import { formatNumber } from '@/lib/format';
 export interface ScopeTarget {
   lessonKey: string;
   year: number;
+  /** The centre (school) to create the centre-scoped plan against — the slot's centre. */
+  centreId: string;
   dailyOutcome: string;
   /** The Mon–Fri column (1..5) to place the new plan on. */
   weekday: number;
@@ -161,6 +163,7 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
     const res = await createScopedPlan({
       lessonKey: target.lessonKey,
       scope: 'centre',
+      schoolId: target.centreId,
       weekday: target.weekday,
       period: target.period,
     });

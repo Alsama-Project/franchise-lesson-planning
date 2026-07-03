@@ -38,6 +38,23 @@ export interface BoardPlan {
   lessonKey: string;
   /** Curriculum year (0–6) the plan targets. */
   year: number;
+  /** The plan's subject `code` (e.g. "english") — the board can span subjects. */
+  subjectCode: string;
+  /** The plan's subject display name — the card's attribution label. */
+  subjectName: string;
+  /**
+   * The centre (school) name to show under the subject, or `null` when the centre
+   * label should be omitted — a single-centre user, or an org-scoped ("all centres")
+   * plan whose scope chip already conveys reach. Set only when the user spans >1
+   * centre AND the plan belongs to one centre.
+   */
+  centreName: string | null;
+  /**
+   * The band this plan belongs to (`centreId|subjectCode|year`) — the key the
+   * Calendar view groups a day's stack by when re-deriving each card's "Period N",
+   * so cards of different (subject, centre, year) never share one numbering.
+   */
+  groupKey: string;
   /** Day column (1 = Mon … 5 = Fri). Legacy rows fall back to a derived day. */
   weekday: number;
   /** Stored day-ordinal — the sort hint within its (year, weekday) stack. */
@@ -75,13 +92,26 @@ export interface BoardLesson {
 }
 
 /**
- * One year section: the years a teacher teaches each get their own band of
- * Mon–Fri columns. `plans` are every plan placed this week (any weekday),
+ * One band on the board: a `(centre, subject, year)` the user teaches. The board
+ * is user-wide, so a single year number (e.g. Year 2) can appear in several bands —
+ * one per subject, and per centre when the user spans centres — hence the composite
+ * `key`. `plans` are every plan placed this week for the band (any weekday),
  * pre-sorted by (weekday, period); `lessons` is the curriculum pool the picker
- * draws from.
+ * draws from. On a single-subject, single-centre board there is one band per year,
+ * exactly as before.
  */
 export interface BoardYear {
+  /** Stable band identity: `centreId|subjectCode|year`. */
+  key: string;
   year: number;
+  /** The band's centre (school) id — the centre a new plan here is created against. */
+  centreId: string;
+  /** The band's centre display name (for the card's centre label). */
+  centreName: string;
+  /** The band's subject `code`. */
+  subjectCode: string;
+  /** The band's subject display name. */
+  subjectName: string;
   plans: BoardPlan[];
   lessons: BoardLesson[];
 }
@@ -111,16 +141,34 @@ export interface BoardClass {
   label: string;
 }
 
+/** One subject the user can export a week PDF for — the download picker's options. */
+export interface BoardDownloadSubject {
+  /** The subject's `code`, passed to `/api/pdf/week`. */
+  subjectCode: string;
+  /** The subject's display name. */
+  subjectName: string;
+  /** The years to export for this subject (union across the user's centres for it). */
+  years: number[];
+}
+
 /** Everything the planning board renders for the selected curriculum week. */
 export interface BoardData {
   /** The signed-in teacher's display name. */
   teacherName: string;
-  /** "Centre · Subject" context line, derived from the teacher's classes. */
+  /**
+   * "Centre · Subject" context line — kept only when the user's spaces collapse to a
+   * single `(centre, subject)`. Null on a user-wide (multi-subject or multi-centre)
+   * board, where no single centre·subject describes it.
+   */
   context: string | null;
-  /** The subject the board is showing (English first). */
-  subjectName: string;
-  /** The subject's `code` (e.g. "english") — drives the new-lesson curriculum query. */
-  subjectCode: string;
+  /** The distinct subject names the board spans (English first) — for empty-state copy. */
+  subjectNames: string[];
+  /** True when the board spans more than one subject (drives user-wide chrome). */
+  spansMultipleSubjects: boolean;
+  /** True when the board spans more than one centre (drives the per-card centre label). */
+  spansMultipleCentres: boolean;
+  /** Per-subject week-PDF export targets — the "Download week" picker's options. */
+  downloadSubjects: BoardDownloadSubject[];
   /** The selected curriculum coordinate. */
   coordinate: BoardCoordinate;
   /** Human label for the coordinate, e.g. "March · Week 2". Kept as the week label's tooltip. */

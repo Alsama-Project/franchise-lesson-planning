@@ -50,17 +50,21 @@ const COLUMNS = WEEKDAYS.map((key, i) => ({ key, weekday: i + 1 }));
 export function CalendarView({
   years,
   ownerId,
-  subjectName,
   mondayDate,
   readOnly = false,
+  spansMultipleSubjects = false,
+  spansMultipleCentres = false,
 }: {
   years: BoardYear[];
   ownerId: string | null;
-  subjectName: string;
   /** The shown week's real Monday (`YYYY-MM-DD`) from `term_week`, or null when no row. */
   mondayDate: string | null;
   /** Coordinator review mode: no drag, no "+ Add lesson", cards open the review view. */
   readOnly?: boolean;
+  /** Board spans >1 subject — "+ Add lesson" labels each choice with its subject. */
+  spansMultipleSubjects?: boolean;
+  /** Board spans >1 centre — "+ Add lesson" choices carry their centre label. */
+  spansMultipleCentres?: boolean;
 }) {
   const t = useTranslations('board');
   const [byDay, setByDay] = useState<ByDay>(() => buildByDay(years));
@@ -92,9 +96,13 @@ export function CalendarView({
    */
   const addChoicesFor = (weekday: number): AddYearChoice[] =>
     years.map((band) => ({
+      bandKey: band.key,
       year: band.year,
+      subjectName: band.subjectName,
+      centreId: band.centreId,
+      centreName: spansMultipleCentres ? band.centreName : null,
       lessonKey: band.lessons.find((l) => l.period === weekday)?.lessonKey ?? null,
-      period: byDay[weekday].filter((p) => p.year === band.year).length + 1,
+      period: byDay[weekday].filter((p) => p.groupKey === band.key).length + 1,
     }));
 
   const activePlan = activeId
@@ -195,17 +203,15 @@ export function CalendarView({
                 mondayDate={mondayDate}
                 cards={byDay[weekday]}
                 ownerId={ownerId}
-                subjectName={subjectName}
                 dragEnabled={dragEnabled}
                 readOnly={readOnly}
                 addChoices={addChoicesFor(weekday)}
+                spansMultipleSubjects={spansMultipleSubjects}
               />
             ))}
           </div>
           <DragOverlay>
-            {activePlan ? (
-              <CalendarLessonCard card={toPlanCard(activePlan)} subjectName={subjectName} />
-            ) : null}
+            {activePlan ? <CalendarLessonCard card={toPlanCard(activePlan)} /> : null}
           </DragOverlay>
         </DndContext>
       </div>
@@ -235,15 +241,22 @@ function buildByDay(years: BoardYear[]): ByDay {
 }
 
 /**
- * Order a day's stack by year (a stable sort preserves the within-year order the
- * caller arranged) and renumber each year's `period` 1..N — the displayed ordinal.
+ * Order a day's stack by band — subject, then centre, then year (a stable sort
+ * preserves the within-band order the caller arranged) — and renumber each band's
+ * `period` 1..N (the displayed ordinal). Grouping by band (not bare year) keeps a
+ * user-wide board's numbering correct when a day holds several subjects' cards.
  */
 function normalizeDay(plans: BoardPlan[]): BoardPlan[] {
-  const sorted = [...plans].sort((a, b) => a.year - b.year);
-  const perYear = new Map<number, number>();
+  const sorted = [...plans].sort(
+    (a, b) =>
+      a.subjectName.localeCompare(b.subjectName) ||
+      (a.centreName ?? '').localeCompare(b.centreName ?? '') ||
+      a.year - b.year,
+  );
+  const perBand = new Map<string, number>();
   for (const p of sorted) {
-    const n = (perYear.get(p.year) ?? 0) + 1;
-    perYear.set(p.year, n);
+    const n = (perBand.get(p.groupKey) ?? 0) + 1;
+    perBand.set(p.groupKey, n);
     p.period = n;
   }
   return sorted;
@@ -272,6 +285,8 @@ function toPlanCard(plan: BoardPlan): PlanCard {
     key: plan.id,
     planId: plan.id,
     year: plan.year,
+    subjectName: plan.subjectName,
+    centreName: plan.centreName,
     period: plan.period,
     status: plan.status,
     scope: plan.scope,
@@ -287,20 +302,21 @@ function DayColumn({
   mondayDate,
   cards,
   ownerId,
-  subjectName,
   dragEnabled,
   readOnly,
   addChoices,
+  spansMultipleSubjects,
 }: {
   weekday: number;
   mondayDate: string | null;
   cards: BoardPlan[];
   ownerId: string | null;
-  subjectName: string;
   dragEnabled: boolean;
   readOnly: boolean;
-  /** Resolved year-group choices for this column's "+ Add lesson" dropdown. */
+  /** Resolved band choices for this column's "+ Add lesson" dropdown. */
   addChoices: AddYearChoice[];
+  /** Board spans >1 subject — the add menu labels each choice with its subject. */
+  spansMultipleSubjects: boolean;
 }) {
   const t = useTranslations('board');
   const locale = useLocale();
@@ -358,7 +374,6 @@ function DayColumn({
             <SortableCard
               key={plan.id}
               plan={plan}
-              subjectName={subjectName}
               dragEnabled={dragEnabled}
               readOnly={readOnly}
             />
@@ -367,7 +382,11 @@ function DayColumn({
 
         {/* Coordinators review existing plans; they don't author, so no add affordance. */}
         {readOnly ? null : (
-          <AddLessonMenu weekday={weekday} choices={addChoices} />
+          <AddLessonMenu
+            weekday={weekday}
+            choices={addChoices}
+            spansMultipleSubjects={spansMultipleSubjects}
+          />
         )}
       </div>
     </div>
@@ -381,12 +400,10 @@ function DayColumn({
  */
 function SortableCard({
   plan,
-  subjectName,
   dragEnabled,
   readOnly,
 }: {
   plan: BoardPlan;
-  subjectName: string;
   dragEnabled: boolean;
   readOnly: boolean;
 }) {
@@ -405,7 +422,7 @@ function SortableCard({
   return (
     <div ref={setNodeRef} style={style}>
       <div {...attributes} {...listeners} className={disabled ? undefined : 'cursor-grab'}>
-        <CalendarLessonCard card={toPlanCard(plan)} subjectName={subjectName} readOnly={readOnly} />
+        <CalendarLessonCard card={toPlanCard(plan)} readOnly={readOnly} />
       </div>
     </div>
   );

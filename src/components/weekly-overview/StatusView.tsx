@@ -63,18 +63,19 @@ const REAL_STATUS_COLUMNS: PlanStatus[] = ['in_progress', 'submitted', 'needs_re
 export function StatusView({
   years,
   ownerId,
-  subjectName,
   readOnly = false,
+  spansMultipleCentres = false,
 }: {
   years: BoardYear[];
   ownerId: string | null;
-  subjectName: string;
   /** Coordinator review mode: no drag, and the "Not started" column is omitted. */
   readOnly?: boolean;
+  /** Board spans >1 centre — "Not started" cards carry their centre label. */
+  spansMultipleCentres?: boolean;
 }) {
   const t = useTranslations('board');
   const cards = planCardsForYears(years, ownerId);
-  const empties = emptySlotCards(years);
+  const empties = emptySlotCards(years, spansMultipleCentres);
 
   // Optimistic per-plan status overrides, keyed by plan id.
   const [overrides, setOverrides] = useState<Record<string, PlanStatus>>({});
@@ -93,12 +94,7 @@ export function StatusView({
     return (
       <div className="grid grid-cols-4 items-start gap-[14px]">
         {REAL_STATUS_COLUMNS.map((status) => (
-          <ReadOnlyStatusColumn
-            key={status}
-            status={status}
-            cards={byStatus[status]}
-            subjectName={subjectName}
-          />
+          <ReadOnlyStatusColumn key={status} status={status} cards={byStatus[status]} />
         ))}
       </div>
     );
@@ -189,14 +185,9 @@ export function StatusView({
         <div className="grid grid-cols-5 items-start gap-[14px]">
           {STATUS_COLUMN_ORDER.map((status) =>
             status === 'not_started' ? (
-              <NotStartedColumn key={status} cards={empties} subjectName={subjectName} />
+              <NotStartedColumn key={status} cards={empties} />
             ) : (
-              <StatusColumn
-                key={status}
-                status={status}
-                cards={byStatus[status]}
-                subjectName={subjectName}
-              />
+              <StatusColumn key={status} status={status} cards={byStatus[status]} />
             ),
           )}
         </div>
@@ -247,7 +238,7 @@ function ColumnHeader({ status, count }: { status: SlotStatus; count: number }) 
  * to the count plus a "Show all" affordance; the individual cards (each opens the
  * scope chooser) only render on demand. Never a drop target, cards never draggable.
  */
-function NotStartedColumn({ cards, subjectName }: { cards: EmptySlotCard[]; subjectName: string }) {
+function NotStartedColumn({ cards }: { cards: EmptySlotCard[] }) {
   const t = useTranslations('board');
   const locale = useLocale();
   const [expanded, setExpanded] = useState(false);
@@ -277,9 +268,7 @@ function NotStartedColumn({ cards, subjectName }: { cards: EmptySlotCard[]; subj
             </button>
           </div>
           {expanded
-            ? cards.map((card) => (
-                <NotStartedLessonCard key={card.key} card={card} subjectName={subjectName} />
-              ))
+            ? cards.map((card) => <NotStartedLessonCard key={card.key} card={card} />)
             : null}
         </div>
       )}
@@ -291,11 +280,9 @@ function NotStartedColumn({ cards, subjectName }: { cards: EmptySlotCard[]; subj
 function StatusColumn({
   status,
   cards,
-  subjectName,
 }: {
   status: PlanStatus;
   cards: PlanCard[];
-  subjectName: string;
 }) {
   const t = useTranslations('board');
   const { setNodeRef, isOver } = useDroppable({ id: status });
@@ -311,7 +298,7 @@ function StatusColumn({
         )}
       >
         {cards.map((card) => (
-          <DraggableStatusCard key={card.key} card={card} subjectName={subjectName} />
+          <DraggableStatusCard key={card.key} card={card} />
         ))}
         {cards.length === 0 ? (
           <div className="py-[8px] text-center text-[11.5px] text-text-faint">
@@ -328,11 +315,9 @@ function StatusColumn({
 function ReadOnlyStatusColumn({
   status,
   cards,
-  subjectName,
 }: {
   status: PlanStatus;
   cards: PlanCard[];
-  subjectName: string;
 }) {
   const t = useTranslations('board');
   return (
@@ -340,7 +325,7 @@ function ReadOnlyStatusColumn({
       <ColumnHeader status={status} count={cards.length} />
       <div className="flex flex-col gap-2">
         {cards.map((card) => (
-          <StatusLessonCard key={card.key} card={card} subjectName={subjectName} readOnly />
+          <StatusLessonCard key={card.key} card={card} readOnly />
         ))}
         {cards.length === 0 ? (
           <div className="py-[8px] text-center text-[11.5px] text-text-faint">
@@ -353,7 +338,7 @@ function ReadOnlyStatusColumn({
 }
 
 /** A status card wrapped as a @dnd-kit draggable, still a click-through link. */
-function DraggableStatusCard({ card, subjectName }: { card: PlanCard; subjectName: string }) {
+function DraggableStatusCard({ card }: { card: PlanCard }) {
   const { listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: card.planId,
     data: { card },
@@ -371,7 +356,7 @@ function DraggableStatusCard({ card, subjectName }: { card: PlanCard; subjectNam
       {...listeners}
       className={cn('cursor-grab', isDragging && 'cursor-grabbing opacity-80')}
     >
-      <StatusLessonCard card={card} subjectName={subjectName} />
+      <StatusLessonCard card={card} />
     </div>
   );
 }

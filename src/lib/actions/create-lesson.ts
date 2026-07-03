@@ -24,6 +24,14 @@ export interface CreateScopedPlanInput {
   /** Required for `class` scope — the class group the plan is for. */
   classId?: string;
   /**
+   * For `centre` scope — the centre (school) to create the plan against. The board
+   * is user-wide and can span centres, so the slot names its own centre; without it
+   * the action would fall back to the caller's first membership for the subject and
+   * silently mis-attribute the plan when the user teaches the subject at >1 centre.
+   * Verified against the caller's membership as defence in depth on top of RLS.
+   */
+  schoolId?: string;
+  /**
    * The Mon–Fri column (1..5) to place the plan on. Defaults to the lesson's
    * curriculum period (clamped) for callers that don't choose a day.
    */
@@ -102,9 +110,12 @@ export async function createScopedPlan(
     if (!subjectId) return { ok: false, error: 'Subject not found for this lesson.' };
 
     if (input.scope === 'centre') {
-      // The teacher's centre for this subject is their membership's school.
+      // Prefer the centre the slot named (the user-wide board spans centres); fall
+      // back to the caller's membership for this subject only when none was passed.
       const memberships = await getMyMemberships();
-      const space = memberships.find((m) => m.subjectId === subjectId);
+      const space = input.schoolId
+        ? memberships.find((m) => m.subjectId === subjectId && m.schoolId === input.schoolId)
+        : memberships.find((m) => m.subjectId === subjectId);
       if (!space) {
         return { ok: false, error: 'You are not a member of a centre for this subject.' };
       }

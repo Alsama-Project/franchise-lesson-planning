@@ -381,8 +381,14 @@ export async function getAdminMembers(): Promise<AdminMembersData> {
 // this can only come from the `list_users_admin()` SECURITY DEFINER function,
 // which hard-gates on is_admin(). Filtering/search happen client-side in the tab.
 
-/** One subject space a user belongs to, for the Users-tab chips. */
+/** One subject space a user belongs to, for the Users-tab chips + Edit-access
+ *  matrix. `schoolId`/`subjectId` (added in 0037) identify the (centre, subject)
+ *  cell so the modal can tick/untick and persist by id; `membershipId` is the
+ *  row's own id (unused by the toggle, kept for parity with the RPC shape). */
 export interface UserSpace {
+  membershipId: string | null;
+  schoolId: string | null;
+  subjectId: string | null;
   subject: string | null;
   role: MembershipRole;
   centre: string | null;
@@ -395,6 +401,30 @@ export interface AdminUser {
   isAdmin: boolean;
   isDeactivated: boolean;
   spaces: UserSpace[];
+}
+
+/**
+ * The axes of the Edit-access subject-space grid: every active centre and every
+ * active subject. A subject is NOT centre-scoped (there is no `centre_subjects`
+ * table), so the grid is the cartesian of these two — matching the membership
+ * model (`saveMembership` grants any centre × subject pair). Read via the auth'd
+ * client (reference tables are readable to any authenticated user).
+ */
+export interface SubjectSpaceAxes {
+  centres: Array<{ id: string; name: string }>;
+  subjects: Array<{ id: string; name: string }>;
+}
+
+export async function getSubjectSpaceAxes(): Promise<SubjectSpaceAxes> {
+  const supabase = await createClient();
+  const [{ data: schools }, { data: subjects }] = await Promise.all([
+    supabase.from('schools').select('id, name').is('archived_at', null).order('name'),
+    supabase.from('subjects').select('id, name').is('archived_at', null).order('name'),
+  ]);
+  return {
+    centres: (schools ?? []) as Array<{ id: string; name: string }>,
+    subjects: (subjects ?? []) as Array<{ id: string; name: string }>,
+  };
 }
 
 /**
@@ -414,7 +444,14 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     is_admin: boolean;
     is_deactivated: boolean;
     spaces:
-      | Array<{ subject: string | null; role: MembershipRole; centre: string | null }>
+      | Array<{
+          membership_id: string | null;
+          school_id: string | null;
+          subject_id: string | null;
+          subject: string | null;
+          role: MembershipRole;
+          centre: string | null;
+        }>
       | null;
   }>;
 
@@ -425,6 +462,9 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     isAdmin: r.is_admin,
     isDeactivated: r.is_deactivated,
     spaces: (r.spaces ?? []).map((s) => ({
+      membershipId: s.membership_id,
+      schoolId: s.school_id,
+      subjectId: s.subject_id,
       subject: s.subject,
       role: s.role,
       centre: s.centre,

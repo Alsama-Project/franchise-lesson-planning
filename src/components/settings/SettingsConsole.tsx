@@ -15,6 +15,7 @@ import type {
   ResourceGuideVersion,
   SmarttGuideVersion,
   SubjectRow,
+  SubjectSpaceAxes,
   TermRow,
 } from '@/lib/console';
 import { CentresTab } from './console/CentresTab';
@@ -43,6 +44,8 @@ export interface SettingsConsoleProps {
   terms?: TermRow[];
   /** `null` = load failed (error state); `undefined` = not loaded (non-admin). */
   users?: AdminUser[] | null;
+  /** Subject-space grid axes for the Users-tab Edit-access matrix (admin only). */
+  userAxes?: SubjectSpaceAxes;
 }
 
 export function SettingsConsole(props: SettingsConsoleProps) {
@@ -117,6 +120,7 @@ export function SettingsConsole(props: SettingsConsoleProps) {
           <UsersTab
             users={props.users ?? null}
             currentUserId={access.profileId}
+            axes={props.userAxes ?? { centres: [], subjects: [] }}
           />
         ) : null}
       </div>

@@ -16,6 +16,7 @@ import {
   getCoordinatorMembers,
   getCurriculumStatus,
   getSubjects,
+  getSubjectSpaceAxes,
   getTerms,
   getUsersAdmin,
   type AdminMembersData,
@@ -27,6 +28,7 @@ import {
   type ResourceGuideVersion,
   type SmarttGuideVersion,
   type SubjectRow,
+  type SubjectSpaceAxes,
   type TermRow,
 } from '@/lib/console';
 
@@ -84,9 +86,11 @@ export default async function SettingsPage() {
   // `null` distinguishes a load failure (renders the tab's error state) from
   // "not loaded because not admin" (`undefined`).
   let users: AdminUser[] | null | undefined;
+  // Grid axes for the Users-tab Edit-access matrix (active centres × subjects).
+  let userAxes: SubjectSpaceAxes | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, adminMembers, curriculum, resourceGuide, smarttGuide, terms, users] =
+    [centres, subjects, classesData, adminMembers, curriculum, resourceGuide, smarttGuide, terms, users, userAxes] =
       await Promise.all([
         getCentres(),
         getSubjects(),
@@ -97,6 +101,7 @@ export default async function SettingsPage() {
         getActiveSmarttGuideVersion(),
         getTerms(),
         getUsersAdmin().catch(() => null),
+        getSubjectSpaceAxes(),
       ]);
   } else if (access.isCoordinator) {
     const subjectIds = [...new Set(access.coordinatorSpaces.map((s) => s.subjectId))];
@@ -132,6 +137,7 @@ export default async function SettingsPage() {
           smarttGuide={smarttGuide}
           terms={terms}
           users={users}
+          userAxes={userAxes}
         />
       </div>
     </AppShell>

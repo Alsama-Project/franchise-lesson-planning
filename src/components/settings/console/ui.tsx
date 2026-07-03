@@ -277,6 +277,52 @@ export function Toggle({
   );
 }
 
+/**
+ * A real accessible checkbox (`<button role="checkbox" aria-checked>`), 20×20,
+ * radius 6, 1.5px border — the access-editor's tick control. Off is a neutral
+ * outline (#CBBFB0 on white); on is a filled teal box (#1F7A6C) with a white
+ * check. `locked` renders the on-state in muted locked-teal (#A9CFC8) and blocks
+ * interaction (the last-active-admin case). `disabled` greys it out.
+ */
+export function Checkbox({
+  checked,
+  onChange,
+  disabled,
+  locked,
+  'aria-label': ariaLabel,
+}: {
+  checked: boolean;
+  onChange?: (next: boolean) => void;
+  disabled?: boolean;
+  locked?: boolean;
+  'aria-label'?: string;
+}) {
+  const off = !checked;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled || locked}
+      onClick={locked || disabled ? undefined : () => onChange?.(!checked)}
+      className={cn(
+        'inline-flex size-[20px] shrink-0 items-center justify-center rounded-[6px] border-[1.5px] transition-colors',
+        off && 'border-[#CBBFB0] bg-white',
+        checked && !locked && 'border-[#1F7A6C] bg-[#1F7A6C]',
+        checked && locked && 'border-[#A9CFC8] bg-[#A9CFC8]',
+        locked ? 'cursor-not-allowed' : disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer',
+      )}
+    >
+      {checked ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      ) : null}
+    </button>
+  );
+}
+
 /** A modal dialog over a dimmed page. */
 export function Modal({
   open,

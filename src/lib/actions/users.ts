@@ -15,7 +15,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentProfile } from '@/lib/auth';
+import { getCurrentProfile, type MembershipRole } from '@/lib/auth';
 
 export interface UsersActionResult {
   ok: boolean;
@@ -66,6 +66,51 @@ export async function setUserDeactivated(
     p_deactivated: deactivated,
   });
   if (error) return fail(error.message);
+
+  revalidatePath('/settings');
+  return { ok: true };
+}
+
+/**
+ * Grant, switch, or revoke a user's membership of one (centre, subject) space.
+ * `role` = 'teacher' | 'coordinator' upserts the row (the unique key means one row
+ * per space, so switching role is a plain upsert — no separate delete); `role` =
+ * null deletes the membership. Writes go direct to `subject_membership` under the
+ * `sm_admin_write` RLS policy (admin-gated, `for all`), the same path the Members
+ * tab's `saveMembership`/`removeMembership` already use. `membership_role` has no
+ * 'admin' value, so this can never escalate a user to org-admin. Admin-only here
+ * is a friendly first line; RLS is the real backstop.
+ */
+export async function setUserMembership(
+  userId: string,
+  schoolId: string,
+  subjectId: string,
+  role: MembershipRole | null,
+): Promise<UsersActionResult> {
+  const guard = await requireAdmin();
+  if (guard) return guard;
+
+  if (!userId || !schoolId || !subjectId) return fail('Pick a person and a subject space.');
+
+  const supabase = await createClient();
+
+  if (role === null) {
+    const { error } = await supabase
+      .from('subject_membership')
+      .delete()
+      .eq('profile_id', userId)
+      .eq('school_id', schoolId)
+      .eq('subject_id', subjectId);
+    if (error) return fail(error.message);
+  } else {
+    const { error } = await supabase
+      .from('subject_membership')
+      .upsert(
+        { profile_id: userId, school_id: schoolId, subject_id: subjectId, role },
+        { onConflict: 'profile_id,school_id,subject_id' },
+      );
+    if (error) return fail(error.message);
+  }
 
   revalidatePath('/settings');
   return { ok: true };

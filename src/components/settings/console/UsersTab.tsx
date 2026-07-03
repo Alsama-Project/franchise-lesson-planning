@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState, useTransition, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import type { AdminUser, UserSpace } from '@/lib/console';
-import { setUserAdmin, setUserDeactivated } from '@/lib/actions/users';
-import { Avatar, ErrorText, Modal } from './ui';
+import { useLocale, useTranslations } from 'next-intl';
+import type { AdminUser, SubjectSpaceAxes, UserSpace } from '@/lib/console';
+import { formatNumber } from '@/lib/format';
+import { avatarColors, initialsOf } from '@/components/weekly-overview/avatar';
+import { EditAccessModal } from './EditAccessModal';
 import { cn } from '@/lib/cn';
 
 type AccessFilter = 'all' | 'admin' | 'nonAdmin';
@@ -16,13 +17,6 @@ function ShieldIcon({ className, size = 12 }: { className?: string; size?: numbe
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
-function PowerIcon({ className, size = 12 }: { className?: string; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-      <path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10" />
     </svg>
   );
 }
@@ -39,6 +33,20 @@ function Chevron() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8178" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M6 9l6 6 6-6" />
     </svg>
+  );
+}
+
+/** 34px colour-hashed initials avatar (design shows coloured avatars here). */
+function RowAvatar({ id, name }: { id: string; name: string }) {
+  const { bg, fg } = avatarColors(id);
+  return (
+    <span
+      className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
+      style={{ background: bg, color: fg }}
+      aria-hidden
+    >
+      {initialsOf(name)}
+    </span>
   );
 }
 
@@ -123,47 +131,28 @@ function SpaceChips({
 export function UsersTab({
   users,
   currentUserId,
+  axes,
 }: {
   users: AdminUser[] | null;
   currentUserId: string | null;
+  axes: SubjectSpaceAxes;
 }) {
   const t = useTranslations('settings');
+  const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [access, setAccess] = useState<AccessFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('active');
 
-  // Confirmation dialog state (promote + deactivate only).
-  const [promoteTarget, setPromoteTarget] = useState<AdminUser | null>(null);
-  const [deactivateTarget, setDeactivateTarget] = useState<AdminUser | null>(null);
+  // The user whose Edit-access modal is open (a live reference into `users`).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const closeModal = useCallback(() => setEditingId(null), []);
 
   const roleLabel = (role: UserSpace['role']) => t(`roles.${role}`);
-  const spaceLabel = (s: UserSpace) => {
-    const base = t('users.space', { subject: s.subject ?? '—', role: roleLabel(s.role) });
-    return base;
-  };
-
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onDone?: () => void) {
-    setError(null);
-    startTransition(async () => {
-      const res = await fn();
-      if (!res.ok) {
-        setError(res.error ?? t('common.somethingWrong'));
-        return;
-      }
-      onDone?.();
-      router.refresh();
-    });
-  }
-
-  // Number of admins who can still administer the org — the last one is protected.
-  const activeAdminCount = useMemo(
-    () => (users ?? []).filter((u) => u.isAdmin && !u.isDeactivated).length,
-    [users],
-  );
+  const spaceLabel = (s: UserSpace) =>
+    t('users.space', { subject: s.subject ?? '—', role: roleLabel(s.role) });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -193,6 +182,13 @@ export function UsersTab({
     );
   }
 
+  const editing = editingId ? users.find((u) => u.userId === editingId) ?? null : null;
+  // Live count of active admins OTHER than the editing target — drives the modal's
+  // last-admin lock, matching exactly what the server (0035) refuses.
+  const editingOtherActiveAdmins = editing
+    ? users.filter((u) => u.isAdmin && !u.isDeactivated && u.userId !== editing.userId).length
+    : 0;
+
   const clearFilters = () => {
     setSearch('');
     setAccess('all');
@@ -212,7 +208,7 @@ export function UsersTab({
       <div className="mb-[16px] flex items-center gap-[12px]">
         <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-ink">{t('users.title')}</h2>
         <span className="rounded-full bg-[#F3ECE2] px-[10px] py-[3px] text-[12px] font-semibold text-[#A79E94]">
-          {users.length}
+          {formatNumber(users.length, locale)}
         </span>
       </div>
 
@@ -252,8 +248,6 @@ export function UsersTab({
         />
       </div>
 
-      <ErrorText>{error}</ErrorText>
-
       {/* Column headers */}
       <div className="flex items-center border-b border-[#EFE7DA] px-[14px] pb-[9px] pt-[6px]">
         <span className="min-w-[300px] flex-1 text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
@@ -268,7 +262,7 @@ export function UsersTab({
         <span className="w-[120px] text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
           {t('users.col.status')}
         </span>
-        <span className="w-[210px]" />
+        <span className="w-[130px]" />
       </div>
 
       {/* Rows / empty */}
@@ -286,42 +280,21 @@ export function UsersTab({
               key={u.userId}
               user={u}
               isYou={u.userId === currentUserId}
-              isLastActiveAdmin={u.isAdmin && !u.isDeactivated && activeAdminCount <= 1}
-              pending={pending}
               spaceLabel={spaceLabel}
-              onMakeAdmin={() => setPromoteTarget(u)}
-              onRemoveAdmin={() => run(() => setUserAdmin(u.userId, false))}
-              onDeactivate={() => setDeactivateTarget(u)}
-              onReactivate={() => run(() => setUserDeactivated(u.userId, false))}
+              onEdit={() => setEditingId(u.userId)}
             />
           ))}
         </div>
       )}
 
-      {/* Promote dialog (teal, significant) */}
-      {promoteTarget ? (
-        <PromoteDialog
-          user={promoteTarget}
-          pending={pending}
-          onCancel={() => setPromoteTarget(null)}
-          onConfirm={() =>
-            run(() => setUserAdmin(promoteTarget.userId, true), () => setPromoteTarget(null))
-          }
-        />
-      ) : null}
-
-      {/* Deactivate dialog (danger, reversible) */}
-      {deactivateTarget ? (
-        <DeactivateDialog
-          user={deactivateTarget}
-          pending={pending}
-          onCancel={() => setDeactivateTarget(null)}
-          onConfirm={() =>
-            run(
-              () => setUserDeactivated(deactivateTarget.userId, true),
-              () => setDeactivateTarget(null),
-            )
-          }
+      {editing ? (
+        <EditAccessModal
+          key={editing.userId}
+          user={editing}
+          isSelf={editing.userId === currentUserId}
+          otherActiveAdmins={editingOtherActiveAdmins}
+          axes={axes}
+          onClose={closeModal}
         />
       ) : null}
     </div>
@@ -332,23 +305,13 @@ export function UsersTab({
 function UserRow({
   user,
   isYou,
-  isLastActiveAdmin,
-  pending,
   spaceLabel,
-  onMakeAdmin,
-  onRemoveAdmin,
-  onDeactivate,
-  onReactivate,
+  onEdit,
 }: {
   user: AdminUser;
   isYou: boolean;
-  isLastActiveAdmin: boolean;
-  pending: boolean;
   spaceLabel: (s: UserSpace) => string;
-  onMakeAdmin: () => void;
-  onRemoveAdmin: () => void;
-  onDeactivate: () => void;
-  onReactivate: () => void;
+  onEdit: () => void;
 }) {
   const t = useTranslations('settings');
   const deactivated = user.isDeactivated;
@@ -363,7 +326,7 @@ function UserRow({
     >
       {/* Person */}
       <span className={cn('flex min-w-[300px] flex-1 items-center gap-[12px]', deactivated && 'opacity-55')}>
-        <Avatar name={name} />
+        <RowAvatar id={user.userId} name={name} />
         <span className="flex flex-col leading-[1.3]">
           <span className="flex items-center gap-[8px] text-[13.5px] font-semibold text-ink" dir="auto">
             {name}
@@ -425,232 +388,17 @@ function UserRow({
         )}
       </span>
 
-      {/* Actions */}
-      <span className="relative flex w-[210px] items-center justify-end gap-[4px]">
-        {deactivated ? (
-          <ActionButton tone="teal" bold onClick={onReactivate} disabled={pending}>
-            {t('users.action.reactivate')}
-          </ActionButton>
-        ) : (
-          <>
-            {isLastActiveAdmin ? (
-              <span className="group relative flex items-center gap-[4px]">
-                <span className="cursor-not-allowed px-[8px] py-[4px] text-[12px] font-semibold text-[#C7BFB5]">
-                  {t('users.action.removeAdmin')}
-                </span>
-                <span className="cursor-not-allowed px-[8px] py-[4px] text-[12px] font-semibold text-[#C7BFB5]">
-                  {t('users.action.deactivate')}
-                </span>
-                <span
-                  role="tooltip"
-                  className="pointer-events-none absolute bottom-[calc(100%+9px)] end-[4px] z-10 w-[236px] rounded-[8px] bg-[#2A2422] px-[11px] py-[9px] text-[11.5px] leading-[1.5] text-[#F5EFE7] opacity-0 shadow-[0_8px_24px_-8px_rgba(40,30,20,0.5)] transition-opacity group-hover:opacity-100"
-                >
-                  {t('users.lastAdminTooltip')}
-                </span>
-              </span>
-            ) : user.isAdmin ? (
-              <>
-                <ActionButton tone="danger" onClick={onRemoveAdmin} disabled={pending}>
-                  {t('users.action.removeAdmin')}
-                </ActionButton>
-                <DeactivateAction isYou={isYou} pending={pending} onClick={onDeactivate} />
-              </>
-            ) : (
-              <>
-                <ActionButton tone="teal" onClick={onMakeAdmin} disabled={pending}>
-                  {t('users.action.makeAdmin')}
-                </ActionButton>
-                <DeactivateAction isYou={isYou} pending={pending} onClick={onDeactivate} />
-              </>
-            )}
-          </>
-        )}
+      {/* Action */}
+      <span className="flex w-[130px] items-center justify-end">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-[8px] border border-teal-tint-border px-[12px] py-[7px] text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal-tint"
+        >
+          {t('users.editAccess')}
+        </button>
       </span>
     </div>
-  );
-}
-
-/** The Deactivate text-action; always disabled on the current user's own row. */
-function DeactivateAction({
-  isYou,
-  pending,
-  onClick,
-}: {
-  isYou: boolean;
-  pending: boolean;
-  onClick: () => void;
-}) {
-  const t = useTranslations('settings');
-  if (isYou) {
-    return (
-      <span className="cursor-not-allowed px-[8px] py-[4px] text-[12px] font-semibold text-[#C7BFB5]">
-        {t('users.action.deactivate')}
-      </span>
-    );
-  }
-  return (
-    <ActionButton tone="danger" onClick={onClick} disabled={pending}>
-      {t('users.action.deactivate')}
-    </ActionButton>
-  );
-}
-
-function ActionButton({
-  children,
-  tone,
-  bold,
-  onClick,
-  disabled,
-}: {
-  children: ReactNode;
-  tone: 'teal' | 'danger';
-  bold?: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'px-[8px] py-[4px] text-[12px] transition-opacity hover:opacity-70 disabled:opacity-40',
-        bold ? 'font-bold' : 'font-semibold',
-        tone === 'teal' ? 'text-teal' : 'text-danger',
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ── dialogs ───────────────────────────────────────────────────────────────────
-function PromoteDialog({
-  user,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  user: AdminUser;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const t = useTranslations('settings');
-  const name = user.fullName ?? user.email ?? '—';
-  const detail =
-    user.spaces.length > 0
-      ? user.spaces
-          .map((s) => t('users.space', { subject: s.subject ?? '—', role: t(`roles.${s.role}`) }))
-          .join(', ')
-      : t('users.promoteDialog.noSpaces');
-
-  return (
-    <Modal
-      open
-      onClose={onCancel}
-      width={468}
-      title={
-        <span className="flex items-center gap-[11px]">
-          <span className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-teal-tint text-teal-deep">
-            <ShieldIcon size={17} />
-          </span>
-          <span className="text-[16px] font-semibold text-ink" dir="auto">
-            {t('users.promoteDialog.title', { name })}
-          </span>
-        </span>
-      }
-    >
-      <div className="mb-[16px] text-[13px] leading-[1.6] text-[#5A524B]">
-        {t('users.promoteDialog.body')}
-      </div>
-      <div className="mb-[18px] flex items-center gap-[10px] rounded-[10px] border border-given-border bg-given px-[13px] py-[11px]">
-        <Avatar name={name} />
-        <div className="leading-[1.3]">
-          <div className="text-[13px] font-semibold text-ink" dir="auto">
-            {name}
-          </div>
-          <div className="text-[11.5px] text-[#A79E94]" dir="auto">
-            {t('users.promoteDialog.currently', { detail })}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-[10px]">
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={pending}
-          className="rounded-[9px] bg-teal px-[16px] py-[10px] text-[13px] font-semibold text-white transition-colors hover:bg-[#1a6a5d] disabled:opacity-50"
-        >
-          {t('users.promoteDialog.confirm')}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={pending}
-          className="ms-auto text-[13px] font-medium text-[#756B64] disabled:opacity-50"
-        >
-          {t('common.cancel')}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-function DeactivateDialog({
-  user,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  user: AdminUser;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const t = useTranslations('settings');
-  const name = user.fullName ?? user.email ?? '—';
-  return (
-    <Modal
-      open
-      onClose={onCancel}
-      width={468}
-      title={
-        <span className="flex items-center gap-[11px]">
-          <span className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-[9px] bg-danger-bg text-danger">
-            <PowerIcon size={17} />
-          </span>
-          <span className="text-[16px] font-semibold text-ink" dir="auto">
-            {t('users.deactivateDialog.title', { name })}
-          </span>
-        </span>
-      }
-    >
-      <div className="mb-[12px] rounded-[10px] border border-danger-border bg-danger-bg px-[14px] py-[12px] text-[13px] leading-[1.55] text-[#8A3A2E]">
-        {t('users.deactivateDialog.warning', { name })}
-      </div>
-      <div className="mb-[18px] text-[13px] leading-[1.6] text-[#5A524B]">
-        {t('users.deactivateDialog.body')}
-      </div>
-      <div className="flex items-center gap-[10px]">
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={pending}
-          className="rounded-[9px] bg-danger px-[16px] py-[10px] text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {t('users.deactivateDialog.confirm')}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={pending}
-          className="ms-auto text-[13px] font-medium text-[#756B64] disabled:opacity-50"
-        >
-          {t('common.cancel')}
-        </button>
-      </div>
-    </Modal>
   );
 }
 

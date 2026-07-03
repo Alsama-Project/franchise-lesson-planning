@@ -226,7 +226,17 @@
         "warning": "{name} loses access immediately and is signed out on every device.",
         "body": "This is reversible. Reactivating restores their access and all subject spaces exactly as they are now — nothing is deleted.",
         "confirm": "Deactivate"
-      }
+      },
+      "editAccess": "Edit access",
+      "editAccessFor": "Edit access for {name}",
+      "globalAccess": "Global access",
+      "standardAccess": "Standard access",
+      "notUsedWhileAdmin": "Not used while admin",
+      "spaceCol": "Space",
+      "done": "Done",
+      "noSpaces": "No subject spaces are set up yet.",
+      "lastAdminNote": "Last active admin — promote another admin before removing this one.",
+      "selfDeactivateNote": "You can’t deactivate your own account."
     },
     "aiGuide": {
       "title": "AI resource guide",

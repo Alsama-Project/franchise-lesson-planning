@@ -112,3 +112,40 @@ and **creating** the other three:
    resolves to >1 row) and any unexpected FK roll the whole thing back.
 
 Run both in the Supabase SQL editor (service-role). Never from a user request.
+
+## `trim_test_personas_to_english.sql`
+
+Scopes the two **canonical impersonation personas** — `teacher1`
+(`4d8be40e-…`) and `coordinator1` (`a4e79fa9-…`) — to a **single** subject-space,
+**Shatila 1 · English**. The account chip's space switcher renders one row per
+`subject_membership` row (`getSpaceSwitcher` in `src/lib/active-space.ts`), so a
+persona sitting in eight spaces shows eight switcher entries; trimming each to one
+membership collapses the switcher to a single entry, shared across both personas.
+
+Data-only. Touches **nothing** in the impersonation engine, the Teacher/Coordinator
+toggle, the banner, `resolve_impersonation_persona`, or the `impersonation_canonical`
+designation table, and no schema. Leaves `is_test_persona`, `can_impersonate`, and
+`profiles.role` as-is.
+
+Three parts, run in order in the Supabase SQL editor (service-role):
+
+1. **PART A** — read-only. Verifies the pinned `Shatila 1` school id
+   (`42c11721-…`, name `ilike 'shatila%'`) and resolves **English** by the stable
+   key `subjects.code = 'english'` (never a hardcoded uuid). STOP if the school
+   isn't Shatila or English doesn't resolve to exactly one row.
+2. **PART B** — read-only preview. One row per current `subject_membership` for
+   both personas (centre + subject + role); everything that isn't
+   (Shatila 1 · English) will be removed. Eyeball the counts.
+3. **PART C** — ⚠️ writes, ONE transaction. For **each of the two literal uids
+   only**, deletes every membership that isn't the target space and upserts the
+   target row at the correct role, marked primary. Re-asserts PART A's guards; any
+   failure rolls back. **Idempotent** — re-running leaves each persona at exactly
+   one row. The DELETEs are bound to the two literal uids and can never touch
+   another user's memberships.
+
+**Durability note (why no reseed re-introduces the clutter):** nothing in the repo
+grants a persona all-subject memberships — the only persona `subject_membership`
+inserts are `seed_test_personas.sql` (one **teacher** row at Shatila · English) and
+migration `0039` A3 (one **coordinator** row for `coordinator1` in `teacher1`'s
+derived space). Neither loops over subjects, so the eight-space clutter was a
+manual / data-reset artifact, and PART C alone is sufficient to fix it.

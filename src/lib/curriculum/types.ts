@@ -76,8 +76,21 @@ export interface CurriculumSyncResult {
   rowsUpserted: number;
   rowsDeactivated: number;
   unresolved: number;
+  /**
+   * `error` covers both a hard failure (parse/DB) and a circuit-breaker abort;
+   * `aborted` distinguishes the latter (a safety stop with nothing written) from
+   * the former (an unexpected failure). See `syncCurriculumWorkbook`.
+   */
   status: 'success' | 'error';
   error?: string;
+  /** True when the run was stopped by the magnitude circuit-breaker (Guard 2). */
+  aborted?: boolean;
+  /**
+   * lesson_keys that were absent from this parse but left ACTIVE because a live
+   * lesson plan still references them (Guard 1 — never orphan). Operator-review
+   * signal; mirrored onto `curriculum_sync_run.warnings`.
+   */
+  skippedReferencedKeys?: string[];
 }
 
 /**

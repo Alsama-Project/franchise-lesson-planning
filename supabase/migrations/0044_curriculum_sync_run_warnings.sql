@@ -1,0 +1,23 @@
+-- 0044_curriculum_sync_run_warnings.sql
+-- Curriculum ingest safety guards: give `curriculum_sync_run` an operator-visible
+-- field to carry why a run was held back, so a partial/aborted sync is reviewable in
+-- the console instead of being silent.
+--
+-- NOTE ON PROVENANCE: like the other curriculum DDL (0010, 0015), this is also applied
+-- by hand in the Supabase SQL editor by the operator. It is committed here, idempotently,
+-- so the schema stays the locked source of truth in repo and a local `supabase db reset`
+-- reproduces it. Re-running is safe.
+--
+-- `warnings` shape (written by src/lib/curriculum/sync.ts):
+--   • Guard 1 (referenced-row protection) success run:
+--       { "skippedReferencedKeys": ["english|Y1|...", ...], "skippedReferencedCount": N }
+--     Keys absent from the parse but LEFT ACTIVE because a live lesson_plans row still
+--     references them (archiving would orphan the plan — no FK, and reads filter
+--     is_active=true). Operator prunes deliberately-removed rows manually.
+--   • Guard 2 (magnitude circuit-breaker) aborted run (status='error'):
+--       { "circuitBreaker": { "aborted": true, "active": N, "regenerated": N,
+--                             "lost": N, "ratio": 0.NN, "threshold": 0.1 } }
+--     The parse would have archived too large a fraction of the subject's active rows
+--     (a structural break / parser regression); the run wrote nothing.
+
+alter table public.curriculum_sync_run add column if not exists warnings jsonb;

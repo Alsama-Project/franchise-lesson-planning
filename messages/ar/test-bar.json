@@ -3,14 +3,10 @@
     "testMode": "وضع الاختبار",
     "viewingAs": "العرض بصفة:",
     "yourAccount": "حسابك",
-    "switchPersona": "تبديل الشخصية",
-    "searchPlaceholder": "ابحث عن الشخصيات…",
-    "noPersonas": "لا توجد شخصيات متاحة",
+    "viewAs": "العرض بصفة {role}",
     "returnToAccount": "العودة إلى حسابي",
     "switchFailed": "فشل التبديل",
-    "noCentre": "لا يوجد مركز",
     "roleTeacher": "معلّم",
-    "roleCoordinator": "منسّق",
-    "roleAdmin": "مدير"
+    "roleCoordinator": "منسّق"
   }
 }

@@ -11,25 +11,26 @@ import {
   impersonationEnabled,
   isEligibleCaller,
   isStashedSessionResumable,
-  listImpersonationPersonas,
   readStash,
   writeSessionToAuthCookies,
   writeStash,
 } from '@/lib/test-impersonation';
+import { isToggleRole } from '@/lib/test-roles';
 
 /**
- * Dev/preview-only impersonation endpoint. POST a `{ personaId }` to step into a
- * dedicated per-tester persona, or `{ action: 'return' }` to restore your own
- * account. SECURITY-SENSITIVE: it establishes real Supabase sessions, so the
- * master switch (`impersonationEnabled()`) and the caller-eligibility gate must
- * hold or it refuses.
+ * Dev/preview-only impersonation endpoint. POST a `{ role: 'teacher' | 'coordinator' }`
+ * to step into that role's fixed canonical persona, or `{ action: 'return' }` to
+ * restore your own account. SECURITY-SENSITIVE: it establishes real Supabase
+ * sessions, so the master switch (`impersonationEnabled()`) and the
+ * caller-eligibility gate must hold or it refuses.
  *
- * The client only ever sends a persona UID. The server NEVER trusts it blindly:
- * it re-enumerates the caller-scoped personas through the security-definer RPC
- * (`list_impersonation_personas`, which returns only `is_test_persona` rows and
- * hides admin personas from non-admins) and requires the requested id to be in
- * that list. The persona's email and the shared password stay server-only and
- * never leave the server (not in any response, log line, or client bundle).
+ * The client only ever sends a toggle ROLE — never a uid or email. The server
+ * resolves it through the security-definer RPC (`resolve_impersonation_persona`),
+ * which re-applies the eligibility + anti-escalation gate (a non-admin caller
+ * asking for `coordinator` gets NO ROW), and treats an empty result as a
+ * caller-scope denial (403). The persona's uid, email, and the shared password
+ * stay server-only and never leave the server (not in any response, log line, or
+ * client bundle).
  *
  * Session mechanism (matches this repo's @supabase/ssr cookie setup):
  *   - switch: sign in as the persona with `signInWithPassword({email, password})`
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
     const stash = await readStash(cookieStore);
 
     const body = (await request.json().catch(() => null)) as
-      | { personaId?: unknown; action?: unknown }
+      | { role?: unknown; action?: unknown }
       | null;
 
     // ── Return to my account ────────────────────────────────────────────────
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
       return fail('auth', 'no current session', 401);
     }
     // The real caller is the stashed identity when already impersonating, else the
-    // current session. Enumerate/validate personas AS THE REAL CALLER: while
+    // current session. Resolve/validate the persona AS THE REAL CALLER: while
     // impersonating the live session is the persona, so use a client bound to the
     // stashed session; otherwise the current cookie session already is the caller.
     const realUid = stash?.uid ?? user.id;
@@ -163,19 +164,31 @@ export async function POST(request: NextRequest) {
       return fail('auth', 'caller is not eligible to impersonate', 404);
     }
 
-    // ── Resolve the requested persona (never trust the client's id) ───────────
-    // The target must be present in the server-computed, caller-scoped list (the
-    // RPC returns only is_test_persona rows and hides admin personas from
-    // non-admins), so a guessed or out-of-scope id is rejected here.
+    // ── Resolve the requested role → fixed persona (server-side, scope-enforced) ─
+    // The client sends only a toggle role. `resolve_impersonation_persona` applies
+    // the SAME eligibility + anti-escalation gate in the definer as the retired
+    // picker RPC: a non-admin caller asking for `coordinator` gets NO ROW. An empty
+    // result is therefore the caller-scope denial — surfaced here as a 403. This is
+    // where caller-scope stays enforced server-side; the client id is never trusted.
     stage = 'resolve_user';
-    const personaId = typeof body?.personaId === 'string' ? body.personaId : null;
-    if (!personaId) {
-      return fail('resolve_user', 'missing persona id', 400);
+    const role = typeof body?.role === 'string' ? body.role : null;
+    if (!role || !isToggleRole(role)) {
+      return fail('resolve_user', 'missing or invalid role', 400);
     }
-    const personas = await listImpersonationPersonas(privileged);
-    const target = personas.find((p) => p.id === personaId);
-    if (!target) {
-      return fail('resolve_user', 'persona not found or not permitted', 404);
+    const { data: resolved, error: resolveError } = await privileged.rpc(
+      'resolve_impersonation_persona',
+      { target_role: role },
+    );
+    if (resolveError) {
+      return fail('resolve_user', reason(resolveError, 'failed to resolve persona'), 500);
+    }
+    const target = (Array.isArray(resolved) ? resolved[0] : null) as
+      | { persona_id?: string; email?: string }
+      | null;
+    if (!target?.persona_id || !target?.email) {
+      // No row = ineligible caller or out-of-scope role (e.g. a non-admin asking
+      // for `coordinator`). This is the server-side caller-scope denial.
+      return fail('resolve_user', 'role not permitted for this caller', 403);
     }
 
     // ── Config: the shared persona password (server-only, never a value) ──────
@@ -212,7 +225,7 @@ export async function POST(request: NextRequest) {
     console.error(
       '[test-impersonate] sign-in attempt',
       JSON.stringify({
-        personaId: target.id,
+        role,
         hasAnonUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()),
         hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()),
       }),
@@ -225,7 +238,8 @@ export async function POST(request: NextRequest) {
       return fail('auth', reason(signInError, 'failed to sign in as the persona'), 401);
     }
 
-    return NextResponse.json({ ok: true, impersonating: true, personaId: target.id });
+    // Echo only the role back — never the resolved persona uid or email.
+    return NextResponse.json({ ok: true, impersonating: true, role });
   } catch (err) {
     // Unexpected throw — tag it with the step in flight; message is secret-free.
     return fail(stage, reason(err, 'unexpected error'), 500);

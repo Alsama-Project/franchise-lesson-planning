@@ -12,9 +12,9 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseEnv } from '@/lib/supabase/env';
-import { isTestRole, type Persona } from '@/lib/test-roles';
+import type { ToggleRole } from '@/lib/test-roles';
 
-export { isTestRole, type Persona, type TestRole } from '@/lib/test-roles';
+export { isToggleRole, type ToggleRole } from '@/lib/test-roles';
 
 /**
  * Dev/preview-only test-user impersonation — the eligibility gates, the persona
@@ -156,23 +156,13 @@ export function getPersonaPassword(): string | null {
   return pw ? pw : null;
 }
 
-/** Server-only enumeration shape: {@link Persona} plus the sign-in email. */
-interface PersonaWithEmail extends Persona {
-  email: string;
-}
-
-/** Strip the server-only email before a persona is handed to the client. */
-function sanitizePersona({ id, name, role, centre }: PersonaWithEmail): Persona {
-  return { id, name, role, centre };
-}
-
 /**
  * A Supabase client authenticated as the given (real caller's) session, WITHOUT
- * touching cookies or refreshing tokens. Used to enumerate/validate personas as
- * the real caller even while the live cookie session is the impersonated persona
- * — the definer RPC (`list_impersonation_personas`) then scopes to the real
- * caller's eligibility and admin status. If the access token has since expired
- * the RPC simply fails and the list comes back empty (Return still works).
+ * touching cookies or refreshing tokens. Used to act AS THE REAL CALLER even while
+ * the live cookie session is the impersonated persona — the definer RPC
+ * (`resolve_impersonation_persona`) then scopes to the real caller's eligibility
+ * and admin status, and the caller's own admin flag can be read for the toggle. If
+ * the access token has since expired the RPC/read simply fails (Return still works).
  */
 export function createSessionClient(session: Session): SupabaseClient {
   const { url, anonKey } = getSupabaseEnv();
@@ -182,55 +172,61 @@ export function createSessionClient(session: Session): SupabaseClient {
   });
 }
 
-/** Raw row shape returned by the `list_impersonation_personas` RPC. */
-interface RawPersonaRow {
-  persona_id: string;
-  full_name: string | null;
-  email: string | null;
-  role: string | null;
-  centre_name: string | null;
+/**
+ * The real caller's test-bar eligibility AND whether they are a global admin, in
+ * one profile read. Eligibility = `TEST_IMPERSONATION_ALLOWED_UIDS` env allowlist
+ * OR `profiles.can_impersonate` OR real-admin (`profiles.role = 'admin'`). Admin
+ * additionally unlocks the coordinator toggle state (anti-escalation: a non-admin
+ * eligible caller may only ever step into a teacher). Reads only the caller's OWN
+ * profile row (allowed by `profiles_select_own` RLS), so `client` must be
+ * authenticated as `uid`. Never gated on coordinator role and never promotes anyone.
+ */
+export interface CallerEligibility {
+  eligible: boolean;
+  isAdmin: boolean;
 }
 
-/**
- * Enumerate the caller-scoped personas via the security-definer RPC. The RPC
- * gates on real-admin OR `can_impersonate` and applies the anti-escalation scope
- * (non-admins see teacher personas only), so the returned list is already safe to
- * act on. Returns `[]` on any error (ineligible caller, expired stash token, RPC
- * missing) — the picker then shows its empty state rather than surfacing a 500.
- */
-export async function listImpersonationPersonas(
+export async function getCallerEligibility(
   client: SupabaseClient,
-): Promise<PersonaWithEmail[]> {
-  const { data, error } = await client.rpc('list_impersonation_personas');
-  if (error || !data) return [];
-  return (data as RawPersonaRow[])
-    .filter((r) => typeof r.email === 'string' && r.email.length > 0)
-    .map((r) => ({
-      id: r.persona_id,
-      name: r.full_name?.trim() || (r.email as string),
-      role: isTestRole(r.role) ? r.role : 'teacher',
-      centre: r.centre_name ?? null,
-      email: r.email as string,
-    }));
-}
-
-/**
- * Whether `uid` may USE the bar (step into a persona). Dynamic eligibility =
- * `profiles.can_impersonate` OR real-admin (`profiles.role = 'admin'`), with the
- * `TEST_IMPERSONATION_ALLOWED_UIDS` env allowlist kept as a fallback. Reads only
- * the caller's OWN profile row (allowed by `profiles_select_own` RLS), so `client`
- * must be authenticated as `uid`. It is deliberately NOT gated on coordinator role
- * and never promotes anyone.
- */
-export async function isEligibleCaller(client: SupabaseClient, uid: string): Promise<boolean> {
-  if (getAllowedUids().includes(uid)) return true;
+  uid: string,
+): Promise<CallerEligibility> {
+  const allowlisted = getAllowedUids().includes(uid);
   const { data } = await client
     .from('profiles')
     .select('role, can_impersonate')
     .eq('id', uid)
     .maybeSingle();
   const row = data as { role: string | null; can_impersonate: boolean | null } | null;
-  return !!row && (row.can_impersonate === true || row.role === 'admin');
+  const isAdmin = row?.role === 'admin';
+  const eligible = allowlisted || isAdmin || row?.can_impersonate === true;
+  return { eligible, isAdmin };
+}
+
+/**
+ * Whether `uid` may USE the bar at all (step into a persona). Thin wrapper over
+ * {@link getCallerEligibility} kept for the swap route's gate.
+ */
+export async function isEligibleCaller(client: SupabaseClient, uid: string): Promise<boolean> {
+  return (await getCallerEligibility(client, uid)).eligible;
+}
+
+/** The toggle roles a caller may enter: admin → both; eligible non-admin → teacher only. */
+function rolesForCaller(isAdmin: boolean): ToggleRole[] {
+  return isAdmin ? ['teacher', 'coordinator'] : ['teacher'];
+}
+
+/**
+ * Map the impersonated user's `profiles.role` to a toggle role. Returns undefined
+ * if the persona's role is neither teacher nor coordinator (e.g. an admin persona
+ * or a missing row) so the bar degrades gracefully instead of crashing.
+ */
+async function currentRoleFor(
+  client: SupabaseClient,
+  uid: string,
+): Promise<ToggleRole | undefined> {
+  const { data } = await client.from('profiles').select('role').eq('id', uid).maybeSingle();
+  const role = (data as { role: string | null } | null)?.role;
+  return role === 'teacher' || role === 'coordinator' ? role : undefined;
 }
 
 /** Cookie options for the stash — server-set, httpOnly, never readable by JS. */
@@ -295,30 +291,28 @@ export interface ImpersonationState {
   active: boolean;
   /** Whether a real session is currently stashed (i.e. we are viewing-as). */
   impersonating: boolean;
-  /** The persona currently being viewed, when impersonating. */
-  currentPersona: Persona | null;
-  /** The caller-scoped personas the picker may offer (client-safe, no emails). */
-  personas: Persona[];
+  /** Toggle roles the caller may enter: admin → both; eligible non-admin → teacher only. */
+  availableRoles: ToggleRole[];
+  /** The toggle role currently being viewed, when impersonating (undefined if it degrades). */
+  currentRole?: ToggleRole;
 }
 
 const INACTIVE: ImpersonationState = {
   active: false,
   impersonating: false,
-  currentPersona: null,
-  personas: [],
+  availableRoles: [],
 };
 
 /**
- * Server-side decision for the authed shell: should the test bar render, whose
- * persona is being viewed, and which personas may be picked?
+ * Server-side decision for the authed shell: should the test bar render, which
+ * toggle roles may be entered, and which role is currently being viewed?
  *
  *   - Impersonating: a VALID STASH is itself proof the session began from an
  *     eligible caller (the route only ever writes it after the eligibility gate),
  *     so the bar renders regardless of the now-impersonated session's state — the
- *     only in-app way back must never disappear. Personas are enumerated AS THE
- *     REAL caller (via the stashed session), so the picker stays populated and
- *     correctly scoped; the current persona is that list entry matching the live
- *     session's uid.
+ *     only in-app way back must never disappear. `availableRoles` is computed AS
+ *     THE REAL caller (via the stashed session), so an admin keeps both toggle
+ *     states; `currentRole` comes from the live (impersonated) session's profile.
  *   - Not impersonating: the bar renders only for an eligible real caller
  *     (`can_impersonate` OR admin OR the env allowlist), who may then start.
  */
@@ -329,19 +323,24 @@ export async function getImpersonationState(): Promise<ImpersonationState> {
   const stash = await readStash(cookieStore);
 
   if (stash) {
-    // Enumerate as the real caller, not the impersonated session.
+    // Compute available roles AS THE REAL caller, not the impersonated session, so
+    // an admin keeps [teacher, coordinator] even while viewing as a teacher.
     const privileged = createSessionClient(stash.session);
-    const withEmail = await listImpersonationPersonas(privileged);
-    const personas = withEmail.map(sanitizePersona);
+    const { isAdmin } = await getCallerEligibility(privileged, stash.uid);
 
-    // The current persona is the live (impersonated) session's user.
+    // The current role is the live (impersonated) session user's profile role.
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const current = user ? personas.find((p) => p.id === user.id) ?? null : null;
+    const currentRole = user ? await currentRoleFor(supabase, user.id) : undefined;
 
-    return { active: true, impersonating: true, currentPersona: current, personas };
+    return {
+      active: true,
+      impersonating: true,
+      availableRoles: rolesForCaller(isAdmin),
+      currentRole,
+    };
   }
 
   // Not impersonating: the bar shows only for an eligible real caller.
@@ -349,8 +348,9 @@ export async function getImpersonationState(): Promise<ImpersonationState> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user || !(await isEligibleCaller(supabase, user.id))) return INACTIVE;
+  if (!user) return INACTIVE;
+  const { eligible, isAdmin } = await getCallerEligibility(supabase, user.id);
+  if (!eligible) return INACTIVE;
 
-  const personas = (await listImpersonationPersonas(supabase)).map(sanitizePersona);
-  return { active: true, impersonating: false, currentPersona: null, personas };
+  return { active: true, impersonating: false, availableRoles: rolesForCaller(isAdmin) };
 }

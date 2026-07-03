@@ -3,14 +3,10 @@
     "testMode": "Test mode",
     "viewingAs": "Viewing as:",
     "yourAccount": "your account",
-    "switchPersona": "Switch persona",
-    "searchPlaceholder": "Search personas…",
-    "noPersonas": "No personas available",
+    "viewAs": "View as {role}",
     "returnToAccount": "Return to my account",
     "switchFailed": "Switch failed",
-    "noCentre": "No centre",
     "roleTeacher": "Teacher",
-    "roleCoordinator": "Coordinator",
-    "roleAdmin": "Admin"
+    "roleCoordinator": "Coordinator"
   }
 }

@@ -3,7 +3,7 @@ import { AppShell } from '@/components/app-shell/AppShell';
 import { LessonPlanEditor } from '@/components/editor/LessonPlanEditor';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
-import { getPlanComments, getPlanEvents } from '@/lib/review/comments';
+import { planHasAnnotations } from '@/lib/review/annotations';
 import { createClient } from '@/lib/supabase/server';
 
 // Rendered per-request: the plan is loaded with the auth'd client (RLS).
@@ -19,15 +19,15 @@ export default async function PlanEditorPage({
   // The plan load and the shell-chrome identity are independent, so run them in
   // parallel rather than waterfalling.
   const supabase = await createClient();
-  // Comments load in parallel: coordinator→teacher feedback the teacher needs to
-  // see on a returned plan. RLS scopes the read — it returns [] (degrading
-  // gracefully) until the teacher-SELECT comments policy (migration 0025) lands.
-  const [data, { data: { user } }, canCoordinate, comments, events] = await Promise.all([
+  // Whether the plan carries any coordinator feedback. The wizard no longer embeds
+  // the response thread — the teacher responds on /plan/[id]/view (one surface) — so
+  // here we only need to know whether to show the "feedback to review" pointer. RLS
+  // scopes the check to a plan the caller can see.
+  const [data, { data: { user } }, canCoordinate, hasFeedback] = await Promise.all([
     loadPlanForEditor(id),
     supabase.auth.getUser(),
     canCoordinatePlan(id),
-    getPlanComments(id),
-    getPlanEvents(id),
+    planHasAnnotations(id),
   ]);
   if (!data) notFound();
 
@@ -51,7 +51,7 @@ export default async function PlanEditorPage({
 
   return (
     <AppShell name={name} subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}>
-      <LessonPlanEditor data={data} comments={comments} events={events} />
+      <LessonPlanEditor data={data} hasFeedback={hasFeedback} />
     </AppShell>
   );
 }

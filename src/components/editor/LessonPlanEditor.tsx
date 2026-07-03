@@ -27,8 +27,6 @@ import {
   unsubmitLessonPlan,
 } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
-import type { PlanComment } from '@/lib/review/comments';
-import type { PlanEvent } from '@/lib/review/timeline';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { SubmitControl } from '@/components/editor/SubmitControl';
 import { CurriculumCard } from '@/components/editor/CurriculumCard';
@@ -39,7 +37,7 @@ import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
-import { ActivityPane } from '@/components/review/ActivityPane';
+import Link from 'next/link';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -69,21 +67,18 @@ function SaveIndicator({ state }: { state: SaveState }) {
 
 export function LessonPlanEditor({
   data,
-  comments,
-  events,
+  hasFeedback,
 }: {
   data: EditorPlanData;
-  /** Coordinator→teacher feedback on this plan. Rendered existence-gated at the
-   *  foot of the lesson-plan pane regardless of status, so a returned plan shows
-   *  what to fix. Empty until the teacher-SELECT comments policy (migration 0025)
-   *  is applied. */
-  comments: PlanComment[];
-  /** Recorded lifecycle events, interleaved with comments in the read-only rail.
-   *  Empty until migration 0027 (`plan_events`) is applied. */
-  events: PlanEvent[];
+  /** Whether the plan carries any coordinator annotations (comments/suggestions).
+   *  The wizard does NOT embed the response thread — the teacher responds on
+   *  /plan/[id]/view (one surface). When true, we show a lightweight pointer that
+   *  links there; the accept/reject/resolve/reply pane lives only on the view. */
+  hasFeedback: boolean;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
+  const tReview = useTranslations('review');
 
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
   const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
@@ -301,8 +296,6 @@ export function LessonPlanEditor({
     }
   }
 
-  const showCommentsRail = comments.length > 0 || events.length > 0;
-
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
 
@@ -476,14 +469,29 @@ export function LessonPlanEditor({
               locked={locked}
             />
 
-            {showCommentsRail ? (
+            {hasFeedback ? (
               <div className="mt-[22px]">
-                <ActivityPane
-                  mode="teacher"
-                  teacherId={plan.created_by}
-                  comments={comments}
-                  events={events}
-                />
+                <Link
+                  href={`/plan/${plan.id}/view`}
+                  className="flex items-center gap-[10px] rounded-[12px] border border-[#CBE1DA] bg-[#EEF6F3] px-[15px] py-[12px] transition-colors hover:bg-[#E4F0EC]"
+                >
+                  <span className="inline-flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full bg-[#1F7A6C] text-white">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold text-[#15433C]">
+                      {tReview('annotations.pointer.title')}
+                    </span>
+                    <span className="block text-[12.5px] text-[#5C6B66]">
+                      {tReview('annotations.pointer.body')}
+                    </span>
+                  </span>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 rtl:-scale-x-100" aria-hidden>
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                </Link>
               </div>
             ) : null}
           </div>

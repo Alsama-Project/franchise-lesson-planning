@@ -73,6 +73,90 @@
         "reopened": "Reopened as draft",
         "undone": "Approval undone"
       }
+    },
+    "annotations": {
+      "title": "Comments",
+      "count": "{count} notes",
+      "countEmpty": "No comments",
+      "filter": {
+        "open": "Open",
+        "resolved": "Resolved"
+      },
+      "filterEmpty": {
+        "open": "No open items.",
+        "resolved": "Nothing resolved yet."
+      },
+      "empty": {
+        "title": "No comments yet",
+        "body": "Select any line of the plan or the worksheet to leave a comment, or suggest an edit inline."
+      },
+      "kind": {
+        "suggestion": "Suggestion",
+        "comment": "Comment"
+      },
+      "anchor": {
+        "objective": "SMARTT objective",
+        "phase": "Lesson phase",
+        "worksheet": "Worksheet",
+        "general": "Whole plan"
+      },
+      "decided": {
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "resolved": "Resolved"
+      },
+      "actions": {
+        "accept": "Accept",
+        "reject": "Reject",
+        "awaitingTeacher": "Awaiting teacher",
+        "resolve": "Resolve",
+        "undo": "Undo",
+        "decided": {
+          "accepted": "Accepted by the teacher",
+          "rejected": "Rejected by the teacher"
+        }
+      },
+      "reply": {
+        "toggle": "Reply",
+        "placeholder": "Reply…",
+        "submit": "Reply",
+        "cancel": "Cancel"
+      },
+      "general": {
+        "heading": "General feedback · whole plan",
+        "placeholder": "Add general feedback about the whole plan…",
+        "submit": "Add feedback"
+      },
+      "footer": {
+        "return": "Return for changes",
+        "approve": "Approve plan",
+        "returnHint": "Add at least one comment or suggestion before returning the plan.",
+        "undo": "Undo approval",
+        "reopen": "Reopen as draft",
+        "resubmit": "Resubmit plan",
+        "teacherHint": "Address the feedback above, then resubmit for review.",
+        "working": "Working…",
+        "error": "Couldn't update the plan. Please try again."
+      },
+      "pill": {
+        "minutes": "{n} min"
+      },
+      "author": {
+        "time": "Suggest a time",
+        "grouping": "Suggest a grouping",
+        "comment": "Comment",
+        "suggest": "Suggest edit",
+        "cancel": "Cancel",
+        "notePlaceholder": "Add a note (optional)…",
+        "commentPlaceholder": "Comment on this line…",
+        "durFrom": "Currently {n} min",
+        "durNoteDefault": "Suggest changing the time from {from} to {to} minutes.",
+        "enumNoteDefault": "Suggest changing the grouping from {from} to {to}."
+      },
+      "pointer": {
+        "title": "Coordinator feedback to review",
+        "body": "Open the review view to accept changes and reply."
+      }
     }
   }
 }

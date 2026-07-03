@@ -2,6 +2,81 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
+## Inline coordinator review — annotation layer (Part A) ✅ (this phase)
+
+Replaces the flat plan-level comment sidebar on `/plan/[id]/view` with a
+Google-Docs-style annotation layer: anchored comments (objective / phase row /
+whole-plan, threaded + resolvable) and structured suggestions (a phase's duration
+or its I/WE/YOU grouping, shown inline as `from → to`, that the teacher accepts or
+rejects). Part B (tracked prose edits: free-text selection → text suggestion, the
+strike/insert diff, applying into a plain-text field or the tiptap worksheet) is a
+LATER branch — the schema already carries its columns (`suggestion_shape='text'`,
+`anchor_quote/prefix/suffix`, `from/to_value` as spans), left null in Part A.
+
+### Done
+
+- **Schema** — `supabase/migrations/0045_plan_annotations.sql` (authored, NOT run;
+  printed in the handoff to apply by hand). `plan_annotations` (comments +
+  suggestions, anchored) + `plan_annotation_replies` (threaded). Phases are the
+  `blocks` JSONB array (no phase table), so a phase anchor is `phase_ref` = the
+  block `type`; a worksheet anchor is `block_ref`. RLS reuses the existing plan-level
+  wrappers `is_member_of_plan` / `is_coordinator_of_plan` (which already fold in
+  `is_admin()` + the deactivation check): read = any member, author = coordinator,
+  reply = any member, update = any member (column scope gated in the actions). Reply
+  `plan_id` is denormalized and stamped by a BEFORE-INSERT trigger (can't be spoofed;
+  keeps the reply policy a direct `is_member_of_plan(plan_id)`, no subquery). Fully
+  idempotent; backfills `plan_comments` → `general` comments with a `not exists`
+  guard.
+- **Server actions** (`@/lib/actions/annotations`) — `createAnnotation` (coord),
+  `addAnnotationReply` (member), `setAnnotationResolved` (member),
+  `decideSuggestion` (author/admin, only while `needs_review`/`in_progress`; on
+  accept applies `dur`→block `minutes` / `enum`→block `phase` to the `blocks` JSONB
+  in the same action, then stamps `status`/`decided_*`). `decidePlan` +
+  `submitLessonPlanById` are reused unchanged for the footers.
+- **Pane** (`@/components/review/annotation/*`) — strict port of the Coordinator
+  Review · Annotation Layer design: header + count pill, Open/Resolved filter tabs,
+  empty state, cards (badge · kind tag · anchor label · decided chip · expand →
+  `from→to` strip, author block, threaded replies, reply composer, role-aware action
+  row), a General feedback section + composer, and a role-aware footer (coordinator:
+  Return/Approve/Undo/Reopen via `decidePlan`; teacher: hint + Resubmit via
+  `submitLessonPlanById`). One `AnnotationProvider` wraps the whole review view so
+  the read-side affordances and the pane cross-highlight; mutations `router.refresh()`.
+- **Read-side, woven into `ReadOnlyPlan`** (not rebuilt) — objective gets a count
+  badge + coordinator "comment"; each content phase row gets a count badge, a teal
+  `from→to` pill in the duration/grouping cell for a live suggestion (green once
+  accepted, and the in-session total recomputes), and coordinator inline authoring
+  (suggest a time via a stepper, suggest a grouping, comment). Affordances no-op
+  (plain read-only markup) when no provider — a non-member's view is unchanged.
+- **Wizard editor** — the embedded response thread is removed; when a plan carries
+  feedback the wizard shows a lightweight pointer linking to `/plan/[id]/view` (one
+  respond-surface). `planHasAnnotations` gates it.
+- **plan_comments cutover** — backfilled into the new model; `addPlanComment`,
+  `getPlanComments`/`getPlanEvents`, `ActivityPane`, `mergeTimeline`/`activity-events`
+  are deleted; nothing reads/writes `plan_comments` anymore. The TABLE is left in
+  place (dropping is irreversible + would break `supabase/admin/*`); a later
+  migration drops it and fixes those scripts once the cutover is verified in prod.
+  `plan_events` (table + trigger) is untouched — the pane just stops rendering the
+  event timeline.
+- **i18n** — new `review.annotations.*` in `messages/{en,ar}/review.json`; counts via
+  `formatNumber`, content islands `dir="auto"`. **Arabic machine-translated — flagged
+  for Kadria.**
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes.
+
+### Deferred / follow-ups (reported in the handoff)
+
+- **Lesson/Worksheet tabs + worksheet-block anchoring** deferred: the worksheet
+  renders inside `PartContent` (shared with the editor Review step), so a tab split
+  is a layout restructure beyond "weave, don't rebuild". Schema supports it
+  (`worksheet_block` / `block_ref`) so it's additive later.
+- Coordinator authoring is explicit per-row buttons (not hover affordances) for
+  usability; a hover/selection treatment is a fidelity follow-up.
+- Suggestion "Undo" after decision is not offered (comments toggle Resolve/Undo);
+  un-applying an accepted dur/enum is a later concern (`from_value` is retained).
+- Migration is authored-only (0045) — apply in the Supabase SQL editor.
+
 ## Curriculum browser — period labels, rail overflow, monthly view ✅ (this phase)
 
 Goal: relabel the weekly viewer by curriculum **period**, contain the detail

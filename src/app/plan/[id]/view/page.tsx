@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
-import { ActivityPane } from '@/components/review/ActivityPane';
+import { AnnotationProvider } from '@/components/review/annotation/context';
+import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
-import { getPlanComments, getPlanEvents } from '@/lib/review/comments';
+import { getPlanAnnotations } from '@/lib/review/annotations';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
 import { createClient } from '@/lib/supabase/server';
 
@@ -13,15 +14,16 @@ import { createClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 /**
- * The read-only view of a lesson plan. The board routes here when the viewer is
- * not the plan's creator (editing is creator-only by RLS). Anyone with RLS read
- * access — a colleague, a coordinator, or anyone seeing a shared centre/org plan —
- * can open it; the data load 404s if RLS hides the plan.
+ * The read-only view of a lesson plan and its inline coordinator-review annotation
+ * layer. The board routes here when the viewer is not the plan's creator (editing is
+ * creator-only by RLS), and the wizard's "coordinator feedback" pointer links here so
+ * the teacher responds on ONE surface.
  *
- * For a coordinator of the plan's space, the reserved right rail carries the review
- * comments sidebar (thread + decisions) — but only on a reviewable plan
- * (`submitted` / `needs_review` / `approved`). On a draft we keep the neutral
- * "nothing to review yet" note and mount no sidebar.
+ * The annotation pane mounts for any MEMBER of the plan's space — the coordinator (who
+ * authors comments/suggestions and decides) and the plan's teacher (who accepts /
+ * rejects / resolves / replies). A non-member gets the plain read-only plan with no
+ * pane (RLS would return them nothing anyway). The read-side affordances woven into
+ * ReadOnlyPlan share the AnnotationProvider, so badges/pills cross-highlight the pane.
  */
 export default async function PlanViewPage({
   params,
@@ -31,8 +33,8 @@ export default async function PlanViewPage({
   const { id } = await params;
 
   const supabase = await createClient();
-  // The plan, the viewer, and whether the viewer may take a coordinator decision
-  // on this plan (coordinator of its space, or admin) — independent reads.
+  // The plan, the viewer, and whether the viewer may take a coordinator decision on
+  // this plan (coordinator of its space, or admin) — independent reads.
   const [data, { data: { user } }, canDecide] = await Promise.all([
     loadPlanForEditor(id),
     supabase.auth.getUser(),
@@ -49,25 +51,25 @@ export default async function PlanViewPage({
 
   const status = data.plan.status;
   const isReviewable = status !== 'in_progress';
+  const isCreator = !!user && user.id === data.plan.created_by;
+  // A member sees the pane: the coordinator (authors + decides) or the plan's teacher
+  // (responds). Everyone else gets the plain read-only plan.
+  const isMemberViewer = canDecide || isCreator;
+  const role = canDecide ? 'coordinator' : 'teacher';
 
-  // Comments are loaded for any coordinator of the plan, in every status: their
-  // display is EXISTENCE-gated, not status-gated, so a plan returned to draft
-  // (in_progress) still shows the feedback that was left on it. The sidebar mounts
-  // when the plan is reviewable OR any comment exists; the decision bar inside
-  // keeps its own status gating. (Loaded only for a coordinator — a non-coordinator
-  // reads [] by RLS and never sees the sidebar.)
-  const [comments, events] = canDecide
-    ? await Promise.all([getPlanComments(id), getPlanEvents(id)])
-    : [[], []];
-  const hasComments = comments.length > 0;
-  const showSidebar = canDecide && (isReviewable || hasComments || events.length > 0);
-  const authorName = showSidebar ? await resolveAuthorName(supabase, data.plan.created_by) : '';
+  const annotations = isMemberViewer
+    ? await getPlanAnnotations(id, data.plan.created_by)
+    : [];
+  // Mount when there is something to review (a submitted/decided plan) or any feedback
+  // already exists. A pristine draft shows the neutral note instead.
+  const mountPane = isMemberViewer && (isReviewable || annotations.length > 0);
 
-  // The neutral "nothing to review yet" note appears only when there is genuinely
-  // nothing — a draft with no comments. Once any comment exists it gives way to the
-  // sidebar, so returned feedback is never hidden behind the draft message.
+  // block.type → title, so a phase-anchored card can label itself.
+  const phaseTitles = Object.fromEntries(data.plan.blocks.map((b) => [b.type, b.title]));
+
+  // Neutral "nothing to review yet" note — only for a coordinator on a pristine draft.
   let draftNote: ReactNode = null;
-  if (canDecide && !isReviewable && !hasComments && events.length === 0) {
+  if (canDecide && !mountPane) {
     const t = await getTranslations('review');
     draftNote = (
       <div className="border-b border-[#EFE8DD] bg-surface-subtle px-[22px] py-[14px] lg:px-[30px]">
@@ -84,38 +86,20 @@ export default async function PlanViewPage({
       name={viewerName}
       subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}
     >
-      <ReadOnlyPlan
-        data={data}
-        decisionBar={draftNote}
-        rightRail={
-          showSidebar ? (
-            <ActivityPane
-              mode="coordinator"
-              planId={id}
-              status={status}
-              teacherId={data.plan.created_by}
-              authorName={authorName}
-              viewerName={viewerName}
-              comments={comments}
-              events={events}
-            />
-          ) : null
-        }
-      />
+      {mountPane ? (
+        <AnnotationProvider
+          planId={id}
+          status={status}
+          role={role}
+          viewerName={viewerName}
+          annotations={annotations}
+          phaseTitles={phaseTitles}
+        >
+          <ReadOnlyPlan data={data} decisionBar={null} rightRail={<AnnotationPane />} />
+        </AnnotationProvider>
+      ) : (
+        <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} />
+      )}
     </AppShell>
   );
-}
-
-/** The plan author's (teacher's) display name, for the return microcopy. Empty
- *  when RLS hides it. */
-async function resolveAuthorName(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  authorId: string,
-): Promise<string> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('id', authorId)
-    .maybeSingle();
-  return (data as { full_name?: string | null } | null)?.full_name ?? '';
 }

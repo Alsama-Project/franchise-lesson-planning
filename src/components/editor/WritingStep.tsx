@@ -55,15 +55,15 @@ export function WritingStep({
     <>
       <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border disabled:opacity-75">
         {/* Header */}
-        <div className="flex flex-wrap items-center gap-[10px] border-b border-[#EFE8DD] px-6 py-[18px]">
-          <span className="text-[20px] font-semibold">{title}</span>
+        <div className="flex flex-wrap items-center gap-[10px] border-b border-[#EFE8DD] px-6 py-[14px]">
+          <span className="text-[21px] font-bold">{title}</span>
           <PhaseSelect
             value={block.phase}
             onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
           />
         </div>
 
-        <div className="flex flex-col gap-[18px] p-6">
+        <div className="flex flex-col gap-[16px] p-5">
           <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
             <div>
               <FieldLabel>{t('teacherDoes')}</FieldLabel>

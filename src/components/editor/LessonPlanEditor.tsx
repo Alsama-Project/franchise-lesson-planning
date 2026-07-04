@@ -402,13 +402,13 @@ export function LessonPlanEditor({
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {step === 1 ? (
           // STEP 1 — Objective: single full-width column, no worksheet, no divider.
-          <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:px-[30px]">
+          <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[18px] lg:overflow-y-auto lg:px-[30px]">
             <div className="mx-auto max-w-[860px]">
               {locked ? (
                 <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
               ) : null}
-              <CurriculumCard curriculum={curriculum} />
-              <div className="mt-[22px]">
+              <CurriculumCard curriculum={curriculum} defaultExpanded />
+              <div className="mt-[18px]">
                 <ObjectiveStep
                   remainder={remainder}
                   onChange={setRemainder}
@@ -425,7 +425,7 @@ export function LessonPlanEditor({
         ) : (
           // STEPS 2–5 — split: plan (left) · persistent worksheet (right).
           <>
-            <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
+            <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[18px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
               <div className="mx-auto max-w-[820px]">
                 {locked && step < STEP_COUNT ? (
                   <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />

@@ -35,11 +35,11 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className={divider ? 'mt-[18px] border-t border-border pt-[18px]' : ''}>
-      <div className="text-[14px] font-bold uppercase tracking-[0.05em] text-neutral-700">
+    <div className={divider ? 'mt-[16px] border-t border-border pt-[16px]' : ''}>
+      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-neutral-500">
         {title}
       </div>
-      <div className="mt-[12px]">{children}</div>
+      <div className="mt-[11px]">{children}</div>
     </div>
   );
 }
@@ -227,8 +227,10 @@ export function LinkItStep({
 }) {
   const t = useTranslations('wizard.linkIt');
   return (
-    <fieldset disabled={locked} className="mt-[22px] min-w-0 rounded-[14px] border border-border bg-surface px-[18px] py-[16px] disabled:opacity-75">
-      <Section title={t('recap')}>
+    <>
+      <div className="mt-[22px] text-[21px] font-bold">{t('heading')}</div>
+      <fieldset disabled={locked} className="mt-[14px] min-w-0 rounded-[14px] border border-border bg-surface px-[18px] py-[16px] disabled:opacity-75">
+        <Section title={t('recap')}>
         {previousDailyLO ? <PreviousOutcomePanel outcome={previousDailyLO} /> : null}
         <textarea
           dir="auto"
@@ -255,6 +257,7 @@ export function LinkItStep({
           onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
         />
       </Section>
-    </fieldset>
+      </fieldset>
+    </>
   );
 }

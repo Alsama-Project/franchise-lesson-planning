@@ -47,14 +47,14 @@
       "notWritten": "not written yet"
     },
     "curriculum": {
-      "sectionTitle": "Curriculum context",
       "dailyOutcome": "Daily outcome",
       "thisWeek": "This week",
       "monthlyObjective": "Monthly objective",
       "thisMonth": "This month",
       "grammarVocab": "Grammar & vocabulary",
       "theme": "Theme",
-      "yesterdayOutcome": "Yesterday's learning outcome"
+      "yesterdayOutcome": "Yesterday's learning outcome",
+      "dailyAndObjectives": "Daily outcome & objectives"
     },
     "teach": {
       "newContentTitle": "Teach the new content",
@@ -82,7 +82,8 @@
       "allAdded": "All techniques added.",
       "notePlaceholder": "Add a note…",
       "remove": "Remove {name}",
-      "techniqueFallback": "Technique"
+      "techniqueFallback": "Technique",
+      "heading": "Link it together"
     },
     "review": {
       "heading": "Review the whole lesson",

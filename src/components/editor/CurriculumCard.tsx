@@ -4,108 +4,133 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { EditorCurriculumContext } from '@/lib/editor/load-plan';
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#A6917A"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={
+        'flex-shrink-0 transition-transform ' +
+        (open ? '' : '-rotate-90 rtl:rotate-90')
+      }
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 /**
- * The collapsible cream curriculum card pinned at the top of the lesson-plan
- * pane: a locked (`given`/cream = curriculum) surface holding the stacked learning
- * outcomes (dominant Daily outcome + muted week/month context) and two nested
- * WHITE sub-cards — Grammar & vocabulary, Theme. Cream = locked, so nothing here
- * is editable; only the collapse/expand toggle is interactive. Renders nothing
- * when the lesson has no curriculum context.
+ * The collapsible cream curriculum context (colour = curriculum/locked). Two
+ * states, matching the comp:
+ *   • COLLAPSED — a slim one-row bar: chevron + "Daily outcome & objectives" +
+ *     the daily outcome truncated inline. Default on steps 2–5.
+ *   • EXPANDED — "Daily outcome" → the outcome → divider → one flowing
+ *     "This week · … · Monthly · …" line → a 2-up row of white Grammar &
+ *     vocabulary / Theme sub-cards. Default on step 1 (writing the objective).
+ * Nothing here is editable; only the toggle is. Renders nothing without context.
  */
-export function CurriculumCard({ curriculum }: { curriculum: EditorCurriculumContext | null }) {
+export function CurriculumCard({
+  curriculum,
+  defaultExpanded = false,
+}: {
+  curriculum: EditorCurriculumContext | null;
+  defaultExpanded?: boolean;
+}) {
   const t = useTranslations('wizard.curriculum');
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultExpanded);
 
   if (!curriculum) return null;
 
-  const hasContext = !!(curriculum.weekLO || curriculum.monthlyLO || curriculum.monthLO);
+  const daily = curriculum.dailyLO || '—';
+  const hasContext = !!(curriculum.weekLO || curriculum.monthlyLO);
+
+  if (!open) {
+    return (
+      <section className="overflow-hidden rounded-[12px] border border-given-border bg-given">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-expanded={false}
+          className="flex w-full items-center gap-[8px] px-[14px] py-[9px] text-start"
+        >
+          <Chevron open={false} />
+          <span className="flex-shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#A6917A]">
+            {t('dailyAndObjectives')}
+          </span>
+          <span dir="auto" className="min-w-0 flex-1 truncate text-[13px] text-[#6E6052]">
+            {daily}
+          </span>
+        </button>
+      </section>
+    );
+  }
 
   return (
-    <section className="overflow-hidden rounded-[14px] border border-given-border bg-given">
+    <section className="overflow-hidden rounded-[12px] border border-given-border bg-given px-[14px] py-[12px]">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 px-[15px] py-[12px] text-start"
+        onClick={() => setOpen(false)}
+        aria-expanded
+        className="flex w-full items-center justify-between gap-3 text-start"
       >
-        <span className="flex items-center gap-[8px] text-[11px] font-bold uppercase tracking-[0.06em] text-given-label">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <rect x="4" y="11" width="16" height="9" rx="2" />
-            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-          </svg>
-          {t('sectionTitle')}
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#A6917A]">
+          {t('dailyOutcome')}
         </span>
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-          className={(open ? 'rotate-180 ' : '') + 'text-given-label transition-transform'}
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <Chevron open />
       </button>
 
-      {open ? (
-        <div className="px-[13px] pb-[14px] pt-[2px]">
-          {/* Stacked learning outcomes — dominant Daily outcome, muted context. */}
-          <div>
-            <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-given-label">
-              {t('dailyOutcome')}
-            </div>
-            <div dir="auto" className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
-              {curriculum.dailyLO || '—'}
-            </div>
-            {hasContext ? (
-              <div className="mt-[11px] flex flex-col gap-[6px] border-t border-given-border pt-[10px] text-[12px] leading-[1.45] text-neutral-700">
-                {curriculum.weekLO ? (
-                  <div dir="auto">
-                    <span className="font-semibold text-given-label">{t('thisWeek')} · </span>
-                    {curriculum.weekLO}
-                  </div>
-                ) : null}
-                {curriculum.monthlyLO ? (
-                  <div dir="auto">
-                    <span className="font-semibold text-given-label">{t('monthlyObjective')} · </span>
-                    {curriculum.monthlyLO}
-                  </div>
-                ) : null}
-                {curriculum.monthLO ? (
-                  <div dir="auto">
-                    <span className="font-semibold text-given-label">{t('thisMonth')} · </span>
-                    {curriculum.monthLO}
-                  </div>
-                ) : null}
-              </div>
+      <div dir="auto" className="mt-[5px] text-[15px] font-semibold leading-[1.4] text-[#3A332E]">
+        {daily}
+      </div>
+
+      {hasContext ? (
+        <>
+          <div className="my-[10px] border-t border-[#EDE4D6]" />
+          <div dir="auto" className="text-[11.5px] leading-[1.55] text-[#8A7B66]">
+            {curriculum.weekLO ? (
+              <>
+                <span className="font-semibold text-[#6E6052]">{t('thisWeek')} · </span>
+                {curriculum.weekLO}
+              </>
+            ) : null}
+            {curriculum.weekLO && curriculum.monthlyLO ? (
+              <span aria-hidden className="px-[8px] text-[#CBBBA4]">·</span>
+            ) : null}
+            {curriculum.monthlyLO ? (
+              <>
+                <span className="font-semibold text-[#6E6052]">{t('monthlyObjective')} · </span>
+                {curriculum.monthlyLO}
+              </>
             ) : null}
           </div>
+        </>
+      ) : null}
 
-          {/* Two nested WHITE sub-cards — Grammar & vocabulary, Theme. */}
-          <div className="mt-[12px] grid grid-cols-1 gap-[10px] sm:grid-cols-2">
-            <div className="rounded-[10px] border border-border bg-surface px-[12px] py-[10px]">
-              <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
-                {t('grammarVocab')}
-              </div>
-              <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.5] text-neutral-800">
-                {curriculum.grammarVocab || '—'}
-              </div>
-            </div>
-            <div className="rounded-[10px] border border-border bg-surface px-[12px] py-[10px]">
-              <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
-                {t('theme')}
-              </div>
-              <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.45] text-neutral-800">
-                {curriculum.theme || '—'}
-              </div>
-            </div>
+      <div className="mt-[11px] grid grid-cols-1 gap-[9px] sm:grid-cols-2">
+        <div className="rounded-[9px] border border-border bg-surface px-[11px] py-[9px]">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#A6917A]">
+            {t('grammarVocab')}
+          </div>
+          <div dir="auto" className="mt-[4px] text-[13px] leading-[1.5] text-neutral-800">
+            {curriculum.grammarVocab || '—'}
           </div>
         </div>
-      ) : null}
+        <div className="rounded-[9px] border border-border bg-surface px-[11px] py-[9px]">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#A6917A]">
+            {t('theme')}
+          </div>
+          <div dir="auto" className="mt-[4px] text-[13px] leading-[1.45] text-neutral-800">
+            {curriculum.theme || '—'}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

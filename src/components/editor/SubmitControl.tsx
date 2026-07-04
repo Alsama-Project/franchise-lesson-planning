@@ -93,7 +93,10 @@ export function SubmitControl({
       aria-busy={submitting || undefined}
       title={!canSubmit ? t('needObjective') : undefined}
       className={cn(
-        'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-teal-deep disabled:cursor-not-allowed disabled:opacity-60',
+        // Solid teal (#1F7A6C) enabled — matches the Next button and the completed
+        // pipeline nodes. Disabled reads as a muted teal, not a faded ghost, so the
+        // control never looks washed-out.
+        'inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-[#1F7A6C] px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#186155] disabled:cursor-not-allowed disabled:bg-[#AFD0CA]',
       )}
     >
       {submitting ? <Spinner size={15} /> : null}

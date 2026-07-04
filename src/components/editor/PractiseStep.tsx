@@ -42,8 +42,8 @@ export function PractiseStep({
   return (
     <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
       {/* Block header */}
-      <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
-        <span className="text-[20px] font-semibold">{t('practise.title')}</span>
+      <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[14px]">
+        <span className="text-[21px] font-bold">{t('practise.title')}</span>
         <PhaseSelect
           value={block.phase}
           onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
@@ -53,7 +53,7 @@ export function PractiseStep({
       {/* Teacher / student writing (pink-editable) */}
       <div
         className={
-          'grid grid-cols-1 gap-[14px] px-6 py-[18px] md:grid-cols-2' +
+          'grid grid-cols-1 gap-[14px] px-6 py-[14px] md:grid-cols-2' +
           (withWorksheet ? ' border-b border-[#EFE8DD]' : '')
         }
       >

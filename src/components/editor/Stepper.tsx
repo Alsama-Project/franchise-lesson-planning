@@ -43,7 +43,7 @@ export function Stepper({
   const t = useTranslations('wizard');
   const isLast = step === STEP_COUNT;
   return (
-    <div className="border-b border-[#EFE8DD] px-[22px] py-[15px] lg:px-[30px]">
+    <div className="border-b border-[#EFE8DD] px-[22px] py-[11px] lg:px-[30px]">
       {/* Each stage is a shrink-0 cluster (30px circle + its label, sized to the
           label so "SMARTT objective" shows in full — never truncated). The
           connectors between stages are flex-1 SIBLINGS, so they each take an equal
@@ -65,7 +65,7 @@ export function Stepper({
               >
                 <span
                   className={
-                    'flex size-[30px] shrink-0 items-center justify-center rounded-full text-[13px] font-bold ' +
+                    'flex size-[22px] shrink-0 items-center justify-center rounded-full text-[13px] font-bold ' +
                     (isDone
                       ? 'bg-teal text-white'
                       : isCur
@@ -77,7 +77,7 @@ export function Stepper({
                 </span>
                 <span
                   className={
-                    'hidden whitespace-nowrap text-[13px] sm:block ' +
+                    'hidden whitespace-nowrap text-[14px] sm:block ' +
                     (isCur
                       ? 'font-semibold text-[#2A2422]'
                       : isDone

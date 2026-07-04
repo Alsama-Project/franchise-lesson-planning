@@ -155,6 +155,18 @@
         "reviewUnresolved": "Review {count} unresolved",
         "upload": "Upload .xlsx"
       },
+      "reviewModal": {
+        "title": "Unresolved — {subject}",
+        "subtitle": "{count} active lessons with no daily outcome. Benign structural rows; nothing to fix.",
+        "colKey": "Lesson key",
+        "colYear": "Year",
+        "colWeek": "Week",
+        "colPeriod": "Period",
+        "weekly": "—",
+        "loading": "Loading…",
+        "empty": "No unresolved rows.",
+        "close": "Close"
+      },
       "badge": {
         "syncing": "Syncing…",
         "syncedJustNow": "Synced just now",

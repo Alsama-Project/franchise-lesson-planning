@@ -38,6 +38,17 @@ const COLUMNS =
   'linguistic_skill, theme, resources, taxonomy_id, monthly_knowledge_lo, ' +
   'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo, grammar_vocabulary, monthly_lo';
 
+// This read is load-bearing: it pulls the whole active curriculum (~6k full-text rows)
+// once and is sliced in memory for four hot consumers (curriculum browse, teacher
+// home / weekly-overview, the create-lesson picker, the editor load-plan) — so it stays
+// cached. The `revalidate: 120` TTL is what makes an upload actually appear without a
+// redeploy: on-demand `revalidateTag` of this LEGACY `unstable_cache` entry is
+// unreliable in Next 16 (unstable_cache is superseded by `use cache`), so we self-heal
+// via stale-while-revalidate — a normal request ≥120s after a sync re-reads the DB. The
+// `revalidateTag('curriculum')` call on sync success is kept as a harmless best-effort
+// fast path (free instant refresh if a future Next makes it reliable), but nothing
+// depends on it. DO NOT remove the TTL — without it the entry caches indefinitely and
+// only a redeploy refreshes it.
 const fetchActiveRows = unstable_cache(
   async (): Promise<CurriculumLessonRow[]> => {
     const supabase = createAdminClient();
@@ -49,7 +60,7 @@ const fetchActiveRows = unstable_cache(
     return (data ?? []) as unknown as CurriculumLessonRow[];
   },
   ['curriculum-active-rows'],
-  { tags: [CURRICULUM_CACHE_TAG] },
+  { tags: [CURRICULUM_CACHE_TAG], revalidate: 120 },
 );
 
 // ── Row → legacy CurriculumLesson mapping ───────────────────────────────────────

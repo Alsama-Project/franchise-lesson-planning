@@ -155,6 +155,18 @@
         "reviewUnresolved": "مراجعة {count} غير محلولة",
         "upload": "رفع ملف .xlsx"
       },
+      "reviewModal": {
+        "title": "غير محلولة — {subject}",
+        "subtitle": "{count} درسًا نشطًا بدون ناتج يومي. صفوف بنيوية سليمة؛ لا شيء يحتاج إلى إصلاح.",
+        "colKey": "مفتاح الدرس",
+        "colYear": "السنة",
+        "colWeek": "الأسبوع",
+        "colPeriod": "الحصة",
+        "weekly": "—",
+        "loading": "جارٍ التحميل…",
+        "empty": "لا صفوف غير محلولة.",
+        "close": "إغلاق"
+      },
       "badge": {
         "syncing": "جارٍ المزامنة…",
         "syncedJustNow": "تمت المزامنة الآن",

@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import type { CurriculumSubjectStatus } from '@/lib/console';
-import { importCurriculumAction } from '@/lib/curriculum/actions';
+import { importCurriculumAction, listUnresolvedCurriculumRows } from '@/lib/curriculum/actions';
+import type { UnresolvedCurriculumRow } from '@/lib/curriculum/types';
 import { formatNumber } from '@/lib/format';
 import { GhostButton, SectionCard } from './ui';
 import { Stat, UploadProgressBar, UploadStatusBadge, hhmm, timeAgo } from './upload';
@@ -66,7 +67,10 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
 
   const run = status.latestRun;
   const lastSyncedIso = run?.finishedAt ?? run?.startedAt ?? null;
-  const unresolved = run?.unresolved ?? 0;
+  // LIVE count (active rows with no daily outcome), not the stored run count which can
+  // drift — drives both the "Unresolved" stat and the persistent Review button.
+  const unresolved = status.unresolvedLive;
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // ── Derive the single discriminated state ──
   // Precedence: in-flight upload → transient client result → persisted run. A run
@@ -112,6 +116,7 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
   const noTrigger = true;
 
   return (
+    <>
     <SectionCard
       title={<span dir="auto">{status.name}</span>}
       action={<StateBadge state={state} lastSyncedIso={lastSyncedIso} />}
@@ -124,7 +129,7 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
           />
           <Stat
             label={t('curriculum.stat.unresolved')}
-            value={run?.unresolved != null ? formatNumber(run.unresolved, locale) : t('common.dash')}
+            value={formatNumber(unresolved, locale)}
           />
           <Stat
             label={t('curriculum.stat.deactivated')}
@@ -152,14 +157,10 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
                   {t('curriculum.action.refresh')}
                 </GhostButton>
               )}
-              {state.kind === 'success' && unresolved > 0 ? (
-                <GhostButton
-                  tone="teal"
-                  onClick={() => {
-                    // TODO: no unresolved-review surface exists yet — that's a
-                    // separate slice. Wire this to it when it lands.
-                  }}
-                >
+              {/* Persistent whenever the LIVE unresolved count > 0 (not just the
+                  transient post-upload success state). Opens the inspector list. */}
+              {unresolved > 0 ? (
+                <GhostButton tone="teal" onClick={() => setReviewOpen(true)}>
                   {t('curriculum.action.reviewUnresolved', {
                     count: formatNumber(unresolved, locale),
                   })}
@@ -203,6 +204,123 @@ function CurriculumCard({ status }: { status: CurriculumSubjectStatus }) {
         </div>
       ) : null}
     </SectionCard>
+      {reviewOpen ? (
+        <UnresolvedReviewModal
+          subjectCode={status.code}
+          subjectName={status.name}
+          count={unresolved}
+          onClose={() => setReviewOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The "Review N unresolved" inspector — a read-only modal listing a subject's active
+ * rows with no daily outcome (lesson_key / year / week / period). Loads the live list
+ * on open via the server action; mutates nothing.
+ */
+function UnresolvedReviewModal({
+  subjectCode,
+  subjectName,
+  count,
+  onClose,
+}: {
+  subjectCode: string;
+  subjectName: string;
+  count: number;
+  onClose: () => void;
+}) {
+  const t = useTranslations('settings');
+  const locale = useLocale();
+  const [rows, setRows] = useState<UnresolvedCurriculumRow[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listUnresolvedCurriculumRows(subjectCode)
+      .then((r) => {
+        if (alive) setRows(r);
+      })
+      .catch(() => {
+        if (alive) setRows([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [subjectCode]);
+
+  // Close on Escape; backdrop click also closes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[14px] bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-[#EDE7E0] px-[20px] py-[16px]">
+          <h2 className="text-[15px] font-semibold text-[#2C2621]" dir="auto">
+            {t('curriculum.reviewModal.title', { subject: subjectName })}
+          </h2>
+          <p className="mt-1 text-[12.5px] text-[#A79E94]">
+            {t('curriculum.reviewModal.subtitle', { count: formatNumber(count, locale) })}
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-[20px] py-[12px]">
+          {rows === null ? (
+            <p className="py-6 text-center text-[13px] text-[#A79E94]">
+              {t('curriculum.reviewModal.loading')}
+            </p>
+          ) : rows.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-[#A79E94]">
+              {t('curriculum.reviewModal.empty')}
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[#A79E94]">
+                  <th className="py-1 pr-3 font-medium">{t('curriculum.reviewModal.colKey')}</th>
+                  <th className="py-1 pr-3 font-medium">{t('curriculum.reviewModal.colYear')}</th>
+                  <th className="py-1 pr-3 font-medium">{t('curriculum.reviewModal.colWeek')}</th>
+                  <th className="py-1 font-medium">{t('curriculum.reviewModal.colPeriod')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.lessonKey} className="border-t border-[#F1ECE6] text-[#4A433C]">
+                    <td className="py-1 pr-3 font-mono text-[11.5px] break-all">{r.lessonKey}</td>
+                    <td className="py-1 pr-3">{formatNumber(r.year, locale)}</td>
+                    <td className="py-1 pr-3">{formatNumber(r.week, locale)}</td>
+                    <td className="py-1">
+                      {r.period != null
+                        ? formatNumber(r.period, locale)
+                        : t('curriculum.reviewModal.weekly')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="border-t border-[#EDE7E0] px-[20px] py-[12px] text-right">
+          <GhostButton tone="teal" onClick={onClose}>
+            {t('curriculum.reviewModal.close')}
+          </GhostButton>
+        </div>
+      </div>
+    </div>
   );
 }
 

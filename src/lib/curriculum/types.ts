@@ -66,6 +66,14 @@ export interface ParsedCurriculumRow {
   monthly_lo: string | null;
 }
 
+/** One active curriculum row with no daily outcome — the "unresolved" inspector list. */
+export interface UnresolvedCurriculumRow {
+  lessonKey: string;
+  year: number;
+  week: number;
+  period: number | null;
+}
+
 /** Where an import came from. */
 export type CurriculumSyncSource = 'n8n' | 'upload';
 

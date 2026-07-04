@@ -88,11 +88,11 @@ function GroupCard({ group }: { group: ClassGroup }) {
         className="flex w-full items-center justify-between gap-3 px-[17px] py-[15px] text-start"
       >
         <div className="min-w-0">
-          <div dir="auto" className="truncate text-[13px] font-medium text-text-faint">
+          <div dir="auto" className="truncate text-[12px] font-medium text-text-faint">
             {group.subjectName}
             {group.centreName ? <span className="text-text-faint"> · {group.centreName}</span> : null}
           </div>
-          <div className="mt-[1px] text-[20px] font-bold leading-[1.1] text-ink">
+          <div className="mt-[1px] text-[16px] font-bold leading-[1.1] text-ink">
             {t('card.year', { n: formatNumber(group.year, locale) })}
           </div>
         </div>

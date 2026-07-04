@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { LinkPending } from '@/components/ui/LinkPending';
 import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
 
-const BASE = 'block rounded-[14px] border border-border bg-surface px-[17px] py-[15px]';
+const BASE = 'block rounded-[14px] border border-border bg-surface px-[15px] py-[13px]';
 
 /**
  * The flat lesson card surface shared by the Calendar and Status views — white,

@@ -18,6 +18,7 @@
 // cards here — they render as the grouped accordion (see NotStartedGroups).
 
 import { useLocale, useTranslations } from 'next-intl';
+import { cn } from '@/lib/cn';
 import { CardShell } from '@/components/weekly-overview/CardShell';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
 import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
@@ -36,7 +37,20 @@ function weekdayKey(weekday: number): Weekday {
  * or the read-only review view), so the "Open / Review" pill is a styled affordance,
  * not a nested button.
  */
-function PlannedCard({ card, readOnly = false }: { card: PlanCard; readOnly?: boolean }) {
+function PlannedCard({
+  card,
+  readOnly = false,
+  showSchedule = true,
+}: {
+  card: PlanCard;
+  readOnly?: boolean;
+  /**
+   * Show the "Mon · P2" day·period line. True on the Status view (the
+   * differentiator within a status column); false on the Calendar view, where the
+   * day and period already live in the column header.
+   */
+  showSchedule?: boolean;
+}) {
   const t = useTranslations('board');
   const locale = useLocale();
 
@@ -50,25 +64,33 @@ function PlannedCard({ card, readOnly = false }: { card: PlanCard; readOnly?: bo
     <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div dir="auto" className="truncate text-[13px] font-medium text-text-faint">
+          <div dir="auto" className="truncate text-[12px] font-medium text-text-faint">
             {card.subjectName}
             {card.centreName ? <span className="text-text-faint"> · {card.centreName}</span> : null}
           </div>
-          <div className="mt-[2px] text-[20px] font-bold leading-[1.1] text-ink">
+          <div className="mt-[2px] text-[16px] font-bold leading-[1.1] text-ink">
             {t('card.year', { n: formatNumber(card.year, locale) })}
           </div>
         </div>
         {card.owner ? <OwnerAvatar owner={card.owner} size={38} /> : null}
       </div>
 
-      <div className="mt-[13px]">
-        <div className="text-[11px] font-semibold text-text-faint">{dayPeriod}</div>
-        <p dir="auto" className="mt-[3px] line-clamp-2 text-[13px] leading-[1.4] text-text-muted">
+      <div className="mt-[11px]">
+        {showSchedule ? (
+          <div className="text-[11px] font-semibold text-text-faint">{dayPeriod}</div>
+        ) : null}
+        <p
+          dir="auto"
+          className={cn(
+            'line-clamp-2 text-[13px] leading-[1.4] text-text-muted',
+            showSchedule && 'mt-[3px]',
+          )}
+        >
           {topic}
         </p>
       </div>
 
-      <div className="mt-[14px] flex items-center justify-between gap-2">
+      <div className="mt-[12px] flex items-center justify-between gap-2">
         <StatusChip status={card.status} />
         <span className="inline-flex flex-shrink-0 items-center rounded-[8px] border border-action-border px-[14px] py-[5px] text-[11.5px] font-semibold text-teal">
           {readOnly ? t('card.review') : t('card.open')}
@@ -86,7 +108,9 @@ export function CalendarLessonCard({
   card: PlanCard;
   readOnly?: boolean;
 }) {
-  return <PlannedCard card={card} readOnly={readOnly} />;
+  // The Calendar column header already carries the day and period, so the card's
+  // day·period line is redundant here — drop it (topic moves up under the header).
+  return <PlannedCard card={card} readOnly={readOnly} showSchedule={false} />;
 }
 
 /** Status-view planned card (individual cards in the four real-status columns). */

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "title": "Something went wrong",
+    "body": "This page hit an unexpected error. You can try again — if it keeps happening, the reference code below helps us track it down.",
+    "tryAgain": "Try again",
+    "reference": "Reference: {digest}"
+  }
+}

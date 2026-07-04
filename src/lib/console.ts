@@ -548,6 +548,13 @@ export interface CurriculumSubjectStatus {
    * the failure, so the standing `latestRun` can't answer "when did it last work".
    */
   lastGoodAt: string | null;
+  /**
+   * LIVE count of active rows with no daily outcome, computed from `curriculum_lesson`
+   * — not the stored `curriculum_sync_run.unresolved` (a point-in-time parse count that
+   * can drift). Drives the "Review N unresolved" inspector so the number and the list
+   * always agree with the current table.
+   */
+  unresolvedLive: number;
 }
 
 /**
@@ -558,13 +565,21 @@ export async function getCurriculumStatus(
   subjectIds?: string[],
 ): Promise<CurriculumSubjectStatus[]> {
   const supabase = await createClient();
-  const [{ data: subjects }, { data: runs }] = await Promise.all([
+  const [{ data: subjects }, { data: runs }, { data: unresolvedRows }] = await Promise.all([
     supabase.from('subjects').select('id, name, code').is('archived_at', null).order('name'),
     supabase
       .from('curriculum_sync_run')
       .select('subject_code, status, rows_upserted, rows_deactivated, unresolved, started_at, finished_at, error')
       .order('started_at', { ascending: false }),
+    // Live "unresolved" per subject: active rows with no daily outcome. Cheap (a few
+    // hundred single-column rows) and always current, unlike the stored run count.
+    supabase.from('curriculum_lesson').select('subject_code').eq('is_active', true).is('daily_outcome', null),
   ]);
+
+  const unresolvedByCode = new Map<string, number>();
+  for (const r of (unresolvedRows ?? []) as Array<{ subject_code: string }>) {
+    unresolvedByCode.set(r.subject_code, (unresolvedByCode.get(r.subject_code) ?? 0) + 1);
+  }
 
   let subjectRows = (subjects ?? []) as Array<{ id: string; name: string; code: string }>;
   if (subjectIds) {
@@ -614,6 +629,7 @@ export async function getCurriculumStatus(
           }
         : null,
       lastGoodAt: lastGood?.finished_at ?? null,
+      unresolvedLive: unresolvedByCode.get(s.code) ?? 0,
     };
   });
 }

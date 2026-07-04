@@ -142,7 +142,7 @@ export function ReviewStep({
   return (
     <div className="mt-[22px]">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="text-[22px] font-semibold">{t('review.heading')}</div>
+        <div className="text-[21px] font-bold">{t('review.heading')}</div>
         <div className="flex flex-wrap items-center gap-4">
           {status === 'approved' ? (
             <a

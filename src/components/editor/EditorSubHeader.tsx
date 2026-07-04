@@ -59,10 +59,10 @@ export function EditorSubHeader({
   const metaLine = [dateLabel, classContext.schoolName].filter(Boolean).join(' · ');
 
   return (
-    <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
+    <div className="border-b border-[#EFE8DD] px-[22px] py-[13px] lg:px-[30px]">
       <Link
         href={backHref}
-        className="mb-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-600 transition-colors hover:text-ink"
+        className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-neutral-600 transition-colors hover:text-ink"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rtl:-scale-x-100">
           <path d="M15 18l-6-6 6-6" />
@@ -71,7 +71,7 @@ export function EditorSubHeader({
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-[10px]">
-          <span className="text-[19px] font-semibold">
+          <span className="text-[20px] font-bold">
             {t('subheader.year', { year: formatNumber(classContext.year, locale) })}
             {scopeSuffix ? ` · ${scopeSuffix}` : ''}
           </span>

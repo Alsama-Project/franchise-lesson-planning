@@ -126,7 +126,7 @@ export function ObjectiveStep({
 
   return (
     <div className="mt-1.5">
-      <div className="text-[22px] font-semibold">{t('heading')}</div>
+      <div className="text-[21px] font-bold">{t('heading')}</div>
 
       <div className="mt-[18px] flex flex-wrap gap-1.5">
         {SMARTT_LETTERS.map((l) => (

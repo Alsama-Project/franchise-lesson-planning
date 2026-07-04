@@ -47,14 +47,14 @@
       "notWritten": "لم يُكتب بعد"
     },
     "curriculum": {
-      "sectionTitle": "سياق المنهج",
       "dailyOutcome": "الناتج اليومي",
       "thisWeek": "هذا الأسبوع",
       "monthlyObjective": "الهدف الشهري",
       "thisMonth": "هذا الشهر",
       "grammarVocab": "القواعد والمفردات",
       "theme": "الموضوع",
-      "yesterdayOutcome": "ناتج تعلّم الأمس"
+      "yesterdayOutcome": "ناتج تعلّم الأمس",
+      "dailyAndObjectives": "الناتج اليومي والأهداف"
     },
     "teach": {
       "newContentTitle": "تدريس المحتوى الجديد",
@@ -82,7 +82,8 @@
       "allAdded": "تمت إضافة كل التقنيات.",
       "notePlaceholder": "أضف ملاحظة…",
       "remove": "إزالة {name}",
-      "techniqueFallback": "تقنية"
+      "techniqueFallback": "تقنية",
+      "heading": "اربط الدرس معًا"
     },
     "review": {
       "heading": "راجع الدرس بأكمله",

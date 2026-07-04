@@ -59,10 +59,10 @@ export function EditorSubHeader({
   const metaLine = [dateLabel, classContext.schoolName].filter(Boolean).join(' · ');
 
   return (
-    <div className="border-b border-[#EFE8DD] px-[22px] py-[13px] lg:px-[30px]">
+    <div className="border-b border-[#EFE8DD] px-[22px] py-[9px] lg:px-[30px]">
       <Link
         href={backHref}
-        className="mb-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-neutral-600 transition-colors hover:text-ink"
+        className="mb-1.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-neutral-600 transition-colors hover:text-ink"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rtl:-scale-x-100">
           <path d="M15 18l-6-6 6-6" />

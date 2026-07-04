@@ -89,15 +89,20 @@ export function ObjectiveStep({
   // check has run), then auto-expands whenever a check returns results so the
   // teacher sees the outcome without an extra click.
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Auto-expand when a fresh result arrives — derived from the `checkResult` prop
+  // during render (React's "adjust state on a prop change" pattern) rather than an
+  // effect, so the disclosure opens in the same commit the result lands, with no
+  // extra render pass and no setState-in-effect.
+  const [seenCheckResult, setSeenCheckResult] = useState(checkResult);
+  if (checkResult !== seenCheckResult) {
+    setSeenCheckResult(checkResult);
+    if (checkResult) setFeedbackOpen(true);
+  }
 
   useEffect(() => {
     const el = editableRef.current;
     if (el && el.textContent !== remainder) el.textContent = remainder;
   }, [remainder]);
-
-  useEffect(() => {
-    if (checkResult) setFeedbackOpen(true);
-  }, [checkResult]);
 
   // Focus the editable region and drop the caret at the END of any existing text.
   // Used when the teacher clicks the fixed stem or the padding around the field —

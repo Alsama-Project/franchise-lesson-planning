@@ -3,21 +3,22 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { EditorCurriculumContext } from '@/lib/editor/load-plan';
-import { CurriculumBand } from '@/components/editor/CurriculumBand';
 
 /**
- * The collapsible cream curriculum card that heads the lesson-plan pane: a locked
- * (`given`/cream = curriculum) surface whose body is the existing {@link
- * CurriculumBand} (stacked learning outcomes + Grammar & vocabulary + Theme, all
- * bound to the loaded curriculum data). Cream = locked, so nothing here is
- * editable — only the collapse/expand toggle is interactive. Renders nothing when
- * the lesson has no curriculum context.
+ * The collapsible cream curriculum card pinned at the top of the lesson-plan
+ * pane: a locked (`given`/cream = curriculum) surface holding the stacked learning
+ * outcomes (dominant Daily outcome + muted week/month context) and two nested
+ * WHITE sub-cards — Grammar & vocabulary, Theme. Cream = locked, so nothing here
+ * is editable; only the collapse/expand toggle is interactive. Renders nothing
+ * when the lesson has no curriculum context.
  */
 export function CurriculumCard({ curriculum }: { curriculum: EditorCurriculumContext | null }) {
   const t = useTranslations('wizard.curriculum');
   const [open, setOpen] = useState(true);
 
   if (!curriculum) return null;
+
+  const hasContext = !!(curriculum.weekLO || curriculum.monthlyLO || curriculum.monthLO);
 
   return (
     <section className="overflow-hidden rounded-[14px] border border-given-border bg-given">
@@ -49,9 +50,60 @@ export function CurriculumCard({ curriculum }: { curriculum: EditorCurriculumCon
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
+
       {open ? (
         <div className="px-[13px] pb-[14px] pt-[2px]">
-          <CurriculumBand curriculum={curriculum} />
+          {/* Stacked learning outcomes — dominant Daily outcome, muted context. */}
+          <div>
+            <div className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-given-label">
+              {t('dailyOutcome')}
+            </div>
+            <div dir="auto" className="mt-[6px] text-[15px] font-semibold leading-[1.4] text-neutral-900">
+              {curriculum.dailyLO || '—'}
+            </div>
+            {hasContext ? (
+              <div className="mt-[11px] flex flex-col gap-[6px] border-t border-given-border pt-[10px] text-[12px] leading-[1.45] text-neutral-700">
+                {curriculum.weekLO ? (
+                  <div dir="auto">
+                    <span className="font-semibold text-given-label">{t('thisWeek')} · </span>
+                    {curriculum.weekLO}
+                  </div>
+                ) : null}
+                {curriculum.monthlyLO ? (
+                  <div dir="auto">
+                    <span className="font-semibold text-given-label">{t('monthlyObjective')} · </span>
+                    {curriculum.monthlyLO}
+                  </div>
+                ) : null}
+                {curriculum.monthLO ? (
+                  <div dir="auto">
+                    <span className="font-semibold text-given-label">{t('thisMonth')} · </span>
+                    {curriculum.monthLO}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Two nested WHITE sub-cards — Grammar & vocabulary, Theme. */}
+          <div className="mt-[12px] grid grid-cols-1 gap-[10px] sm:grid-cols-2">
+            <div className="rounded-[10px] border border-border bg-surface px-[12px] py-[10px]">
+              <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
+                {t('grammarVocab')}
+              </div>
+              <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.5] text-neutral-800">
+                {curriculum.grammarVocab || '—'}
+              </div>
+            </div>
+            <div className="rounded-[10px] border border-border bg-surface px-[12px] py-[10px]">
+              <div className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-given-label">
+                {t('theme')}
+              </div>
+              <div dir="auto" className="mt-[5px] text-[12.5px] leading-[1.45] text-neutral-800">
+                {curriculum.theme || '—'}
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

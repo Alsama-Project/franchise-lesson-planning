@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import type { Block, LessonBlockType, TeachingPhase } from '@/types/lesson';
+import type { Block, LessonBlockType, PlanStatus, TeachingPhase } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import { blockMinutes, IN_SESSION_TARGET_MINUTES } from '@/lib/blocks';
 import { formatNumber } from '@/lib/format';
@@ -41,6 +41,8 @@ interface PartRow {
  * Homework (excluded from the 50) is shown separately.
  */
 export function ReviewStep({
+  planId,
+  status,
   blocks,
   total,
   materials,
@@ -53,6 +55,8 @@ export function ReviewStep({
   onRoutinesMinutes,
   locked = false,
 }: {
+  planId: string;
+  status: PlanStatus;
   blocks: Block[];
   total: number;
   materials: string[];
@@ -140,6 +144,19 @@ export function ReviewStep({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="text-[22px] font-semibold">{t('review.heading')}</div>
         <div className="flex flex-wrap items-center gap-4">
+          {status === 'approved' ? (
+            <a
+              href={`/api/pdf/plan/${planId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-[7px] rounded-[9px] border border-status-approved-border bg-status-approved-bg px-[13px] py-2 text-[13px] font-semibold text-status-approved hover:bg-[#d6ebe0]"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+              </svg>
+              {t('review.downloadPdf')}
+            </a>
+          ) : null}
           <div className="inline-flex items-center gap-2 text-[13px]">
             <span className="text-neutral-600">{t('review.inSessionTotal')}</span>
             <span className={`font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>

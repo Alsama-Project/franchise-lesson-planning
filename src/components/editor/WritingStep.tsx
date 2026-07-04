@@ -1,66 +1,68 @@
 'use client';
 
-// The shared two-pane layout for steps 2 (Teach it) and 3 (Practise). The LEFT
-// pane is the teacher's writing — "What the teacher does" / "What students do" —
-// plus this section's "Attached from the bank" list and, on Practise, the
-// student worksheet builder. The RIGHT pane is the embedded Resource Bank panel
-// (a fixed 396px column, a 1px divider, no shadow), identical on both steps.
+// The "Teach it" (new content) step body: the phase header, the two pink-editable
+// teacher/student textareas, and the "Attached from the bank" list. Browsing the
+// resource bank is done through the shared ResourceBankModal opened from here (the
+// same picker the worksheet uses) — there is no embedded bank browser inline; the
+// left pane shows only what has been attached.
 
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { Block, TeachingPhase } from '@/types/lesson';
-import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
+import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import { PhaseSelect } from '@/components/editor/PhaseSelect';
 import { FieldLabel, Textarea } from '@/components/editor/fields';
 import { AttachedList } from '@/components/editor/AttachedList';
-import { ResourcePanel } from '@/components/editor/ResourcePanel';
+import { ResourceBankModal } from '@/components/editor/worksheet/ResourceBankModal';
+import type { WorksheetContext } from '@/components/editor/worksheet/context';
+
+function PlusIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
 
 export function WritingStep({
   title,
   block,
   onPatch,
-  subjectId,
+  worksheetContext,
   vocabulary,
-  folders,
   attachedResources,
   onAttach,
   onRemove,
-  worksheetSlot,
   locked = false,
 }: {
   title: string;
   block: Block;
   onPatch: (patch: Partial<Block>) => void;
-  subjectId: string | null;
+  /** Subject/year/theme scoping for the resource-bank picker. */
+  worksheetContext: WorksheetContext;
   vocabulary: TagsByDimension;
-  folders: Folder[];
   attachedResources: ResourceWithTags[];
   onAttach: (resource: ResourceWithTags) => void;
   onRemove: (resourceId: string) => void;
-  /** The student worksheet builder, rendered on the Practise step only. */
-  worksheetSlot?: ReactNode;
   /** When true the plan is submitted/approved: every control inside is disabled
    *  via a single `disabled` fieldset, so the step is read-only. */
   locked?: boolean;
 }) {
   const t = useTranslations('wizard.teach');
-  return (
-    <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border disabled:opacity-75">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-[14px] border-b border-[#EFE8DD] px-6 py-[18px]">
-        <div>
-          <div className="flex flex-wrap items-center gap-[10px]">
-            <span className="text-[20px] font-semibold">{title}</span>
-            <PhaseSelect
-              value={block.phase}
-              onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
-            />
-          </div>
-        </div>
-      </div>
+  const [bankOpen, setBankOpen] = useState(false);
 
-      {/* Two panes: writing (left) · embedded resource bank (right, 396px) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_396px]">
+  return (
+    <>
+      <fieldset disabled={locked} className="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-border disabled:opacity-75">
+        {/* Header */}
+        <div className="flex flex-wrap items-center gap-[10px] border-b border-[#EFE8DD] px-6 py-[18px]">
+          <span className="text-[20px] font-semibold">{title}</span>
+          <PhaseSelect
+            value={block.phase}
+            onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}
+          />
+        </div>
+
         <div className="flex flex-col gap-[18px] p-6">
           <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
             <div>
@@ -87,31 +89,33 @@ export function WritingStep({
             </div>
           </div>
 
-          {worksheetSlot ? (
-            <div>
-              <div className="mb-[8px] flex items-center gap-[8px]">
-                <span className="text-[12px] font-bold uppercase tracking-[0.05em] text-neutral-700">
-                  {t('worksheetTitle')}
-                </span>
-                <span className="text-[11px] text-text-faint">
-                  {t('worksheetHint')}
-                </span>
-              </div>
-              {worksheetSlot}
-            </div>
-          ) : null}
-
-          <AttachedList resources={attachedResources} onRemove={onRemove} />
+          <div>
+            <AttachedList resources={attachedResources} onRemove={onRemove} />
+            <button
+              type="button"
+              onClick={() => setBankOpen(true)}
+              className="mt-[10px] inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-teal-tint-border bg-teal-tint px-[12px] py-[8px] text-[13px] font-semibold text-teal hover:bg-[#d8ebe6]"
+            >
+              <PlusIcon />
+              {t('addFromBank')}
+            </button>
+          </div>
         </div>
+      </fieldset>
 
-        <ResourcePanel
-          subjectId={subjectId}
+      {/* The bank picker lives OUTSIDE the disabled fieldset so it stays fully
+          interactive; it can only be opened while the plan is unlocked. */}
+      {bankOpen ? (
+        <ResourceBankModal
+          ctx={worksheetContext}
           vocabulary={vocabulary}
-          folders={folders}
-          attachedIds={block.resourceIds ?? []}
-          onAttach={onAttach}
+          onClose={() => setBankOpen(false)}
+          onAdd={(resource) => {
+            onAttach(resource);
+            setBankOpen(false);
+          }}
         />
-      </div>
-    </fieldset>
+      ) : null}
+    </>
   );
 }

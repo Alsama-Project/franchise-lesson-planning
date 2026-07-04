@@ -27,17 +27,20 @@ import {
   unsubmitLessonPlan,
 } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
+import Link from 'next/link';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
+import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
+import { LockedBanner } from '@/components/editor/LockedBanner';
 import { CurriculumCard } from '@/components/editor/CurriculumCard';
 import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
+import { ObjectiveBanner } from '@/components/editor/ObjectiveBanner';
 import { WritingStep } from '@/components/editor/WritingStep';
 import { PractiseStep } from '@/components/editor/PractiseStep';
 import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
-import Link from 'next/link';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -73,8 +76,8 @@ export function LessonPlanEditor({
   data: EditorPlanData;
   /** Whether the plan carries any coordinator annotations (comments/suggestions).
    *  The wizard does NOT embed the response thread — the teacher responds on
-   *  /plan/[id]/view (one surface). When true, we show a lightweight pointer that
-   *  links there; the accept/reject/resolve/reply pane lives only on the view. */
+   *  /plan/[id]/view (one surface). When true, the Review step shows a lightweight
+   *  pointer that links there; the accept/reject/reply pane lives only on the view. */
   hasFeedback: boolean;
   /** Where "‹ This week" returns — the board week this plan was opened from. */
   backHref?: string;
@@ -83,6 +86,7 @@ export function LessonPlanEditor({
   const t = useTranslations('wizard');
   const tReview = useTranslations('review');
 
+  const [step, setStep] = useState(1);
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
   const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
   const [worksheet, setWorksheet] = useState<unknown>(() => plan.worksheet);
@@ -111,10 +115,9 @@ export function LessonPlanEditor({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // The single source of truth for "the lesson PLAN is locked": one derived value.
-  // `submitted` and `approved` both lock the plan pane (objective, phases, link-it,
-  // review) read-only; `in_progress` and `needs_review` leave it editable. The
-  // student WORKSHEET pane is deliberately exempt — it stays editable at every
-  // status (its writes go through `saveWorksheet`, never gated here).
+  // `submitted` and `approved` both lock the plan pane read-only; `in_progress`
+  // and `needs_review` leave it editable. The student WORKSHEET pane is exempt —
+  // it stays editable at every status (its writes go through `saveWorksheet`).
   const locked = status === 'submitted' || status === 'approved';
 
   const total = useMemo(() => inSessionMinutes(blocks), [blocks]);
@@ -186,6 +189,10 @@ export function LessonPlanEditor({
       if (wsTimer.current) clearTimeout(wsTimer.current);
     };
   }, [worksheet, plan.id]);
+
+  const goStep = useCallback((n: number) => {
+    setStep(Math.max(1, Math.min(STEP_COUNT, n)));
+  }, []);
 
   const patchType = useCallback((type: LessonBlockType, patch: Partial<Block>) => {
     setBlocks((bs) => patchBlock(bs, type, patch));
@@ -299,6 +306,17 @@ export function LessonPlanEditor({
     }
   }
 
+  const submitControl = (
+    <SubmitControl
+      status={status}
+      canSubmit={canSubmit}
+      submitting={submitting}
+      unlocking={unlocking}
+      onSubmit={handleSubmit}
+      onUnlock={handleUnlock}
+    />
+  );
+
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
 
@@ -344,11 +362,18 @@ export function LessonPlanEditor({
     [classContext, curriculum, linkIt, techniqueLabels, plan.id, plan.curriculum_lesson_id, plan.year],
   );
 
+  const errorBox = submitError ? (
+    <div className="mt-4 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-3 text-[13px] text-pink">
+      {submitError}
+    </div>
+  ) : null;
+
   return (
-    // Full-bleed, viewport-tall shell (past `lg`): the context strip + stage-action
-    // row pin to the top and the two panes fill the rest, each scrolling on its
-    // own. Below `lg` it falls back to normal document flow (panes stack, the page
-    // scrolls) so a narrow viewport isn't split into two tiny scroll regions.
+    // Full-bleed, viewport-tall shell (past `lg`): the context strip + pipeline
+    // tracker pin to the top and the working area fills the rest with full height.
+    // On Step 1 the working area is one full-width column; on Steps 2–5 it splits
+    // into plan (left) · persistent worksheet (right), each scrolling on its own.
+    // Below `lg` it falls back to normal document flow (panes stack, page scrolls).
     <div className="-mx-6 -my-8 flex flex-col lg:-mx-10 lg:h-[calc(100vh-var(--app-chrome-height,64px))]">
       <div className="shrink-0">
         <EditorSubHeader
@@ -360,160 +385,156 @@ export function LessonPlanEditor({
         />
       </div>
 
-      {/* Stage-action row: the plan's pipeline expressed as contextual actions
-          (Submit for approval → Unlock → Recall) plus the approved-only PDF export.
-          No content "next" — the wizard is gone; these are the status transitions. */}
-      <div className="shrink-0 border-b border-[#EFE8DD] px-[22px] py-[11px] lg:px-[30px]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-h-[34px] flex items-center">
-            {locked ? (
-              <span className="inline-flex items-center gap-[8px] text-[13px] font-semibold text-[#186155]">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <rect x="4" y="11" width="16" height="9" rx="2" />
-                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                </svg>
-                {status === 'approved' ? t('lockedBanner.approvedTitle') : t('lockedBanner.title')}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-[9px]">
-            {status === 'approved' ? (
-              <a
-                href={`/api/pdf/plan/${plan.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-[7px] rounded-[9px] border border-status-approved-border bg-status-approved-bg px-[13px] py-2 text-[13px] font-semibold text-status-approved hover:bg-[#d6ebe0]"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
-                </svg>
-                {t('review.downloadPdf')}
-              </a>
-            ) : null}
-            <SubmitControl
-              status={status}
-              canSubmit={canSubmit}
-              submitting={submitting}
-              unlocking={unlocking}
-              onSubmit={handleSubmit}
-              onUnlock={handleUnlock}
-            />
-          </div>
-        </div>
-        {submitError ? (
-          <div className="mt-2 rounded-[12px] border border-status-review-border bg-status-review-bg px-4 py-2.5 text-[13px] text-pink">
-            {submitError}
-          </div>
-        ) : null}
+      {/* Pipeline tracker: the 5-step wizard as clickable nodes; Back / Next on
+          steps 1–4, the SubmitControl on step 5 (states/colours unchanged). */}
+      <div className="shrink-0">
+        <Stepper
+          step={step}
+          onGo={goStep}
+          onBack={() => goStep(step - 1)}
+          onNext={() => goStep(step + 1)}
+          nextLabel={step === 4 ? t('nav.toReview') : t('nav.next')}
+          submitSlot={submitControl}
+        />
       </div>
 
-      {/* The working area: lesson plan (left) · student worksheet (right). */}
+      {/* Working area */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* LEFT — lesson plan, scrolls independently past `lg`. */}
-        <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
-          <div className="mx-auto max-w-[820px]">
-            <CurriculumCard curriculum={curriculum} />
-
-            <div className="mt-[22px]">
-              <ObjectiveStep
-                remainder={remainder}
-                onChange={setRemainder}
-                checkResult={checkResult}
-                checking={checking}
-                checkError={checkError}
-                onCheck={handleCheck}
-                locked={locked}
-              />
-            </div>
-
-            {newContentBlock ? (
-              <WritingStep
-                title={t('teach.newContentTitle')}
-                block={newContentBlock}
-                onPatch={(patch) => patchType('new_content', patch)}
-                subjectId={resourceBank.subjectId}
-                vocabulary={resourceBank.vocabulary}
-                folders={resourceBank.folders}
-                attachedResources={attachedFor(newContentBlock)}
-                onAttach={(resource) => attachResource('new_content', resource)}
-                onRemove={(resourceId) => detachResource('new_content', resourceId)}
-                locked={locked}
-              />
-            ) : null}
-
-            {practiceBlock ? (
-              <PractiseStep
-                block={practiceBlock}
-                onPatch={(patch) => patchType('independent_practice', patch)}
-                showWorksheet={false}
-                locked={locked}
-              />
-            ) : null}
-
-            <LinkItStep
-              linkIt={linkIt}
-              cfuActivities={activitiesByBlock.cfu ?? []}
-              exitActivities={activitiesByBlock.exit_ticket ?? []}
-              previousDailyLO={curriculum?.previousDailyLO ?? ''}
-              onChange={onLinkItChange}
-              locked={locked}
-            />
-
-            <ReviewStep
-              blocks={blocks}
-              total={total}
-              materials={materials}
-              worksheet={worksheet}
-              worksheetContext={worksheetContext}
-              techniqueLabels={techniqueLabels}
-              attachedFor={attachedFor}
-              onMaterialsChange={setMaterials}
-              onBlockMinutes={setBlockMinutes}
-              onRoutinesMinutes={setRoutinesMin}
-              locked={locked}
-            />
-
-            {hasFeedback ? (
+        {step === 1 ? (
+          // STEP 1 — Objective: single full-width column, no worksheet, no divider.
+          <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:px-[30px]">
+            <div className="mx-auto max-w-[860px]">
+              {locked ? (
+                <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
+              ) : null}
+              <CurriculumCard curriculum={curriculum} />
               <div className="mt-[22px]">
-                <Link
-                  href={`/plan/${plan.id}/view`}
-                  className="flex items-center gap-[10px] rounded-[12px] border border-[#CBE1DA] bg-[#EEF6F3] px-[15px] py-[12px] transition-colors hover:bg-[#E4F0EC]"
-                >
-                  <span className="inline-flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full bg-[#1F7A6C] text-white">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13.5px] font-semibold text-[#15433C]">
-                      {tReview('annotations.pointer.title')}
-                    </span>
-                    <span className="block text-[12.5px] text-[#5C6B66]">
-                      {tReview('annotations.pointer.body')}
-                    </span>
-                  </span>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 rtl:-scale-x-100" aria-hidden>
-                    <path d="M9 18l6-6-6-6" />
-                  </svg>
-                </Link>
+                <ObjectiveStep
+                  remainder={remainder}
+                  onChange={setRemainder}
+                  checkResult={checkResult}
+                  checking={checking}
+                  checkError={checkError}
+                  onCheck={handleCheck}
+                  locked={locked}
+                />
               </div>
-            ) : null}
-          </div>
-        </section>
+              {errorBox}
+            </div>
+          </section>
+        ) : (
+          // STEPS 2–5 — split: plan (left) · persistent worksheet (right).
+          <>
+            <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[22px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
+              <div className="mx-auto max-w-[820px]">
+                {locked && step < STEP_COUNT ? (
+                  <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
+                ) : null}
 
-        {/* RIGHT — student worksheet, embedded inline. Editable at EVERY status
-            (never wrapped in the plan-lock fieldset); its edits autosave through
-            `saveWorksheet`. Scrolls independently past `lg`. */}
-        <section className="min-w-0 flex-1 overflow-visible bg-surface-subtle px-[16px] py-[22px] lg:overflow-y-auto lg:px-[22px]">
-          <div className="mx-auto max-w-[900px]">
-            <WorksheetBuilder
-              value={worksheet}
-              onChange={setWorksheet}
-              context={worksheetContext}
-              vocabulary={resourceBank.vocabulary}
-            />
-          </div>
-        </section>
+                <CurriculumCard curriculum={curriculum} />
+
+                <div className="mt-[14px]">
+                  <ObjectiveBanner remainder={remainder} />
+                </div>
+
+                {step === 2 && newContentBlock ? (
+                  <WritingStep
+                    title={t('teach.newContentTitle')}
+                    block={newContentBlock}
+                    onPatch={(patch) => patchType('new_content', patch)}
+                    worksheetContext={worksheetContext}
+                    vocabulary={resourceBank.vocabulary}
+                    attachedResources={attachedFor(newContentBlock)}
+                    onAttach={(resource) => attachResource('new_content', resource)}
+                    onRemove={(resourceId) => detachResource('new_content', resourceId)}
+                    locked={locked}
+                  />
+                ) : null}
+
+                {step === 3 && practiceBlock ? (
+                  <PractiseStep
+                    block={practiceBlock}
+                    onPatch={(patch) => patchType('independent_practice', patch)}
+                    showWorksheet={false}
+                    locked={locked}
+                  />
+                ) : null}
+
+                {step === 4 ? (
+                  <LinkItStep
+                    linkIt={linkIt}
+                    cfuActivities={activitiesByBlock.cfu ?? []}
+                    exitActivities={activitiesByBlock.exit_ticket ?? []}
+                    previousDailyLO={curriculum?.previousDailyLO ?? ''}
+                    onChange={onLinkItChange}
+                    locked={locked}
+                  />
+                ) : null}
+
+                {step === 5 ? (
+                  <ReviewStep
+                    planId={plan.id}
+                    status={status}
+                    blocks={blocks}
+                    total={total}
+                    materials={materials}
+                    worksheet={worksheet}
+                    worksheetContext={worksheetContext}
+                    techniqueLabels={techniqueLabels}
+                    attachedFor={attachedFor}
+                    onMaterialsChange={setMaterials}
+                    onBlockMinutes={setBlockMinutes}
+                    onRoutinesMinutes={setRoutinesMin}
+                    locked={locked}
+                  />
+                ) : null}
+
+                {step === STEP_COUNT && hasFeedback ? (
+                  <div className="mt-[22px]">
+                    <Link
+                      href={`/plan/${plan.id}/view`}
+                      className="flex items-center gap-[10px] rounded-[12px] border border-[#CBE1DA] bg-[#EEF6F3] px-[15px] py-[12px] transition-colors hover:bg-[#E4F0EC]"
+                    >
+                      <span className="inline-flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full bg-[#1F7A6C] text-white">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13.5px] font-semibold text-[#15433C]">
+                          {tReview('annotations.pointer.title')}
+                        </span>
+                        <span className="block text-[12.5px] text-[#5C6B66]">
+                          {tReview('annotations.pointer.body')}
+                        </span>
+                      </span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 rtl:-scale-x-100" aria-hidden>
+                        <path d="M9 18l6-6-6-6" />
+                      </svg>
+                    </Link>
+                  </div>
+                ) : null}
+
+                {errorBox}
+              </div>
+            </section>
+
+            {/* RIGHT — the persistent student worksheet for Steps 2–5. One
+                WorksheetBuilder instance, editable at every step and every plan
+                status (never wrapped in the plan-lock fieldset); edits autosave
+                through `saveWorksheet`. Scrolls independently past `lg`. */}
+            <section className="min-w-0 flex-1 overflow-visible bg-surface-subtle px-[16px] py-[22px] lg:overflow-y-auto lg:px-[22px]">
+              <div className="mx-auto max-w-[900px]">
+                <WorksheetBuilder
+                  value={worksheet}
+                  onChange={setWorksheet}
+                  context={worksheetContext}
+                  vocabulary={resourceBank.vocabulary}
+                />
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

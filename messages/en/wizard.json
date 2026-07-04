@@ -63,7 +63,8 @@
       "teacherPlaceholder": "Model the task, narrate your thinking, set the success criteria…",
       "studentsPlaceholder": "What the class is doing — reading, answering, working in pairs…",
       "worksheetTitle": "Student worksheet",
-      "worksheetHint": "build the sheet students work from"
+      "worksheetHint": "build the sheet students work from",
+      "addFromBank": "Add from bank"
     },
     "practise": {
       "title": "Practise"

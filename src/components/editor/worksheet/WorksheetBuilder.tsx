@@ -605,14 +605,17 @@ export function WorksheetBuilder({
     >
       {/* ── CHROME — two thin rows (view controls, then format toolbar) above the
              scrolling canvas. It is the flex header (FIX C), so it stays pinned and
-             the page scrolls beneath it. No card/panel background — the pane shows
-             through and the white A4 page is the only surface. ──────────────── */}
+             the page scrolls beneath it. A solid white strip separates the controls
+             from the cream page below; `direction: ltr` keeps the tools laid out
+             left-to-right even when the page content is RTL. ──────────────── */}
       <div
         className="ws-no-print"
         style={{
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
+          direction: 'ltr',
+          background: '#fff',
           borderBottom: '1px solid #ECE4D7',
         }}
       >

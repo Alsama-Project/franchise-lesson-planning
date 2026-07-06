@@ -47,6 +47,9 @@ interface AnnotationContextValue {
   /** Whether the plan is editable (suggestions can be accepted): needs_review / in_progress. */
   editable: boolean;
   annotations: Annotation[];
+  /** The number of OPEN annotations (see {@link isOpenAnnotation}) — the shared
+   *  count the pane's "Open · N" tab and the footer's Approve gate both read. */
+  openCount: number;
   /** block.type → display title, so a phase anchor can label its card. */
   phaseTitles: Record<string, string>;
 
@@ -78,6 +81,20 @@ interface AnnotationContextValue {
   forWorksheet: () => Annotation[];
   /** The single pending-or-accepted structured suggestion of a shape on a phase. */
   suggestionFor: (phaseRef: string, shape: 'dur' | 'enum') => Annotation | undefined;
+}
+
+/**
+ * The SINGLE definition of "open" for the review layer — the one both the pane's
+ * "Open · N" tab and the coordinator footer's Approve gate read, so they can never
+ * disagree. An anchored annotation is OPEN while it still needs the teacher's
+ * attention: a still-`pending` suggestion, or an unresolved comment. Decided
+ * suggestions (accepted/rejected) and resolved comments are filed OUT of Open (they
+ * surface under Resolved), so they don't hold Approve back. General (whole-plan)
+ * feedback is not anchored and is excluded, matching what "Open · N" counts.
+ */
+export function isOpenAnnotation(a: Annotation): boolean {
+  if (a.anchorType === 'general') return false;
+  return a.kind === 'suggestion' ? a.status === 'pending' : !a.resolved;
 }
 
 const Ctx = createContext<AnnotationContextValue | null>(null);
@@ -146,6 +163,7 @@ export function AnnotationProvider({
       viewerName,
       editable,
       annotations,
+      openCount: annotations.filter(isOpenAnnotation).length,
       phaseTitles,
       activeId,
       setActiveId,

@@ -1182,3 +1182,45 @@ untouched. i18n-aware: every new string is keyed in `messages/en` + `messages/ar
   hydration drift.
 - No design-reference HTML for the sidebar exists in the repo; the port follows the
   prompt's detailed behavioural/visual spec.
+
+## Phase 9 — Review footer: Approve steps back while anything is open ✅ (this phase)
+
+Presentation-only change to the coordinator review footer (`submitted` state). When
+there is ≥1 **open** annotation (a pending suggestion or an unresolved comment),
+**Return for changes** now leads (filled teal, larger) and **Approve plan** is demoted
+to a teal-outline secondary — still visible and clickable, with the hint *"Resolve open
+comments before approving."* Nothing open → **Approve** leads as before, Return stays
+available as the secondary. No destructive red; exactly one filled-teal button at a time.
+
+### Done
+
+- **Single source of truth for "open".** Added `isOpenAnnotation(a)` +
+  `openCount` on the `AnnotationProvider` context
+  (`src/components/review/annotation/context.tsx`). Open = pending suggestions +
+  unresolved comments (general/whole-plan feedback excluded, matching "Open · N").
+  Both the pane's **Open · N** tab and the footer's Approve gate read this one value,
+  so they can never disagree.
+- **Filing fix (required for the gate to work).** The pane previously counted *every*
+  suggestion as Open forever (`kind === 'suggestion' ? true : …`), so Open could never
+  reach 0 once any suggestion existed — Approve could never become primary. Now decided
+  suggestions (accepted/rejected) file into **Resolved** alongside resolved comments, so
+  they stay visible (with their Accepted/Rejected chip) and no longer hold Approve back.
+- **Footer** (`AnnotationPane.tsx`): `submitted` branch keys off `openCount > 0` for
+  filled-teal-primary vs teal-outline-secondary + the Approve hint. `decidePlan`
+  (return/approve/undo/reopen) is untouched — which button is primary and the hint are
+  the only changes.
+- **i18n**: `annotations.footer.resolveBeforeApprove` added to `messages/en` and
+  `messages/ar`. ⚠️ **Arabic flagged for Kadria** ("عالِج التعليقات المفتوحة قبل
+  الاعتماد."). Counts still render via `formatNumber`.
+
+### Preserved (no change)
+
+- `decidePlan` signature + behaviour; the teacher footer; the annotation pane's
+  structure, actions, cards, and RLS. No schema change.
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes.
+- Footer's open count derives from the same `openCount`/`isOpenAnnotation` the pane's
+  "Open · N" renders, so `Open · 0` ⇒ Approve primary and `Open · 1+` ⇒ Return primary,
+  in lockstep with the pane in every case.

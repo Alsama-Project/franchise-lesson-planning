@@ -14,7 +14,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
 import { decidePlan, submitLessonPlanById } from '@/lib/actions/lesson-plan';
 import { AnnotationCard } from './AnnotationCard';
-import { useAnnotations } from './context';
+import { isOpenAnnotation, useAnnotations } from './context';
 import { A } from './tokens';
 
 export function AnnotationPane() {
@@ -26,6 +26,7 @@ export function AnnotationPane() {
     scope,
     role,
     annotations,
+    openCount,
     filter,
     setFilter,
     create,
@@ -35,12 +36,12 @@ export function AnnotationPane() {
   const general = annotations.filter((a) => a.anchorType === 'general');
   const anchored = annotations.filter((a) => a.anchorType !== 'general');
 
-  // Open = unresolved comments + every suggestion (decided ones stay, marked).
-  // Resolved = resolved comments. (Per the design's filing rule.)
-  const openCards = anchored.filter((a) =>
-    a.kind === 'suggestion' ? true : !a.resolved,
-  );
-  const resolvedCards = anchored.filter((a) => a.kind === 'comment' && a.resolved);
+  // Open vs Resolved share ONE predicate with the footer (isOpenAnnotation): open =
+  // pending suggestions + unresolved comments; resolved = everything else anchored
+  // (decided suggestions + resolved comments), so a decided suggestion stays visible
+  // under Resolved and no longer counts against Open. openCards.length === openCount.
+  const openCards = anchored.filter(isOpenAnnotation);
+  const resolvedCards = anchored.filter((a) => !isOpenAnnotation(a));
   const shown = filter === 'open' ? openCards : resolvedCards;
 
   const total = annotations.length;
@@ -73,7 +74,7 @@ export function AnnotationPane() {
       {total > 0 ? (
         <div className="flex flex-shrink-0 gap-[6px] border-b px-[14px] py-[9px]" style={{ borderColor: A.headBorder }}>
           {(['open', 'resolved'] as const).map((f) => {
-            const count = f === 'open' ? openCards.length : resolvedCards.length;
+            const count = f === 'open' ? openCount : resolvedCards.length;
             const active = filter === f;
             return (
               <button
@@ -141,7 +142,7 @@ export function AnnotationPane() {
       </div>
 
       {/* Footer — role-aware. */}
-      <Footer planId={planId} status={status} scope={scope} role={role} hasAnnotations={total > 0} />
+      <Footer planId={planId} status={status} scope={scope} role={role} openCount={openCount} />
     </section>
   );
 }
@@ -194,13 +195,15 @@ function Footer({
   status,
   scope,
   role,
-  hasAnnotations,
+  openCount,
 }: {
   planId: string;
   status: string;
   scope: string;
   role: string;
-  hasAnnotations: boolean;
+  /** Shared open-annotation count (see isOpenAnnotation) — the SAME value the pane's
+   *  "Open · N" tab shows. Drives which coordinator action leads while `submitted`. */
+  openCount: number;
 }) {
   const t = useTranslations('review');
   const router = useRouter();
@@ -245,36 +248,61 @@ function Footer({
   return (
     <div className="flex-shrink-0 border-t bg-white px-[16px] py-[13px]" style={{ borderColor: A.paneBorder }}>
       {status === 'submitted' ? (
-        <>
-          {!hasAnnotations ? (
-            <p className="mb-[9px] text-[11px] leading-[1.4]" style={{ color: A.hint }}>
-              {t('annotations.footer.returnHint')}
-            </p>
-          ) : null}
-          <div className="flex gap-[9px]">
-            <button
-              type="button"
-              onClick={() => run(() => decidePlan(planId, 'return'))}
-              disabled={!hasAnnotations || busy}
-              className="inline-flex flex-1 items-center justify-center gap-[6px] rounded-[10px] border bg-white px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ color: A.amberFg, borderColor: A.amberBorder }}
-            >
-              {t('annotations.footer.return')}
-            </button>
-            <button
-              type="button"
-              onClick={() => run(() => decidePlan(planId, 'approve'))}
-              disabled={busy}
-              className="inline-flex items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ flex: '1.4', background: A.teal }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-              {busy ? t('annotations.footer.working') : t('annotations.footer.approve')}
-            </button>
-          </div>
-        </>
+        // Anything OPEN (a suggestion or comment still needing the teacher) means the
+        // plan should go back: Return LEADS (filled teal, larger) and Approve is
+        // DEMOTED to a teal-outline secondary — still visible + clickable (the escape
+        // hatch), with a hint saying why. Nothing open → Approve leads as before.
+        // `hasOpen` reads the SAME openCount the pane's "Open · N" shows, so the two
+        // never disagree. No destructive red: both actions are teal, one filled.
+        (() => {
+          const hasOpen = openCount > 0;
+          return (
+            <>
+              <div className="flex gap-[9px]">
+                <button
+                  type="button"
+                  onClick={() => run(() => decidePlan(planId, 'return'))}
+                  disabled={busy}
+                  className={`inline-flex items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                    hasOpen ? 'text-white' : 'border bg-white'
+                  }`}
+                  style={{
+                    flex: hasOpen ? '1.4' : '1',
+                    ...(hasOpen
+                      ? { background: A.teal }
+                      : { color: A.teal, borderColor: A.tealBorder }),
+                  }}
+                >
+                  {t('annotations.footer.return')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => run(() => decidePlan(planId, 'approve'))}
+                  disabled={busy}
+                  className={`inline-flex items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                    hasOpen ? 'border bg-white' : 'text-white'
+                  }`}
+                  style={{
+                    flex: hasOpen ? '1' : '1.4',
+                    ...(hasOpen
+                      ? { color: A.teal, borderColor: A.tealBorder }
+                      : { background: A.teal }),
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  {busy ? t('annotations.footer.working') : t('annotations.footer.approve')}
+                </button>
+              </div>
+              {hasOpen ? (
+                <p className="mt-[9px] text-[11px] leading-[1.4]" style={{ color: A.hint }}>
+                  {t('annotations.footer.resolveBeforeApprove')}
+                </p>
+              ) : null}
+            </>
+          );
+        })()
       ) : status === 'approved' ? (
         <button
           type="button"

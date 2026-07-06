@@ -131,6 +131,7 @@
         "return": "Return for changes",
         "approve": "Approve plan",
         "returnHint": "Add at least one comment or suggestion before returning the plan.",
+        "resolveBeforeApprove": "Resolve open comments before approving.",
         "undo": "Undo approval",
         "reopen": "Reopen as draft",
         "resubmit": "Resubmit plan",

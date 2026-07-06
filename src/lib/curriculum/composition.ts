@@ -379,15 +379,33 @@ export async function getInsightsAggregates(
 // The three curriculum surfaces each depend on DIFFERENT data that is present for a
 // DIFFERENT subset of subjects (verified against live rows), so each capability is
 // probed independently — never assume one implies another:
-//   * hasTaxonomy      → the Logic tree spine (english, professionalism, it partial).
-//   * hasFocusAreaText → the Topics focus-area tier (everyone EXCEPT english).
-//   * hasWeeklyText    → the Logic-tree strand cards (english, it).
-// Probed with head-only COUNT queries (no rows returned) so the PostgREST 1000-row cap
-// never applies.
+//   * taxonomy COVERAGE → the Logic-tree spine. Gated on a threshold, not mere
+//     presence: a subject with only a thin sliver of taxonomy (IT ~22%) would build a
+//     misleadingly sparse tree, so it stays disabled. `total`/`wellFormed` also drive
+//     the disclosure banner (rows not mapped to the taxonomy are shown, not dropped).
+//   * hasFocusAreaText  → the Topics focus-area tier (everyone EXCEPT english).
+//   * hasWeeklyText     → the Logic-tree strand cards (english, it).
+// Probed with head-only COUNT queries / a two-number RPC (no bulk rows), so the
+// PostgREST 1000-row cap never applies.
+
+/**
+ * The minimum fraction of a subject's rows that must carry a well-formed taxonomy id
+ * for the Logic tree to render. Below this the tree would be more gap than spine, so
+ * the tab is disabled-with-reason instead. (IT ~0.22 is caught; english ~0.73 and
+ * professionalism ~0.97 pass.)
+ */
+export const TAXONOMY_COVERAGE_MIN = 0.5;
 
 export interface SubjectCapabilities {
   subject: string;
-  hasTaxonomy: boolean;
+  /** Active rows for the subject. */
+  totalRows: number;
+  /** Rows whose taxonomy_id matches ^[0-9]+\.S[0-9]+\.K[0-9]+\.H[0-9]+$. */
+  wellFormedRows: number;
+  /** wellFormedRows / totalRows, or 0 when the subject has no rows. */
+  taxonomyCoverage: number;
+  /** True when coverage ≥ TAXONOMY_COVERAGE_MIN — the Logic-tree gate. */
+  logicTreeEnabled: boolean;
   hasFocusAreaText: boolean;
   hasWeeklyText: boolean;
 }
@@ -397,30 +415,35 @@ export async function getCurriculumSubjectCapabilities(
 ): Promise<SubjectCapabilities> {
   const supabase = createAdminClient();
 
-  // Each probe FAILS SAFE to "unavailable": a capability query is a gate for an
-  // optional surface, and one of them reads the `curriculum_taxonomy` view (migration
-  // 0050) that an operator applies by hand. If that view isn't present yet — or any
-  // probe errors — we degrade to false (the tab shows disabled) rather than 500 the
-  // whole Explorer, including the existing Calendar tab.
+  // Each probe FAILS SAFE to "unavailable": a capability query gates an optional
+  // surface, and some read objects (the coverage RPC, the `curriculum_taxonomy` view)
+  // that an operator applies by hand. If one isn't present yet — or any probe errors —
+  // we degrade to zero (the tab shows disabled) rather than 500 the whole Explorer,
+  // including the existing Calendar tab.
   const countOf = async (build: () => PromiseLike<{ count: number | null; error: unknown }>) => {
     try {
       const { count, error } = await build();
-      if (error) return 0;
-      return count ?? 0;
+      return error ? 0 : (count ?? 0);
     } catch {
       return 0;
     }
   };
 
-  const [tax, fa, wk] = await Promise.all([
-    countOf(() =>
-      supabase
-        .from('curriculum_taxonomy')
-        .select('id', { count: 'exact', head: true })
-        .eq('subject_code', subject)
-        .eq('is_placeholder', false)
-        .not('focus_area', 'is', null),
-    ),
+  const coverageOf = async (): Promise<{ total: number; wellFormed: number }> => {
+    try {
+      const { data, error } = await supabase.rpc('curriculum_taxonomy_coverage', {
+        p_subject: subject,
+      });
+      if (error) return { total: 0, wellFormed: 0 };
+      const row = (data ?? [])[0] as { total: number; well_formed: number } | undefined;
+      return { total: Number(row?.total ?? 0), wellFormed: Number(row?.well_formed ?? 0) };
+    } catch {
+      return { total: 0, wellFormed: 0 };
+    }
+  };
+
+  const [coverage, fa, wk] = await Promise.all([
+    coverageOf(),
     countOf(() =>
       supabase
         .from('curriculum_lesson')
@@ -439,9 +462,13 @@ export async function getCurriculumSubjectCapabilities(
     ),
   ]);
 
+  const taxonomyCoverage = coverage.total > 0 ? coverage.wellFormed / coverage.total : 0;
   return {
     subject,
-    hasTaxonomy: tax > 0,
+    totalRows: coverage.total,
+    wellFormedRows: coverage.wellFormed,
+    taxonomyCoverage,
+    logicTreeEnabled: taxonomyCoverage >= TAXONOMY_COVERAGE_MIN,
     hasFocusAreaText: fa > 0,
     hasWeeklyText: wk > 0,
   };

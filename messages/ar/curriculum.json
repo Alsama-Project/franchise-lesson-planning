@@ -68,7 +68,8 @@
       "subjShort": "المادة",
       "slotYear": "سنة {n}",
       "slotWeek": "أسبوع {n}",
-      "slotPeriod": "ح{n}"
+      "slotPeriod": "ح{n}",
+      "unmappedBanner": "‏{n} من أصل {m} صفًّا في هذه المادة غير مرتبطة بتصنيف النواتج ولا تظهر هنا."
     },
     "topics": {
       "yearsLabel": "السنوات",

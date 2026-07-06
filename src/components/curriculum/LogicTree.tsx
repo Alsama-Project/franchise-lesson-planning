@@ -28,12 +28,21 @@ import type {
 
 export function LogicTree({
   tree,
+  enabled,
+  unmappedCount,
+  totalRows,
   subjects,
   subjectName,
   years,
   year,
 }: {
   tree: CompositionTree;
+  /** False when the subject's taxonomy coverage is below the threshold. */
+  enabled: boolean;
+  /** Rows in this subject NOT mapped to the taxonomy (disclosed, not dropped). */
+  unmappedCount: number;
+  /** Total active rows for the subject (the banner's denominator). */
+  totalRows: number;
   subjects: SubjectOption[];
   subjectName: string;
   years: number[];
@@ -41,6 +50,7 @@ export function LogicTree({
 }) {
   const t = useTranslations('curriculum');
   const yearData: CompositionYear | undefined = tree.years[0];
+  const showTree = enabled && yearData && yearData.groups.length > 0;
 
   return (
     <div>
@@ -51,8 +61,8 @@ export function LogicTree({
         years={years}
         year={year}
       />
-      {yearData && yearData.groups.length > 0 ? (
-        <TreeBody tree={tree} yearData={yearData} />
+      {showTree ? (
+        <TreeBody tree={tree} yearData={yearData} unmappedCount={unmappedCount} totalRows={totalRows} />
       ) : (
         <div className="px-[26px] py-[64px] text-center">
           <p className="text-[14px] text-text-muted">
@@ -64,7 +74,17 @@ export function LogicTree({
   );
 }
 
-function TreeBody({ tree, yearData }: { tree: CompositionTree; yearData: CompositionYear }) {
+function TreeBody({
+  tree,
+  yearData,
+  unmappedCount,
+  totalRows,
+}: {
+  tree: CompositionTree;
+  yearData: CompositionYear;
+  unmappedCount: number;
+  totalRows: number;
+}) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
 
@@ -84,10 +104,37 @@ function TreeBody({ tree, yearData }: { tree: CompositionTree; yearData: Composi
     (openKey ? ` › ${t('tree.monthlyOutcome')} ${openKey}` : '');
 
   return (
-    <div className="grid gap-[22px] px-[26px] pb-[26px] pt-[18px] lg:grid-cols-[minmax(0,1fr)_328px]">
-      <div>
-        <div className="mx-auto max-w-[720px]">
-          <div className="mb-[14px] text-[11.5px] text-[#A79E94]">{crumb}</div>
+    <div>
+      {/* Disclosure: rows without a well-formed taxonomy id are NOT part of the tree.
+          Quiet, informational chrome (slate) — not an error. TODO: once the curriculum
+          upload/validation surface exists, deep-link this to that subject's unmapped
+          rows so a coordinator can fix them at source. */}
+      {unmappedCount > 0 ? (
+        <div className="mx-[26px] mt-[16px] flex items-start gap-[9px] rounded-[10px] border border-[#E4DED4] bg-[#F6F3EE] px-[13px] py-[10px]">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#8A8178"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            className="mt-[1px] shrink-0"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8h.01M11 12h1v4h1" />
+          </svg>
+          <p className="text-[12.5px] leading-[1.45] text-[#6C6259]">
+            {t('tree.unmappedBanner', { n: unmappedCount, m: totalRows })}
+          </p>
+        </div>
+      ) : null}
+      <div className="grid gap-[22px] px-[26px] pb-[26px] pt-[18px] lg:grid-cols-[minmax(0,1fr)_328px]">
+        <div>
+          <div className="mx-auto max-w-[720px]">
+            <div className="mb-[14px] text-[11.5px] text-[#A79E94]">{crumb}</div>
 
           {/* Subject tier */}
           <div className="rounded-[12px] border border-[#EAD9C5] bg-surface-cream px-[15px] py-[12px]">
@@ -129,6 +176,7 @@ function TreeBody({ tree, yearData }: { tree: CompositionTree; yearData: Composi
         {selectedGroup && selectedHour ? (
           <FocusRail tree={tree} yearData={yearData} group={selectedGroup} hour={selectedHour} />
         ) : null}
+      </div>
       </div>
     </div>
   );

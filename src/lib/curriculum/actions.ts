@@ -22,10 +22,9 @@ export async function listUnresolvedCurriculumRows(
 
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from('curriculum_lesson')
+    .from('curriculum_lesson_active')
     .select('lesson_key, year, week, period')
     .eq('subject_code', code)
-    .eq('is_active', true)
     .is('daily_outcome', null)
     .order('year', { ascending: true })
     .order('week', { ascending: true })
@@ -95,5 +94,50 @@ export async function importCurriculumAction(
     message:
       `Synced ${result.rowsUpserted} lessons for "${subjectCode}" · ` +
       `${result.unresolved} without a daily outcome · ${result.rowsDeactivated} deactivated.`,
+  };
+}
+
+/**
+ * PUBLISH A NEW curriculum version for a subject from an uploaded workbook. This is a
+ * DISTINCT action from `importCurriculumAction` (a reconcile): it writes every parsed
+ * row under a fresh version and makes it active, leaving the prior version's rows —
+ * and every plan pinned to them — untouched. Admin-only (heavier than a routine
+ * re-sync); the guards do not run because nothing is dropped from the active set.
+ */
+export async function publishCurriculumVersionAction(
+  _prev: CurriculumImportState | null,
+  formData: FormData,
+): Promise<CurriculumImportState> {
+  const subjectCode = String(formData.get('subject_code') ?? '').trim();
+  const file = formData.get('file');
+
+  if (!subjectCode) return { ok: false, message: 'Choose a subject.' };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: 'Choose an .xlsx file to publish.' };
+  }
+
+  const profile = await getCurrentProfile();
+  if (!profile) return { ok: false, message: 'You must be signed in.' };
+  if (profile.role !== 'admin') {
+    return { ok: false, message: 'Only an admin can publish a new curriculum version.' };
+  }
+
+  const buffer = await file.arrayBuffer();
+  const result = await importCurriculumWorkbook({
+    buffer,
+    subjectCode,
+    source: 'upload',
+    fileName: file.name,
+    newVersion: true,
+  });
+  if (result.status === 'error') {
+    return { ok: false, message: result.error ?? 'Publish failed.' };
+  }
+  return {
+    ok: true,
+    message:
+      `Published version ${result.newVersionNo ?? '?'} for "${subjectCode}" · ` +
+      `${result.rowsUpserted} lessons · ${result.unresolved} without a daily outcome. ` +
+      `Existing plans stay on their previous version.`,
   };
 }

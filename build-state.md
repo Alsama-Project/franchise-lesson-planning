@@ -2,6 +2,76 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
+## Per-subject curriculum VERSIONING (foundation) ✅ (this phase)
+
+A re-authored subject creates a NEW version instead of overwriting rows; existing
+lesson plans stay pinned (silently) to the version they were authored under. Fixes the
+"previous lesson" breakage and stops a full re-author tripping the reconcile
+circuit-breaker.
+
+### Phase 0 findings (read-only, then built against them)
+
+- **Plan → curriculum linkage** is a denormalised **text key, no FK**:
+  `lesson_plans.curriculum_lesson_id` stores a `curriculum_lesson.lesson_key`
+  (`subject_code|Y{y}|{month}|W{w}|P{p}`). Resolved by `getLessonById` →
+  `.eq('lesson_key').eq('is_active', true)`. Compatible with versioning — we add a
+  version stamp beside the key rather than changing the key. (Truncated STOP CONDITION
+  in the brief could not be read in full; the design held under every condition
+  inspected, so implementation proceeded.)
+- **"active" per row** = the `is_active` boolean; archive = flip to false; Guard 2
+  (`MAX_ARCHIVE_RATIO = 0.1`) aborts a reconcile that would drop >10% of a version's
+  active rows; Guard 1 never archives a lost key a live plan references. Both live in
+  `src/lib/curriculum/sync.ts` and are shared by n8n + upload + ops script.
+
+### Model (migration `0056_curriculum_versioning.sql` — authored; apply in Supabase)
+
+- **`curriculum_version`** `(id, subject_code, version_no, is_active, note, created_at)`;
+  partial unique index → exactly one active version per subject; RLS read-only.
+- **`curriculum_lesson.curriculum_version_id`** (NOT NULL after backfill). Rows
+  ACCUMULATE across versions — a new version ADDS rows; prior rows PERSIST untouched
+  (their `is_active`/content are never mutated on demotion), so a full re-author drops
+  nothing and Guard 2 is N/A. `lesson_key`/natural-key uniques are now **per version**.
+- **`lesson_plans.curriculum_version_id`** (nullable). Backfill: every existing plan →
+  v1 of its subject (via `split_part(curriculum_lesson_id,'|',1)`); every existing
+  curriculum row → its subject's v1 (active). No plan/subject count assumptions.
+- **`curriculum_activate_version(subject, version_id)`** RPC flips the active version in
+  ONE statement (never two-active / zero-active).
+
+### Read scoping
+
+- New **`curriculum_lesson_active`** view = active version AND row-level active. The
+  browser/picker/board/insights/search/gaps/console readers point here (uniform repoint;
+  historical versions invisible with no per-site predicate). Re-scoped the reference
+  views/RPCs (`curriculum_active_subjects`, `curriculum_taxonomy`, `..._coverage`,
+  `..._hours_by_linguistic_skill`, `..._topic_threads`) to it.
+- **Plan-pinned resolution** (`getLessonById`/`getPreviousLesson`, via `load-plan.ts`)
+  reads the BASE table scoped to the plan's stamped `curriculum_version_id`, so an old
+  plan (incl. its recap "previous lesson") renders the curriculum it was authored under —
+  silently, no banner.
+- `fetchRows` gained a `versionId` mode; `getActiveCurriculumVersionId` stamps new plans
+  at creation (`create-lesson.ts`).
+
+### Importer: reconcile vs. publish (two distinct actions)
+
+- **Reconcile** (default upload / n8n) now operates WITHIN the subject's active version
+  (diff/upsert/Guard 1/Guard 2/archive all version-scoped; Guard 1 also version-aware).
+- **Publish new version** (`newVersion`) creates a fresh version, writes every parsed row
+  under it, and atomically activates it — no guards, no archive, prior rows untouched.
+- **Trigger/UX wired** (confirm if you'd prefer otherwise): an **admin-only "Publish new
+  version" button** on each Settings → Curriculum sync card (separate file picker +
+  confirm dialog), distinct from "Upload .xlsx" (reconcile). Backend via
+  `POST /api/curriculum/import?newVersion=1` (admin-gated) + `publishCurriculumVersionAction`.
+
+### Verify / caveats
+
+- `npx tsc --noEmit` clean · `eslint` clean · `npm test` green (73 pass) · `next build`
+  (Next 16.2.9) passes. **No local Supabase** in this env — SQL not executed; the
+  migration is authored for manual apply. `gen:types` NOT re-run (clients are untyped, so
+  no compile dep) — regenerate after applying. New Arabic strings are **machine-translated,
+  flag for Kadria**. Design decisions (historical rows keep `is_active=true`; admin-only
+  publish button) were taken autonomously after the clarify prompt failed — both trivially
+  reversible.
+
 ## Curriculum Explorer — Search tab (instant client-side search + facets) ✅ (this phase)
 
 Replaces the inert "Search is coming soon" slot in the Explorer tab bar with a working

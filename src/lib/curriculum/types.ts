@@ -112,6 +112,11 @@ export interface CurriculumSyncResult {
    * signal; mirrored onto `curriculum_sync_run.warnings`.
    */
   skippedReferencedKeys?: string[];
+  /**
+   * Set on the "publish new version" path: the version number just created and made
+   * active for the subject. Absent on a normal (reconcile) sync.
+   */
+  newVersionNo?: number;
 }
 
 /**

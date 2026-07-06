@@ -573,7 +573,7 @@ export async function getCurriculumStatus(
       .order('started_at', { ascending: false }),
     // Live "unresolved" per subject: active rows with no daily outcome. Cheap (a few
     // hundred single-column rows) and always current, unlike the stored run count.
-    supabase.from('curriculum_lesson').select('subject_code').eq('is_active', true).is('daily_outcome', null),
+    supabase.from('curriculum_lesson_active').select('subject_code').eq('is_active', true).is('daily_outcome', null),
   ]);
 
   const unresolvedByCode = new Map<string, number>();

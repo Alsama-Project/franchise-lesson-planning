@@ -52,13 +52,32 @@ export interface SyncArgs {
    * 0054) for the Curriculum Gaps reconcile action bar; null for sources that supply none.
    */
   fileName?: string;
+  /**
+   * PUBLISH AS A NEW VERSION instead of reconciling the current one. This is a
+   * distinct action, not a normal upload:
+   *   • false / omitted (default) = RECONCILE the subject's active version — upsert
+   *     into it, apply Guard 1 + Guard 2, archive unreferenced lost rows. A routine
+   *     re-sync that edits the current curriculum.
+   *   • true = create a NEW curriculum_version, write every parsed row under it, and
+   *     atomically make it active (demoting the prior version to historical). The
+   *     prior version's rows are NOT archived or mutated — they persist, and any plan
+   *     stamped with the prior version keeps resolving them. The guards do NOT run
+   *     (nothing is being dropped from the active set), so a full re-author never
+   *     trips the circuit-breaker.
+   */
+  newVersion?: boolean;
+}
+
+interface CurriculumVersionRow {
+  id: string;
+  version_no: number;
 }
 
 export async function syncCurriculumWorkbook(
   supabase: SupabaseClient,
   args: SyncArgs,
 ): Promise<CurriculumSyncResult> {
-  const { buffer, subjectCode, source, sheet, fileName } = args;
+  const { buffer, subjectCode, source, sheet, fileName, newVersion = false } = args;
   const runTimestamp = new Date().toISOString();
 
   // Open a sync run first so even a parse failure is recorded.
@@ -116,15 +135,140 @@ export async function syncCurriculumWorkbook(
     return fail('No curriculum rows were found in the workbook.');
   }
 
-  // ── Diff FIRST, before any write ──────────────────────────────────────────────
-  // The keys this parse produces vs. the subject's current active keys. `lost` is
-  // what a plain reconcile would archive; both guards reason about it.
+  const unresolved = lessonRows.filter((r) => !r.daily_outcome).length;
+
+  // Resolve the subject's current active version (null for a brand-new subject).
+  const { data: activeVersionRow, error: versionReadError } = await supabase
+    .from('curriculum_version')
+    .select('id, version_no')
+    .eq('subject_code', subjectCode)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (versionReadError) {
+    return fail(`Active-version read failed: ${versionReadError.message}`);
+  }
+  let activeVersion = activeVersionRow as CurriculumVersionRow | null;
+
+  // Close the run as success with the given counts + optional warnings (shared by the
+  // reconcile and publish-new-version paths).
+  const succeed = async (opts: {
+    rowsUpserted: number;
+    rowsDeactivated: number;
+    skippedReferencedKeys?: string[];
+    newVersionNo?: number;
+  }): Promise<CurriculumSyncResult> => {
+    const skipped = opts.skippedReferencedKeys ?? [];
+    if (runId) {
+      await supabase
+        .from('curriculum_sync_run')
+        .update({
+          status: 'success',
+          rows_upserted: opts.rowsUpserted,
+          rows_deactivated: opts.rowsDeactivated,
+          unresolved,
+          warnings:
+            skipped.length > 0
+              ? { skippedReferencedKeys: skipped, skippedReferencedCount: skipped.length }
+              : null,
+          finished_at: new Date().toISOString(),
+        })
+        .eq('id', runId);
+    }
+    return {
+      runId,
+      subjectCode,
+      rowsUpserted: opts.rowsUpserted,
+      rowsDeactivated: opts.rowsDeactivated,
+      unresolved,
+      status: 'success',
+      ...(skipped.length > 0 ? { skippedReferencedKeys: skipped } : {}),
+      ...(opts.newVersionNo != null ? { newVersionNo: opts.newVersionNo } : {}),
+    };
+  };
+
+  // ── PUBLISH NEW VERSION ────────────────────────────────────────────────────────
+  // A distinct action from reconcile: write every parsed row under a fresh version and
+  // make it active, leaving the prior version's rows untouched. No diff, no guards, no
+  // archive — nothing is dropped from any version, so the circuit-breaker is N/A.
+  if (newVersion) {
+    // Next version number for the subject (max + 1, or 1 when none exist).
+    const { data: maxRow, error: maxError } = await supabase
+      .from('curriculum_version')
+      .select('version_no')
+      .eq('subject_code', subjectCode)
+      .order('version_no', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (maxError) {
+      return fail(`Version lookup failed: ${maxError.message}`);
+    }
+    const nextVersionNo = ((maxRow as { version_no: number } | null)?.version_no ?? 0) + 1;
+
+    // Create the new version INACTIVE first: if the row write below fails, the subject
+    // keeps its current active version (the dangling empty version is harmless and the
+    // action is re-runnable). It is promoted to active atomically at the end.
+    const { data: createdVersion, error: createError } = await supabase
+      .from('curriculum_version')
+      .insert({ subject_code: subjectCode, version_no: nextVersionNo, is_active: false })
+      .select('id, version_no')
+      .maybeSingle();
+    if (createError || !createdVersion) {
+      return fail(`Could not create new version: ${createError?.message ?? 'no row returned'}`);
+    }
+    const newVersionId = (createdVersion as CurriculumVersionRow).id;
+
+    // Write every parsed row under the new version. Plain insert — a fresh version has
+    // no existing rows to conflict with; prior versions' rows are left as-is.
+    const versionPayload = lessonRows.map((row) => ({
+      ...row,
+      is_active: true,
+      source,
+      synced_at: runTimestamp,
+      curriculum_version_id: newVersionId,
+    }));
+    const { error: insertError } = await supabase.from('curriculum_lesson').insert(versionPayload);
+    if (insertError) {
+      return fail(`New-version row write failed: ${insertError.message}`);
+    }
+
+    // Atomically make the new version active, demoting the prior one to historical in
+    // the SAME statement (never two active, never zero active mid-flip).
+    const { error: activateError } = await supabase.rpc('curriculum_activate_version', {
+      p_subject: subjectCode,
+      p_version_id: newVersionId,
+    });
+    if (activateError) {
+      return fail(`Version activation failed: ${activateError.message}`);
+    }
+
+    return succeed({ rowsUpserted: lessonRows.length, rowsDeactivated: 0, newVersionNo: nextVersionNo });
+  }
+
+  // ── RECONCILE the active version (default path) ────────────────────────────────
+  // A fresh subject has no version yet: create version 1 (active) and reconcile into it
+  // (nothing existing, so the guards are inert on the first sync).
+  if (!activeVersion) {
+    const { data: v1, error: v1Error } = await supabase
+      .from('curriculum_version')
+      .insert({ subject_code: subjectCode, version_no: 1, is_active: true })
+      .select('id, version_no')
+      .maybeSingle();
+    if (v1Error || !v1) {
+      return fail(`Could not initialise curriculum version: ${v1Error?.message ?? 'no row returned'}`);
+    }
+    activeVersion = v1 as CurriculumVersionRow;
+  }
+  const versionId = activeVersion.id;
+
+  // ── Diff FIRST, before any write (WITHIN the active version) ────────────────────
+  // The keys this parse produces vs. the active version's current active keys. `lost`
+  // is what a plain reconcile would archive; both guards reason about it.
   const regeneratedKeys = new Set(lessonRows.map((r) => r.lesson_key));
 
   const { data: existingRows, error: existingError } = await supabase
     .from('curriculum_lesson')
     .select('lesson_key')
-    .eq('subject_code', subjectCode)
+    .eq('curriculum_version_id', versionId)
     .eq('is_active', true);
   if (existingError) {
     return fail(`Existing-key read failed: ${existingError.message}`);
@@ -163,11 +307,12 @@ export async function syncCurriculumWorkbook(
     is_active: true,
     source,
     synced_at: runTimestamp,
+    curriculum_version_id: versionId,
   }));
 
   const { error: upsertError } = await supabase
     .from('curriculum_lesson')
-    .upsert(payload, { onConflict: 'lesson_key' });
+    .upsert(payload, { onConflict: 'curriculum_version_id,lesson_key' });
   if (upsertError) {
     return fail(`Upsert failed: ${upsertError.message}`);
   }
@@ -177,11 +322,16 @@ export async function syncCurriculumWorkbook(
   // (trashed) plans (migration 0048): a trashed plan can be restored, and a restored
   // plan must never point at an archived curriculum lesson. So this reference check
   // is intentionally NOT filtered on `deleted_at`.
+  // A plan resolves through THIS version's rows when it is stamped with this version,
+  // OR when it carries no version stamp (legacy row → falls back to the active version
+  // at read time). A plan stamped to a DIFFERENT version reads its own version's rows,
+  // so it does not pin this version's row — hence the version predicate.
   let skippedReferencedKeys: string[] = [];
   if (lostKeys.length > 0) {
     const { data: refRows, error: refError } = await supabase
       .from('lesson_plans')
       .select('curriculum_lesson_id')
+      .or(`curriculum_version_id.eq.${versionId},curriculum_version_id.is.null`)
       .in('curriculum_lesson_id', lostKeys);
     if (refError) {
       return fail(`Reference check failed: ${refError.message}`);
@@ -202,7 +352,7 @@ export async function syncCurriculumWorkbook(
     const { data: deactivated, error: reconcileError } = await supabase
       .from('curriculum_lesson')
       .update({ is_active: false })
-      .eq('subject_code', subjectCode)
+      .eq('curriculum_version_id', versionId)
       .eq('is_active', true)
       .in('lesson_key', keysToArchive)
       .select('id');
@@ -212,33 +362,9 @@ export async function syncCurriculumWorkbook(
     rowsDeactivated = (deactivated ?? []).length;
   }
 
-  const rowsUpserted = lessonRows.length;
-  const unresolved = lessonRows.filter((r) => !r.daily_outcome).length;
-
-  if (runId) {
-    await supabase
-      .from('curriculum_sync_run')
-      .update({
-        status: 'success',
-        rows_upserted: rowsUpserted,
-        rows_deactivated: rowsDeactivated,
-        unresolved,
-        warnings:
-          skippedReferencedKeys.length > 0
-            ? { skippedReferencedKeys, skippedReferencedCount: skippedReferencedKeys.length }
-            : null,
-        finished_at: new Date().toISOString(),
-      })
-      .eq('id', runId);
-  }
-
-  return {
-    runId,
-    subjectCode,
-    rowsUpserted,
+  return succeed({
+    rowsUpserted: lessonRows.length,
     rowsDeactivated,
-    unresolved,
-    status: 'success',
-    ...(skippedReferencedKeys.length > 0 ? { skippedReferencedKeys } : {}),
-  };
+    skippedReferencedKeys,
+  });
 }

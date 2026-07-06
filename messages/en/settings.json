@@ -154,8 +154,10 @@
         "refresh": "Refresh now",
         "reviewUnresolved": "Review {count} unresolved",
         "reviewGaps": "Review gaps",
-        "upload": "Upload .xlsx"
+        "upload": "Upload .xlsx",
+        "publishVersion": "Publish new version"
       },
+      "publishConfirm": "Publish a NEW curriculum version for \"{subject}\" from this workbook? It becomes the active version; existing lesson plans stay pinned to their current version. This cannot be undone from here.",
       "reviewModal": {
         "title": "Unresolved — {subject}",
         "subtitle": "{count} active lessons with no daily outcome. Benign structural rows; nothing to fix.",

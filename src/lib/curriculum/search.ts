@@ -99,7 +99,7 @@ export async function getSearchData(subject: string): Promise<SearchData> {
   const rows: SearchRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
-      .from('curriculum_lesson')
+      .from('curriculum_lesson_active')
       .select(SEARCH_COLUMNS)
       .eq('is_active', true)
       .eq('subject_code', subject)

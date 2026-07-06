@@ -12,7 +12,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { isAdmin, isMemberOf, getMyMemberships } from '@/lib/auth';
-import { getCurriculumKeyCoords } from '@/lib/curriculumUtils';
+import { getCurriculumKeyCoords, getActiveCurriculumVersionId } from '@/lib/curriculumUtils';
 import { DEFAULT_BLOCKS } from '@/lib/blocks';
 import type { PlanScope } from '@/types/lesson';
 
@@ -155,10 +155,17 @@ export async function createScopedPlan(
   const existingId = (existing as { id: string }[] | null)?.[0]?.id;
   if (existingId) return { ok: true, planId: existingId };
 
+  // Stamp the plan with the subject's ACTIVE curriculum version so it stays pinned to
+  // the curriculum it was authored under, even after a later re-author publishes a new
+  // version. Null when the subject has no curriculum version yet (resolution then falls
+  // back to the active version at read time).
+  const curriculumVersionId = await getActiveCurriculumVersionId(coords.subjectCode);
+
   const { data: inserted, error } = await supabase
     .from('lesson_plans')
     .insert({
       curriculum_lesson_id: input.lessonKey,
+      curriculum_version_id: curriculumVersionId,
       scope: input.scope,
       class_id: classId,
       school_id: schoolId,

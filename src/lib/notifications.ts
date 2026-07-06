@@ -131,7 +131,7 @@ async function getOutcomeNotifications(supabase: Supa, userId: string): Promise<
   const titleByKey = new Map<string, string>();
   if (keys.length > 0) {
     const { data: lessons } = await supabase
-      .from('curriculum_lesson')
+      .from('curriculum_lesson_active')
       .select('lesson_key, daily_outcome, focus_area')
       .in('lesson_key', keys);
     for (const l of (lessons ?? []) as Array<{

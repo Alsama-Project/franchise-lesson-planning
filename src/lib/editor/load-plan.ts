@@ -111,6 +111,7 @@ interface RawPlanRow {
   subject_id: string | null;
   year: number | null;
   curriculum_lesson_id: string;
+  curriculum_version_id: string | null;
   lesson_date: string | null;
   weekday: number | null;
   period: number | null;
@@ -156,7 +157,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
       .from('lesson_plans')
       .select(
         `id, class_id, scope, school_id, subject_id, year,
-         curriculum_lesson_id, lesson_date, weekday, period, status,
+         curriculum_lesson_id, curriculum_version_id, lesson_date, weekday, period, status,
          smartt_objective, smartt_check, blocks, worksheet, required_materials, created_by,
          submitted_at, reviewed_at, review_note, created_at, updated_at,
          class:classes (
@@ -235,12 +236,20 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
   // Resolve the locked curriculum context from the Supabase-backed curriculum.
   // `getLessonById` now resolves to a single row on full identity (or null when a
   // legacy taxonomy id is year-ambiguous), so there is no array to unwrap.
-  const lesson = await getLessonById(row.curriculum_lesson_id);
-  // The lesson taught immediately before this one (same subject + year), resolved
-  // from the curriculum sequence. Its daily outcome anchors the Link-it recap.
+  // Pin resolution to the plan's stamped curriculum version, so an old plan renders
+  // the curriculum it was authored under even after the subject is re-authored.
+  const lesson = await getLessonById(row.curriculum_lesson_id, row.curriculum_version_id);
+  // The lesson taught immediately before this one (same subject + year + version),
+  // resolved from the curriculum sequence. Its daily outcome anchors the Link-it recap.
   const previousLesson =
     lesson && lesson.subject && lesson.week != null && lesson.periodNum != null
-      ? await getPreviousLesson(lesson.subject, lesson.yearNum ?? 0, lesson.week, lesson.periodNum)
+      ? await getPreviousLesson(
+          lesson.subject,
+          lesson.yearNum ?? 0,
+          lesson.week,
+          lesson.periodNum,
+          row.curriculum_version_id,
+        )
       : null;
   const grammarVocab = lesson
     ? [lesson.vocabFocus, lesson.grammarFocus].filter((s) => s && s.trim()).join(' · ')
@@ -306,6 +315,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
     school_id: row.school_id,
     year: row.year,
     curriculum_lesson_id: row.curriculum_lesson_id,
+    curriculum_version_id: row.curriculum_version_id,
     lesson_date: row.lesson_date,
     weekday: row.weekday,
     period: row.period,

@@ -149,7 +149,7 @@ export async function getCompositionTree(
 ): Promise<CompositionTree> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
-    .from('curriculum_lesson')
+    .from('curriculum_lesson_active')
     .select(TREE_COLUMNS)
     .eq('is_active', true)
     .eq('subject_code', subject)
@@ -466,7 +466,7 @@ export async function getCurriculumSubjectCapabilities(
     coverageOf(),
     countOf(() =>
       supabase
-        .from('curriculum_lesson')
+        .from('curriculum_lesson_active')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('subject_code', subject)
@@ -474,7 +474,7 @@ export async function getCurriculumSubjectCapabilities(
     ),
     countOf(() =>
       supabase
-        .from('curriculum_lesson')
+        .from('curriculum_lesson_active')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('subject_code', subject)
@@ -482,7 +482,7 @@ export async function getCurriculumSubjectCapabilities(
     ),
     countOf(() =>
       supabase
-        .from('curriculum_lesson')
+        .from('curriculum_lesson_active')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('subject_code', subject)
@@ -490,7 +490,7 @@ export async function getCurriculumSubjectCapabilities(
     ),
     countOf(() =>
       supabase
-        .from('curriculum_lesson')
+        .from('curriculum_lesson_active')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('subject_code', subject)

@@ -19,6 +19,8 @@ interface ImportArgs {
   source: CurriculumSyncSource;
   /** Original workbook filename, when known — recorded on the run for the reconcile UI. */
   fileName?: string;
+  /** Publish as a new curriculum version instead of reconciling the active one. */
+  newVersion?: boolean;
 }
 
 export async function importCurriculumWorkbook(

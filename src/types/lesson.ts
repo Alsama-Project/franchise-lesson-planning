@@ -238,6 +238,14 @@ export interface LessonPlan {
    */
   curriculum_lesson_id: string;
   /**
+   * The curriculum VERSION this plan is pinned to (Supabase
+   * `lesson_plans.curriculum_version_id`). Stamped at creation with the subject's
+   * active version; the plan resolves its curriculum from this version forever. Null
+   * on legacy rows created before versioning — resolution then falls back to the
+   * subject's active version. See @/lib/curriculumUtils#getLessonById.
+   */
+  curriculum_version_id: string | null;
+  /**
    * Calendar date the lesson sits on. `null` now that the board places cards by
    * curriculum coordinate (month/week/period), not by date
    * (migration 0012_lesson_plan_scope made the column nullable).

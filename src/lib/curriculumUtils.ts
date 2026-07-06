@@ -46,18 +46,36 @@ interface RowFilters {
   week?: number;
   lessonKey?: string;
   taxonomyId?: string;
+  /**
+   * Pin the read to one curriculum VERSION (a plan-pinned resolve). When set, the
+   * read hits the base `curriculum_lesson` table scoped to this version — so a plan
+   * on a historical version resolves that version's rows, silently. When ABSENT the
+   * read hits the `curriculum_lesson_active` view (the subject's active version only),
+   * which is what every browse/picker/board caller wants.
+   */
+  versionId?: string;
 }
 
 /**
- * Fetch active `curriculum_lesson` rows narrowed by the given natural-key filters.
+ * Fetch `curriculum_lesson` rows narrowed by the given natural-key filters.
+ *
+ * Version scoping (see {@link RowFilters.versionId}):
+ *   • no `versionId` → the `curriculum_lesson_active` view — active version + active
+ *     rows only. Since `lesson_key` is unique per version, resolving through the
+ *     active view keeps the old "single active row per key" semantics for browse.
+ *   • `versionId` set → the base table pinned to that version (plan-pinned resolve);
+ *     historical rows are `is_active = true` (never mutated on demotion), so the read
+ *     still filters `is_active` for parity without hiding a historical plan's rows.
+ *
  * Every caller passes enough of (subject, year, month, week) — or an exact key — that
  * the result is at most a few hundred rows, so the PostgREST 1000-row cap is never
- * reached. Always scoped to `is_active = true`, matching the old resolve-over-active
- * semantics exactly.
+ * reached.
  */
 async function fetchRows(filters: RowFilters): Promise<CurriculumLessonRow[]> {
   const supabase = createAdminClient();
-  let query = supabase.from('curriculum_lesson').select(COLUMNS).eq('is_active', true);
+  const source = filters.versionId != null ? 'curriculum_lesson' : 'curriculum_lesson_active';
+  let query = supabase.from(source).select(COLUMNS).eq('is_active', true);
+  if (filters.versionId != null) query = query.eq('curriculum_version_id', filters.versionId);
   if (filters.subjectCode != null) query = query.eq('subject_code', filters.subjectCode);
   if (filters.year != null) query = query.eq('year', filters.year);
   if (filters.month != null) query = query.eq('month', filters.month);
@@ -67,6 +85,26 @@ async function fetchRows(filters: RowFilters): Promise<CurriculumLessonRow[]> {
   const { data, error } = await query;
   if (error) throw new Error(`Curriculum read failed: ${error.message}`);
   return (data ?? []) as unknown as CurriculumLessonRow[];
+}
+
+/**
+ * The id of a subject's ACTIVE curriculum version, or null when the subject has no
+ * curriculum yet. Used to stamp a new lesson plan at creation so it pins to the
+ * version it was authored under.
+ */
+export async function getActiveCurriculumVersionId(
+  subjectCode: string,
+): Promise<string | null> {
+  if (!subjectCode) return null;
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('curriculum_version')
+    .select('id')
+    .eq('subject_code', subjectCode)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) throw new Error(`Active curriculum version read failed: ${error.message}`);
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 // ── Row → legacy CurriculumLesson mapping ───────────────────────────────────────
@@ -129,13 +167,21 @@ function rowToLesson(row: CurriculumLessonRow): CurriculumLesson {
  * the FA-as-year leak documented in curriculum/INGEST_NOTES.md (the old code returned
  * every matching year row and the caller blindly took the first).
  */
-export async function getLessonById(id: string): Promise<CurriculumLesson | null> {
+export async function getLessonById(
+  id: string,
+  versionId?: string | null,
+): Promise<CurriculumLesson | null> {
   if (!id) return null;
 
-  const keyRows = await fetchRows({ lessonKey: id });
+  // A stamped plan resolves within ITS version (silent pin — historical plans render
+  // their old curriculum). An unstamped/legacy plan (no versionId) resolves against
+  // the subject's active version via the active-version view.
+  const pin = versionId ?? undefined;
+
+  const keyRows = await fetchRows({ lessonKey: id, versionId: pin });
   if (keyRows.length > 0) return rowToLesson(keyRows[0]);
 
-  const taxonomyRows = await fetchRows({ taxonomyId: id });
+  const taxonomyRows = await fetchRows({ taxonomyId: id, versionId: pin });
   return taxonomyRows.length === 1 ? rowToLesson(taxonomyRows[0]) : null;
 }
 
@@ -151,10 +197,14 @@ export async function getPreviousLesson(
   year: number | string,
   week: number,
   period: number,
+  versionId?: string | null,
 ): Promise<CurriculumLesson | null> {
   const yn = resolveYearNum(year);
   if (yn === null) return null;
-  const lessons = (await fetchRows({ subjectCode: subject, year: yn }))
+  // Pinned to the plan's version: the previous lesson must come from the SAME version
+  // the plan was authored under, else a re-authored subject would splice a new-version
+  // lesson into an old-version plan's recap.
+  const lessons = (await fetchRows({ subjectCode: subject, year: yn, versionId: versionId ?? undefined }))
     .map(rowToLesson)
     .filter((l) => l.week !== null && l.periodNum !== null)
     .sort(byWeekThenPeriod);

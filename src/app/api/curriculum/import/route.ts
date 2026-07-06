@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
   let subjectCode = request.nextUrl.searchParams.get('subject_code') ?? '';
   const dryRunParam = request.nextUrl.searchParams.get('dryRun');
   let dryRun = dryRunParam === '1' || dryRunParam === 'true';
+  const newVersionParam = request.nextUrl.searchParams.get('newVersion');
+  let newVersion = newVersionParam === '1' || newVersionParam === 'true';
   let sheet = request.nextUrl.searchParams.get('sheet') ?? undefined;
   let fileName = '';
   let buffer: ArrayBuffer | null = null;
@@ -36,9 +38,13 @@ export async function POST(request: NextRequest) {
     const file = form.get('file');
     const formSubject = form.get('subject_code');
     const formDryRun = form.get('dryRun');
+    const formNewVersion = form.get('newVersion');
     const formSheet = form.get('sheet');
     if (typeof formSubject === 'string' && formSubject) subjectCode = formSubject;
     if (typeof formDryRun === 'string' && (formDryRun === '1' || formDryRun === 'true')) dryRun = true;
+    if (typeof formNewVersion === 'string' && (formNewVersion === '1' || formNewVersion === 'true')) {
+      newVersion = true;
+    }
     if (typeof formSheet === 'string' && formSheet) sheet = formSheet;
     if (file instanceof File) {
       buffer = await file.arrayBuffer();
@@ -83,12 +89,26 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Publishing a NEW version is a heavier action than a routine reconcile — gate it to
+  // admins (the n8n secret path is already trusted). A subject member may reconcile the
+  // current version via upload, but not mint a new one.
+  if (newVersion && source === 'upload') {
+    const profile = await getCurrentProfile();
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only an admin can publish a new curriculum version.' },
+        { status: 403 },
+      );
+    }
+  }
+
   // ── Run the import ──
   const result = await importCurriculumWorkbook({
     buffer,
     subjectCode,
     source,
     fileName: fileName || undefined,
+    newVersion,
   });
   if (result.status === 'error') {
     return NextResponse.json(result, { status: 422 });

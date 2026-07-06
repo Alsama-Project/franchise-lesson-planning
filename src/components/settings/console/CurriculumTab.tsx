@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import type { CurriculumSubjectStatus } from '@/lib/console';
-import { importCurriculumAction, listUnresolvedCurriculumRows } from '@/lib/curriculum/actions';
+import {
+  importCurriculumAction,
+  publishCurriculumVersionAction,
+  listUnresolvedCurriculumRows,
+} from '@/lib/curriculum/actions';
 import type { UnresolvedCurriculumRow } from '@/lib/curriculum/types';
 import { formatNumber } from '@/lib/format';
 import { GhostButton, SectionCard } from './ui';
@@ -71,6 +75,7 @@ function CurriculumCard({ status, isAdmin }: { status: CurriculumSubjectStatus; 
   const [success, setSuccess] = useState<string | null>(null);
   const [clientError, setClientError] = useState<{ message: string; at: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const publishRef = useRef<HTMLInputElement>(null);
 
   const run = status.latestRun;
   const lastSyncedIso = run?.finishedAt ?? run?.startedAt ?? null;
@@ -108,6 +113,34 @@ function CurriculumCard({ status, isAdmin }: { status: CurriculumSubjectStatus; 
     fd.set('file', file);
     startTransition(async () => {
       const res = await importCurriculumAction(null, fd);
+      if (res.ok) {
+        setSuccess(res.message);
+      } else {
+        setClientError({ message: res.message, at: new Date().toISOString() });
+      }
+      router.refresh();
+    });
+  }
+
+  // Publish a NEW curriculum version (admin-only, distinct from the reconcile upload
+  // above): the parsed workbook becomes a fresh active version, and every existing plan
+  // stays pinned to its previous version. Confirmed before running — it is not undoable
+  // from the UI.
+  function onPublishFile(file: File) {
+    if (
+      !window.confirm(
+        t('curriculum.publishConfirm', { subject: status.name }),
+      )
+    ) {
+      return;
+    }
+    setSuccess(null);
+    setClientError(null);
+    const fd = new FormData();
+    fd.set('subject_code', status.code);
+    fd.set('file', file);
+    startTransition(async () => {
+      const res = await publishCurriculumVersionAction(null, fd);
       if (res.ok) {
         setSuccess(res.message);
       } else {
@@ -202,6 +235,27 @@ function CurriculumCard({ status, isAdmin }: { status: CurriculumSubjectStatus; 
               <GhostButton tone="teal" onClick={() => fileRef.current?.click()}>
                 {t('curriculum.action.upload')}
               </GhostButton>
+              {/* Admin-only: publish the uploaded workbook as a NEW curriculum version
+                  (distinct from the reconcile upload above). Existing plans stay pinned
+                  to their previous version. */}
+              {isAdmin ? (
+                <>
+                  <input
+                    ref={publishRef}
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) onPublishFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <GhostButton tone="teal" onClick={() => publishRef.current?.click()}>
+                    {t('curriculum.action.publishVersion')}
+                  </GhostButton>
+                </>
+              ) : null}
             </>
           )}
         </div>

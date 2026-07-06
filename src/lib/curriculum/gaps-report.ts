@@ -80,7 +80,7 @@ export async function getCurriculumGapsReport(
   const [{ data: subject }, { data: lessonData }, { data: runData }] = await Promise.all([
     supabase.from('subjects').select('id, name, code').eq('code', code).maybeSingle(),
     supabase
-      .from('curriculum_lesson')
+      .from('curriculum_lesson_active')
       .select(
         'id, source_row, lesson_key, year, month, week, period, taxonomy_id, daily_outcome, linguistic_skill, grammar_vocabulary, theme, resources',
       )

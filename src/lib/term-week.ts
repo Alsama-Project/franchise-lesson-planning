@@ -15,7 +15,7 @@
 // row produces a date or a "current" week.
 
 import type { createClient } from '@/lib/supabase/server';
-import { addDays, mondayOf, todayInBeirut } from '@/lib/week';
+import { addDays, daysBetween, mondayOf, todayInBeirut } from '@/lib/week';
 
 /** The cookie-bound, RLS-scoped server client (never the service-role key). */
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
@@ -75,4 +75,37 @@ export async function resolveCurrentTermWeekNo(
 
   const weekNo = (data?.[0] as { week_no?: number | null } | undefined)?.week_no;
   return typeof weekNo === 'number' ? weekNo : null;
+}
+
+/**
+ * The teaching-week number the "This week" button jumps to: today's own term week
+ * when seeded, else the NEAREST seeded term week (min |starts_on − today's Monday|).
+ * Returns `null` only when `term_week` is entirely empty. Unlike
+ * `resolveCurrentTermWeekNo` (which drives on-load defaulting and must stay exact),
+ * this always lands on a real seeded week so the button is never a dead end while the
+ * table's coverage lags the calendar.
+ */
+export async function resolveNearestTermWeekNo(
+  supabase: ServerSupabase,
+): Promise<number | null> {
+  // Prefer today's exact week when it's seeded.
+  const exact = await resolveCurrentTermWeekNo(supabase);
+  if (exact != null) return exact;
+
+  // Else pick the seeded week whose Monday is closest to today's Monday.
+  const monday = mondayOf(todayInBeirut());
+  const { data } = await supabase.from('term_week').select('week_no, starts_on');
+  const rows = (data ?? []) as Array<{ week_no: number | null; starts_on: string | null }>;
+
+  let bestWeekNo: number | null = null;
+  let bestDistance = Infinity;
+  for (const row of rows) {
+    if (typeof row.week_no !== 'number' || !row.starts_on) continue;
+    const distance = Math.abs(daysBetween(monday, row.starts_on));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestWeekNo = row.week_no;
+    }
+  }
+  return bestWeekNo;
 }

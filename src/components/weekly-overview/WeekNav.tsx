@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
 import { WeekPicker, type WeekPickerOption } from '@/components/common/WeekPicker';
@@ -38,6 +39,7 @@ export function WeekNav({
   weeks,
   prev,
   next,
+  currentWeek,
   view,
 }: {
   weekNo: number;
@@ -50,6 +52,9 @@ export function WeekNav({
   weeks: BoardWeekOption[];
   prev: BoardCoordinate | null;
   next: BoardCoordinate | null;
+  /** The coordinate the "This week" button jumps to (today's or nearest seeded term
+   *  week); null when nothing maps, so the button is hidden. */
+  currentWeek: BoardCoordinate | null;
   view: View;
 }) {
   const t = useTranslations('board');
@@ -75,22 +80,39 @@ export function WeekNav({
     active: w.month === coordinate.month && w.week === coordinate.week,
   }));
 
+  // The "This week" jump appears only when a real (current or nearest seeded) week
+  // exists AND the board isn't already showing it — a one-click return to "now" after
+  // browsing ahead. It never changes which week loads by default.
+  const showThisWeek =
+    currentWeek != null &&
+    !(currentWeek.month === coordinate.month && currentWeek.week === coordinate.week);
+
   return (
-    <WeekPicker
-      label={label}
-      meta={meta}
-      tooltip={coordinateLabel}
-      defaultMonth={coordinate.month || null}
-      options={options}
-      prevHref={prev ? href(prev, view) : null}
-      nextHref={next ? href(next, view) : null}
-      labels={{
-        previousWeek: t('weekNav.previousWeek'),
-        nextWeek: t('weekNav.nextWeek'),
-        unavailable: (label) => t('weekNav.unavailable', { label }),
-        monthHeading: t('weekNav.picker.month'),
-        weekHeading: t('weekNav.picker.week'),
-      }}
-    />
+    <div className="flex items-center gap-[10px]">
+      <WeekPicker
+        label={label}
+        meta={meta}
+        tooltip={coordinateLabel}
+        defaultMonth={coordinate.month || null}
+        options={options}
+        prevHref={prev ? href(prev, view) : null}
+        nextHref={next ? href(next, view) : null}
+        labels={{
+          previousWeek: t('weekNav.previousWeek'),
+          nextWeek: t('weekNav.nextWeek'),
+          unavailable: (label) => t('weekNav.unavailable', { label }),
+          monthHeading: t('weekNav.picker.month'),
+          weekHeading: t('weekNav.picker.week'),
+        }}
+      />
+      {showThisWeek ? (
+        <Link
+          href={href(currentWeek, view)}
+          className="inline-flex items-center rounded-[10px] border border-border px-[11px] py-[8px] text-[12.5px] font-semibold text-text-muted transition-colors hover:border-teal hover:text-teal"
+        >
+          {t('weekNav.thisWeek')}
+        </Link>
+      ) : null}
+    </div>
   );
 }

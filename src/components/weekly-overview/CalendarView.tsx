@@ -94,16 +94,21 @@ export function CalendarView({
    * A year with no such lesson is offered disabled (graceful empty state). The
    * day-ordinal is the next slot in that year's stack on this column.
    */
+  // Only bands the viewer may AUTHOR in (a class they teach) offer "+ Add lesson".
+  // A coordinator reviewing a subject they don't teach gets no add cells — review
+  // only. `createTeacherPlan` remains the authoritative guard on the create path.
   const addChoicesFor = (weekday: number): AddYearChoice[] =>
-    years.map((band) => ({
-      bandKey: band.key,
-      year: band.year,
-      subjectName: band.subjectName,
-      centreId: band.centreId,
-      centreName: spansMultipleCentres ? band.centreName : null,
-      lessonKey: band.lessons.find((l) => l.period === weekday)?.lessonKey ?? null,
-      period: byDay[weekday].filter((p) => p.groupKey === band.key).length + 1,
-    }));
+    years
+      .filter((band) => band.canAuthor)
+      .map((band) => ({
+        bandKey: band.key,
+        year: band.year,
+        subjectName: band.subjectName,
+        centreId: band.centreId,
+        centreName: spansMultipleCentres ? band.centreName : null,
+        lessonKey: band.lessons.find((l) => l.period === weekday)?.lessonKey ?? null,
+        period: byDay[weekday].filter((p) => p.groupKey === band.key).length + 1,
+      }));
 
   const activePlan = activeId
     ? [byDay[1], byDay[2], byDay[3], byDay[4], byDay[5]].flat().find((p) => p.id === activeId) ?? null
@@ -383,8 +388,10 @@ function DayColumn({
           ))}
         </SortableContext>
 
-        {/* Coordinators review existing plans; they don't author, so no add affordance. */}
-        {readOnly ? null : (
+        {/* Coordinators review existing plans; they don't author, so no add affordance.
+            `addChoices` is pre-filtered to bands the viewer teaches — empty means the
+            viewer authors nothing in view (pure reviewer), so no add affordance either. */}
+        {readOnly || addChoices.length === 0 ? null : (
           <AddLessonMenu
             weekday={weekday}
             choices={addChoices}

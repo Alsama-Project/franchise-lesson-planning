@@ -121,6 +121,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
               weeks={data.weeks}
               prev={data.prev}
               next={data.next}
+              currentWeek={data.currentWeek}
               view={view}
             />
             <ViewToggle view={view} onChange={changeView} />

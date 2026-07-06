@@ -11,7 +11,7 @@
 // key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
-import { resolveCurrentTermWeekNo, resolveTermWeek } from '@/lib/term-week';
+import { resolveCurrentTermWeekNo, resolveNearestTermWeekNo, resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav } from '@/lib/curriculumUtils';
 import { resolveWeekSlotKeys, selectWeekPlanRows } from '@/lib/weekly-overview-selection';
 import { initialsOf } from '@/components/weekly-overview/avatar';
@@ -132,6 +132,7 @@ function emptyBoard(teacherName: string): BoardData {
     isCurrent: false,
     prev: null,
     next: null,
+    currentWeek: null,
     weeks: [],
     years: [],
     owners: [],
@@ -296,6 +297,17 @@ export async function getBoardData(input: {
         a.year - b.year,
     );
 
+  // Whether the viewer may AUTHOR in a band — they teach an ACTIVE class for its
+  // (centre, subject, year). This is the board-render half of the same eligible-class
+  // rule `createTeacherPlan` binds on (match on school_id + subject_id + year over the
+  // viewer's non-archived classes). It gates the "+ Add lesson" / "Not started"
+  // affordances so a coordinator reviewing a subject they don't teach sees none — while
+  // `createTeacherPlan` stays the authoritative guard on the create path itself.
+  const teachesBand = (band: { centreId: string; subjectId: string; year: number }): boolean =>
+    taught.some(
+      (c) => c.school_id === band.centreId && c.subject_id === band.subjectId && c.year === band.year,
+    );
+
   // The teacher's own classes, grouped by year — legacy field, kept populated.
   const myClassesByYear: Record<number, BoardClass[]> = {};
   for (const c of taught) {
@@ -377,6 +389,7 @@ export async function getBoardData(input: {
       downloadSubjects,
       hasClasses: true,
       boardReadOnly,
+      currentWeek: null,
       years: bands.map((b) => ({
         key: b.bandKey,
         year: b.year,
@@ -384,6 +397,7 @@ export async function getBoardData(input: {
         centreName: b.centreName,
         subjectCode: b.subjectCode,
         subjectName: b.subjectName,
+        canAuthor: teachesBand(b),
         plans: [],
         lessons: [],
       })),
@@ -423,6 +437,16 @@ export async function getBoardData(input: {
   // the single, temporary point of date resolution).
   const weekNo = index + 1;
   const { mondayDate, isCurrent } = await resolveTermWeek(supabase, weekNo);
+
+  // The "This week" button's jump target: the curriculum coordinate for today's term
+  // week, or the nearest seeded one when today is outside coverage. Null when nothing
+  // maps (empty `term_week`). This does NOT change on-load defaulting above — it only
+  // feeds the button, so a teacher can always return to "now" after browsing ahead.
+  const currentWeekNo = await resolveNearestTermWeekNo(supabase);
+  const currentWeek =
+    currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
+      ? coords[currentWeekNo - 1]
+      : null;
 
   // The curriculum lessons (P1..P5) for the selected coordinate, per subject, across
   // that subject's years — the "+ Add lesson" pool and the join target for the
@@ -560,6 +584,7 @@ export async function getBoardData(input: {
     centreName: band.centreName,
     subjectCode: band.subjectCode,
     subjectName: band.subjectName,
+    canAuthor: teachesBand(band),
     plans: plansByBand.get(band.bandKey) ?? [],
     lessons: lessonsBySubjectYear.get(`${band.subjectCode}|${band.year}`) ?? [],
   }));
@@ -583,6 +608,7 @@ export async function getBoardData(input: {
     isCurrent,
     prev,
     next,
+    currentWeek,
     weeks,
     years: yearBands,
     owners,

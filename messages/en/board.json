@@ -19,6 +19,7 @@
     "weekNav": {
       "previousWeek": "Previous week",
       "nextWeek": "Next week",
+      "thisWeek": "This week",
       "unavailable": "{label} (unavailable)",
       "weekNumber": "Week {n}",
       "current": "current",

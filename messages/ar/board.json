@@ -19,6 +19,7 @@
     "weekNav": {
       "previousWeek": "الأسبوع السابق",
       "nextWeek": "الأسبوع التالي",
+      "thisWeek": "هذا الأسبوع",
       "unavailable": "{label} (غير متاح)",
       "weekNumber": "الأسبوع {n}",
       "current": "الحالي",

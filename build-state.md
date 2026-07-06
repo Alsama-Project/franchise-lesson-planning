@@ -2,7 +2,51 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Lesson creation binds to the teacher's class (kill silent read-only centre plans) ✅ (this phase)
+## Lesson board fixes: coordinator review-only · "This week" jump ✅ (this phase)
+
+Ships two more board fixes on top of the class-binding fix below (that one already
+landed via #100, so it's inherited from `main` here). Same surface — the lesson board,
+the calendar header, and the teacher-vs-coordinator authoring split.
+
+### Fix 2 — coordinator board is review-only (capability-based)
+
+- **The gate is per-band `canAuthor`** on `BoardYear` (`src/lib/weekly-overview.ts`):
+  the viewer may author in a band iff they teach an **active** class for its
+  `(centre, subject, year)` — the same eligible-class rule `createTeacherPlan` binds
+  on, evaluated over the already-loaded `taught` classes (no extra query). The create
+  action stays the authoritative guard; this only hides affordances that would
+  otherwise mislead.
+- **Add-lesson** (`CalendarView.addChoicesFor`) is filtered to `canAuthor` bands, and
+  the whole "+ Add lesson" control is suppressed when a column has no authorable band.
+  **Not-started cards** (`cards.ts` `emptySlotCards`) skip non-authorable bands too, so
+  the scope-chooser create path is gated identically.
+- This supersedes the old single-space-only `boardReadOnly` for authoring: a user who
+  **coordinates subject A but teaches subject B** now correctly sees Add-lesson only on
+  B's bands. `boardReadOnly` (drag/status controls, review routing) is unchanged.
+
+### Fix 3 — "This week" button
+
+- New `resolveNearestTermWeekNo` (`src/lib/term-week.ts`): today's exact term week when
+  seeded, else the **nearest seeded** week by `|starts_on − today's Monday|`, else null
+  (empty `term_week`). The board resolves it to a `currentWeek: BoardCoordinate | null`
+  on `BoardData`.
+- `WeekNav` renders a **"This week"** button (next to the week picker) linking to
+  `currentWeek`; hidden when null or already showing that week. **On-load week
+  defaulting is unchanged** — button only. (Accurate "current" still needs `term_week`
+  seeded beyond Dec 2025 — data, applied separately.)
+
+### i18n
+
+- `board.weekNav.thisWeek` in **`messages/en`** + **`messages/ar`** (Arabic needs
+  **Kadria**'s review). `dir="auto"` retained on free-text.
+
+### Preserve / verify
+
+- Coordinator review board, `decidePlan` + submit/resubmit, the editor, RLS, and the
+  annotation layer are unchanged. **No schema change.**
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes · `eslint` clean.
+
+## Lesson creation binds to the teacher's class (kill silent read-only centre plans) ✅ (previous phase, #100)
 
 Fixes the broken teacher → coordinator → teacher loop: a teacher could create a plan
 with `class_id=null` / `scope='centre'`, which is read-only to them, so they'd see a

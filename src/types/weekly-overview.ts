@@ -118,6 +118,15 @@ export interface BoardYear {
   subjectCode: string;
   /** The band's subject display name. */
   subjectName: string;
+  /**
+   * Whether the viewer may AUTHOR (create) lessons in this band — i.e. they teach
+   * an active class for its `(centre, subject, year)`. Drives whether the board's
+   * "+ Add lesson" and "Not started" affordances appear for the band: a coordinator
+   * who reviews a subject they don't teach sees none (review only). This is the same
+   * eligible-class rule `createTeacherPlan` binds on; the action stays the
+   * authoritative guard, this only hides affordances that would otherwise mislead.
+   */
+  canAuthor: boolean;
   plans: BoardPlan[];
   lessons: BoardLesson[];
 }
@@ -196,6 +205,14 @@ export interface BoardData {
   prev: BoardCoordinate | null;
   /** The next coordinate (or null at the end of the scheme of work). */
   next: BoardCoordinate | null;
+  /**
+   * The coordinate the "This week" button jumps to: the curriculum week containing
+   * today (Asia/Beirut) resolved via `term_week`, or the NEAREST seeded term week
+   * when today falls outside coverage. Null only when `term_week` has no rows at all
+   * (or no curriculum is synced), in which case the button is not shown. Does NOT
+   * affect on-load week defaulting — button target only.
+   */
+  currentWeek: BoardCoordinate | null;
   /**
    * Every curriculum coordinate in scheme-of-work order, each carrying its flat
    * `weekNo` — the month → week picker's option list. Empty when no curriculum is

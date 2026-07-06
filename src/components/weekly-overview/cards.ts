@@ -108,6 +108,10 @@ export function planCardsForYears(years: BoardYear[], ownerId: string | null): P
 export function emptySlotCards(years: BoardYear[], showCentre: boolean): EmptySlotCard[] {
   const out: EmptySlotCard[] = [];
   for (const band of years) {
+    // "Not started" cards are a create affordance, so only offer them for bands the
+    // viewer may author in (a class they teach). A coordinator reviewing a subject
+    // they don't teach gets no "Not started" cards — review only.
+    if (!band.canAuthor) continue;
     // De-dupe curriculum lessons already planned in THIS band by any scope.
     const planned = new Set(band.plans.map((p) => p.lessonKey));
     for (const lesson of band.lessons) {

@@ -85,7 +85,9 @@
       "dailyLearningOutcome": "ناتج التعلّم اليومي",
       "inFocusYear": "قيد التركيز · السنة {year}",
       "selectYear": "اختر سنة لعرض درسها.",
-      "empty": "لا توجد مواضيع مسجّلة لـ {subject} بعد."
+      "empty": "لا توجد مواضيع مسجّلة لـ {subject} بعد.",
+      "filterThemes": "تصفية المواضيع",
+      "noThemeMatch": "لا مواضيع مطابقة."
     },
     "search": {
       "placeholder": "ابحث في الدروس",
@@ -94,7 +96,7 @@
       "clearAll": "مسح الكل",
       "resultCount": "{count, plural, zero {لا نتائج} one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}",
       "emptyTitle": "ابحث في المنهج",
-      "emptyBody": "ابدأ بالكتابة للبحث في دروس {subject}، أو صفِّ النتائج باستخدام العوامل على اليمين.",
+      "emptyBody": "ابدأ الكتابة للبحث في دروس {subject}، أو أضف مُرشِّحًا من شريط البحث.",
       "noMatchTitle": "لا توجد دروس مطابقة",
       "noMatchBody": "جرّب كلمة مختلفة أو أزل بعض عوامل التصفية.",
       "detailHeading": "الدرس المحدد",
@@ -107,8 +109,21 @@
         "skill": "المهارة اللغوية",
         "more": "المزيد",
         "hasResources": "يحتوي على موارد",
-        "grammar": "القواعد والمفردات"
-      }
+        "grammar": "القواعد والمفردات",
+        "groupTopic": "الموضوع",
+        "groupYear": "السنة",
+        "groupMonth": "الشهر"
+      },
+      "scope": "{subject} · كل السنوات",
+      "addFilter": "أضف مُرشِّحًا",
+      "groupByLabel": "التجميع حسب",
+      "groupNone": "بلا",
+      "resourcesOnly": "الدروس التي تحتوي موارد فقط",
+      "removeFilter": "إزالة مُرشِّح {label}",
+      "selectedCount": "{count} محدَّد",
+      "anyValue": "أي",
+      "allYears": "كل السنوات",
+      "close": "إغلاق البحث"
     },
     "noLessons": "لا توجد دروس لهذا الأسبوع.",
     "emptyState": {

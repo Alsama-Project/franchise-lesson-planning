@@ -19,6 +19,27 @@ export function skillKeyOf(label: string): SkillKey {
   return 'other';
 }
 
+/**
+ * Canonicalise a raw `linguistic_skill` label to one of the ~5 REAL skill values
+ * (Listening · Reading · Speaking · Writing · Basic Literacy). The source column carries
+ * typo/casing variants of these, so the Search Skill facet folds them to a stable label
+ * (matched by substring, which absorbs the common misspellings). A value that matches
+ * none is returned trimmed as-is rather than dropped, so no real data disappears; a blank
+ * yields null. Keep this the single definition both the facet options and the record
+ * matching read.
+ */
+export function canonicalSkill(label: string | null): string | null {
+  const raw = (label ?? '').trim();
+  if (!raw) return null;
+  const s = raw.toLowerCase();
+  if (s.includes('read')) return 'Reading';
+  if (s.includes('writ')) return 'Writing';
+  if (s.includes('listen')) return 'Listening';
+  if (s.includes('speak')) return 'Speaking';
+  if (s.includes('liter')) return 'Basic Literacy';
+  return raw;
+}
+
 /** Coloured text class for the table's Skill column (no fill, as in the design). */
 export const SKILL_TEXT: Record<SkillKey, string> = {
   reading: 'text-skill-reading',

@@ -159,7 +159,6 @@ function TopicsBody({ data }: { data: TopicsData }) {
                       taught={taught}
                       selected={selected2}
                       thread={thread ?? null}
-                      presence={data.years.map((y) => taughtByYear.has(y))}
                       onSelect={() => (taught ? setSelectedYear(yr) : undefined)}
                     />
                   </div>
@@ -193,7 +192,13 @@ function TopicsBody({ data }: { data: TopicsData }) {
   );
 }
 
-/** The flat, always-visible theme list (english fallback — no focus_area structure). */
+/**
+ * The english theme rail — no focus_area parent exists, so the CLEANED theme list
+ * (trimmed, junk-dropped and case-folded in `getTopicsData`) is organised into
+ * ALPHABETICAL sections (A, B, C…) for scannability, with a filter box on top. Topic
+ * indices stay the ORIGINAL ones (selection keys off them), so filtering/sectioning is
+ * display-only.
+ */
 function ThemeRail({
   group,
   faIdx,
@@ -206,7 +211,27 @@ function ThemeRail({
   onSelect: (fi: number, ti: number) => void;
 }) {
   const t = useTranslations('curriculum');
+  const [filter, setFilter] = useState('');
+
+  const sections = useMemo(() => {
+    const q = filter.trim().toLocaleLowerCase();
+    const indexed = (group?.topics ?? []).map((tp, ti) => ({ label: tp.topic, ti }));
+    const matched = q ? indexed.filter((it) => it.label.toLocaleLowerCase().includes(q)) : indexed;
+    const bySection = new Map<string, { label: string; ti: number }[]>();
+    for (const it of matched) {
+      const first = it.label.charAt(0).toLocaleUpperCase();
+      const key = /\p{L}/u.test(first) ? first : '#'; // non-letter leads → "#"
+      if (!bySection.has(key)) bySection.set(key, []);
+      bySection.get(key)!.push(it);
+    }
+    // "#" sinks to the end; letters collate normally.
+    return [...bySection.entries()].sort(([a], [b]) =>
+      a === '#' ? 1 : b === '#' ? -1 : a.localeCompare(b),
+    );
+  }, [group, filter]);
+
   if (!group) return null;
+
   return (
     <div className="overflow-hidden rounded-[12px] border border-[#EFE8DD]">
       <div className="bg-[#F8F1E8] px-[13px] py-[11px]">
@@ -214,15 +239,47 @@ function ThemeRail({
           {t('topics.topicsHeading')}
         </span>
       </div>
-      <div className="bg-[#FCFAF6] p-[6px]">
-        {group.topics.map((tp, ti) => (
-          <TopicButton
-            key={ti}
-            label={tp.topic}
-            active={selected?.faIdx === faIdx && selected?.topicIdx === ti}
-            onSelect={() => onSelect(faIdx, ti)}
+      <div className="border-b border-[#F3EEE6] bg-[#FCFAF6] p-[8px]">
+        <div className="relative">
+          <span className="pointer-events-none absolute start-[9px] top-1/2 -translate-y-1/2 text-[#B4AA9E]">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+          </span>
+          <input
+            type="search"
+            dir="auto"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label={t('topics.filterThemes')}
+            placeholder={t('topics.filterThemes')}
+            className="w-full rounded-[8px] border border-[#DDD4C8] bg-surface py-[7px] pe-[10px] ps-[28px] text-[12.5px] text-ink outline-none placeholder:text-text-faint focus-visible:ring-2 focus-visible:ring-teal/30"
           />
-        ))}
+        </div>
+      </div>
+      <div className="max-h-[520px] overflow-y-auto bg-[#FCFAF6] p-[6px]">
+        {sections.length === 0 ? (
+          <p className="px-[10px] py-[16px] text-center text-[12px] text-text-muted">
+            {t('topics.noThemeMatch')}
+          </p>
+        ) : (
+          sections.map(([letter, items]) => (
+            <div key={letter}>
+              <div className="px-[10px] pb-[3px] pt-[8px] text-[10px] font-bold uppercase tracking-[0.06em] text-[#B4AA9E]">
+                {letter}
+              </div>
+              {items.map((it) => (
+                <TopicButton
+                  key={it.ti}
+                  label={it.label}
+                  active={selected?.faIdx === faIdx && selected?.topicIdx === it.ti}
+                  onSelect={() => onSelect(faIdx, it.ti)}
+                />
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -341,13 +398,11 @@ function SpiralCard({
   taught,
   selected,
   thread,
-  presence,
   onSelect,
 }: {
   taught: boolean;
   selected: boolean;
   thread: TopicThreadYear | null;
-  presence: boolean[];
   onSelect: () => void;
 }) {
   const t = useTranslations('curriculum');
@@ -358,6 +413,8 @@ function SpiralCard({
       </div>
     );
   }
+  // The spiral progression reads from the year-accent rail on the left; the per-card
+  // presence pips were redundant noise, so the card is just the year's outcome.
   return (
     <button
       type="button"
@@ -370,12 +427,6 @@ function SpiralCard({
           : 'border border-[#EAD9C5] bg-surface-cream',
       )}
     >
-      {/* Presence pips — filled where the topic is TAUGHT (recurrence, not depth). */}
-      <div className="mb-[4px] flex gap-[3px]" aria-hidden>
-        {presence.map((on, i) => (
-          <span key={i} className={cn('size-[6px] rounded-full', on ? 'bg-teal' : 'border border-[#C9BEB0]')} />
-        ))}
-      </div>
       <div dir="auto" className="text-[14px] leading-[1.45] text-ink [overflow-wrap:anywhere]">
         {thread?.dailyOutcome || t('empty')}
       </div>

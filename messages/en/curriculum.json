@@ -85,7 +85,9 @@
       "dailyLearningOutcome": "Daily learning outcome",
       "inFocusYear": "In focus · Year {year}",
       "selectYear": "Select a year to see its lesson.",
-      "empty": "No topics recorded for {subject} yet."
+      "empty": "No topics recorded for {subject} yet.",
+      "filterThemes": "Filter themes",
+      "noThemeMatch": "No themes match."
     },
     "search": {
       "placeholder": "Search lessons",
@@ -94,7 +96,7 @@
       "clearAll": "Clear all",
       "resultCount": "{count, plural, =0 {No results} one {# result} other {# results}}",
       "emptyTitle": "Search the curriculum",
-      "emptyBody": "Start typing to search {subject}'s lessons, or filter with the facets on the left.",
+      "emptyBody": "Start typing to search {subject}’s lessons, or add a filter from the search bar.",
       "noMatchTitle": "No lessons match",
       "noMatchBody": "Try a different word or clear some filters.",
       "detailHeading": "Selected lesson",
@@ -107,8 +109,21 @@
         "skill": "Linguistic skill",
         "more": "More",
         "hasResources": "Has resources",
-        "grammar": "Grammar & vocabulary"
-      }
+        "grammar": "Grammar & vocabulary",
+        "groupTopic": "Topic",
+        "groupYear": "Year",
+        "groupMonth": "Month"
+      },
+      "scope": "{subject} · all years",
+      "addFilter": "Add filter",
+      "groupByLabel": "Group by",
+      "groupNone": "None",
+      "resourcesOnly": "Only lessons with resources",
+      "removeFilter": "Remove {label} filter",
+      "selectedCount": "{count} selected",
+      "anyValue": "Any",
+      "allYears": "All years",
+      "close": "Close search"
     },
     "noLessons": "No lessons for this week.",
     "emptyState": {

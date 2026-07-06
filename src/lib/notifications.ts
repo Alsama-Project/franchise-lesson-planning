@@ -17,10 +17,14 @@ import 'server-only';
 // Everything else (draft `in_progress`, a teacher's own `submitted`/pending) is
 // not a notification. RLS already scopes `lesson_plans` to rows the user may see;
 // the explicit `created_by` / coordinator-space filters narrow on top of that. The
-// auth'd, cookie-bound client is used throughout — never the service-role key.
+// auth'd, cookie-bound client scopes every PLAN read — never the service-role key;
+// the per-plan curriculum label is resolved through the shared curriculum layer
+// (global reference data), PINNED to each plan's stamped curriculum version so a
+// notification for a historical plan reads the same curriculum the plan renders.
 
 import { createClient } from '@/lib/supabase/server';
 import { getMyMemberships } from '@/lib/auth';
+import { getPlanCurriculumLabels, planCurriculumLabelKey } from '@/lib/curriculumUtils';
 import type { PlanStatus } from '@/types/lesson';
 
 /** The two outcome statuses that surface as teacher-facing notifications. */
@@ -66,6 +70,7 @@ export type NotificationItem = OutcomeNotification | ReviewNotification;
 interface OutcomeRow {
   id: string;
   curriculum_lesson_id: string;
+  curriculum_version_id: string | null;
   year: number | null;
   status: NotificationStatus;
   review_note: string | null;
@@ -116,7 +121,7 @@ type Supa = Awaited<ReturnType<typeof createClient>>;
 async function getOutcomeNotifications(supabase: Supa, userId: string): Promise<OutcomeNotification[]> {
   const { data } = await supabase
     .from('lesson_plans')
-    .select('id, curriculum_lesson_id, year, status, review_note, reviewed_at, updated_at')
+    .select('id, curriculum_lesson_id, curriculum_version_id, year, status, review_note, reviewed_at, updated_at')
     .eq('created_by', userId)
     .in('status', ['approved', 'needs_review'])
     .is('deleted_at', null) // a trashed plan (0048) raises no outcome notification
@@ -125,35 +130,29 @@ async function getOutcomeNotifications(supabase: Supa, userId: string): Promise<
   const rows = (data ?? []) as OutcomeRow[];
   if (rows.length === 0) return [];
 
-  // Resolve a short title per curriculum lesson (curriculum_lesson_id == lesson_key).
-  // curriculum_lesson is readable by any authenticated user (curr_read policy).
-  const keys = [...new Set(rows.map((r) => r.curriculum_lesson_id).filter(Boolean))];
-  const titleByKey = new Map<string, string>();
-  if (keys.length > 0) {
-    const { data: lessons } = await supabase
-      .from('curriculum_lesson_active')
-      .select('lesson_key, daily_outcome, focus_area')
-      .in('lesson_key', keys);
-    for (const l of (lessons ?? []) as Array<{
-      lesson_key: string;
-      daily_outcome: string | null;
-      focus_area: string | null;
-    }>) {
-      titleByKey.set(l.lesson_key, (l.focus_area || l.daily_outcome || '').trim());
-    }
-  }
+  // Resolve a short title per plan, PINNED to the plan's stamped curriculum version
+  // (a re-authored subject must not retitle an old plan's notification). Falls back to
+  // the active version for legacy/unstamped plans; keyed by (lesson_key, version).
+  const labels = await getPlanCurriculumLabels(
+    rows
+      .filter((r) => r.curriculum_lesson_id)
+      .map((r) => ({ lessonKey: r.curriculum_lesson_id, versionId: r.curriculum_version_id })),
+  );
 
-  return rows.map((r) => ({
-    kind: 'outcome' as const,
-    key: `outcome:${r.id}`,
-    planId: r.id,
-    href: `/plan/${r.id}`,
-    status: r.status,
-    yearLabel: yearLabel(r.year),
-    lessonTitle: titleByKey.get(r.curriculum_lesson_id) ?? '',
-    at: r.reviewed_at ?? r.updated_at,
-    reviewNote: r.status === 'needs_review' ? r.review_note : null,
-  }));
+  return rows.map((r) => {
+    const label = labels.get(planCurriculumLabelKey(r.curriculum_lesson_id, r.curriculum_version_id));
+    return {
+      kind: 'outcome' as const,
+      key: `outcome:${r.id}`,
+      planId: r.id,
+      href: `/plan/${r.id}`,
+      status: r.status,
+      yearLabel: yearLabel(r.year),
+      lessonTitle: (label ? label.focusArea || label.dailyOutcome : '').trim(),
+      at: r.reviewed_at ?? r.updated_at,
+      reviewNote: r.status === 'needs_review' ? r.review_note : null,
+    };
+  });
 }
 
 /**

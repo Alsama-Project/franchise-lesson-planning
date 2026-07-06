@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { parseTaxonomyId } from '@/lib/curriculum/taxonomy';
+import { planCurriculumLabelKey, type PlanCurriculumLabel } from '@/lib/curriculum/plan-labels';
 import type { CurriculumLesson } from '@/types/curriculum';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
 import type { MonthNav, PickerCell } from '@/components/create-lesson/types';
@@ -105,6 +106,107 @@ export async function getActiveCurriculumVersionId(
     .maybeSingle();
   if (error) throw new Error(`Active curriculum version read failed: ${error.message}`);
   return (data as { id: string } | null)?.id ?? null;
+}
+
+// ── Per-plan curriculum labels (version-pinned) ─────────────────────────────────
+
+// The label type + key builder are pure and live in a server-free module so the
+// version-keying contract is unit-testable in isolation; re-exported here so
+// callers import the whole label API from one place.
+export { planCurriculumLabelKey, type PlanCurriculumLabel };
+
+/**
+ * Resolve the display label (daily outcome + focus area) for a SET of lesson
+ * plans, each PINNED to the plan's stamped `curriculum_version_id`. A list entry
+ * for a historical plan then shows the same curriculum the plan renders when
+ * opened — silently, no version marker — instead of drifting to the active
+ * version's text after a re-author.
+ *
+ * Read scoping mirrors {@link getLessonById}: a stamped plan reads the base
+ * `curriculum_lesson` table pinned to its version; an unstamped plan reads the
+ * `curriculum_lesson_active` view (the subject's active version). Batched into at
+ * most two reads regardless of list size. Missing/archived rows simply have no
+ * entry, so callers fall back to their own placeholder (parity with the old
+ * active-only lookup). Keyed by {@link planCurriculumLabelKey}.
+ */
+export async function getPlanCurriculumLabels(
+  plans: ReadonlyArray<{ lessonKey: string; versionId: string | null }>,
+): Promise<Map<string, PlanCurriculumLabel>> {
+  const out = new Map<string, PlanCurriculumLabel>();
+  if (plans.length === 0) return out;
+
+  const supabase = createAdminClient();
+
+  // Partition the requested plans: version-stamped keys resolve against the base
+  // table pinned to their version; unstamped keys resolve against the active view.
+  const pinnedKeys = new Set<string>();
+  const pinnedVersionIds = new Set<string>();
+  const activeKeys = new Set<string>();
+  for (const p of plans) {
+    if (!p.lessonKey) continue;
+    if (p.versionId) {
+      pinnedKeys.add(p.lessonKey);
+      pinnedVersionIds.add(p.versionId);
+    } else {
+      activeKeys.add(p.lessonKey);
+    }
+  }
+
+  const reads: Array<PromiseLike<void>> = [];
+
+  if (pinnedKeys.size > 0) {
+    // Over-fetches the (keys × versions) cross-product, but the exact
+    // (lesson_key, version) pair is what we key on, so unrelated pairs are
+    // ignored. `is_active` keeps parity with the resolve path (historical rows
+    // stay active on demotion, so this never hides a pinned plan's row).
+    reads.push(
+      supabase
+        .from('curriculum_lesson')
+        .select('lesson_key, curriculum_version_id, daily_outcome, focus_area')
+        .eq('is_active', true)
+        .in('lesson_key', [...pinnedKeys])
+        .in('curriculum_version_id', [...pinnedVersionIds])
+        .then(({ data, error }) => {
+          if (error) throw new Error(`Plan curriculum label read failed: ${error.message}`);
+          for (const r of (data ?? []) as Array<{
+            lesson_key: string;
+            curriculum_version_id: string;
+            daily_outcome: string | null;
+            focus_area: string | null;
+          }>) {
+            out.set(planCurriculumLabelKey(r.lesson_key, r.curriculum_version_id), {
+              dailyOutcome: (r.daily_outcome ?? '').trim(),
+              focusArea: (r.focus_area ?? '').trim(),
+            });
+          }
+        }),
+    );
+  }
+
+  if (activeKeys.size > 0) {
+    reads.push(
+      supabase
+        .from('curriculum_lesson_active')
+        .select('lesson_key, daily_outcome, focus_area')
+        .in('lesson_key', [...activeKeys])
+        .then(({ data, error }) => {
+          if (error) throw new Error(`Plan curriculum label read failed: ${error.message}`);
+          for (const r of (data ?? []) as Array<{
+            lesson_key: string;
+            daily_outcome: string | null;
+            focus_area: string | null;
+          }>) {
+            out.set(planCurriculumLabelKey(r.lesson_key, null), {
+              dailyOutcome: (r.daily_outcome ?? '').trim(),
+              focusArea: (r.focus_area ?? '').trim(),
+            });
+          }
+        }),
+    );
+  }
+
+  await Promise.all(reads);
+  return out;
 }
 
 // ── Row → legacy CurriculumLesson mapping ───────────────────────────────────────

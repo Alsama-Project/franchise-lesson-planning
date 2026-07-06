@@ -82,6 +82,38 @@ centres by **name** and ABORT if any resolved id equals a real centre id.
 
 Run both in the Supabase SQL editor (service-role). Never from a user request.
 
+## `reset_personas_english_shatila.sql`
+
+The **re-runnable "reset the impersonation personas to English · Shatila" fixture**.
+When the two canonical impersonation personas (`teacher1` / `coordinator1`) drift
+during end-to-end testing — teacher1 picking up extra subject memberships/class
+links so it can author non-English plans, coordinator1's chrome pointing at the
+wrong centre+subject while its coordinator power sprawls across many subjects — this
+pins both back to English · Shatila and nothing else. Next drift is a one-paste fix.
+
+It is **idempotent** (scoped delete-then-upsert; guards throughout) and touches
+**only these two profiles' rows** — no other user's memberships. End state:
+
+- **teacher1** → 1 `subject_membership` (English·Shatila, `role='teacher'`, primary),
+  0 `coordinator_subject`, 2 `class_teachers` (English·Shatila Y1 + Y2).
+- **coordinator1** → 1 `subject_membership` (English·Shatila, `role='coordinator'`,
+  primary), 1 `coordinator_subject` (English), 0 `class_teachers`.
+
+Why three tables: the coordinator scope is split — `coordinator_subject` is the
+school-agnostic **power** (console Members/Curriculum + all-schools plan RLS), while
+the `subject_membership` `role='coordinator'` row is the **chrome** (persona chip
+label, read-only review board, review-queue notifications). The planning board also
+folds any `class_teachers` row into a board space regardless of membership, so class
+links are scoped too — that fold is exactly how teacher1 authored the stray Arabic
+plan. Also soft-deletes the abandoned Arabic-centre plan
+(`577f2207-…`, reversible via `restore_lesson_plan`).
+
+Runs as plain DML in one transaction in the Supabase SQL editor (service-role) — no
+path assumes `auth.uid()`. **No schema change** required: the current chrome resolves
+to English·Shatila with the seed alone (no move-2 migration). It ends with a
+count-asserting verify `SELECT` that reads **PASS**/**FAIL** per persona. Never runs
+from a user request.
+
 ## `report_test_data.sql` → `reset_test_data.sql`
 
 A two-step, **read-then-reset** one-off that resets the whole (centre, class) layer

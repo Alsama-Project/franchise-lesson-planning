@@ -17,7 +17,7 @@
 // cleaned logic — the live per-subject signal). The spiral's deepening is POSITIONAL (Nth
 // recurrence), never a fabricated complexity signal.
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
@@ -56,8 +56,26 @@ const SEGMENT_STOPS = [
 // both cards stretch to the taller, so each row reads as one band.
 const ROW1_HEIGHT = 300;
 const ROW2_HEIGHT = 520;
-/** Rows shown per page in the ENGLISH (theme-mode) matrices before the pager kicks in. */
-const ROWS_PER_PAGE = 15;
+/** Fixed grid-row footprint for the theme-mode matrices. Rows are pinned to this height
+ *  (`grid-auto-rows`) so every row — including the year-label header — is uniform and the
+ *  rows-per-page fit can be computed from the measured body height. `ROW_STRIDE` is the
+ *  vertical space one row consumes (height + the row gap between rows). `MIN_ROWS_PER_PAGE`
+ *  is the floor so a very short body never collapses to a useless one- or two-row page. */
+const MATRIX_ROW_HEIGHT = 30;
+const MATRIX_ROW_GAP = 5;
+const MATRIX_ROW_STRIDE = MATRIX_ROW_HEIGHT + MATRIX_ROW_GAP;
+const MIN_ROWS_PER_PAGE = 6;
+/** Reserved height for each matrix card's footer (legend / gap callout) so both row-2 cards
+ *  budget the SAME body height whether or not the callout renders — keeping their fitted
+ *  rows-per-page identical. */
+const MATRIX_FOOTER_MIN_HEIGHT = 56;
+
+/** How many whole theme rows (excluding the sticky year-label header row) fit in a body of
+ *  `bodyHeight` px, clamped to the floor. Pure so the fit math stays in one place. */
+function fitRowsPerPage(bodyHeight: number): number {
+  const rows = Math.floor((bodyHeight - MATRIX_ROW_HEIGHT) / MATRIX_ROW_STRIDE);
+  return Math.max(MIN_ROWS_PER_PAGE, rows);
+}
 
 export function CurriculumInsights({
   subjects,
@@ -95,6 +113,19 @@ export function CurriculumInsights({
   const yearName = (y: number) => (y === 0 ? t('prep') : t('yearShort', { n: formatNumber(y, locale) }));
   const explorerHref = `/curriculum?${new URLSearchParams({ tab: 'topics', subject: subjectCode, year: String(year) }).toString()}`;
 
+  // The two row-2 matrices (spiral + coverage) each measure how many whole rows fit their
+  // body; we page BOTH off the SMALLER budget so they show the same count, stay the same
+  // height and neither scrolls. Each panel reports its own fitted rows here; the shared
+  // `rowsPerPage` is the min (clamped to the floor until the first measurement lands).
+  const [rowBudgets, setRowBudgets] = useState<Record<string, number>>({});
+  const reportRowBudget = useCallback((panelId: string, rows: number) => {
+    setRowBudgets((prev) => (prev[panelId] === rows ? prev : { ...prev, [panelId]: rows }));
+  }, []);
+  const rowsPerPage = useMemo(() => {
+    const budgets = Object.values(rowBudgets);
+    return budgets.length ? Math.max(MIN_ROWS_PER_PAGE, Math.min(...budgets)) : MIN_ROWS_PER_PAGE;
+  }, [rowBudgets]);
+
   return (
     <div className="mx-auto max-w-[1240px] overflow-hidden rounded-[18px] border border-border bg-surface shadow-card">
       {/* Title row: "Curriculum health" · subject picker (the year lens lives on card 1). */}
@@ -120,8 +151,19 @@ export function CurriculumInsights({
             onYear={(y) => go({ year: y })}
           />
           <FocusAreaCard topics={topics} linguisticSkills={linguisticSkills} />
-          <SpiralCard topics={topics} yearName={yearName} />
-          <CoverageCard topics={topics} yearName={yearName} explorerHref={explorerHref} />
+          <SpiralCard
+            topics={topics}
+            yearName={yearName}
+            rowsPerPage={rowsPerPage}
+            reportRowBudget={reportRowBudget}
+          />
+          <CoverageCard
+            topics={topics}
+            yearName={yearName}
+            explorerHref={explorerHref}
+            rowsPerPage={rowsPerPage}
+            reportRowBudget={reportRowBudget}
+          />
         </div>
       </div>
     </div>
@@ -374,6 +416,7 @@ function FocusAreaCard({
 // this component owns the layout and takes those as props.
 
 function MatrixScaffold({
+  panelId,
   title,
   headerRight,
   view,
@@ -382,7 +425,11 @@ function MatrixScaffold({
   emptyMessage,
   renderCell,
   footer,
+  rowsPerPage,
+  reportRowBudget,
 }: {
+  /** Stable id used to report this panel's fitted rows to the shared parent budget. */
+  panelId: string;
   title: string;
   headerRight?: React.ReactNode;
   view: MatrixView;
@@ -391,27 +438,49 @@ function MatrixScaffold({
   emptyMessage: string;
   renderCell: (row: MatrixRow, year: number, taughtYears: number[]) => React.ReactNode;
   footer?: React.ReactNode;
+  /** Shared rows-per-page (the SMALLER of the two panels' fitted budgets). */
+  rowsPerPage: number;
+  reportRowBudget: (panelId: string, rows: number) => void;
 }) {
   const t = useTranslations('insights');
   const locale = useLocale();
   const isTheme = view.groupedBy === 'theme';
-  const cols = `${labelWidth}px repeat(${view.years.length}, minmax(38px, 1fr))`;
+  // Label column bounded; year columns share the remaining width evenly (minmax(0,1fr) lets
+  // them shrink below content), so all 7 fit with no horizontal scroll.
+  const cols = `minmax(0, ${labelWidth}px) repeat(${view.years.length}, minmax(0, 1fr))`;
 
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  // Theme mode: flatten (single group), filter, then page.
+  // Measure the body height and report how many whole rows fit; the parent feeds back the
+  // smaller of the two panels' budgets as `rowsPerPage`. Runs on mount and on every body
+  // resize (viewport / font / footer changes) via a ResizeObserver.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isTheme) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => reportRowBudget(panelId, fitRowsPerPage(el.clientHeight));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isTheme, panelId, reportRowBudget]);
+
+  // Theme mode: flatten (single group), filter, then page off the shared rows-per-page.
   const allRows = useMemo(() => view.groups.flatMap((g) => g.rows), [view]);
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? allRows.filter((r) => r.topic.toLowerCase().includes(q)) : allRows;
   }, [allRows, filter]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  // Clamp the page whenever rowsPerPage (or the filter) shrinks the page count so we never
+  // render past the last page.
   const clampedPage = Math.min(page, totalPages - 1);
-  const pageRows = filtered.slice(clampedPage * ROWS_PER_PAGE, clampedPage * ROWS_PER_PAGE + ROWS_PER_PAGE);
-  const from = filtered.length === 0 ? 0 : clampedPage * ROWS_PER_PAGE + 1;
-  const to = clampedPage * ROWS_PER_PAGE + pageRows.length;
+  const pageRows = filtered.slice(clampedPage * rowsPerPage, clampedPage * rowsPerPage + rowsPerPage);
+  const from = filtered.length === 0 ? 0 : clampedPage * rowsPerPage + 1;
+  const to = clampedPage * rowsPerPage + pageRows.length;
 
   const toggleGroup = (key: string) =>
     setCollapsed((prev) => {
@@ -444,20 +513,35 @@ function MatrixScaffold({
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div
+            ref={bodyRef}
+            className={cn('min-h-0 flex-1', isTheme ? 'overflow-hidden' : 'overflow-auto')}
+          >
             {isTheme && filtered.length === 0 ? (
               <p className="pt-[24px] text-center text-[12.5px] text-text-muted">{t('matrix.noMatches')}</p>
-            ) : (
-              <div className="grid min-w-max items-center gap-[5px] pe-[2px]" style={{ gridTemplateColumns: cols }}>
+            ) : isTheme ? (
+              // Theme mode: exactly `rowsPerPage` fitted rows + the year-label header, all
+              // pinned to a uniform row height. No overflow-y (nothing exceeds the body) and
+              // overflow-x hidden (the 7 year columns share the width instead of scrolling).
+              <div
+                className="grid items-center overflow-x-hidden"
+                style={{ gridTemplateColumns: cols, gridAutoRows: MATRIX_ROW_HEIGHT, columnGap: 5, rowGap: MATRIX_ROW_GAP }}
+              >
                 <span />
                 {view.years.map((y) => (
-                  <span key={y} className="text-center text-[10px] text-[#A79E94]">{yearName(y)}</span>
+                  <span key={y} className="truncate text-center text-[10px] text-[#A79E94]">{yearName(y)}</span>
                 ))}
-                {isTheme
-                  ? pageRows.map((row, ri) => (
-                      <MatrixRowCells key={`${row.topic}-${ri}`} row={row} years={view.years} renderCell={renderCell} />
-                    ))
-                  : view.groups.map((g, gi) => {
+                {pageRows.map((row, ri) => (
+                  <MatrixRowCells key={`${row.topic}-${ri}`} row={row} years={view.years} renderCell={renderCell} />
+                ))}
+              </div>
+            ) : (
+              <div className="grid items-center gap-[5px] pe-[2px]" style={{ gridTemplateColumns: cols }}>
+                <span />
+                {view.years.map((y) => (
+                  <span key={y} className="truncate text-center text-[10px] text-[#A79E94]">{yearName(y)}</span>
+                ))}
+                {view.groups.map((g, gi) => {
                       const key = g.faLabel ?? `g-${gi}`;
                       const open = !collapsed.has(key);
                       return (
@@ -527,7 +611,7 @@ function MatrixRowCells({
   const taughtYears = years.filter((y) => row.byYear[y] !== undefined);
   return (
     <div className="contents">
-      <span dir="auto" className="truncate text-[11.5px] text-[#3A332E] [overflow-wrap:anywhere]">{row.topic}</span>
+      <span dir="auto" title={row.topic} className="min-w-0 truncate text-[11.5px] text-[#3A332E]">{row.topic}</span>
       {years.map((y) => renderCell(row, y, taughtYears))}
     </div>
   );
@@ -535,7 +619,17 @@ function MatrixRowCells({
 
 // ── 3) Spiralling across years ──────────────────────────────────────────────────────
 
-function SpiralCard({ topics, yearName }: { topics: TopicsData; yearName: (y: number) => string }) {
+function SpiralCard({
+  topics,
+  yearName,
+  rowsPerPage,
+  reportRowBudget,
+}: {
+  topics: TopicsData;
+  yearName: (y: number) => string;
+  rowsPerPage: number;
+  reportRowBudget: (panelId: string, rows: number) => void;
+}) {
   const t = useTranslations('insights');
   const view = useMemo(() => topicMatrix(topics), [topics]);
 
@@ -552,6 +646,7 @@ function SpiralCard({ topics, yearName }: { topics: TopicsData; yearName: (y: nu
 
   return (
     <MatrixScaffold
+      panelId="spiral"
       title={t('card3.title')}
       headerRight={<LensChip label={t('allYears')} />}
       view={view}
@@ -559,8 +654,10 @@ function SpiralCard({ topics, yearName }: { topics: TopicsData; yearName: (y: nu
       labelWidth={172}
       emptyMessage={t('card3.empty')}
       renderCell={renderCell}
+      rowsPerPage={rowsPerPage}
+      reportRowBudget={reportRowBudget}
       footer={
-        <div className="flex flex-wrap gap-[16px]">
+        <div className="flex flex-wrap items-start gap-[16px]" style={{ minHeight: MATRIX_FOOTER_MIN_HEIGHT }}>
           <span className="inline-flex items-center gap-[6px] text-[11px] text-[#8A8178]">
             <span className="inline-flex">
               <span className="size-[9px] rounded-[2px]" style={{ background: 'var(--color-chart-teal-1)' }} />
@@ -585,10 +682,14 @@ function CoverageCard({
   topics,
   yearName,
   explorerHref,
+  rowsPerPage,
+  reportRowBudget,
 }: {
   topics: TopicsData;
   yearName: (y: number) => string;
   explorerHref: string;
+  rowsPerPage: number;
+  reportRowBudget: (panelId: string, rows: number) => void;
 }) {
   const t = useTranslations('insights');
   const locale = useLocale();
@@ -629,6 +730,7 @@ function CoverageCard({
 
   return (
     <MatrixScaffold
+      panelId="coverage"
       title={t('card4.title')}
       headerRight={
         <span className="flex items-center gap-[8px]">
@@ -643,24 +745,30 @@ function CoverageCard({
       labelWidth={150}
       emptyMessage={t('card4.empty')}
       renderCell={renderCell}
+      rowsPerPage={rowsPerPage}
+      reportRowBudget={reportRowBudget}
+      // Always reserve the callout's footprint (min-height) so the body-height budget — and
+      // thus the fitted rows-per-page — is the same whether or not a gap callout renders.
       footer={
-        primary ? (
-          <div className="flex items-center gap-[8px] rounded-[9px] border border-gap-border bg-gap-bg px-[12px] py-[9px]">
-            <WarningIcon />
-            <span dir="auto" className="flex-1 text-[12.5px] text-[#7A4436] [overflow-wrap:anywhere]">
-              {t.rich('card4.gapNarrative', {
-                topic: primary.topic,
-                gap: gapText(primary.gapYears),
-                reappear: yearName(primary.reappear),
-                b: (chunks) => <b className="font-semibold">{chunks}</b>,
-              })}
-            </span>
-            <Link href={explorerHref} className="whitespace-nowrap text-[12px] font-semibold text-gap" aria-label={t('openInExplorer')}>
-              {t('openInExplorer')}
-              <span aria-hidden> →</span>
-            </Link>
-          </div>
-        ) : undefined
+        <div className="flex items-center" style={{ minHeight: MATRIX_FOOTER_MIN_HEIGHT }}>
+          {primary ? (
+            <div className="flex w-full items-center gap-[8px] rounded-[9px] border border-gap-border bg-gap-bg px-[12px] py-[9px]">
+              <WarningIcon />
+              <span dir="auto" className="flex-1 text-[12.5px] text-[#7A4436] [overflow-wrap:anywhere]">
+                {t.rich('card4.gapNarrative', {
+                  topic: primary.topic,
+                  gap: gapText(primary.gapYears),
+                  reappear: yearName(primary.reappear),
+                  b: (chunks) => <b className="font-semibold">{chunks}</b>,
+                })}
+              </span>
+              <Link href={explorerHref} className="whitespace-nowrap text-[12px] font-semibold text-gap" aria-label={t('openInExplorer')}>
+                {t('openInExplorer')}
+                <span aria-hidden> →</span>
+              </Link>
+            </div>
+          ) : null}
+        </div>
       }
     />
   );

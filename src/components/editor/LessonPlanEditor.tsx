@@ -374,7 +374,7 @@ export function LessonPlanEditor({
     // On Step 1 the working area is one full-width column; on Steps 2–5 it splits
     // into plan (left) · persistent worksheet (right), each scrolling on its own.
     // Below `lg` it falls back to normal document flow (panes stack, page scrolls).
-    <div className="-mx-6 -my-8 flex flex-col lg:-mx-10 lg:h-[calc(100vh-var(--app-chrome-height,64px))]">
+    <div className="-mx-6 -my-8 flex h-[calc(100dvh_-_var(--app-chrome-height,64px))] flex-col lg:-mx-10">
       <div className="shrink-0">
         <EditorSubHeader
           classContext={classContext}
@@ -404,7 +404,7 @@ export function LessonPlanEditor({
           // STEP 1 — Objective: single FULL-WIDTH column, edge to edge (page
           // padding only). No reserved right column, no split max-width — the
           // worksheet pane belongs to steps 2–5 only.
-          <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[18px] lg:overflow-y-auto lg:px-[30px]">
+          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[18px] lg:px-[30px]">
             <div>
               {locked ? (
                 <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
@@ -427,7 +427,7 @@ export function LessonPlanEditor({
         ) : (
           // STEPS 2–5 — split: plan (left) · persistent worksheet (right).
           <>
-            <section className="min-w-0 flex-1 overflow-visible px-[22px] py-[18px] lg:overflow-y-auto lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
+            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[18px] lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
               <div className="mx-auto max-w-[820px]">
                 {locked && step < STEP_COUNT ? (
                   <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
@@ -525,7 +525,7 @@ export function LessonPlanEditor({
                 WorksheetBuilder instance, editable at every step and every plan
                 status (never wrapped in the plan-lock fieldset); edits autosave
                 through `saveWorksheet`. Scrolls independently past `lg`. */}
-            <section className="min-w-0 flex-1 overflow-visible bg-surface-subtle px-[16px] py-[22px] lg:flex-[1.5] lg:overflow-y-auto lg:px-[22px]">
+            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface-subtle px-[16px] py-[18px] lg:flex-[1.5] lg:px-[22px]">
               <div className="mx-auto max-w-[1000px]">
                 <WorksheetBuilder
                   value={worksheet}

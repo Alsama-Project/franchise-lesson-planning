@@ -72,7 +72,6 @@ export function WritingStep({
                 rows={2}
                 value={block.teacher_does}
                 onChange={(e) => onPatch({ teacher_does: e.target.value })}
-                placeholder={t('teacherPlaceholder')}
                 className="mt-1.5"
               />
             </div>
@@ -83,7 +82,6 @@ export function WritingStep({
                 rows={2}
                 value={block.students_do}
                 onChange={(e) => onPatch({ students_do: e.target.value })}
-                placeholder={t('studentsPlaceholder')}
                 className="mt-1.5"
               />
             </div>

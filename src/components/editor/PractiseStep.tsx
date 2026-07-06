@@ -64,7 +64,6 @@ export function PractiseStep({
             rows={2}
             value={block.teacher_does}
             onChange={(e) => onPatch({ teacher_does: e.target.value })}
-            placeholder={t('teach.teacherPlaceholder')}
             className="mt-1.5"
           />
         </div>
@@ -75,7 +74,6 @@ export function PractiseStep({
             rows={2}
             value={block.students_do}
             onChange={(e) => onPatch({ students_do: e.target.value })}
-            placeholder={t('teach.studentsPlaceholder')}
             className="mt-1.5"
           />
         </div>

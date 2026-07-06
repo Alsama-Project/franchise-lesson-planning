@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { parseTaxonomyId } from '@/lib/curriculum/taxonomy';
 import type { CurriculumLesson } from '@/types/curriculum';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
 import type { MonthNav, PickerCell } from '@/components/create-lesson/types';
@@ -35,7 +36,8 @@ export function cleanLO(raw: string): string {
 const COLUMNS =
   'subject_code, year, month, week, period, lesson_key, daily_outcome, focus_area, ' +
   'linguistic_skill, theme, resources, taxonomy_id, monthly_knowledge_lo, ' +
-  'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo, grammar_vocabulary, monthly_lo';
+  'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo, grammar_vocabulary, monthly_lo, ' +
+  'subject_learning_outcome, annual_learning_outcome';
 
 interface RowFilters {
   subjectCode?: string;
@@ -70,15 +72,14 @@ async function fetchRows(filters: RowFilters): Promise<CurriculumLessonRow[]> {
 // ── Row → legacy CurriculumLesson mapping ───────────────────────────────────────
 //
 // The legacy presentational shape is preserved so consumers (and their hand-narrow
-// types) don't change. The S/K refs are best-effort parsed from the taxonomy id
-// (format `n.Sx.Kx.Hx`); the new natural key is (subject, year, month, week, period).
+// types) don't change. The S/K refs come from the canonical taxonomy parser
+// (`FA.S.K.H` — segment 1 is the Focus Area, NOT the year); the new natural key is
+// (subject, year, month, week, period), so `year` here always comes from the row's
+// dedicated `year` column, never inferred from the taxonomy id.
 
 function parseTaxonomy(id: string | null): { skillRef: string; knowledgeRef: string } {
-  const parts = (id ?? '').split('.');
-  return {
-    skillRef: parts.find((p) => /^S\d+$/i.test(p)) ?? '',
-    knowledgeRef: parts.find((p) => /^K\d+$/i.test(p)) ?? '',
-  };
+  const t = parseTaxonomyId(id);
+  return { skillRef: t.skillLo ?? '', knowledgeRef: t.knowledgeLo ?? '' };
 }
 
 function rowToLesson(row: CurriculumLessonRow): CurriculumLesson {
@@ -116,26 +117,26 @@ function rowToLesson(row: CurriculumLessonRow): CurriculumLesson {
 // ── Public API (preserved surface; async) ────────────────────────────────────────
 
 /**
- * Resolve a stored `lesson_plans.curriculum_lesson_id` to its lesson(s).
+ * Resolve a stored `lesson_plans.curriculum_lesson_id` to its single lesson.
  *
- * Resolution order — IDENTICAL to the prior in-memory version: exact `lesson_key`
- * (the value new pickers write; UNIQUE in the table, so at most one active row) first,
- * then a best-effort match on legacy `taxonomy_id` (may match multiple year rows →
- * array). Returns null when nothing matches. The only behavioural change is that rows
- * beyond the old 1000-row cap now resolve instead of silently returning null.
+ * Resolution is on the FULL identity: the exact `lesson_key` (the value new pickers
+ * write; UNIQUE in the table → at most one active row) first. Only when that misses
+ * do we fall back to a legacy `taxonomy_id` — and that id is NOT year-unique (its
+ * first segment is the Focus Area, not the year; see `parseTaxonomyId`). It therefore
+ * identifies a lesson ONLY when exactly one active row carries it: when it matches
+ * multiple years we cannot recover which the plan meant from the id alone, so we
+ * return null rather than silently loading an arbitrary year's context. This closes
+ * the FA-as-year leak documented in curriculum/INGEST_NOTES.md (the old code returned
+ * every matching year row and the caller blindly took the first).
  */
-export async function getLessonById(
-  id: string,
-): Promise<CurriculumLesson | CurriculumLesson[] | null> {
+export async function getLessonById(id: string): Promise<CurriculumLesson | null> {
   if (!id) return null;
 
   const keyRows = await fetchRows({ lessonKey: id });
   if (keyRows.length > 0) return rowToLesson(keyRows[0]);
 
   const taxonomyRows = await fetchRows({ taxonomyId: id });
-  if (taxonomyRows.length === 0) return null;
-  if (taxonomyRows.length === 1) return rowToLesson(taxonomyRows[0]);
-  return taxonomyRows.map(rowToLesson);
+  return taxonomyRows.length === 1 ? rowToLesson(taxonomyRows[0]) : null;
 }
 
 /**

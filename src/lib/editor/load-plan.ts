@@ -230,8 +230,9 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
   }
 
   // Resolve the locked curriculum context from the Supabase-backed curriculum.
-  const lookup = await getLessonById(row.curriculum_lesson_id);
-  const lesson = Array.isArray(lookup) ? lookup[0] : lookup;
+  // `getLessonById` now resolves to a single row on full identity (or null when a
+  // legacy taxonomy id is year-ambiguous), so there is no array to unwrap.
+  const lesson = await getLessonById(row.curriculum_lesson_id);
   // The lesson taught immediately before this one (same subject + year), resolved
   // from the curriculum sequence. Its daily outcome anchors the Link-it recap.
   const previousLesson =

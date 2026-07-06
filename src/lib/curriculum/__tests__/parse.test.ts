@@ -101,6 +101,8 @@ test('English: sheet/header/grain detected; helper excluded; English mapping int
     weekly_skills_lo: 'Skill: write letters',
     grammar_vocabulary: 'Letter a; vowel sounds',
     monthly_lo: 'Monthly: letters',
+    subject_learning_outcome: 'Read & write',
+    annual_learning_outcome: 'Annual: literacy',
   });
 
   // P2: hierarchical cells forward-filled from P1; per-row theme/grammar blank → null.

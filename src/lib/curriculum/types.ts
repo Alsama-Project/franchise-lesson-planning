@@ -36,6 +36,9 @@ export interface CurriculumLessonRow {
   weekly_skills_lo: string | null;
   grammar_vocabulary: string | null;
   monthly_lo: string | null;
+  /** Subject-level LO (constant per subject); yearly/annual LO (constant per subject+year). Added by 0048. */
+  subject_learning_outcome: string | null;
+  annual_learning_outcome: string | null;
 }
 
 /**
@@ -64,6 +67,9 @@ export interface ParsedCurriculumRow {
   weekly_skills_lo: string | null;
   grammar_vocabulary: string | null;
   monthly_lo: string | null;
+  /** Subject-level LO (constant per subject); yearly/annual LO (constant per subject+year). Added by 0048. */
+  subject_learning_outcome: string | null;
+  annual_learning_outcome: string | null;
 }
 
 /** One active curriculum row with no daily outcome — the "unresolved" inspector list. */

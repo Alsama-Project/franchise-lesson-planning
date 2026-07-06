@@ -389,10 +389,16 @@ export async function getInsightsAggregates(
 // PostgREST 1000-row cap never applies.
 
 /**
- * The minimum fraction of a subject's rows that must carry a well-formed taxonomy id
- * for the Logic tree to render. Below this the tree would be more gap than spine, so
- * the tab is disabled-with-reason instead. (IT ~0.22 is caught; english ~0.73 and
- * professionalism ~0.97 pass.)
+ * The minimum fraction of a subject's rows that must carry a REAL well-formed taxonomy
+ * id for the Logic tree to render. "Well-formed" excludes the `*.S0.K0.*` sentinel ("no
+ * real skill/knowledge assigned") — counting sentinels inflated coverage and produced a
+ * giant meaningless single-node tree. Below this threshold the tree would be more gap
+ * than spine, so the tab is disabled-with-reason instead.
+ *
+ * On live data every subject is currently below 0.5 (english ~2%, professionalism ~5%,
+ * the rest 0), so the Logic tree is disabled-with-reason for ALL subjects today. That is
+ * intended: the tree lights up per-subject once REAL taxonomy is populated — the
+ * threshold is NOT lowered to force it visible.
  */
 export const TAXONOMY_COVERAGE_MIN = 0.5;
 
@@ -400,7 +406,12 @@ export interface SubjectCapabilities {
   subject: string;
   /** Active rows for the subject. */
   totalRows: number;
-  /** Rows whose taxonomy_id matches ^[0-9]+\.S[0-9]+\.K[0-9]+\.H[0-9]+$. */
+  /**
+   * Rows whose taxonomy_id matches ^[0-9]+\.S[0-9]+\.K[0-9]+\.H[0-9]+$ AND is NOT the
+   * `*.S0.K0.*` "no real skill/knowledge assigned" sentinel. `totalRows − wellFormedRows`
+   * is the unmapped-rows count the disclosure banner shows (S0/K0 sentinels count as
+   * unmapped, matching the gate).
+   */
   wellFormedRows: number;
   /** wellFormedRows / totalRows, or 0 when the subject has no rows. */
   taxonomyCoverage: number;
@@ -533,15 +544,26 @@ export async function getTopicsData(subject: string): Promise<TopicsData> {
 
   // Bucket: Focus Area → Topic(theme) → per-year thread. In theme mode every row's
   // focus area is null, so all topics fall under a single null-keyed group.
-  const faMap = new Map<string, Map<string, TopicThreadYear[]>>();
+  //
+  // In THEME mode (english — no focus_area text, so the theme list is the whole rail)
+  // the raw themes are a baked spreadsheet export carrying junk: leading-punctuation
+  // placeholders (e.g. ".…") and case-variant duplicates ("Academic language" vs
+  // "Academic Language"). We scrub those here so the fallback reads clean: drop
+  // leading-punctuation junk, and merge case-fold duplicates under one display label
+  // (first-seen casing), unioning their year threads. Focus-area subjects keep their
+  // themes verbatim (already trimmed in SQL) — that structure is the intended one.
+  const mergeKeyOf = (label: string) => (hasFocusArea ? label : label.toLocaleLowerCase());
+  const faMap = new Map<string, Map<string, { label: string; threads: TopicThreadYear[] }>>();
   for (const r of rows) {
     const faKey = hasFocusArea ? (r.focus_area ?? '').trim() : '';
-    const topicKeyLabel = (r.theme ?? r.focus_area ?? '').trim();
-    if (!topicKeyLabel) continue;
+    const rawTopic = (r.theme ?? r.focus_area ?? '').trim();
+    if (!rawTopic) continue;
+    if (!hasFocusArea && isJunkTheme(rawTopic)) continue; // leading-punctuation junk
+    const mergeKey = mergeKeyOf(rawTopic);
     if (!faMap.has(faKey)) faMap.set(faKey, new Map());
     const topics = faMap.get(faKey)!;
-    if (!topics.has(topicKeyLabel)) topics.set(topicKeyLabel, []);
-    topics.get(topicKeyLabel)!.push({
+    if (!topics.has(mergeKey)) topics.set(mergeKey, { label: rawTopic, threads: [] });
+    topics.get(mergeKey)!.threads.push({
       year: r.year,
       hours: Number(r.hours),
       lessonKey: r.lesson_key,
@@ -555,13 +577,22 @@ export async function getTopicsData(subject: string): Promise<TopicsData> {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([faKey, topics]) => ({
       focusArea: faKey === '' ? null : faKey,
-      topics: [...topics.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([topic, threadYears]) => ({
-          topic,
-          years: threadYears.sort((a, b) => a.year - b.year),
+      topics: [...topics.values()]
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .map(({ label, threads }) => ({
+          topic: label,
+          years: threads.sort((a, b) => a.year - b.year),
         })),
     }));
 
   return { subject, groupedBy, years, focusAreas };
+}
+
+/**
+ * A theme label that is leading-punctuation junk from the export (e.g. "." or ".Foo") —
+ * its first character is neither a letter nor a digit. Such rows are placeholders, not
+ * real themes, so the theme-grouped (english) fallback drops them.
+ */
+function isJunkTheme(label: string): boolean {
+  return /^[^\p{L}\p{N}]/u.test(label);
 }

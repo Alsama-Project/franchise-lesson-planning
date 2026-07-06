@@ -54,18 +54,26 @@ export function Topics({
   );
 }
 
+type Address = { faIdx: number; topicIdx: number };
+
 function TopicsBody({ data }: { data: TopicsData }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
+  const isThemeMode = data.groupedBy === 'theme';
 
-  // Flatten to a selectable (focusAreaIdx, topicIdx) address; default to the first
-  // non-empty topic.
+  // Selection address (focusAreaIdx, topicIdx). English (theme mode) is a FLAT,
+  // always-visible list, so it auto-selects the first topic. Focus-area subjects render
+  // COLLAPSIBLE Focus Area sections that are collapsed by default with nothing selected
+  // — the teacher expands a Focus Area and picks a Topic to drive the spiral.
   const firstFa = data.focusAreas.findIndex((fa) => fa.topics.length > 0);
-  const [faIdx, setFaIdx] = useState(firstFa === -1 ? 0 : firstFa);
-  const [topicIdx, setTopicIdx] = useState(0);
+  const [selected, setSelected] = useState<Address | null>(() =>
+    isThemeMode && firstFa !== -1 ? { faIdx: firstFa, topicIdx: 0 } : null,
+  );
+  // Which Focus Area sections are open (focus-area mode only).
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
 
-  const focusArea = data.focusAreas[faIdx] ?? data.focusAreas[0];
-  const topic: Topic | undefined = focusArea?.topics[topicIdx] ?? focusArea?.topics[0];
+  const focusArea = selected ? data.focusAreas[selected.faIdx] : undefined;
+  const topic: Topic | undefined = selected ? focusArea?.topics[selected.topicIdx] : undefined;
 
   // Presence across ALL of the subject's years → the spiral rows.
   const taughtByYear = useMemo(() => {
@@ -80,86 +88,90 @@ function TopicsBody({ data }: { data: TopicsData }) {
     (selectedYear != null ? taughtByYear.get(selectedYear) : null) ?? topic?.years[0] ?? null;
 
   const selectTopic = (nextFa: number, nextTopic: number) => {
-    setFaIdx(nextFa);
-    setTopicIdx(nextTopic);
+    setSelected({ faIdx: nextFa, topicIdx: nextTopic });
     setSelectedYear(data.focusAreas[nextFa]?.topics[nextTopic]?.years[0]?.year ?? null);
   };
+  const toggleFa = (fi: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(fi)) next.delete(fi);
+      else next.add(fi);
+      return next;
+    });
+
+  // Theme mode has a single null-focus-area group; its topic count is the count of
+  // themes that survived cleaning (junk dropped, case-variants merged) — surfaced next
+  // to the "grouped by theme" disclosure.
+  const themeCount = isThemeMode ? (data.focusAreas[0]?.topics.length ?? 0) : 0;
 
   return (
     <div className="grid gap-[20px] px-[26px] pb-[28px] pt-[18px] lg:grid-cols-[260px_minmax(0,1fr)_300px]">
-      {/* Left rail: Focus area → Topic */}
+      {/* Left rail: Focus area → Topic (collapsible), or a flat theme list for english */}
       <div className="self-start">
-        <div className="mb-[10px] text-[11px] font-bold uppercase tracking-[0.06em] text-[#8A8178]">
-          {data.groupedBy === 'theme' ? t('topics.byThemeLabel') : t('topics.focusAreaLabel')}
+        <div className="mb-[10px] flex flex-wrap items-baseline gap-x-[6px] gap-y-[2px]">
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#8A8178]">
+            {isThemeMode ? t('topics.byThemeLabel') : t('topics.focusAreaLabel')}
+          </span>
+          {isThemeMode ? (
+            <span className="text-[11px] text-[#A79E94]">· {t('topics.themeCount', { count: themeCount })}</span>
+          ) : null}
         </div>
-        <div className="overflow-hidden rounded-[12px] border border-[#EFE8DD]">
-          {data.focusAreas.map((fa, fi) => (
-            <div key={fi} className={fi > 0 ? 'border-t border-[#F3EEE6]' : ''}>
-              <div className="flex items-center gap-[9px] bg-[#F8F1E8] px-[13px] py-[11px]">
-                <span className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[0.05em] text-[#9A7B5C]">
-                  {data.groupedBy === 'theme' ? t('topics.topicsHeading') : t('topics.focusArea')}
-                </span>
-                {fa.focusArea ? (
-                  <span dir="auto" className="truncate text-[13px] font-semibold text-ink">{fa.focusArea}</span>
-                ) : null}
-              </div>
-              <div className="bg-[#FCFAF6] p-[6px]">
-                {fa.topics.map((tp, ti) => {
-                  const active = fi === faIdx && ti === topicIdx;
-                  return (
-                    <button
-                      key={ti}
-                      type="button"
-                      onClick={() => selectTopic(fi, ti)}
-                      aria-pressed={active}
-                      className={cn(
-                        'flex w-full items-center gap-[9px] rounded-[8px] px-[10px] py-[9px] text-start transition-colors',
-                        active ? 'bg-teal-tint' : 'hover:bg-surface-subtle',
-                      )}
-                    >
-                      <span className={cn('size-[6px] shrink-0 rounded-full', active ? 'bg-teal' : 'bg-[#CFC6BA]')} />
-                      <span dir="auto" className={cn('min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere]', active ? 'font-semibold text-teal-deep' : 'text-[#5C544E]')}>
-                        {tp.topic}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        {isThemeMode ? (
+          <ThemeRail
+            group={data.focusAreas[firstFa === -1 ? 0 : firstFa]}
+            faIdx={firstFa === -1 ? 0 : firstFa}
+            selected={selected}
+            onSelect={selectTopic}
+          />
+        ) : (
+          <FocusAreaRail
+            focusAreas={data.focusAreas}
+            expanded={expanded}
+            selected={selected}
+            onToggle={toggleFa}
+            onSelect={selectTopic}
+          />
+        )}
       </div>
 
-      {/* Middle: the spiral */}
+      {/* Middle: the spiral (or a prompt until a topic is chosen) */}
       <div>
-        <div dir="auto" className="mb-[18px] text-[17px] font-semibold text-ink">{topic?.topic}</div>
-        <div className="flex flex-col">
-          {data.years.map((yr, i) => {
-            const thread = taughtByYear.get(yr);
-            const taught = Boolean(thread);
-            const selected = selectedYear === yr && taught;
-            return (
-              <div key={yr} className="flex gap-[16px]">
-                <div className="flex w-[52px] flex-col items-center">
-                  <span
-                    className="w-[48px] rounded-full py-[5px] text-center text-[11px] font-bold text-white"
-                    style={{ background: yearAccent(i, data.years.length) }}
-                  >
-                    {t('year', { n: formatNumber(yr, locale) })}
-                  </span>
-                  {i < data.years.length - 1 ? <span className="my-[4px] w-[2px] flex-1 bg-[#DCEAE6]" /> : null}
-                </div>
-                <SpiralCard
-                  taught={taught}
-                  selected={selected}
-                  thread={thread ?? null}
-                  presence={data.years.map((y) => taughtByYear.has(y))}
-                  onSelect={() => (taught ? setSelectedYear(yr) : undefined)}
-                />
-              </div>
-            );
-          })}
-        </div>
+        {topic ? (
+          <>
+            <div dir="auto" className="mb-[18px] text-[17px] font-semibold text-ink">{topic.topic}</div>
+            <div className="flex flex-col">
+              {data.years.map((yr, i) => {
+                const thread = taughtByYear.get(yr);
+                const taught = Boolean(thread);
+                const selected2 = selectedYear === yr && taught;
+                return (
+                  <div key={yr} className="flex gap-[16px]">
+                    <div className="flex w-[52px] flex-col items-center">
+                      <span
+                        className="w-[48px] rounded-full py-[5px] text-center text-[11px] font-bold text-white"
+                        style={{ background: yearAccent(i, data.years.length) }}
+                      >
+                        {t('year', { n: formatNumber(yr, locale) })}
+                      </span>
+                      {i < data.years.length - 1 ? <span className="my-[4px] w-[2px] flex-1 bg-[#DCEAE6]" /> : null}
+                    </div>
+                    <SpiralCard
+                      taught={taught}
+                      selected={selected2}
+                      thread={thread ?? null}
+                      presence={data.years.map((y) => taughtByYear.has(y))}
+                      onSelect={() => (taught ? setSelectedYear(yr) : undefined)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="rounded-[14px] border border-dashed border-[#DBCDBB] bg-[#F5EDE5]/40 px-[18px] py-[40px] text-center text-[13px] text-text-muted">
+            {t('topics.pickTopic')}
+          </div>
+        )}
       </div>
 
       {/* Right: IN FOCUS */}
@@ -173,11 +185,155 @@ function TopicsBody({ data }: { data: TopicsData }) {
           <TopicFocus thread={selectedThread} topicLabel={topic.topic} />
         ) : (
           <div className="rounded-[14px] border border-border bg-surface-subtle p-[15px] text-[13px] text-text-muted">
-            {t('topics.selectYear')}
+            {topic ? t('topics.selectYear') : t('topics.pickTopic')}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** The flat, always-visible theme list (english fallback — no focus_area structure). */
+function ThemeRail({
+  group,
+  faIdx,
+  selected,
+  onSelect,
+}: {
+  group: TopicsData['focusAreas'][number] | undefined;
+  faIdx: number;
+  selected: Address | null;
+  onSelect: (fi: number, ti: number) => void;
+}) {
+  const t = useTranslations('curriculum');
+  if (!group) return null;
+  return (
+    <div className="overflow-hidden rounded-[12px] border border-[#EFE8DD]">
+      <div className="bg-[#F8F1E8] px-[13px] py-[11px]">
+        <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-[#9A7B5C]">
+          {t('topics.topicsHeading')}
+        </span>
+      </div>
+      <div className="bg-[#FCFAF6] p-[6px]">
+        {group.topics.map((tp, ti) => (
+          <TopicButton
+            key={ti}
+            label={tp.topic}
+            active={selected?.faIdx === faIdx && selected?.topicIdx === ti}
+            onSelect={() => onSelect(faIdx, ti)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Collapsible Focus Area → Topic accordion (subjects with focus_area text). Sections
+ *  are collapsed by default and show their topic count; expanding one reveals its topics. */
+function FocusAreaRail({
+  focusAreas,
+  expanded,
+  selected,
+  onToggle,
+  onSelect,
+}: {
+  focusAreas: TopicsData['focusAreas'];
+  expanded: Set<number>;
+  selected: Address | null;
+  onToggle: (fi: number) => void;
+  onSelect: (fi: number, ti: number) => void;
+}) {
+  const t = useTranslations('curriculum');
+  return (
+    <div className="overflow-hidden rounded-[12px] border border-[#EFE8DD]">
+      {focusAreas.map((fa, fi) => {
+        const open = expanded.has(fi);
+        return (
+          <div key={fi} className={fi > 0 ? 'border-t border-[#F3EEE6]' : ''}>
+            <button
+              type="button"
+              onClick={() => onToggle(fi)}
+              aria-expanded={open}
+              className="flex w-full items-center gap-[9px] bg-[#F8F1E8] px-[13px] py-[11px] text-start transition-colors hover:bg-[#F5ECDF]"
+            >
+              <Chevron open={open} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-bold uppercase tracking-[0.05em] text-[#9A7B5C]">
+                  {t('topics.focusArea')}
+                </span>
+                {fa.focusArea ? (
+                  <span dir="auto" className="mt-[1px] block truncate text-[13px] font-semibold text-ink">
+                    {fa.focusArea}
+                  </span>
+                ) : null}
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-[#A79E94]">
+                {t('topics.topicCount', { count: fa.topics.length })}
+              </span>
+            </button>
+            {open ? (
+              <div className="bg-[#FCFAF6] p-[6px]">
+                {fa.topics.map((tp, ti) => (
+                  <TopicButton
+                    key={ti}
+                    label={tp.topic}
+                    active={selected?.faIdx === fi && selected?.topicIdx === ti}
+                    onSelect={() => onSelect(fi, ti)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A single selectable Topic row (shared by both rails). */
+function TopicButton({
+  label,
+  active,
+  onSelect,
+}: {
+  label: string;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      className={cn(
+        'flex w-full items-center gap-[9px] rounded-[8px] px-[10px] py-[9px] text-start transition-colors',
+        active ? 'bg-teal-tint' : 'hover:bg-surface-subtle',
+      )}
+    >
+      <span className={cn('size-[6px] shrink-0 rounded-full', active ? 'bg-teal' : 'bg-[#CFC6BA]')} />
+      <span dir="auto" className={cn('min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere]', active ? 'font-semibold text-teal-deep' : 'text-[#5C544E]')}>
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={open ? '#9A7B5C' : '#B4AA9E'}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={cn('shrink-0', !open && 'rtl:-scale-x-100')}
+    >
+      {open ? <path d="M6 9l6 6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+    </svg>
   );
 }
 

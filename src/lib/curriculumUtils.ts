@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { unstable_cache } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { CurriculumLesson } from '@/types/curriculum';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
@@ -8,22 +7,22 @@ import type { MonthNav, PickerCell } from '@/components/create-lesson/types';
 
 // ── Supabase-backed curriculum (was: committed curriculum.json) ──────────────────
 //
-// Curriculum now lives in the `curriculum_lesson` Supabase table, populated from
-// the curriculum Excel via /api/curriculum/import (n8n folder-watch + in-app
-// upload). This module preserves the PUBLIC SURFACE of the old flat-file utils so
-// consumers change minimally — but the old source was synchronous and the database
-// is async, so every query function now returns a Promise. The three live consumers
-// (editor load-plan, weekly-overview, pdf/load) and the orphaned curriculum-actions
-// were updated to await.
+// Curriculum lives in the `curriculum_lesson` Supabase table, populated via
+// /api/curriculum/import. This module preserves the public surface of the old
+// flat-file utils; every query is async.
 //
-// Reads are cached cross-request (`unstable_cache`) under CURRICULUM_CACHE_TAG; the
-// import endpoint calls revalidateTag(CURRICULUM_CACHE_TAG) so edits appear without
-// a redeploy. The fetch uses the service-role client because the cache scope cannot
-// touch the cookie-bound auth'd client — and curriculum is global reference data,
-// identical for every authenticated user (see @/lib/supabase/admin).
-
-/** Cache tag the import endpoint invalidates after a successful sync. */
-export const CURRICULUM_CACHE_TAG = 'curriculum';
+// SCOPED READS — every consumer reads ONLY the rows it needs (by subject / year /
+// month / week / lesson_key), filtered in the DB against the `idx_curr_nav`
+// (subject_code, year, month, week) index. This replaced a single "load ALL active
+// rows, slice in memory" cache: PostgREST caps a plain select at 1000 rows, so that
+// read silently truncated 6071 active rows to 1000 and made most subjects/years
+// invisible in the picker, weekly board, and editor. No scope here exceeds a few
+// hundred rows, so the cap can never bite; there is no cross-request cache, so there
+// is nothing to invalidate (a sync is visible on the next request). The distinct
+// subject list — the one read that isn't naturally scoped — comes from the
+// `curriculum_active_subjects` view (0045): a ~7-row DISTINCT that is uncapped by
+// construction. Reads use the service-role client because curriculum is global
+// reference data, identical for every authenticated user (see @/lib/supabase/admin).
 
 /** Strip the leading ". " stem some LO fields carry (legacy curriculum.json artefact). */
 export function cleanLO(raw: string): string {
@@ -31,48 +30,42 @@ export function cleanLO(raw: string): string {
   return raw.replace(/^(\.\s*)+/, '').trim();
 }
 
-// ── DB fetch (cached) ───────────────────────────────────────────────────────────
+// ── Scoped DB fetch ───────────────────────────────────────────────────────────
 
 const COLUMNS =
   'subject_code, year, month, week, period, lesson_key, daily_outcome, focus_area, ' +
   'linguistic_skill, theme, resources, taxonomy_id, monthly_knowledge_lo, ' +
   'monthly_skills_lo, weekly_knowledge_lo, weekly_skills_lo, grammar_vocabulary, monthly_lo';
 
-// This read is load-bearing: it pulls the whole active curriculum (~6k full-text rows)
-// once and is sliced in memory for four hot consumers (curriculum browse, teacher
-// home / weekly-overview, the create-lesson picker, the editor load-plan) — so it stays
-// cached. Three things keep it correct:
-//
-//   • keyParts `…-v2` — the ORIGINAL `curriculum-active-rows` entry was written with NO
-//     `revalidate` (never-stale) back when only 3 subjects had rows, and on-demand
-//     `revalidateTag` never dropped it. It also survived redeploys: the Vercel Data
-//     Cache persists across deployments (a redeploy resets the Full Route Cache, NOT
-//     the Data Cache), so that stuck entry would neither expire nor honor a TTL it was
-//     never written with. Bumping the key orphans it — a fresh, TTL-carrying entry is
-//     written on the next request, so all 7 subjects appear immediately on deploy.
-//   • `revalidate: 120` — self-heals FUTURE syncs via stale-while-revalidate (a normal
-//     request ≥120s after a sync re-reads the DB), because on-demand `revalidateTag` of
-//     this LEGACY `unstable_cache` entry is unreliable in Next 16 (superseded by
-//     `use cache`). DO NOT remove it — without it the entry caches indefinitely.
-//   • `revalidateTag('curriculum')` on sync success is kept as a harmless best-effort
-//     fast path (free instant refresh if a future Next makes it reliable); nothing
-//     depends on it.
-//
-// If a fresh-keyed entry still shows fewer than the active subject count after deploy,
-// the source is misdiagnosed — investigate, don't just bump the key again.
-const fetchActiveRows = unstable_cache(
-  async (): Promise<CurriculumLessonRow[]> => {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from('curriculum_lesson')
-      .select(COLUMNS)
-      .eq('is_active', true);
-    if (error) throw new Error(`Curriculum read failed: ${error.message}`);
-    return (data ?? []) as unknown as CurriculumLessonRow[];
-  },
-  ['curriculum-active-rows-v2'],
-  { tags: [CURRICULUM_CACHE_TAG], revalidate: 120 },
-);
+interface RowFilters {
+  subjectCode?: string;
+  year?: number;
+  month?: string;
+  week?: number;
+  lessonKey?: string;
+  taxonomyId?: string;
+}
+
+/**
+ * Fetch active `curriculum_lesson` rows narrowed by the given natural-key filters.
+ * Every caller passes enough of (subject, year, month, week) — or an exact key — that
+ * the result is at most a few hundred rows, so the PostgREST 1000-row cap is never
+ * reached. Always scoped to `is_active = true`, matching the old resolve-over-active
+ * semantics exactly.
+ */
+async function fetchRows(filters: RowFilters): Promise<CurriculumLessonRow[]> {
+  const supabase = createAdminClient();
+  let query = supabase.from('curriculum_lesson').select(COLUMNS).eq('is_active', true);
+  if (filters.subjectCode != null) query = query.eq('subject_code', filters.subjectCode);
+  if (filters.year != null) query = query.eq('year', filters.year);
+  if (filters.month != null) query = query.eq('month', filters.month);
+  if (filters.week != null) query = query.eq('week', filters.week);
+  if (filters.lessonKey != null) query = query.eq('lesson_key', filters.lessonKey);
+  if (filters.taxonomyId != null) query = query.eq('taxonomy_id', filters.taxonomyId);
+  const { data, error } = await query;
+  if (error) throw new Error(`Curriculum read failed: ${error.message}`);
+  return (data ?? []) as unknown as CurriculumLessonRow[];
+}
 
 // ── Row → legacy CurriculumLesson mapping ───────────────────────────────────────
 //
@@ -120,35 +113,29 @@ function rowToLesson(row: CurriculumLessonRow): CurriculumLesson {
   };
 }
 
-/** Every active lesson, mapped to the legacy shape. Backed by the cached fetch. */
-async function allLessons(): Promise<CurriculumLesson[]> {
-  const rows = await fetchActiveRows();
-  return rows.map(rowToLesson);
-}
-
-// ── Public API (preserved surface; now async) ────────────────────────────────────
+// ── Public API (preserved surface; async) ────────────────────────────────────────
 
 /**
  * Resolve a stored `lesson_plans.curriculum_lesson_id` to its lesson(s).
  *
- * Resolution order: exact `lesson_key` (the value new pickers write) first, then a
- * best-effort match on legacy `taxonomy_id`. A taxonomy id can match multiple year
- * rows, so that path may return an array (matching the old exam-slot behaviour).
- * Returns null when nothing matches.
+ * Resolution order — IDENTICAL to the prior in-memory version: exact `lesson_key`
+ * (the value new pickers write; UNIQUE in the table, so at most one active row) first,
+ * then a best-effort match on legacy `taxonomy_id` (may match multiple year rows →
+ * array). Returns null when nothing matches. The only behavioural change is that rows
+ * beyond the old 1000-row cap now resolve instead of silently returning null.
  */
 export async function getLessonById(
   id: string,
 ): Promise<CurriculumLesson | CurriculumLesson[] | null> {
   if (!id) return null;
-  const rows = await fetchActiveRows();
 
-  const keyHit = rows.find((r) => r.lesson_key === id);
-  if (keyHit) return rowToLesson(keyHit);
+  const keyRows = await fetchRows({ lessonKey: id });
+  if (keyRows.length > 0) return rowToLesson(keyRows[0]);
 
-  const taxonomyHits = rows.filter((r) => r.taxonomy_id === id);
-  if (taxonomyHits.length === 0) return null;
-  if (taxonomyHits.length === 1) return rowToLesson(taxonomyHits[0]);
-  return taxonomyHits.map(rowToLesson);
+  const taxonomyRows = await fetchRows({ taxonomyId: id });
+  if (taxonomyRows.length === 0) return null;
+  if (taxonomyRows.length === 1) return rowToLesson(taxonomyRows[0]);
+  return taxonomyRows.map(rowToLesson);
 }
 
 /**
@@ -156,8 +143,7 @@ export async function getLessonById(
  * (subject, year). Lessons are ordered by (week, period): weeks are numbered
  * globally across the school year (monotonically increasing across months — the
  * month is only a label), so this is a clean total order with no duplicate slots.
- * Month/week boundaries fall out of the ordering automatically. Returns null when
- * the slot is the first lesson of its year (no in-year predecessor) or unknown.
+ * Returns null when the slot is the first lesson of its year, or unknown.
  */
 export async function getPreviousLesson(
   subject: string,
@@ -167,186 +153,20 @@ export async function getPreviousLesson(
 ): Promise<CurriculumLesson | null> {
   const yn = resolveYearNum(year);
   if (yn === null) return null;
-  const lessons = (await allLessons())
-    .filter(
-      (l) =>
-        l.subject === subject &&
-        l.yearNum === yn &&
-        l.week !== null &&
-        l.periodNum !== null,
-    )
+  const lessons = (await fetchRows({ subjectCode: subject, year: yn }))
+    .map(rowToLesson)
+    .filter((l) => l.week !== null && l.periodNum !== null)
     .sort(byWeekThenPeriod);
   const idx = lessons.findIndex((l) => l.week === week && l.periodNum === period);
   if (idx <= 0) return null;
   return lessons[idx - 1];
 }
 
-/** Every lesson for a year+week, sorted by period. */
-export async function getLessonsByWeek(
-  year: number | string,
-  week: number,
-): Promise<CurriculumLesson[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = await allLessons();
-  return lessons.filter((l) => l.yearNum === yn && l.week === week).sort(byPeriod);
-}
-
-/** Sorted week numbers that have at least one lesson in the year. */
-export async function getAllWeeks(year: number | string): Promise<number[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = await allLessons();
-  const weeks = new Set<number>();
-  for (const l of lessons) {
-    if (l.yearNum === yn && l.week !== null) weeks.add(l.week);
-  }
-  return [...weeks].sort((a, b) => a - b);
-}
-
-/** Every lesson for a year, sorted by week then period. */
-export async function getLessonsByYear(year: number | string): Promise<CurriculumLesson[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = await allLessons();
-  return lessons.filter((l) => l.yearNum === yn).sort(byWeekThenPeriod);
-}
-
-/** Alias for getAllWeeks. */
-export function getWeeksForYear(year: number | string): Promise<number[]> {
-  return getAllWeeks(year);
-}
-
-/** Alias for getLessonsByWeek. */
-export function getLessonsForWeek(year: number | string, week: number): Promise<CurriculumLesson[]> {
-  return getLessonsByWeek(year, week);
-}
-
-/** Months (in calendar order) with their week numbers for the year. */
-export async function getMonthsWithWeeks(
-  year: number | string,
-): Promise<{ month: string; weeks: number[] }[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = (await allLessons()).filter((l) => l.yearNum === yn).sort(byWeekThenPeriod);
-
-  const order: string[] = [];
-  const monthWeeks = new Map<string, Set<number>>();
-  for (const l of lessons) {
-    if (!l.month || l.week === null) continue;
-    if (!monthWeeks.has(l.month)) {
-      monthWeeks.set(l.month, new Set());
-      order.push(l.month);
-    }
-    monthWeeks.get(l.month)!.add(l.week);
-  }
-  return order.map((month) => ({
-    month,
-    weeks: [...monthWeeks.get(month)!].sort((a, b) => a - b),
-  }));
-}
-
-/** Unique themes for a year with lesson counts, sorted by count desc. */
-export async function getThemesForYear(
-  year: number | string,
-): Promise<{ theme: string; count: number }[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = (await allLessons()).filter((l) => l.yearNum === yn);
-  const counts = new Map<string, number>();
-  for (const l of lessons) {
-    if (!l.theme) continue;
-    counts.set(l.theme, (counts.get(l.theme) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([theme, count]) => ({ theme, count }))
-    .sort((a, b) => b.count - a.count);
-}
-
-/** All lessons for a year+theme. */
-export async function getLessonsByTheme(
-  year: number | string,
-  theme: string,
-): Promise<CurriculumLesson[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = await allLessons();
-  return lessons.filter((l) => l.yearNum === yn && l.theme === theme).sort(byWeekThenPeriod);
-}
-
-/** Linguistic-skill breakdown for a year. */
-export async function getSkillBreakdown(
-  year: number | string,
-): Promise<{ skill: string; skillKey: string; count: number; pct: number }[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = (await allLessons()).filter(
-    (l) => l.yearNum === yn && l.linguisticSkill && l.linguisticSkill.length > 1,
-  );
-  const total = lessons.length || 1;
-  const counts = new Map<string, number>();
-  for (const l of lessons) {
-    counts.set(l.linguisticSkill, (counts.get(l.linguisticSkill) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([skill, count]) => ({
-      skill,
-      skillKey: skillToKey(skill),
-      count,
-      pct: Math.round((count / total) * 100),
-    }))
-    .sort((a, b) => b.count - a.count);
-}
-
-/** Skill LOs (skillLORef → text) for a year, with lesson counts, sorted by ref. */
-export async function getSkillLOs(
-  year: number | string,
-): Promise<{ ref: string; lo: string; skill: string; count: number }[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = (await allLessons()).filter((l) => l.yearNum === yn);
-  const map = new Map<string, { lo: string; skill: string; count: number }>();
-  for (const l of lessons) {
-    if (!l.skillLORef) continue;
-    if (!map.has(l.skillLORef)) {
-      map.set(l.skillLORef, { lo: cleanLO(l.skillLO), skill: l.linguisticSkill, count: 0 });
-    }
-    map.get(l.skillLORef)!.count++;
-  }
-  return [...map.entries()]
-    .map(([ref, v]) => ({ ref, ...v }))
-    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
-}
-
-/** Knowledge LOs under a skillLORef for a year, with counts and week lists. */
-export async function getKnowledgeLOsForSkill(
-  year: number | string,
-  skillRef: string,
-): Promise<{ ref: string; lo: string; count: number; weeks: number[] }[]> {
-  const yn = resolveYearNum(year);
-  if (yn === null) return [];
-  const lessons = (await allLessons()).filter((l) => l.yearNum === yn && l.skillLORef === skillRef);
-  const map = new Map<string, { lo: string; weeks: Set<number>; count: number }>();
-  for (const l of lessons) {
-    if (!l.knowledgeLORef) continue;
-    if (!map.has(l.knowledgeLORef)) {
-      map.set(l.knowledgeLORef, { lo: cleanLO(l.knowledgeLO), weeks: new Set(), count: 0 });
-    }
-    const entry = map.get(l.knowledgeLORef)!;
-    entry.count++;
-    if (l.week !== null) entry.weeks.add(l.week);
-  }
-  return [...map.entries()]
-    .map(([ref, v]) => ({ ref, lo: v.lo, count: v.count, weeks: [...v.weeks].sort((a, b) => a - b) }))
-    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
-}
-
-// ── "+ Lesson" curriculum picker (filtered by subject_code) ─────────────────────
+// ── "+ Lesson" curriculum picker (scoped by subject_code + year [+ month + week]) ──
 //
 // The picker navigates curriculum content by (subject_code, year, month, week) and
 // needs the raw `lesson_key` (the value written into a new plan's
 // `curriculum_lesson_id`), which the legacy `CurriculumLesson` shape doesn't carry.
-// These read straight off the cached raw rows.
 
 /** Calendar-month order for sorting the month dropdown. */
 const MONTH_ORDER = [
@@ -368,10 +188,9 @@ export async function getCurriculumNav(
   subjectCode: string,
   year: number,
 ): Promise<MonthNav[]> {
-  const rows = await fetchActiveRows();
+  const rows = await fetchRows({ subjectCode, year });
   const byMonth = new Map<string, Set<number>>();
   for (const r of rows) {
-    if (r.subject_code !== subjectCode || r.year !== year) continue;
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Set());
     byMonth.get(r.month)!.add(r.week);
   }
@@ -391,15 +210,8 @@ export async function getCurriculumWeekCells(
   month: string,
   week: number,
 ): Promise<PickerCell[]> {
-  const rows = await fetchActiveRows();
+  const rows = await fetchRows({ subjectCode, year, month, week });
   return rows
-    .filter(
-      (r) =>
-        r.subject_code === subjectCode &&
-        r.year === year &&
-        r.month === month &&
-        r.week === week,
-    )
     .sort((a, b) => a.period - b.period)
     .map((r) => ({
       period: r.period,
@@ -409,17 +221,25 @@ export async function getCurriculumWeekCells(
     }));
 }
 
-/** The distinct subject codes that have at least one active curriculum row. */
+/**
+ * The distinct subject codes that have at least one active curriculum row. Reads the
+ * `curriculum_active_subjects` view (0045) — a DISTINCT of ~7 rows that is uncapped by
+ * construction, so the picker's subject list can never be truncated by the PostgREST
+ * 1000-row limit (the bug that hid Arabic/IT/Science/Yoga).
+ */
 export async function getCurriculumSubjectCodes(): Promise<string[]> {
-  const rows = await fetchActiveRows();
-  return [...new Set(rows.map((r) => r.subject_code))].sort();
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from('curriculum_active_subjects').select('subject_code');
+  if (error) throw new Error(`Curriculum subjects read failed: ${error.message}`);
+  const codes = (data ?? []) as Array<{ subject_code: string }>;
+  return [...new Set(codes.map((r) => r.subject_code))].sort();
 }
 
 /**
  * The full active rows for one (subject_code, year, month, week), sorted by
  * period. Unlike `getCurriculumWeekCells` (the picker's lean cell shape), this
  * returns the complete `CurriculumLessonRow` so callers can read the weekly /
- * monthly outcome fields and structured resources. Backed by the same cached read.
+ * monthly outcome fields and structured resources.
  */
 export async function getCurriculumWeekRows(
   subjectCode: string,
@@ -427,34 +247,21 @@ export async function getCurriculumWeekRows(
   month: string,
   week: number,
 ): Promise<CurriculumLessonRow[]> {
-  const rows = await fetchActiveRows();
-  return rows
-    .filter(
-      (r) =>
-        r.subject_code === subjectCode &&
-        r.year === year &&
-        r.month === month &&
-        r.week === week,
-    )
-    .sort((a, b) => (a.period ?? 0) - (b.period ?? 0));
+  const rows = await fetchRows({ subjectCode, year, month, week });
+  return rows.sort((a, b) => (a.period ?? 0) - (b.period ?? 0));
 }
 
 /**
  * The full active rows for one (subject_code, year, month) — every week and
- * period in the month — sorted by (week, period). Backs the monthly calendar
- * grid (Task 6). Same cached read as the week/nav helpers.
+ * period in the month — sorted by (week, period). Backs the monthly calendar grid.
  */
 export async function getCurriculumMonthRows(
   subjectCode: string,
   year: number,
   month: string,
 ): Promise<CurriculumLessonRow[]> {
-  const rows = await fetchActiveRows();
-  return rows
-    .filter(
-      (r) => r.subject_code === subjectCode && r.year === year && r.month === month,
-    )
-    .sort((a, b) => (a.week - b.week) || ((a.period ?? 0) - (b.period ?? 0)));
+  const rows = await fetchRows({ subjectCode, year, month });
+  return rows.sort((a, b) => a.week - b.week || (a.period ?? 0) - (b.period ?? 0));
 }
 
 /** A curriculum row's natural coordinates, resolved from its `lesson_key`. */
@@ -469,15 +276,16 @@ export interface CurriculumKeyCoords {
 /**
  * Resolve a `curriculum_lesson.lesson_key` to its natural coordinates (subject,
  * year, month, week, period). Used by the scope-aware create action to derive a
- * plan's subject/year server-side rather than trusting client input. Returns null
- * when the key matches no active row.
+ * plan's subject/year server-side rather than trusting client input. `lesson_key` is
+ * UNIQUE, so the scoped lookup returns the same single row the old in-memory `.find`
+ * did. Returns null when the key matches no active row.
  */
 export async function getCurriculumKeyCoords(
   lessonKey: string,
 ): Promise<CurriculumKeyCoords | null> {
   if (!lessonKey) return null;
-  const rows = await fetchActiveRows();
-  const row = rows.find((r) => r.lesson_key === lessonKey);
+  const rows = await fetchRows({ lessonKey });
+  const row = rows[0];
   if (!row) return null;
   return {
     subjectCode: row.subject_code,
@@ -503,13 +311,4 @@ function byPeriod(a: CurriculumLesson, b: CurriculumLesson): number {
 function byWeekThenPeriod(a: CurriculumLesson, b: CurriculumLesson): number {
   const wDiff = (a.week ?? 0) - (b.week ?? 0);
   return wDiff !== 0 ? wDiff : byPeriod(a, b);
-}
-
-function skillToKey(skill: string): string {
-  const s = skill.toLowerCase();
-  if (s.includes('read')) return 'read';
-  if (s.includes('writ')) return 'write';
-  if (s.includes('listen')) return 'listen';
-  if (s.includes('speak')) return 'speak';
-  return 'basic';
 }

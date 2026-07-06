@@ -79,6 +79,78 @@ export function cleanEnglishWeeklySkillsLo(value: string | null): string | null 
   return /^\s*\d+(\.\d+)?\s*$/.test(value) ? null : value;
 }
 
+// ── Inline monthly Knowledge/Skills split (maths, science, it, arabic) ────────────
+//
+// English populates a combined "Monthly Learning Outcome" cell and the browse UI splits
+// it by bare `Skills`/`Knowledge` heading lines. Maths/Science/IT/Arabic instead bake
+// the split INTO the combined cell with inline labels — "Monthly Knowledge: … Monthly
+// Skills: …", "Knowledge Learning Outcome: … Skills Learning Outcome: …", or Arabic
+// "المعرفة : … المهارات : …" — which that UI splitter doesn't recognise, so it renders
+// one undifferentiated blob. We split the cell into monthly_knowledge_lo /
+// monthly_skills_lo (the fields the UI prefers when populated), producing the same two
+// columns as Professionalism (which already ships separate columns).
+//
+// Deliberately TOLERANT and GUARDED: labels are matched case-insensitively, line-
+// anchored, order-independent (Arabic is Skills→Knowledge), with optional "Monthly" /
+// "Learning Outcome(s)" and optional colon, and content may sit on the label line
+// (space-run separator) or the lines below. We only split when BOTH a Knowledge and a
+// Skills section are found WITH content; otherwise we return null and the row keeps its
+// combined monthly_lo unchanged (identical to today — no regression). Typos, single-
+// section, and freeform rows therefore fall through to the one-column view rather than
+// getting mis-attributed text. monthly_lo is always preserved regardless.
+
+/** Subjects whose combined monthly cell carries inline Knowledge/Skills labels. */
+const MONTHLY_SPLIT_SUBJECTS = new Set(['maths', 'science', 'it', 'arabic']);
+
+const KNOWLEDGE_LABEL = /^\s*(?:monthly\s+)?knowledge(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;
+const SKILLS_LABEL = /^\s*(?:monthly\s+)?skills?(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;
+const AR_KNOWLEDGE_LABEL = /^\s*(?:ال)?معرفة\s*(?::|$)/;
+const AR_SKILLS_LABEL = /^\s*(?:ال)?مهارات\s*(?::|$)/;
+
+/** Match a monthly section label at the START of a line; return its section + the
+ *  content that follows the label on the same line (space-run / "label: text" case). */
+function matchMonthlyLabel(line: string): { section: 'knowledge' | 'skills'; rest: string } | null {
+  const k = KNOWLEDGE_LABEL.exec(line) ?? AR_KNOWLEDGE_LABEL.exec(line);
+  if (k) return { section: 'knowledge', rest: line.slice(k[0].length).trim() };
+  const s = SKILLS_LABEL.exec(line) ?? AR_SKILLS_LABEL.exec(line);
+  if (s) return { section: 'skills', rest: line.slice(s[0].length).trim() };
+  return null;
+}
+
+/**
+ * Split an inline-labelled combined monthly cell into { knowledge, skills }. Returns
+ * null (→ leave monthly_lo combined) unless BOTH sections are present with content.
+ */
+export function splitInlineMonthly(
+  subjectCode: string,
+  text: string | null,
+): { knowledge: string; skills: string } | null {
+  if (!MONTHLY_SPLIT_SUBJECTS.has(subjectCode) || !text) return null;
+  const buf: Record<'knowledge' | 'skills', string[]> = { knowledge: [], skills: [] };
+  let current: 'knowledge' | 'skills' | null = null;
+  let sawKnowledge = false;
+  let sawSkills = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const label = matchMonthlyLabel(raw);
+    if (label) {
+      current = label.section;
+      if (label.section === 'knowledge') sawKnowledge = true;
+      else sawSkills = true;
+      if (label.rest) buf[current].push(label.rest);
+      continue;
+    }
+    if (current) {
+      const line = raw.replace(/\r$/, '').trimEnd();
+      if (line.trim()) buf[current].push(line);
+    }
+  }
+  if (!sawKnowledge || !sawSkills) return null; // both-labels-required guard
+  const knowledge = buf.knowledge.join('\n').trim();
+  const skills = buf.skills.join('\n').trim();
+  if (!knowledge || !skills) return null;
+  return { knowledge, skills };
+}
+
 /** First non-empty cell of these rows marks a header-block meta row, not data. */
 const HEADER_MARKERS = ['column header', 'عنوان العمود'];
 const META_MARKERS = ['description', 'الوصف', 'period', 'الفترة الزمنية'];
@@ -561,6 +633,7 @@ export function parseCurriculumWorkbook(
         periodForKey,
         periodLabel,
       );
+      const monthlySplit = splitInlineMonthly(subjectCode, value('monthlyLearningOutcome'));
       lessonRows.set(lessonKey, {
         subject_code: subjectCode,
         year: yearIndex,
@@ -574,8 +647,16 @@ export function parseCurriculumWorkbook(
         theme: rawAt(r, 'theme') ?? rawAt(r, 'topic'),
         resources: parseResources(resourceText, resourceUrl),
         taxonomy_id: rawAt(r, 'lessonIdentifier'),
-        monthly_knowledge_lo: value('monthlyKnowledgeLearningOutcome'),
-        monthly_skills_lo: value('monthlySkillLearningOutcome'),
+        // Maths/Science/IT/Arabic bake Knowledge/Skills into the combined monthly cell
+        // with inline labels; split them into the separate columns the browse UI prefers
+        // (monthly_lo is preserved below). Falls back to the mapped split columns
+        // (Professionalism) or null when no inline split applies.
+        monthly_knowledge_lo: monthlySplit
+          ? monthlySplit.knowledge
+          : value('monthlyKnowledgeLearningOutcome'),
+        monthly_skills_lo: monthlySplit
+          ? monthlySplit.skills
+          : value('monthlySkillLearningOutcome'),
         weekly_knowledge_lo: cleanWeeklyKnowledge(
           hasWeekCol ? value('weeklyKnowledgeLearningOutcome') : rawWeeklyKnowledge,
         ),

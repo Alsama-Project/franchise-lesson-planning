@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCurriculumWorkbook } from '../parse';
+import { parseCurriculumWorkbook, splitInlineMonthly } from '../parse';
 import { makeWorkbook, headerBlock, type CellSpec } from './fixtures';
 
 // ── English daily-grain workbook — the no-regression anchor ───────────────────────
@@ -346,4 +346,49 @@ test('a renamed/new column lands in unmappedHeaders and parse still succeeds', (
     report.unmappedHeaders.map((u) => u.header),
     ['Sparkle Index 3000'],
   );
+});
+
+// ── Inline monthly Knowledge/Skills split (maths/science/it/arabic) ───────────────
+
+test('splitInlineMonthly: maths "Monthly Knowledge/Skills:" splits both sections', () => {
+  const blob = 'Monthly Knowledge:\r\n. Understand place value.\r\n\r\nMonthly Skills:\r\n. Compare and order numbers.';
+  const r = splitInlineMonthly('maths', blob);
+  assert.deepEqual(r, {
+    knowledge: '. Understand place value.',
+    skills: '. Compare and order numbers.',
+  });
+});
+
+test('splitInlineMonthly: science "… Learning Outcome:" with same-line (space-run) content', () => {
+  const blob = 'Knowledge Learning Outcome:      Explain ecosystems.\nSkills Learning Outcome:      Classify organisms.';
+  const r = splitInlineMonthly('science', blob);
+  assert.deepEqual(r, { knowledge: 'Explain ecosystems.', skills: 'Classify organisms.' });
+});
+
+test('splitInlineMonthly: it singular "Skill Learning Outcome:" is matched', () => {
+  const blob = 'Skill Learning Outcome:\nUse formatting tools.\nKnowledge Learning Outcome:\nIdentify file types.';
+  const r = splitInlineMonthly('it', blob);
+  assert.deepEqual(r, { knowledge: 'Identify file types.', skills: 'Use formatting tools.' });
+});
+
+test('splitInlineMonthly: arabic markers, Skills→Knowledge order (order-independent)', () => {
+  const blob = 'المهارات :\r\n. نطق الحروف.\r\nالمعرفة :\r\n. تمييز الأصوات.';
+  const r = splitInlineMonthly('arabic', blob);
+  assert.deepEqual(r, { knowledge: '. تمييز الأصوات.', skills: '. نطق الحروف.' });
+});
+
+test('splitInlineMonthly: both-labels-required guard — one section only → null', () => {
+  assert.equal(splitInlineMonthly('maths', 'Monthly Knowledge:\n. Only knowledge here.'), null);
+  // typo in a label (source data) → that label unmatched → falls through to null
+  assert.equal(
+    splitInlineMonthly('it', 'Skill learning ourtcomes:\nX\nKnowledge Learning Outcome:\nY'),
+    null,
+  );
+});
+
+test('splitInlineMonthly: non-split subjects (english, professionalism) are untouched → null', () => {
+  const blob = 'Skills\n. a\nKnowledge\n. b';
+  assert.equal(splitInlineMonthly('english', blob), null);
+  assert.equal(splitInlineMonthly('professionalism', blob), null);
+  assert.equal(splitInlineMonthly('maths', null), null);
 });

@@ -22,16 +22,46 @@ export const SMARTT_CRITERIA: { label: string; description: string }[] = [
 ];
 
 /**
+ * A lenient match for the objective's opening scaffold, used ONLY as a fallback
+ * when a stored value doesn't begin with the exact {@link OBJECTIVE_STEM}. It
+ * collapses any near-miss lead-in of the family "By the end of <…> be able to"
+ * (a reworded opener, a negated "will not be able to", an added comma, a
+ * different learner name) back to nothing. Anchored at the start and non-greedy,
+ * so it removes only the opener up to the first "be able to" and never eats into
+ * genuine remainder text. This is what keeps a paraphrased lead-in from ever
+ * resurrecting the doubled-stem bug: the editor/`/view` render exactly one
+ * scaffold, never two, whatever shape a legacy stored value has.
+ */
+const STEM_LEADIN = /^by the end of\b.*?\bbe able to\b/i;
+
+/**
  * Strip the enforced stem (and any leading punctuation/whitespace) from a stored
  * objective, returning just the teacher-editable remainder.
+ *
+ * Prefers an exact {@link OBJECTIVE_STEM} match; falls back to {@link STEM_LEADIN}
+ * so a stored value whose opener merely paraphrases the scaffold still degrades to
+ * a stem-free remainder (rendering one scaffold, never two).
  */
 export function stripStem(full: string | null | undefined): string {
   if (!full) return '';
   let rest = full.trim();
-  if (rest.toLowerCase().startsWith(OBJECTIVE_STEM.toLowerCase())) {
-    rest = rest.slice(OBJECTIVE_STEM.length);
+  // Peel EVERY leading scaffold occurrence — an exact stem, else a paraphrased
+  // lead-in — looping so even a doubled/tripled stem (a legacy corrupt value)
+  // collapses to the real remainder. Each pass removes a non-empty prefix, so
+  // `rest` strictly shrinks and the loop terminates.
+  for (;;) {
+    let next = rest;
+    if (next.toLowerCase().startsWith(OBJECTIVE_STEM.toLowerCase())) {
+      next = next.slice(OBJECTIVE_STEM.length);
+    } else {
+      const m = STEM_LEADIN.exec(next);
+      if (m) next = next.slice(m[0].length);
+    }
+    next = next.replace(/^[\s.,:;-]+/, '');
+    if (next === rest) break;
+    rest = next;
   }
-  return rest.replace(/^[\s.,:;-]+/, '').trim();
+  return rest.trim();
 }
 
 /**

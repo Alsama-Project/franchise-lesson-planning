@@ -9,7 +9,7 @@ import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { PartContent } from '@/components/editor/PartContent';
 import { PhaseRow } from '@/components/review/annotation/PhaseRow';
 import { ObjectiveAnnotations } from '@/components/review/annotation/ObjectiveAnnotations';
-import { ProseField } from '@/components/review/annotation/ProseField';
+import { ObjectiveField } from '@/components/review/annotation/ObjectiveField';
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES, ROUTINE_BLOCK_TYPES } from '@/lib/blocks';
 import { routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
@@ -186,9 +186,11 @@ export function ReadOnlyPlan({
             SMARTT objective
           </h2>
           <div className="rounded-[11px] border border-border bg-surface px-[15px] py-[13px] text-[14px] leading-[1.5] text-neutral-900">
-            <ProseField
-              anchorType="objective"
-              value={plan.smartt_objective?.trim() ?? ''}
+            {/* Stem is a fixed scaffold rendered OUTSIDE the editable value (like
+                the wizard editor); only the remainder is fed to ProseField, so a
+                coordinator's inline edit never captures the scaffold. */}
+            <ObjectiveField
+              value={plan.smartt_objective}
               placeholder="No objective written yet."
             />
           </div>

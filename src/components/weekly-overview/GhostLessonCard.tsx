@@ -2,8 +2,9 @@
 
 // The Calendar view's "not started" curriculum lesson — a GHOST card. Every week,
 // the curriculum fixes a lesson per period (Mon = P1 … Fri = P5); a lesson the
-// teacher hasn't started yet renders here as a dotted, cream-tinted, reduced-opacity
-// card that still shows WHICH lesson it is (subject · year over the daily outcome),
+// teacher hasn't started yet renders here as a fill-less card with only a light
+// dotted border (a subtle placeholder against the solid plan cards) that still
+// shows WHICH lesson it is (subject · year over the daily outcome),
 // so the teacher selects a real, identifiable lesson rather than creating from a
 // blank picker. This replaces the old dashed "+ Add lesson" button + dropdown.
 //
@@ -30,7 +31,7 @@ function BlockedNote({ subjectName, year }: { subjectName: string; year: number 
   return (
     <p
       dir="auto"
-      className="rounded-[14px] border border-dashed border-border-strong bg-surface-cream px-[15px] py-[13px] text-[11.5px] leading-[1.4] text-text-muted"
+      className="rounded-[14px] border border-dashed border-border px-[15px] py-[13px] text-[11.5px] leading-[1.4] text-text-muted"
     >
       {t('add.noClass', { subject: subjectName, year: formatNumber(year, locale) })}
     </p>
@@ -40,8 +41,8 @@ function BlockedNote({ subjectName, year }: { subjectName: string; year: number 
 /**
  * One ghost card for a not-started curriculum lesson. Mirrors the solid plan card's
  * anatomy (subject · year header over the daily-outcome topic) so the two read as
- * one visual language, but cream + dotted + dimmed to signal locked curriculum
- * content the teacher can turn into an editable plan.
+ * one visual language, but fill-less with only a light dotted border to signal
+ * locked curriculum content the teacher can turn into an editable plan.
  */
 export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
   const t = useTranslations('board');
@@ -107,8 +108,8 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
         disabled={busy}
         aria-label={t('card.planAria', { topic })}
         className={cn(
-          'block w-full rounded-[14px] border border-dashed border-border-strong bg-surface-cream px-[15px] py-[13px] text-start opacity-80 transition-colors',
-          'hover:border-teal hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal',
+          'block w-full rounded-[14px] border border-dashed border-border px-[15px] py-[13px] text-start transition-colors',
+          'hover:border-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal',
           busy && 'cursor-not-allowed',
         )}
       >

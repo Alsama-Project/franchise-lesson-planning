@@ -129,6 +129,27 @@
   --color-skill-other-bg: #efeae3;
   --color-skill-other-border: #e2dbd0;
 
+  /* ── Insights chart palette ────────────────────────────────────────────────
+   * The coordinator Insights page speaks two colour languages only:
+   *   1. MAGNITUDE → a sequential teal ramp (light → deep). `chart-teal-*` are the
+   *      discrete stops; a bar/cell picks the stop for its share of the max. Mirrors
+   *      the positional teal ramp the Topics spiral already uses, promoted to tokens.
+   *   2. GAPS / FLAGS → a single red-adjacent tone (`gap`), used ONLY for the "no
+   *      teaching this year" cross and the "unusually low month" flag. It is NOT
+   *      decoration and never encodes magnitude. It is deliberately a muted rust,
+   *      distinct from the reserved destructive delete-red (`--color-danger` #b23a2e)
+   *      — the Insights page has no destructive actions, so the two never sit side by
+   *      side. No pink (#b62a5c) appears here. */
+  --color-chart-teal-1: #dcece8; /* faint — smallest magnitude */
+  --color-chart-teal-2: #a9cfc7;
+  --color-chart-teal-3: #6fb3a6;
+  --color-chart-teal-4: #3d9084;
+  --color-chart-teal-5: #186155; /* deep — largest magnitude */
+  --color-chart-track: #eef4f2; /* empty bar track behind a teal fill */
+  --color-gap: #b5503f; /* red-adjacent, gaps/flags ONLY; ≠ delete-red #b23a2e */
+  --color-gap-bg: #f7e7e2;
+  --color-gap-border: #ecccc0;
+
   /* ── Radius ────────────────────────────────────────────────────────────── */
   --radius-badge: 6px;
   --radius-sm: 8px;

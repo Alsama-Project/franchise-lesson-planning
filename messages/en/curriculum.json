@@ -48,7 +48,8 @@
       "logicTree": "Logic tree",
       "topics": "Topics",
       "search": "Search",
-      "logicTreeDisabled": "Logic tree isn’t available for {subject} yet — its curriculum hasn’t been mapped to the outcome taxonomy."
+      "logicTreeDisabled": "Logic tree isn’t available for {subject} yet — its curriculum hasn’t been mapped to the outcome taxonomy.",
+      "insights": "Insights"
     },
     "tree": {
       "breadcrumb": "Subject › Yearly · Year {year}",

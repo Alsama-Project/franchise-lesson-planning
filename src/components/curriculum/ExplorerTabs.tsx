@@ -22,6 +22,7 @@ export function ExplorerTabs({
   subjectName,
   year,
   logicTreeEnabled,
+  showInsights = false,
   children,
 }: {
   tab: ExplorerTab;
@@ -30,6 +31,9 @@ export function ExplorerTabs({
   year: number;
   /** False when the subject's taxonomy coverage is below the threshold. */
   logicTreeEnabled: boolean;
+  /** Coordinator/admin only — surfaces the trailing "Insights" link. Teachers never see
+   *  it, and the /curriculum/insights route redirects them regardless. */
+  showInsights?: boolean;
   children: React.ReactNode;
 }) {
   const t = useTranslations('curriculum');
@@ -42,9 +46,11 @@ export function ExplorerTabs({
     return `/curriculum?${sp.toString()}`;
   };
 
+  const insightsHref = `/curriculum/insights?${new URLSearchParams({ subject: subjectCode, year: String(year) }).toString()}`;
+
   return (
     <div className="rounded-[18px] border border-border bg-surface shadow-card">
-      <div className="flex gap-[28px] overflow-x-auto border-b border-border px-[26px]">
+      <div className="flex items-center gap-[28px] overflow-x-auto border-b border-border px-[26px]">
         <TabLink href={hrefFor('calendar')} active={tab === 'calendar'} label={t('tabs.calendar')} icon={<CalendarIcon />} />
         <TabLink
           href={hrefFor('tree')}
@@ -56,6 +62,18 @@ export function ExplorerTabs({
         />
         <TabLink href={hrefFor('topics')} active={tab === 'topics'} label={t('tabs.topics')} icon={<TopicsIcon />} />
         <TabLink href={hrefFor('search')} active={tab === 'search'} label={t('tabs.search')} icon={<SearchIcon />} />
+        {showInsights ? (
+          <Link
+            href={insightsHref}
+            className="ms-auto inline-flex shrink-0 items-center gap-[6px] py-[15px] text-[13.5px] font-medium text-teal transition-colors hover:text-teal-deep"
+          >
+            <InsightsIcon />
+            {t('tabs.insights')}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="rtl:-scale-x-100">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </Link>
+        ) : null}
       </div>
       {children}
     </div>
@@ -154,6 +172,14 @@ function SearchIcon() {
     <svg {...iconProps} className="text-[#6C6259]">
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
+function InsightsIcon() {
+  return (
+    <svg {...iconProps} className="text-teal">
+      <path d="M3 3v18h18" />
+      <path d="M7 14l3-4 3 3 4-6" />
     </svg>
   );
 }

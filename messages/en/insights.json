@@ -1,0 +1,55 @@
+{
+  "insights": {
+    "title": "Curriculum insights",
+    "subtitle": "Read-only analytics across {subject}'s scheme of work.",
+    "readOnly": "Read-only",
+    "subjectLabel": "Subject",
+    "yearLabel": "Year",
+    "year": "Year {n}",
+    "yearShort": "Y{n}",
+    "yearsRange": "Years {from}–{to}",
+    "hoursUnit": "{count, plural, one {# hour} other {# hours}}",
+    "hoursShort": "{n} h",
+    "openInExplorer": "Open in Explorer",
+    "backToExplorer": "Back to Explorer",
+    "noCurriculum": "No curriculum has been synced yet.",
+    "notAvailable": "Not available for this subject yet.",
+    "fillsInNote": "This fills in automatically as mapped curriculum is imported.",
+    "card1": {
+      "title": "Teaching hours per month",
+      "subtitle": "Daily lessons counted per month for {year}.",
+      "flagLabel": "Unusually low",
+      "flagNote": "Below {pct}% of this year's median ({median} h).",
+      "medianCaption": "Year median: {median} h",
+      "empty": "No teaching hours recorded for this subject yet."
+    },
+    "card2": {
+      "titleFocus": "Hours by focus area",
+      "titleTheme": "Hours by theme",
+      "themeNote": "This subject isn't focus-area structured — grouped by theme instead.",
+      "subtitleFocus": "Share of teaching time across focus areas, broken down by topic.",
+      "subtitleTheme": "Share of teaching time across themes.",
+      "ofTotal": "{pct}%",
+      "topicsCount": "{count, plural, one {# topic} other {# topics}}",
+      "empty": "No focus-area or theme data recorded for this subject yet."
+    },
+    "card3": {
+      "title": "Spiralling across years",
+      "subtitle": "Where each topic is taught across the years. Presence only — no depth signal is derived.",
+      "taught": "Taught",
+      "notTaught": "Not taught",
+      "topicHeading": "Topic",
+      "empty": "This subject has no focus-area or theme structure to spiral across years yet."
+    },
+    "card4": {
+      "title": "Coverage & gaps",
+      "subtitle": "Teaching hours per topic per year. A cross marks a year with no teaching.",
+      "gapAria": "No teaching this year",
+      "noteHeading": "Coverage notes",
+      "gapNarrative": "{topic} drops out in {gap}, then reappears in {reappear}.",
+      "gapNarrativeOpenEnd": "{topic} was last taught in {last} and hasn't returned since.",
+      "moreNotes": "+{count} more",
+      "empty": "No focus-area or theme data recorded for this subject yet."
+    }
+  }
+}

@@ -12,6 +12,7 @@ import {
   type SubjectCapabilities,
 } from '@/lib/curriculum/composition';
 import { getHeaderProfile } from '@/lib/profile';
+import { getConsoleAccess } from '@/lib/console';
 
 // Rendered per-request so the shell reflects the live session and the selected
 // Tab / Subject / Year / Week / View (driven by URL search params, so the view is
@@ -48,13 +49,16 @@ export default async function CurriculumPage({
   const resolvedView = view === 'monthly' ? 'monthly' : 'weekly';
   const activeTab: ExplorerTab = TABS.includes(tab as ExplorerTab) ? (tab as ExplorerTab) : 'calendar';
 
-  const [{ name, subtitle }, shell] = await Promise.all([
+  const [{ name, subtitle }, shell, access] = await Promise.all([
     getHeaderProfile(),
     getExplorerShell({
       subject: subject || undefined,
       year: Number.isFinite(yearNum) ? yearNum : undefined,
     }),
+    getConsoleAccess(),
   ]);
+  // Coordinator/admin only — surfaces the trailing "Insights" link in the tab bar.
+  const showInsights = access.isAdmin || access.isCoordinator;
 
   // No curriculum synced at all → the Calendar viewer's own empty state.
   if (!shell) {
@@ -76,6 +80,7 @@ export default async function CurriculumPage({
         subjectName={shell.subjectName}
         year={shell.year}
         logicTreeEnabled={capabilities.logicTreeEnabled}
+        showInsights={showInsights}
       >
         <TabBody
           tab={activeTab}

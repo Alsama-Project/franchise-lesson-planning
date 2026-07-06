@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { notFound } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
@@ -48,7 +48,9 @@ export default async function PlanViewPage({
     supabase.auth.getUser(),
     canCoordinatePlan(id),
   ]);
-  if (!data) notFound();
+  // A missing plan — genuinely absent, RLS-hidden, or SOFT-DELETED (loadPlanForEditor
+  // filters deleted_at) — is not openable. Return to the board instead of a raw 404.
+  if (!data) redirect(backHref);
 
   const { data: profile } = await supabase
     .from('profiles')

@@ -12,6 +12,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { getPlanCurriculumLabels, planCurriculumLabelKey } from '@/lib/curriculumUtils';
 import type { PlanScope, PlanStatus } from '@/types/lesson';
 
 export interface TrashActionResult {
@@ -81,6 +82,7 @@ interface TrashRow {
   status: PlanStatus;
   subject_id: string | null;
   curriculum_lesson_id: string;
+  curriculum_version_id: string | null;
   deleted_at: string | null;
 }
 
@@ -98,7 +100,7 @@ export async function listTrashedLessons(): Promise<TrashedLesson[]> {
 
   const { data, error } = await supabase
     .from('lesson_plans')
-    .select('id, year, scope, status, subject_id, curriculum_lesson_id, deleted_at')
+    .select('id, year, scope, status, subject_id, curriculum_lesson_id, curriculum_version_id, deleted_at')
     .eq('created_by', user.id)
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false });
@@ -117,27 +119,20 @@ export async function listTrashedLessons(): Promise<TrashedLesson[]> {
     }
   }
 
-  // Resolve a topic per curriculum lesson (curriculum_lesson_id == lesson_key);
-  // curriculum_lesson is readable by any authenticated user (curr_read policy).
-  const keys = [...new Set(rows.map((r) => r.curriculum_lesson_id).filter(Boolean))];
-  const topicByKey = new Map<string, string>();
-  if (keys.length > 0) {
-    const { data: lessons } = await supabase
-      .from('curriculum_lesson_active')
-      .select('lesson_key, daily_outcome, focus_area')
-      .in('lesson_key', keys);
-    for (const l of (lessons ?? []) as Array<{
-      lesson_key: string;
-      daily_outcome: string | null;
-      focus_area: string | null;
-    }>) {
-      topicByKey.set(l.lesson_key, (l.daily_outcome || l.focus_area || '').trim());
-    }
-  }
+  // Resolve a topic per plan, PINNED to the plan's stamped curriculum version so a
+  // trashed historical plan reads the same curriculum it renders when restored/opened
+  // (a re-authored subject must not relabel it). Falls back to the active version for
+  // legacy/unstamped plans; keyed by (lesson_key, version).
+  const labels = await getPlanCurriculumLabels(
+    rows
+      .filter((r) => r.curriculum_lesson_id)
+      .map((r) => ({ lessonKey: r.curriculum_lesson_id, versionId: r.curriculum_version_id })),
+  );
 
   return rows.map((r) => {
     const subject = r.subject_id ? subjectNames.get(r.subject_id) ?? null : null;
-    const topic = topicByKey.get(r.curriculum_lesson_id) || r.curriculum_lesson_id;
+    const label = labels.get(planCurriculumLabelKey(r.curriculum_lesson_id, r.curriculum_version_id));
+    const topic = (label ? label.dailyOutcome || label.focusArea : '') || r.curriculum_lesson_id;
     const subtitle = [subject, topic].filter(Boolean).join(' · ') || 'Untitled lesson';
     return {
       id: r.id,

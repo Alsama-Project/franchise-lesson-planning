@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/app-shell/AppShell';
 import { LessonPlanEditor } from '@/components/editor/LessonPlanEditor';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
@@ -37,7 +37,10 @@ export default async function PlanEditorPage({
     canCoordinatePlan(id),
     planHasAnnotations(id),
   ]);
-  if (!data) notFound();
+  // A missing plan — genuinely absent, RLS-hidden, or SOFT-DELETED (loadPlanForEditor
+  // filters deleted_at) — is not openable. Return to the board instead of a raw 404,
+  // so trashing a lesson (or following a stale link to one) lands somewhere sensible.
+  if (!data) redirect(backHref);
 
   // The editor is the AUTHORING surface. A coordinator of this plan's space who is
   // not its author opens it to REVIEW, not edit — their controls (Approve / Return

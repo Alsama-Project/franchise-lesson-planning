@@ -1,9 +1,12 @@
 'use client';
 
 // The confirm-before-trash dialog for a Weekly Overview lesson card. Rendered
-// through a portal to document.body: the card itself is a <Link> (and, on the
-// Status board, a dnd-kit draggable), so a portal keeps the dialog OUT of the
-// anchor's DOM subtree — clicks on Cancel/Confirm can't bubble up and navigate.
+// through a portal to document.body. NOTE: a portal moves the dialog out of the
+// anchor's DOM subtree, but React synthetic events still bubble through the REACT
+// tree — and this dialog is a React descendant of the card's <Link>. So a click on
+// Confirm/Cancel would bubble up to that <Link> and navigate to /plan/[id] (which,
+// post-delete, 404s). We stop propagation at the overlay root so no event inside
+// the dialog reaches the card link or the dnd-kit draggable.
 //
 // Destructive framing (red confirm) because it removes the lesson from the board;
 // the copy names the lesson and reassures that it goes to the recycle bin, not
@@ -48,7 +51,13 @@ export function DeleteLessonDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('deleteLesson.dialog.title')}
+      // Contain every interaction inside the dialog: React bubbles portal events
+      // through the component tree to the card's <Link>, so without this a click
+      // would navigate to the (now-deleted) plan and 404. Backdrop click cancels.
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget) onCancel();
       }}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"

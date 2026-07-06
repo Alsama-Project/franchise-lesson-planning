@@ -21,14 +21,15 @@ export function ExplorerTabs({
   subjectCode,
   subjectName,
   year,
-  hasTaxonomy,
+  logicTreeEnabled,
   children,
 }: {
   tab: ExplorerTab;
   subjectCode: string;
   subjectName: string;
   year: number;
-  hasTaxonomy: boolean;
+  /** False when the subject's taxonomy coverage is below the threshold. */
+  logicTreeEnabled: boolean;
   children: React.ReactNode;
 }) {
   const t = useTranslations('curriculum');
@@ -50,7 +51,7 @@ export function ExplorerTabs({
           active={tab === 'tree'}
           label={t('tabs.logicTree')}
           icon={<TreeIcon />}
-          disabled={!hasTaxonomy}
+          disabled={!logicTreeEnabled}
           disabledReason={t('tabs.logicTreeDisabled', { subject: subjectName })}
         />
         <TabLink href={hrefFor('topics')} active={tab === 'topics'} label={t('tabs.topics')} icon={<TopicsIcon />} />

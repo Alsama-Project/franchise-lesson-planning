@@ -9,6 +9,7 @@ import {
   getCompositionTree,
   getCurriculumSubjectCapabilities,
   getTopicsData,
+  type SubjectCapabilities,
 } from '@/lib/curriculum/composition';
 import { getHeaderProfile } from '@/lib/profile';
 
@@ -74,11 +75,12 @@ export default async function CurriculumPage({
         subjectCode={shell.subjectCode}
         subjectName={shell.subjectName}
         year={shell.year}
-        hasTaxonomy={capabilities.hasTaxonomy}
+        logicTreeEnabled={capabilities.logicTreeEnabled}
       >
         <TabBody
           tab={activeTab}
           shell={shell}
+          capabilities={capabilities}
           searchParams={{
             subject: subject || undefined,
             year: Number.isFinite(yearNum) ? yearNum : undefined,
@@ -95,10 +97,12 @@ export default async function CurriculumPage({
 async function TabBody({
   tab,
   shell,
+  capabilities,
   searchParams,
 }: {
   tab: ExplorerTab;
   shell: NonNullable<Awaited<ReturnType<typeof getExplorerShell>>>;
+  capabilities: SubjectCapabilities;
   searchParams: {
     subject?: string;
     year?: number;
@@ -110,10 +114,19 @@ async function TabBody({
   const subjects = shell.subjects.map((s) => ({ code: s.code, name: s.name }));
 
   if (tab === 'tree') {
-    const tree = await getCompositionTree(shell.subjectCode, shell.year);
+    // Enforce the coverage gate in the BODY too (not just the tab link): a below-
+    // threshold subject like IT still has *some* well-formed rows, so we must not
+    // render its sparse tree. Skip the read entirely when disabled.
+    const enabled = capabilities.logicTreeEnabled;
+    const tree = enabled
+      ? await getCompositionTree(shell.subjectCode, shell.year)
+      : { subject: shell.subjectCode, subjectOutcome: null, years: [] };
     return (
       <LogicTree
         tree={tree}
+        enabled={enabled}
+        unmappedCount={capabilities.totalRows - capabilities.wellFormedRows}
+        totalRows={capabilities.totalRows}
         subjects={subjects}
         subjectName={shell.subjectName}
         years={shell.years}

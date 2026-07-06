@@ -68,7 +68,8 @@
       "subjShort": "SUBJ",
       "slotYear": "Yr {n}",
       "slotWeek": "Wk {n}",
-      "slotPeriod": "P{n}"
+      "slotPeriod": "P{n}",
+      "unmappedBanner": "{n} of {m} rows in this subject aren’t mapped to the outcome taxonomy and aren’t shown here."
     },
     "topics": {
       "yearsLabel": "Years",

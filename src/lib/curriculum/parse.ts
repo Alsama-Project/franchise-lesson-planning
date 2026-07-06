@@ -665,6 +665,10 @@ export function parseCurriculumWorkbook(
         ),
         grammar_vocabulary: rawAt(r, 'grammarVocabulary'),
         monthly_lo: value('monthlyLearningOutcome'),
+        // Subject-level LO is a sheet constant; annual LO is a forward-filled per-year
+        // column. Both denormalise onto every row of their scope (see migration 0049).
+        subject_learning_outcome: subjectLOConst,
+        annual_learning_outcome: value('annualLearningOutcome'),
       });
     } else {
       skippedLessonRows++;

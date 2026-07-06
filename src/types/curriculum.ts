@@ -2,7 +2,7 @@
 // These are read-only reference data; for user-created content see src/types/lesson.ts.
 
 export interface CurriculumLesson {
-  /** Lesson identifier, e.g. "0.S1.K1.H3". Format: {skillNum}.{skillRef}.{knowledgeRef}.{hourRef} */
+  /** Lesson identifier, e.g. "0.S1.K1.H3". Format: {focusArea}.{skillRef}.{knowledgeRef}.{hourRef} — segment 1 is the Focus Area, NOT the year (see @/lib/curriculum/taxonomy). */
   id: string;
   /** Full year label, e.g. "Year 0" */
   year: string;

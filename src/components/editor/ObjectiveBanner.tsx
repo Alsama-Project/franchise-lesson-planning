@@ -10,7 +10,7 @@ import { useTranslations } from 'next-intl';
 export function ObjectiveBanner({ remainder }: { remainder: string }) {
   const t = useTranslations('wizard.banner');
   return (
-    <div className="flex items-center gap-3 rounded-[11px] border border-[#F1D8E1] bg-[#FBF2F5] px-4 py-[9px]">
+    <div className="flex items-center gap-3 rounded-[11px] border border-[#F1D8E1] bg-[#FBF2F5] px-4 py-[7px]">
       <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.06em] text-pink">
         {t('label')}
       </span>

@@ -63,12 +63,12 @@ function IconButton({
       onMouseDown={(e) => e.preventDefault()}
       onClick={inert ? undefined : onClick}
       style={{
-        width: 30,
-        height: 30,
+        width: 26,
+        height: 26,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 7,
+        borderRadius: 6,
         border: 'none',
         cursor: inert ? 'default' : 'pointer',
         background: active ? TEAL_TINT : 'transparent',
@@ -83,7 +83,7 @@ function IconButton({
 }
 
 function Divider() {
-  return <span style={{ width: 1, height: 20, background: '#ECE4D7', margin: '0 3px' }} />;
+  return <span style={{ width: 1, height: 16, background: '#ECE4D7', margin: '0 2px' }} />;
 }
 
 // Order matches the dropdown; the i18n key resolves the label and the level
@@ -98,14 +98,14 @@ const HEADING_OPTIONS = [
 const pillStyle = (disabled: boolean): React.CSSProperties => ({
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 8,
-  fontSize: 12.5,
+  gap: 6,
+  fontSize: 12,
   fontWeight: 500,
   color: '#2A2422',
   background: '#FBF8F3',
   border: '1px solid #E7DECF',
-  borderRadius: 7,
-  padding: '6px 10px',
+  borderRadius: 6,
+  padding: '3px 8px',
   cursor: disabled ? 'default' : 'pointer',
   opacity: disabled ? 0.4 : 1,
   font: 'inherit',
@@ -296,11 +296,8 @@ export function WordToolbar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 5,
+        gap: 2,
         flexWrap: 'wrap',
-        padding: '8px 24px',
-        background: '#fff',
-        borderBottom: '1px solid #EFE8DD',
       }}
     >
       {/* Undo / redo — worksheet-level, so they work even when no block is

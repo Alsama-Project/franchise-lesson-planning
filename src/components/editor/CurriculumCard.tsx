@@ -69,7 +69,7 @@ export function CurriculumCard({
           type="button"
           onClick={() => setOpen(true)}
           aria-expanded={false}
-          className="flex w-full items-center gap-[8px] px-[14px] py-[9px] text-start"
+          className="flex w-full items-center gap-[8px] px-[14px] py-[7px] text-start"
         >
           <Chevron open={false} />
           <span className="flex-shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#A6917A]">

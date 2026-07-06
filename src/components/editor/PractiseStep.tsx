@@ -42,7 +42,7 @@ export function PractiseStep({
   return (
     <fieldset disabled={locked} className="mt-[16px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
       {/* Block header */}
-      <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[12px]">
+      <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[10px]">
         <span className="text-[18px] font-bold">{t('practise.title')}</span>
         <PhaseSelect
           value={block.phase}

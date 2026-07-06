@@ -601,72 +601,28 @@ export function WorksheetBuilder({
             { flex: '1 1 auto', minHeight: 0 }),
       }}
     >
-      {/* ── CHROME (never zoom-scaled) ───────────────────────────────────── */}
-      <div className="ws-no-print" style={{ flexShrink: 0 }}>
-        {/* Top bar */}
-        <div
-          style={{
-            padding: '13px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            flexWrap: 'wrap',
-            background: '#FBF8F3',
-            borderBottom: '1px solid #EFE8DD',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B62A5C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" />
-            </svg>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{t('header.title')}</span>
-          </div>
-
-          <div style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #E7DECF', borderRadius: 999, paddingBlock: 5, paddingInlineStart: 12, paddingInlineEnd: 7 }}>
-              <span style={{ fontSize: 11.5, color: '#8A8178' }}>{t('zoom.a4')}</span>
-              <button type="button" onClick={() => zoomManual((z) => clampZoom(round2(z - 0.1)))} title={t('zoom.zoomOut')} style={zoomBtn}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>
-              </button>
-              <span style={{ fontSize: 11.5, fontWeight: 600, minWidth: 32, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-              <button type="button" onClick={() => zoomManual((z) => clampZoom(round2(z + 0.1)))} title={t('zoom.zoomIn')} style={zoomBtn}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-              </button>
-              <button type="button" onClick={fitToWidth} title={t('zoom.fitToWidth')} style={{ ...zoomBtn, width: 'auto', padding: '0 9px', fontSize: 11, fontWeight: 600, color: '#5C544E' }}>
-                {t('zoom.fit')}
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setPrintOpen(true)}
-              title={t('actions.printPreview')}
-              style={chromeButton(false)}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="3" width="12" height="6" rx="1" /><path d="M6 14h12v7H6z" /><path d="M6 14H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>
-              {t('actions.printPreview')}
-            </button>
-
-            {/* Full screen — CSS maximize overlay; teal "Exit" while active, Esc also leaves */}
-            <button
-              type="button"
-              onClick={() => setMaximised((m) => !m)}
-              title={maximised ? t('actions.exitFullScreenTitle') : t('actions.fullScreen')}
-              style={chromeButton(maximised)}
-            >
-              {maximised ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
-                  {t('actions.exitFullScreen')}
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
-                  {t('actions.fullScreen')}
-                </>
-              )}
-            </button>
-          </div>
+      {/* ── CHROME — ONE slim header row: label · format tools · view controls.
+             It's the flex header above the scrolling canvas (FIX C), so it stays
+             pinned; the page scrolls beneath it. ───────────────────────────── */}
+      <div
+        className="ws-no-print"
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          padding: '5px 14px',
+          background: '#fff',
+          borderBottom: '1px solid #F0EAE1',
+        }}
+      >
+        {/* Label */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B62A5C" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" />
+          </svg>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>{t('header.title')}</span>
         </div>
 
         {/* Shared formatting toolbar — everything acts on the active block; insert
@@ -681,6 +637,35 @@ export function WorksheetBuilder({
           canUndo={canUndo}
           canRedo={canRedo}
         />
+
+        {/* View controls — zoom · print preview · full screen (compact, right-aligned) */}
+        <div style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#FBF8F3', border: '1px solid #E7DECF', borderRadius: 999, padding: '2px 6px' }}>
+            <button type="button" onClick={() => zoomManual((z) => clampZoom(round2(z - 0.1)))} title={t('zoom.zoomOut')} style={zoomBtn}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /></svg>
+            </button>
+            <span style={{ fontSize: 11, fontWeight: 600, minWidth: 30, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+            <button type="button" onClick={() => zoomManual((z) => clampZoom(round2(z + 0.1)))} title={t('zoom.zoomIn')} style={zoomBtn}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5C544E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <button type="button" onClick={fitToWidth} title={t('zoom.fitToWidth')} style={{ ...zoomBtn, width: 'auto', padding: '0 7px', fontSize: 10.5, fontWeight: 600, color: '#5C544E' }}>
+              {t('zoom.fit')}
+            </button>
+          </div>
+
+          <button type="button" onClick={() => setPrintOpen(true)} title={t('actions.printPreview')} aria-label={t('actions.printPreview')} style={chromeButton(false)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="3" width="12" height="6" rx="1" /><path d="M6 14h12v7H6z" /><path d="M6 14H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>
+          </button>
+
+          {/* Full screen — CSS maximize overlay; teal while active, Esc also leaves */}
+          <button type="button" onClick={() => setMaximised((m) => !m)} title={maximised ? t('actions.exitFullScreenTitle') : t('actions.fullScreen')} aria-label={maximised ? t('actions.exitFullScreen') : t('actions.fullScreen')} style={chromeButton(maximised)}>
+            {maximised ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* ── CANVAS (scrollable; only the page is scaled) ─────────────────── */}
@@ -926,19 +911,20 @@ const zoomBtn: React.CSSProperties = {
   border: 'none',
 };
 
+// Compact icon-only view button (print / full screen) for the slim header row.
 function chromeButton(teal: boolean): React.CSSProperties {
   return {
-    fontFamily: 'inherit',
-    fontSize: 12.5,
-    fontWeight: teal ? 600 : 500,
-    color: teal ? '#1F7A6C' : '#2A2422',
+    width: 28,
+    height: 26,
+    color: teal ? '#1F7A6C' : '#5C544E',
     background: teal ? '#E4F0ED' : '#fff',
-    border: `1px solid ${teal ? '#CFE6E0' : '#DDD4C8'}`,
-    padding: '7px 13px',
-    borderRadius: 9,
+    border: `1px solid ${teal ? '#CFE6E0' : '#E7DECF'}`,
+    padding: 0,
+    borderRadius: 7,
     cursor: 'pointer',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 7,
+    justifyContent: 'center',
+    font: 'inherit',
   };
 }

@@ -151,7 +151,14 @@
         "commentPlaceholder": "Comment on this line…",
         "durFrom": "Currently {n} min",
         "durNoteDefault": "Suggest changing the time from {from} to {to} minutes.",
-        "enumNoteDefault": "Suggest changing the grouping from {from} to {to}."
+        "enumNoteDefault": "Suggest changing the grouping from {from} to {to}.",
+        "textNoteDefault": "Suggested a wording change.",
+        "textEmptyHint": "Add text…",
+        "editHint": "Click to edit inline"
+      },
+      "suggesting": {
+        "off": "Unlock for editing",
+        "on": "Done editing"
       },
       "pointer": {
         "title": "Coordinator feedback to review",

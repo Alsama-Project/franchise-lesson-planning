@@ -11,6 +11,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { APP_TIME_ZONE, formatDate, formatNumber } from '@/lib/format';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { Annotation, AnnotationRole } from '@/types/annotation';
+import { textDiffSegments } from '@/lib/review/textDiff';
 import { useAnnotations } from './context';
 import { A } from './tokens';
 
@@ -184,6 +185,31 @@ export function AnnotationCard({
               <span className="text-[13px] font-bold" style={{ color: A.toFg }}>
                 {valueLabel(annotation.suggestionShape, annotation.toValue)}
               </span>
+            </div>
+          ) : null}
+
+          {/* Tracked-change diff for a text (prose) suggestion. */}
+          {isSuggestion && annotation.suggestionShape === 'text' ? (
+            <div
+              dir="auto"
+              className="mb-[11px] rounded-[9px] border px-[11px] py-[8px] text-[13px] leading-[1.5]"
+              style={{ background: A.stripBg, borderColor: A.stripBorder }}
+            >
+              {(() => {
+                const segs = textDiffSegments(annotation.fromValue ?? '', annotation.toValue ?? '');
+                return (
+                  <>
+                    {segs.pre}
+                    {segs.del ? (
+                      <span className="line-through" style={{ color: A.fromFg }}>
+                        {segs.del}
+                      </span>
+                    ) : null}
+                    {segs.ins ? <span style={{ color: A.toFg }}>{segs.ins}</span> : null}
+                    {segs.post}
+                  </>
+                );
+              })()}
             </div>
           ) : null}
 

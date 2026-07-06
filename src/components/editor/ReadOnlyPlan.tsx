@@ -9,6 +9,8 @@ import { CurriculumBand } from '@/components/editor/CurriculumBand';
 import { PartContent } from '@/components/editor/PartContent';
 import { PhaseRow } from '@/components/review/annotation/PhaseRow';
 import { ObjectiveAnnotations } from '@/components/review/annotation/ObjectiveAnnotations';
+import { ProseField } from '@/components/review/annotation/ProseField';
+import { SuggestingToggle } from '@/components/review/annotation/SuggestingToggle';
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES, ROUTINE_BLOCK_TYPES } from '@/lib/blocks';
 import { routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
@@ -139,9 +141,12 @@ export function ReadOnlyPlan({
                 Read only · {SCOPE_LABEL[classContext.scope]}
               </span>
             </div>
-            <span className={`text-[13.5px] font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>
-              {total} / {IN_SESSION_TARGET_MINUTES} min
-            </span>
+            <div className="flex items-center gap-3">
+              <SuggestingToggle />
+              <span className={`text-[13.5px] font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>
+                {total} / {IN_SESSION_TARGET_MINUTES} min
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -162,9 +167,11 @@ export function ReadOnlyPlan({
             <ObjectiveAnnotations />
           </div>
           <div className="rounded-[11px] border border-border bg-surface px-[15px] py-[13px] text-[14px] leading-[1.5] text-neutral-900">
-            {plan.smartt_objective?.trim() || (
-              <span className="text-text-muted">No objective written yet.</span>
-            )}
+            <ProseField
+              anchorType="objective"
+              value={plan.smartt_objective?.trim() ?? ''}
+              placeholder="No objective written yet."
+            />
           </div>
         </section>
 

@@ -151,7 +151,14 @@
         "commentPlaceholder": "علّق على هذا السطر…",
         "durFrom": "حالياً {n} دقيقة",
         "durNoteDefault": "اقتراح تغيير الوقت من {from} إلى {to} دقيقة.",
-        "enumNoteDefault": "اقتراح تغيير التجميع من {from} إلى {to}."
+        "enumNoteDefault": "اقتراح تغيير التجميع من {from} إلى {to}.",
+        "textNoteDefault": "اقتراح تعديل الصياغة.",
+        "textEmptyHint": "أضف نصاً…",
+        "editHint": "انقر للتعديل مباشرةً"
+      },
+      "suggesting": {
+        "off": "فتح للتعديل",
+        "on": "تم التعديل"
       },
       "pointer": {
         "title": "ملاحظات المنسّق للمراجعة",

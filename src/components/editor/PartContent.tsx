@@ -16,6 +16,8 @@ import type { ResourceWithTags } from '@/types/resource';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { ReadOnlyResourceList } from '@/components/editor/ReadOnlyResourceList';
 import { ReadOnlyWorksheet } from '@/components/editor/ReadOnlyWorksheet';
+import { useOptionalAnnotations } from '@/components/review/annotation/context';
+import { ProseField } from '@/components/review/annotation/ProseField';
 
 function Detail({ label, value }: { label: string; value: string }) {
   if (!value.trim()) return null;
@@ -52,10 +54,33 @@ export function PartContent({
   /** Fixed-part description shown when there is no block (e.g. Standard routines). */
   fallback?: string;
 }) {
+  // On the review view (/plan/[id]/view) the read-only lesson is wrapped in the
+  // annotation provider, so the two description fields become inline tracked-change
+  // targets. In the editor's Review step (no provider) `ann` is null and every field
+  // renders the plain `Detail` below — byte-for-byte identical to before.
+  const ann = useOptionalAnnotations();
+
   // Fixed parts (no block) just carry their stock description.
   if (!block) {
     return <div className="text-[12.5px] leading-[1.5] text-neutral-700">{fallback ?? ''}</div>;
   }
+
+  /** A description field: plain `Detail` off the review view; an inline `ProseField`
+   *  (tracked-change diff + coordinator edit) on it. Empty fields stay hidden unless a
+   *  coordinator is actively suggesting (so they can add missing content). */
+  const description = (field: 'teacher_does' | 'students_do', label: string, value: string) => {
+    if (!ann) return <Detail label={label} value={value} />;
+    const show = value.trim() !== '' || (ann.role === 'coordinator' && ann.suggesting);
+    if (!show) return null;
+    return (
+      <div className="text-[12.5px] leading-[1.5]">
+        <span className="font-semibold text-text-faint">{label}: </span>
+        <span className="text-neutral-800">
+          <ProseField anchorType="phase_description" phaseRef={block.type} field={field} value={value} />
+        </span>
+      </div>
+    );
+  };
 
   const hasWorksheet = worksheet !== undefined && worksheetContext !== undefined;
 
@@ -101,8 +126,8 @@ export function PartContent({
             <div className="text-[13px] font-semibold text-ink">{block.activity_title}</div>
           ) : null}
           <Detail label="What I'll do" value={block.note ?? ''} />
-          <Detail label="Teacher" value={block.teacher_does} />
-          <Detail label="Students" value={block.students_do} />
+          {description('teacher_does', 'Teacher', block.teacher_does)}
+          {description('students_do', 'Students', block.students_do)}
           <Detail label="Materials" value={block.resources} />
         </>
       ) : null}

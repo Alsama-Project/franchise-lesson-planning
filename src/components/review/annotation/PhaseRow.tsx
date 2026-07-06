@@ -4,14 +4,22 @@
 // Without an annotation provider (a non-member's plain read-only view) it renders
 // EXACTLY the original markup — grouping badge · title · "{n} min". With a provider
 // it adds: a count badge (clicks focus the phase's first card), a teal from→to pill
-// in the duration / grouping cell for a live suggestion (green once accepted), and —
-// for a coordinator — inline authoring (suggest a time, suggest a grouping, comment).
+// in the duration / grouping cell for a live suggestion (green once accepted), and a
+// per-row Comment affordance (coordinator).
+//
+// PART B: authoring duration/grouping is now DIRECT INLINE EDITING (the old "Suggest
+// a time" / "Suggest a grouping" buttons are gone). While a coordinator is in
+// suggesting mode, clicking the `{n} min` value opens a stepper and clicking the
+// grouping tag opens a picker; committing creates / updates / withdraws the same
+// dur / enum suggestion the pills and accept/reject already use. Comments stay
+// available regardless of suggesting mode.
 
 import { useState, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
 import type { TeachingPhase } from '@/types/lesson';
 import { useOptionalAnnotations } from './context';
+import { pendingSuggestion } from './finders';
 import { A } from './tokens';
 
 const PHASE_LABEL: Record<TeachingPhase, string> = { i_do: 'I do', we_do: 'We do', you_do: 'You do' };
@@ -31,62 +39,126 @@ export function PhaseRow({
   const ctx = useOptionalAnnotations();
   const t = useTranslations('review');
   const locale = useLocale();
-  const [authoring, setAuthoring] = useState<null | 'dur' | 'enum' | 'comment'>(null);
+  const [comment, setComment] = useState(false);
+  const [editing, setEditing] = useState<null | 'dur' | 'enum'>(null);
 
-  const durSug = ctx?.suggestionFor(type, 'dur');
+  const durSug = ctx?.suggestionFor(type, 'dur'); // non-rejected → pill / green
   const enumSug = ctx?.suggestionFor(type, 'enum');
   const phaseCards = ctx?.forPhase(type) ?? [];
   const isCoordinator = ctx?.role === 'coordinator';
+  const canEdit = !!isCoordinator && !!ctx?.suggesting;
+
+  const pendingDur = ctx
+    ? pendingSuggestion(ctx.annotations, { shape: 'dur', anchorType: 'phase_duration', phaseRef: type })
+    : undefined;
+  const pendingEnum = ctx
+    ? pendingSuggestion(ctx.annotations, { shape: 'enum', anchorType: 'phase_enum', phaseRef: type })
+    : undefined;
 
   const focus = (id?: string) => {
     if (id && ctx) ctx.setActiveId(id);
+  };
+
+  // ── commits (never touch the plan — only the suggestion) ─────────────────────
+  const commitDur = async (val: number) => {
+    setEditing(null);
+    if (!ctx) return;
+    if (pendingDur) {
+      if (val === Number(pendingDur.fromValue)) await ctx.remove(pendingDur.id);
+      else if (val === Number(pendingDur.toValue)) return;
+      else await ctx.update(pendingDur.id, String(val));
+    } else {
+      if (val === minutes) return;
+      await ctx.create({
+        kind: 'suggestion',
+        suggestionShape: 'dur',
+        anchorType: 'phase_duration',
+        phaseRef: type,
+        fromValue: String(minutes),
+        toValue: String(val),
+        note: t('annotations.author.durNoteDefault', { from: minutes, to: val }),
+      });
+    }
+  };
+
+  const commitEnum = async (p: TeachingPhase) => {
+    setEditing(null);
+    if (!ctx || !phase) return;
+    if (pendingEnum) {
+      if (p === pendingEnum.fromValue) await ctx.remove(pendingEnum.id);
+      else if (p === pendingEnum.toValue) return;
+      else await ctx.update(pendingEnum.id, p);
+    } else {
+      if (p === phase) return;
+      await ctx.create({
+        kind: 'suggestion',
+        suggestionShape: 'enum',
+        anchorType: 'phase_enum',
+        phaseRef: type,
+        fromValue: phase,
+        toValue: p,
+        note: t('annotations.author.enumNoteDefault', { from: PHASE_LABEL[phase], to: PHASE_LABEL[p] }),
+      });
+    }
   };
 
   // ── grouping cell ────────────────────────────────────────────────────────────
   const groupingCell = (() => {
     if (enumSug && enumSug.status === 'pending') {
       return (
-        <button type="button" onClick={() => focus(enumSug.id)}>
+        <Clickable onClick={canEdit ? () => setEditing('enum') : () => focus(enumSug.id)}>
           <FromToPill
             from={PHASE_LABEL[enumSug.fromValue as TeachingPhase] ?? enumSug.fromValue ?? ''}
             to={PHASE_LABEL[enumSug.toValue as TeachingPhase] ?? enumSug.toValue ?? ''}
           />
-        </button>
+        </Clickable>
       );
     }
     if (enumSug && enumSug.status === 'accepted' && phase) {
-      return <GreenTag label={PHASE_LABEL[phase]} />;
+      return (
+        <Clickable onClick={canEdit ? () => setEditing('enum') : undefined}>
+          <GreenTag label={PHASE_LABEL[phase]} />
+        </Clickable>
+      );
     }
     if (phase) {
       return (
-        <span className="rounded-badge bg-surface-subtle px-[7px] py-[2px] text-[10px] font-bold uppercase tracking-[0.03em] text-neutral-600">
-          {PHASE_LABEL[phase]}
-        </span>
+        <Clickable onClick={canEdit ? () => setEditing('enum') : undefined}>
+          <span className="rounded-badge bg-surface-subtle px-[7px] py-[2px] text-[10px] font-bold uppercase tracking-[0.03em] text-neutral-600">
+            {PHASE_LABEL[phase]}
+          </span>
+        </Clickable>
       );
     }
     return null;
   })();
 
   // ── duration cell ────────────────────────────────────────────────────────────
+  const minutesLabel = t('annotations.pill.minutes', { n: formatNumber(minutes, locale) });
   const durationCell = (() => {
     if (durSug && durSug.status === 'pending') {
       return (
-        <button type="button" onClick={() => focus(durSug.id)} className="ml-auto">
+        <Clickable
+          className="ml-auto"
+          onClick={canEdit ? () => setEditing('dur') : () => focus(durSug.id)}
+        >
           <FromToPill from={`${durSug.fromValue}`} to={`${durSug.toValue}`} />
-        </button>
+        </Clickable>
       );
     }
     if (durSug && durSug.status === 'accepted') {
       return (
-        <span className="ml-auto text-[12.5px] font-semibold" style={{ color: A.pillGreenFg }}>
-          {t('annotations.pill.minutes', { n: formatNumber(minutes, locale) })}
-        </span>
+        <Clickable className="ml-auto" onClick={canEdit ? () => setEditing('dur') : undefined}>
+          <span className="text-[12.5px] font-semibold" style={{ color: A.pillGreenFg }}>
+            {minutesLabel}
+          </span>
+        </Clickable>
       );
     }
     return (
-      <span className="ml-auto text-[12.5px] font-semibold text-text-faint">
-        {t('annotations.pill.minutes', { n: formatNumber(minutes, locale) })}
-      </span>
+      <Clickable className="ml-auto" onClick={canEdit ? () => setEditing('dur') : undefined}>
+        <span className="text-[12.5px] font-semibold text-text-faint">{minutesLabel}</span>
+      </Clickable>
     );
   })();
 
@@ -101,47 +173,64 @@ export function PhaseRow({
         {durationCell}
       </div>
 
-      {/* Coordinator authoring toolbar + inline forms. */}
-      {isCoordinator ? (
-        <div className="mt-[8px] flex flex-wrap items-center gap-[7px]">
-          <AuthorButton
-            label={t('annotations.author.time')}
-            active={authoring === 'dur'}
-            onClick={() => setAuthoring(authoring === 'dur' ? null : 'dur')}
+      {/* Inline dur / enum editors (suggesting mode). */}
+      {editing === 'dur' ? (
+        <div className="mt-[8px]">
+          <DurEditor
+            seed={pendingDur ? Number(pendingDur.toValue) : minutes}
+            onCommit={(v) => void commitDur(v)}
+            onCancel={() => setEditing(null)}
+            locale={locale}
           />
-          {phase ? (
-            <AuthorButton
-              label={t('annotations.author.grouping')}
-              active={authoring === 'enum'}
-              onClick={() => setAuthoring(authoring === 'enum' ? null : 'enum')}
-            />
-          ) : null}
-          <AuthorButton
-            label={t('annotations.author.comment')}
-            active={authoring === 'comment'}
-            onClick={() => setAuthoring(authoring === 'comment' ? null : 'comment')}
+        </div>
+      ) : null}
+      {editing === 'enum' && phase ? (
+        <div className="mt-[8px]">
+          <EnumEditor
+            seed={(pendingEnum?.toValue as TeachingPhase) ?? phase}
+            onCommit={(p) => void commitEnum(p)}
+            onCancel={() => setEditing(null)}
           />
         </div>
       ) : null}
 
-      {isCoordinator && authoring === 'dur' ? (
-        <DurationForm
-          type={type}
-          current={minutes}
-          onClose={() => setAuthoring(null)}
-        />
+      {/* Comment — always available to a coordinator, independent of suggesting mode. */}
+      {isCoordinator ? (
+        <div className="mt-[8px] flex flex-wrap items-center gap-[7px]">
+          <AuthorButton
+            label={t('annotations.author.comment')}
+            active={comment}
+            onClick={() => setComment((v) => !v)}
+          />
+        </div>
       ) : null}
-      {isCoordinator && authoring === 'enum' && phase ? (
-        <GroupingForm type={type} current={phase} onClose={() => setAuthoring(null)} />
-      ) : null}
-      {isCoordinator && authoring === 'comment' ? (
-        <CommentForm anchorType="phase" phaseRef={type} onClose={() => setAuthoring(null)} />
+      {isCoordinator && comment ? (
+        <CommentForm anchorType="phase" phaseRef={type} onClose={() => setComment(false)} />
       ) : null}
     </>
   );
 }
 
 // ── shared bits ────────────────────────────────────────────────────────────────
+
+/** A cell that is a button when it has an action, else a plain span (so a
+ *  non-interactive tag doesn't render as a button). */
+function Clickable({
+  onClick,
+  className,
+  children,
+}: {
+  onClick?: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (!onClick) return <span className={className}>{children}</span>;
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {children}
+    </button>
+  );
+}
 
 export function FromToPill({ from, to }: { from: string; to: string }) {
   return (
@@ -208,113 +297,18 @@ function AuthorButton({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[8px] border px-[9px] py-[4px] text-[11.5px] font-semibold transition-colors"
+      className="inline-flex items-center gap-[5px] rounded-[8px] border px-[9px] py-[4px] text-[11.5px] font-semibold transition-colors"
       style={
         active
           ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
           : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
       }
     >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
       {label}
     </button>
-  );
-}
-
-function DurationForm({
-  type,
-  current,
-  onClose,
-}: {
-  type: string;
-  current: number;
-  onClose: () => void;
-}) {
-  const ctx = useOptionalAnnotations();
-  const t = useTranslations('review');
-  const locale = useLocale();
-  const [value, setValue] = useState(current);
-  const [note, setNote] = useState('');
-
-  if (!ctx) return null;
-  const submit = async () => {
-    if (ctx.pending || value === current) return;
-    const ok = await ctx.create({
-      kind: 'suggestion',
-      anchorType: 'phase_duration',
-      phaseRef: type,
-      suggestionShape: 'dur',
-      fromValue: `${current}`,
-      toValue: `${value}`,
-      note: note.trim() || t('annotations.author.durNoteDefault', { from: current, to: value }),
-    });
-    if (ok) onClose();
-  };
-
-  return (
-    <AuthoringShell>
-      <div className="flex items-center gap-[9px]">
-        <Stepper value={value} onChange={setValue} min={1} max={60} locale={locale} />
-        <span className="text-[12px]" style={{ color: A.hint }}>
-          {t('annotations.author.durFrom', { n: formatNumber(current, locale) })}
-        </span>
-      </div>
-      <AuthoringNote value={note} onChange={setNote} placeholder={t('annotations.author.notePlaceholder')} />
-      <AuthoringActions onSubmit={() => void submit()} onCancel={onClose} submitLabel={t('annotations.author.suggest')} disabled={ctx.pending || value === current} />
-    </AuthoringShell>
-  );
-}
-
-function GroupingForm({
-  type,
-  current,
-  onClose,
-}: {
-  type: string;
-  current: TeachingPhase;
-  onClose: () => void;
-}) {
-  const ctx = useOptionalAnnotations();
-  const t = useTranslations('review');
-  const [value, setValue] = useState<TeachingPhase>(current);
-  const [note, setNote] = useState('');
-
-  if (!ctx) return null;
-  const submit = async () => {
-    if (ctx.pending || value === current) return;
-    const ok = await ctx.create({
-      kind: 'suggestion',
-      anchorType: 'phase_enum',
-      phaseRef: type,
-      suggestionShape: 'enum',
-      fromValue: current,
-      toValue: value,
-      note: note.trim() || t('annotations.author.enumNoteDefault', { from: PHASE_LABEL[current], to: PHASE_LABEL[value] }),
-    });
-    if (ok) onClose();
-  };
-
-  return (
-    <AuthoringShell>
-      <div className="flex flex-wrap gap-[6px]">
-        {PHASE_ORDER.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setValue(p)}
-            className="rounded-[8px] border px-[10px] py-[5px] text-[12px] font-semibold transition-colors"
-            style={
-              value === p
-                ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
-                : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
-            }
-          >
-            {PHASE_LABEL[p]}
-          </button>
-        ))}
-      </div>
-      <AuthoringNote value={note} onChange={setNote} placeholder={t('annotations.author.notePlaceholder')} />
-      <AuthoringActions onSubmit={() => void submit()} onCancel={onClose} submitLabel={t('annotations.author.suggest')} disabled={ctx.pending || value === current} />
-    </AuthoringShell>
   );
 }
 
@@ -355,9 +349,90 @@ export function CommentForm({
   );
 }
 
+function DurEditor({
+  seed,
+  onCommit,
+  onCancel,
+  locale,
+}: {
+  seed: number;
+  onCommit: (v: number) => void;
+  onCancel: () => void;
+  locale: string;
+}) {
+  const [value, setValue] = useState(seed);
+  return (
+    <AuthoringShell>
+      <div className="flex flex-wrap items-center gap-[9px]">
+        <Stepper value={value} onChange={setValue} min={1} max={60} locale={locale} />
+        <IconButton onClick={() => onCommit(value)} />
+        <CancelLink onClick={onCancel} />
+      </div>
+    </AuthoringShell>
+  );
+}
+
+function EnumEditor({
+  seed,
+  onCommit,
+  onCancel,
+}: {
+  seed: TeachingPhase;
+  onCommit: (p: TeachingPhase) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AuthoringShell>
+      <div className="flex flex-wrap items-center gap-[6px]">
+        {PHASE_ORDER.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onCommit(p)}
+            className="rounded-[8px] border px-[10px] py-[5px] text-[12px] font-semibold transition-colors"
+            style={
+              seed === p
+                ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
+                : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
+            }
+          >
+            {PHASE_LABEL[p]}
+          </button>
+        ))}
+        <CancelLink onClick={onCancel} />
+      </div>
+    </AuthoringShell>
+  );
+}
+
+function IconButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[8px] text-white transition-opacity hover:opacity-90"
+      style={{ background: A.teal }}
+      aria-label="save"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    </button>
+  );
+}
+
+function CancelLink({ onClick }: { onClick: () => void }) {
+  const t = useTranslations('review');
+  return (
+    <button type="button" onClick={onClick} className="text-[12px] font-medium" style={{ color: A.neutralFg }}>
+      {t('annotations.author.cancel')}
+    </button>
+  );
+}
+
 function AuthoringShell({ children }: { children: ReactNode }) {
   return (
-    <div className="mt-[8px] rounded-[10px] border bg-white p-[11px]" style={{ borderColor: A.pillTealBorder }}>
+    <div className="rounded-[10px] border bg-white p-[11px]" style={{ borderColor: A.pillTealBorder }}>
       <div className="flex flex-col gap-[9px]">{children}</div>
     </div>
   );

@@ -23,7 +23,7 @@ import type {
   Annotation,
   AnnotationKind,
   AnnotationRole,
-  StructuredSuggestionShape,
+  SuggestionShape,
 } from '@/types/annotation';
 
 export interface ActionResult {
@@ -36,13 +36,19 @@ export interface CreateAnnotationInput {
   kind: AnnotationKind;
   anchorType: AnchorType;
   phaseRef?: string | null;
+  /** For a `text` phase_description suggestion, the field name (`teacher_does` /
+   *  `students_do`); for a worksheet anchor, the worksheet block id. Null otherwise. */
   blockRef?: string | null;
-  /** dur/enum only in Part A; a comment sends none. */
-  suggestionShape?: StructuredSuggestionShape | null;
+  /** `dur` / `enum` (structured, Part A) or `text` (inline prose, Part B). A comment
+   *  sends none. */
+  suggestionShape?: SuggestionShape | null;
   fromValue?: string | null;
   toValue?: string | null;
   note: string;
 }
+
+/** The two plain-text fields a `phase_description` text suggestion can target. */
+const TEXT_FIELDS: ReadonlySet<string> = new Set(['teacher_does', 'students_do']);
 
 export interface CreateAnnotationResult extends ActionResult {
   annotation?: Annotation;
@@ -69,18 +75,30 @@ export async function createAnnotation(
 
   const isSuggestion = input.kind === 'suggestion';
   if (isSuggestion) {
-    // Part A authors only the two structured shapes; `text` is Part B.
-    if (input.suggestionShape !== 'dur' && input.suggestionShape !== 'enum') {
+    const shape = input.suggestionShape;
+    if (shape !== 'dur' && shape !== 'enum' && shape !== 'text') {
       return { ok: false, error: 'invalid' };
     }
-    if (!input.phaseRef || input.fromValue == null || input.toValue == null) {
+    if (input.fromValue == null || input.toValue == null) {
       return { ok: false, error: 'invalid' };
     }
-    if (input.suggestionShape === 'enum' && !PHASES.has(input.toValue)) {
-      return { ok: false, error: 'invalid' };
-    }
-    if (input.suggestionShape === 'dur' && !Number.isFinite(Number(input.toValue))) {
-      return { ok: false, error: 'invalid' };
+    if (shape === 'dur' || shape === 'enum') {
+      // Structured: anchored to a phase (block type).
+      if (!input.phaseRef) return { ok: false, error: 'invalid' };
+      if (shape === 'enum' && !PHASES.has(input.toValue)) return { ok: false, error: 'invalid' };
+      if (shape === 'dur' && !Number.isFinite(Number(input.toValue))) return { ok: false, error: 'invalid' };
+    } else {
+      // Prose (Part B): objective (plain column) or a phase description field.
+      if (input.anchorType !== 'objective' && input.anchorType !== 'phase_description') {
+        return { ok: false, error: 'invalid' };
+      }
+      if (input.anchorType === 'phase_description') {
+        if (!input.phaseRef || !input.blockRef || !TEXT_FIELDS.has(input.blockRef)) {
+          return { ok: false, error: 'invalid' };
+        }
+      }
+      // No empty diff: the proposal must differ from the original (trim-insensitive).
+      if (input.toValue.trim() === input.fromValue.trim()) return { ok: false, error: 'invalid' };
     }
   }
 
@@ -205,18 +223,91 @@ export async function setAnnotationResolved(
 }
 
 /**
- * Accept or reject a dur/enum suggestion. Only the plan's author (or an admin), and
+ * Update a still-pending suggestion's proposed value — the inline "keep editing the
+ * same field" path (suggesting mode). Only the suggestion's AUTHOR (the coordinator)
+ * may revise their own proposal, and only while `pending`; `from_value` is NEVER
+ * touched, so the baseline stays pinned to the teacher's original text and the diff
+ * can't collapse. A no-op (proposed == original, trim-insensitive) is rejected — the
+ * client deletes instead (see {@link deleteSuggestion}).
+ */
+export async function updateSuggestion(
+  annotationId: string,
+  toValue: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'forbidden' };
+
+  const { data: annData } = await supabase
+    .from('plan_annotations')
+    .select('id, plan_id, author_id, kind, from_value, status')
+    .eq('id', annotationId)
+    .maybeSingle();
+  const ann = annData as {
+    plan_id: string;
+    author_id: string;
+    kind: string;
+    from_value: string | null;
+    status: string;
+  } | null;
+  if (!ann || ann.kind !== 'suggestion') return { ok: false, error: 'invalid' };
+  if (ann.author_id !== user.id) return { ok: false, error: 'forbidden' };
+  if (ann.status !== 'pending') return { ok: false, error: 'invalid' };
+  if ((ann.from_value ?? '').trim() === toValue.trim()) return { ok: false, error: 'invalid' };
+
+  const { error } = await supabase
+    .from('plan_annotations')
+    .update({ to_value: toValue })
+    .eq('id', annotationId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (error) return { ok: false, error: 'failed' };
+
+  revalidatePath(`/plan/${ann.plan_id}/view`);
+  return { ok: true };
+}
+
+/**
+ * Withdraw a still-pending suggestion — the inline "edited back to the original"
+ * path, so no empty diff lingers. Author-only, pending-only (RLS `pa_author_delete`,
+ * migration 0046). If that policy isn't applied yet the delete is refused by RLS and
+ * this returns `failed` (the suggestion simply remains) — non-fatal.
+ */
+export async function deleteSuggestion(annotationId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('plan_annotations')
+    .delete()
+    .eq('id', annotationId)
+    .eq('status', 'pending')
+    .select('plan_id')
+    .maybeSingle();
+
+  if (error || !data) return { ok: false, error: 'failed' };
+  const planId = (data as { plan_id: string }).plan_id;
+  revalidatePath(`/plan/${planId}/view`);
+  return { ok: true };
+}
+
+/**
+ * Accept or reject a dur/enum/text suggestion. Only the plan's author (or an admin), and
  * only while the plan is editable (`needs_review` / `in_progress`). On ACCEPT the
  * change is applied to the plan's `blocks` JSONB in this same action:
  *   • dur  → set that block's `minutes` to the proposed value (the in-session total
  *            recomputes from it on the next render).
  *   • enum → set that block's `phase` (I/WE/YOU grouping) to the proposed value.
+ *   • text → write `to_value` into the target: the `smartt_objective` column
+ *            (anchor `objective`), or a block's `teacher_does` / `students_do`
+ *            (anchor `phase_description`, field in `block_ref`) via the same blocks
+ *            read-modify-write.
  * then the annotation is stamped accepted + decided_by/decided_at. On REJECT only
- * the stamp is written (no plan change). Applying blocks BEFORE the stamp keeps a
- * partial failure recoverable: the dur/enum write is idempotent (it sets an absolute
- * value), so a retry re-applies the same value and then stamps.
- *
- * `text`-shape accept is Part B: if one reaches here it is a no-op + `invalid`.
+ * the stamp is written (no plan change). Applying the change BEFORE the stamp keeps a
+ * partial failure recoverable: every apply sets an ABSOLUTE value, so a retry
+ * re-applies the same value and then stamps.
  */
 export async function decideSuggestion(
   annotationId: string,
@@ -231,22 +322,23 @@ export async function decideSuggestion(
   // The suggestion, still pending.
   const { data: annData } = await supabase
     .from('plan_annotations')
-    .select('id, plan_id, kind, suggestion_shape, phase_ref, to_value, status')
+    .select('id, plan_id, kind, anchor_type, suggestion_shape, phase_ref, block_ref, to_value, status')
     .eq('id', annotationId)
     .maybeSingle();
   const ann = annData as {
     id: string;
     plan_id: string;
     kind: string;
+    anchor_type: string;
     suggestion_shape: string | null;
     phase_ref: string | null;
+    block_ref: string | null;
     to_value: string | null;
     status: string;
   } | null;
   if (!ann || ann.kind !== 'suggestion') return { ok: false, error: 'invalid' };
   if (ann.status !== 'pending') return { ok: false, error: 'invalid' };
-  // Prose-suggestion apply is Part B — none should exist in Part A.
-  if (ann.suggestion_shape !== 'dur' && ann.suggestion_shape !== 'enum') {
+  if (ann.suggestion_shape !== 'dur' && ann.suggestion_shape !== 'enum' && ann.suggestion_shape !== 'text') {
     return { ok: false, error: 'invalid' };
   }
 
@@ -274,29 +366,47 @@ export async function decideSuggestion(
   }
 
   if (decision === 'accepted') {
-    const blocks = Array.isArray(plan.blocks) ? plan.blocks : [];
-    const idx = blocks.findIndex((b) => b.type === ann.phase_ref);
-    if (idx < 0 || ann.to_value == null) return { ok: false, error: 'invalid' };
+    if (ann.to_value == null) return { ok: false, error: 'invalid' };
 
-    const next = blocks.map((b, i) => {
-      if (i !== idx) return b;
-      if (ann.suggestion_shape === 'dur') {
-        const minutes = Number(ann.to_value);
-        if (!Number.isFinite(minutes)) return b;
-        return { ...b, minutes };
-      }
-      // enum
-      if (!PHASES.has(ann.to_value as string)) return b;
-      return { ...b, phase: ann.to_value as TeachingPhase };
-    });
+    // objective text → the plain smartt_objective column (no blocks touch).
+    if (ann.suggestion_shape === 'text' && ann.anchor_type === 'objective') {
+      const { error: objErr } = await supabase
+        .from('lesson_plans')
+        .update({ smartt_objective: ann.to_value })
+        .eq('id', plan.id)
+        .select('id')
+        .maybeSingle();
+      if (objErr) return { ok: false, error: 'failed' };
+    } else {
+      // dur / enum / phase_description text → the matched block in the blocks JSONB.
+      const blocks = Array.isArray(plan.blocks) ? plan.blocks : [];
+      const idx = blocks.findIndex((b) => b.type === ann.phase_ref);
+      if (idx < 0) return { ok: false, error: 'invalid' };
 
-    const { error: blockErr } = await supabase
-      .from('lesson_plans')
-      .update({ blocks: next })
-      .eq('id', plan.id)
-      .select('id')
-      .maybeSingle();
-    if (blockErr) return { ok: false, error: 'failed' };
+      const next = blocks.map((b, i) => {
+        if (i !== idx) return b;
+        if (ann.suggestion_shape === 'dur') {
+          const minutes = Number(ann.to_value);
+          if (!Number.isFinite(minutes)) return b;
+          return { ...b, minutes };
+        }
+        if (ann.suggestion_shape === 'enum') {
+          if (!PHASES.has(ann.to_value as string)) return b;
+          return { ...b, phase: ann.to_value as TeachingPhase };
+        }
+        // text → a description field named by block_ref.
+        if (ann.block_ref !== 'teacher_does' && ann.block_ref !== 'students_do') return b;
+        return { ...b, [ann.block_ref]: ann.to_value };
+      });
+
+      const { error: blockErr } = await supabase
+        .from('lesson_plans')
+        .update({ blocks: next })
+        .eq('id', plan.id)
+        .select('id')
+        .maybeSingle();
+      if (blockErr) return { ok: false, error: 'failed' };
+    }
   }
 
   // Stamp the decision (guarded on still-pending so a double-accept is a no-op).

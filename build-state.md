@@ -2,7 +2,67 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Inline coordinator review — annotation layer (Part A) ✅ (this phase)
+## Inline coordinator review — suggesting mode / tracked changes (Part B) ✅ (this phase)
+
+Builds the half Part A deferred: the coordinator's **direct inline editing captured as
+tracked changes**. The button-based suggestion authoring ("Suggest a time", grouping
+buttons) is replaced by **direct inline editing** — the coordinator enters suggesting
+mode, edits content in place, and every edit becomes a suggestion the teacher
+accepts/rejects. Comments are unchanged.
+
+### Done
+
+- **"Unlock for editing" = client-side suggesting toggle** (`SuggestingToggle`,
+  coordinator + review view only). It is NOT a real unlock: it never changes plan
+  status and NEVER writes the plan. While on, inline edits are captured as
+  `plan_annotations` suggestions; the plan is written ONLY when the teacher accepts
+  (`decideSuggestion`). Teacher-owned content is never mutated by a coordinator edit.
+- **Inline text suggestions** on `smartt_objective` + each block's `teacher_does` /
+  `students_do` (`ProseField`): click → edit → commit on blur → a `text` suggestion
+  (`from_value` = stored text, pinned; `to_value` = edit). One open suggestion per
+  field — re-editing moves only `to_value`; editing back to the original **withdraws**
+  it (delete). No-op on zero net change. Field-level granularity.
+- **Inline dur / enum** — the `{n} min` value and the I/WE/YOU tag are now click-to-edit
+  (stepper / picker) in suggesting mode, writing the SAME `dur` / `enum` suggestion +
+  `from→to` pill as Part A. The "Suggest a time" / "Suggest a grouping" buttons and
+  their forms are removed; the per-row **Comment** button + `CommentForm` stay.
+- **Tracked-change diff** (`textDiffSegments`, pure: clamped common-prefix/suffix) →
+  `{pre, del, ins, post}`. Rendered in the body (`ProseField`) and on the pane card:
+  pending = `pre` + struck `del` + teal `ins` + `post`; accepted = the settled field
+  text (the stored value already reflects it); rejected = the original.
+- **`decideSuggestion` extended for `text`** — accept writes `to_value` to
+  `smartt_objective` (objective) or a block's `teacher_does`/`students_do` (via the
+  blocks JSONB read-modify-write, field named by `block_ref`); reject = status only.
+  Same author-only + `needs_review`/`in_progress` guard as dur/enum. New
+  `updateSuggestion` (revise a pending proposal, author-only) + `deleteSuggestion`
+  (withdraw a pending proposal).
+- **PartContent stays byte-identical off the review view** — the two description
+  fields render inline (diff/edit) only when the annotation provider is present (the
+  `/view` surface); with no provider (the editor's Review step) they render the exact
+  same `Detail` DOM as before.
+- **i18n** — new `review.annotations.suggesting.*` + `author.text*` in en + ar;
+  editable prose islands `dir="auto"`. **Arabic flagged for Kadria.**
+
+### Migration (apply in the Supabase SQL editor — authored, NOT run)
+
+`supabase/migrations/0046_plan_annotation_delete.sql` — one narrow RLS policy so a
+reverted inline edit can WITHDRAW its still-pending suggestion (author + pending +
+coordinator-of-plan). Part A (0045) intentionally shipped no DELETE. Until it's
+applied, revert-to-original leaves the suggestion in place (non-fatal); everything
+else works. No column changes — 0045 already carries the `text` columns.
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes · `eslint` clean.
+
+### Deferred
+
+- **Worksheet prose** — the worksheet is tiptap JSON rendered through a static,
+  CSS-scaled print view; a block's "text" is a nested node tree (+ floating elements),
+  so applying a `to_value` is a structure-dependent splice. Deferred to its own slice
+  per the scope gate. The `text` / `block_ref` columns already support it (additive).
+
+## Inline coordinator review — annotation layer (Part A) ✅ (previous phase)
 
 Replaces the flat plan-level comment sidebar on `/plan/[id]/view` with a
 Google-Docs-style annotation layer: anchored comments (objective / phase row /

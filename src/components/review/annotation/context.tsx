@@ -27,6 +27,8 @@ import {
   addAnnotationReply,
   setAnnotationResolved,
   decideSuggestion,
+  updateSuggestion,
+  deleteSuggestion,
   type CreateAnnotationInput,
 } from '@/lib/actions/annotations';
 
@@ -52,6 +54,11 @@ interface AnnotationContextValue {
   setTab: (tab: ReviewTab) => void;
   filter: AnnotationFilter;
   setFilter: (f: AnnotationFilter) => void;
+  /** Client-side "Unlock for editing" — coordinator suggesting mode. NOT a real
+   *  unlock: it never changes plan status or writes the plan; inline edits become
+   *  suggestions. Meaningful only for a coordinator. */
+  suggesting: boolean;
+  setSuggesting: (v: boolean) => void;
 
   // ── mutations (each refreshes the route) ─────────────────────────────────────
   pending: boolean;
@@ -59,6 +66,10 @@ interface AnnotationContextValue {
   reply: (annotationId: string, body: string) => Promise<boolean>;
   resolve: (annotationId: string, resolved: boolean) => Promise<boolean>;
   decide: (annotationId: string, decision: 'accepted' | 'rejected') => Promise<boolean>;
+  /** Revise a still-pending suggestion's proposed value (inline re-edit). */
+  update: (annotationId: string, toValue: string) => Promise<boolean>;
+  /** Withdraw a still-pending suggestion (inline edit reverted to the original). */
+  remove: (annotationId: string) => Promise<boolean>;
 
   // ── selectors ────────────────────────────────────────────────────────────────
   /** Annotations anchored to a given phase (block type), any anchor_type. */
@@ -112,6 +123,7 @@ export function AnnotationProvider({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tab, setTab] = useState<ReviewTab>('lesson');
   const [filter, setFilter] = useState<AnnotationFilter>('open');
+  const [suggesting, setSuggesting] = useState(false);
 
   const editable = status === 'needs_review' || status === 'in_progress';
 
@@ -141,6 +153,8 @@ export function AnnotationProvider({
       setTab,
       filter,
       setFilter,
+      suggesting,
+      setSuggesting,
       pending,
       create: (input) => runAndRefresh(() => createAnnotation(planId, input)),
       reply: (annotationId, body) => runAndRefresh(() => addAnnotationReply(annotationId, body)),
@@ -148,6 +162,8 @@ export function AnnotationProvider({
         runAndRefresh(() => setAnnotationResolved(annotationId, resolved)),
       decide: (annotationId, decision) =>
         runAndRefresh(() => decideSuggestion(annotationId, decision)),
+      update: (annotationId, toValue) => runAndRefresh(() => updateSuggestion(annotationId, toValue)),
+      remove: (annotationId) => runAndRefresh(() => deleteSuggestion(annotationId)),
       forPhase: (phaseRef) =>
         annotations.filter(
           (a) =>
@@ -159,17 +175,21 @@ export function AnnotationProvider({
         ),
       forObjective: () => anchored('objective'),
       forWorksheet: () => anchored('worksheet_block'),
-      suggestionFor: (phaseRef, shape) =>
-        annotations.find(
+      suggestionFor: (phaseRef, shape) => {
+        // Prefer a still-PENDING suggestion (its live pill) over an older accepted one
+        // (its settled green), so a re-suggest after an accept shows the new proposal.
+        const matches = annotations.filter(
           (a) =>
             a.kind === 'suggestion' &&
             a.suggestionShape === shape &&
             a.phaseRef === phaseRef &&
             a.status !== 'rejected',
-        ),
+        );
+        return matches.find((a) => a.status === 'pending') ?? matches[matches.length - 1];
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, status, role, viewerName, editable, annotations, phaseTitles, activeId, tab, filter, pending]);
+  }, [planId, status, role, viewerName, editable, annotations, phaseTitles, activeId, tab, filter, suggesting, pending]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

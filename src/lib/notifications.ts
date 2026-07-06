@@ -119,6 +119,7 @@ async function getOutcomeNotifications(supabase: Supa, userId: string): Promise<
     .select('id, curriculum_lesson_id, year, status, review_note, reviewed_at, updated_at')
     .eq('created_by', userId)
     .in('status', ['approved', 'needs_review'])
+    .is('deleted_at', null) // a trashed plan (0048) raises no outcome notification
     .order('reviewed_at', { ascending: false, nullsFirst: false });
 
   const rows = (data ?? []) as OutcomeRow[];
@@ -180,6 +181,7 @@ async function getReviewNotifications(supabase: Supa, userId: string): Promise<R
     .from('lesson_plans')
     .select('id, year, school_id, subject_id, submitted_at, created_by, classes ( school_id, subject_id )')
     .eq('status', 'submitted')
+    .is('deleted_at', null) // a trashed plan (0048) leaves the coordinator's review queue
     .order('submitted_at', { ascending: false, nullsFirst: false });
 
   const rows = (data ?? []) as unknown as SubmittedRow[];

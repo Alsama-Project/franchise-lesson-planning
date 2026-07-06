@@ -143,7 +143,10 @@ export async function createScopedPlan(
     .select('id')
     .eq('created_by', user.id)
     .eq('curriculum_lesson_id', input.lessonKey)
-    .eq('scope', input.scope);
+    .eq('scope', input.scope)
+    // A trashed plan for this slot must NOT be reopened — re-planning a trashed
+    // lesson creates a fresh row (the trash-aware unique index frees the slot, 0048).
+    .is('deleted_at', null);
   if (input.scope === 'class' && classId) dupQuery.eq('class_id', classId);
   if (input.scope === 'centre' && schoolId) dupQuery.eq('school_id', schoolId);
   // limit(1), not maybeSingle(): the class-scope unique index is deferred, so a
@@ -182,7 +185,9 @@ export async function createScopedPlan(
         .select('id')
         .eq('created_by', user.id)
         .eq('curriculum_lesson_id', input.lessonKey)
-        .eq('scope', input.scope);
+        .eq('scope', input.scope)
+        // Same as the dedup lookup: never resolve a race back into a trashed row.
+        .is('deleted_at', null);
       if (input.scope === 'class' && classId) raceQuery.eq('class_id', classId);
       if (input.scope === 'centre' && schoolId) raceQuery.eq('school_id', schoolId);
       const { data: raced } = await raceQuery.limit(1);

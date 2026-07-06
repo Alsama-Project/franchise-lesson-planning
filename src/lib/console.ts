@@ -259,7 +259,7 @@ export async function getConsoleClasses(): Promise<ConsoleClassesData> {
         .select('id, school_id, subject_id, year, archived_at, schools ( name ), subjects ( name )')
         .order('year'),
       supabase.from('subject_membership').select('school_id, subject_id'),
-      supabase.from('lesson_plans').select('class_id'),
+      supabase.from('lesson_plans').select('class_id').is('deleted_at', null),
       supabase.from('schools').select('id, name').is('archived_at', null).order('name'),
       supabase.from('subjects').select('id, name, code').is('archived_at', null).order('name'),
     ]);

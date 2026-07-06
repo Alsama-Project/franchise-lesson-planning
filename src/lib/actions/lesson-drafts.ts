@@ -58,6 +58,7 @@ export async function listDraftLessonsAction(): Promise<DraftLessonSummary[]> {
     .select('id, year, scope, subject_id, curriculum_lesson_id, status, smartt_objective, updated_at')
     .eq('created_by', user.id)
     .eq('status', 'in_progress')
+    .is('deleted_at', null) // trashed drafts (0048) never appear in the picker
     .order('updated_at', { ascending: false });
 
   if (error || !data) return [];
@@ -120,6 +121,7 @@ export async function appendResourceBlocksToLessonAction(
     .from('lesson_plans')
     .select('id, worksheet, created_by, status, year')
     .eq('id', lessonPlanId)
+    .is('deleted_at', null) // can't append to a trashed lesson (0048)
     .maybeSingle();
 
   const row = data as

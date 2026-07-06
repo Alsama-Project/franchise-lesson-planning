@@ -100,6 +100,39 @@
       "cancel": "Cancel",
       "starting": "Starting…",
       "start": "Start planning"
+    },
+    "deleteLesson": {
+      "button": "Delete lesson",
+      "aria": "Delete lesson {name}",
+      "error": "Couldn’t delete the lesson. Please try again.",
+      "dialog": {
+        "title": "Move lesson to Trash?",
+        "body": "<b>{name}</b> will be moved to the Trash. You can restore it from the recycle bin.",
+        "cancel": "Cancel",
+        "confirm": "Move to Trash",
+        "deleting": "Moving…"
+      }
+    },
+    "trash": {
+      "link": "Recycle bin",
+      "title": "Recycle bin",
+      "backToBoard": "← Back to the board",
+      "hint": "Restore a lesson to put it back on the board, or delete it permanently.",
+      "restore": "Restore",
+      "purge": "Delete permanently",
+      "restoreError": "Couldn’t restore the lesson. Please try again.",
+      "purgeError": "Couldn’t delete the lesson. Please try again.",
+      "empty": {
+        "title": "The recycle bin is empty",
+        "body": "Lessons you delete from the board appear here, so you can restore them if you change your mind."
+      },
+      "purgeDialog": {
+        "title": "Delete permanently?",
+        "body": "<b>{name}</b> will be permanently deleted. This can’t be undone.",
+        "cancel": "Cancel",
+        "confirm": "Delete permanently",
+        "deleting": "Deleting…"
+      }
     }
   }
 }

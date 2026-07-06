@@ -22,6 +22,7 @@ import { cn } from '@/lib/cn';
 import { CardShell } from '@/components/weekly-overview/CardShell';
 import { StatusChip } from '@/components/weekly-overview/StatusChip';
 import { OwnerAvatar } from '@/components/weekly-overview/OwnerAvatar';
+import { DeleteLessonControl } from '@/components/weekly-overview/DeleteLessonControl';
 import type { PlanCard } from '@/components/weekly-overview/cards';
 import { formatNumber } from '@/lib/format';
 import { WEEKDAYS, type Weekday } from '@/lib/week';
@@ -59,6 +60,9 @@ function PlannedCard({
     n: formatNumber(card.period, locale),
   });
   const topic = card.topic.trim() || t('card.lessonN', { n: formatNumber(card.period, locale) });
+  // The lesson's human label for the delete affordance's aria + confirm copy —
+  // "Year N · <topic>", the same fields the card already shows.
+  const lessonName = `${t('card.year', { n: formatNumber(card.year, locale) })} · ${topic}`;
 
   return (
     <CardShell planId={card.planId} canEdit={card.canEdit} readOnly={readOnly}>
@@ -92,9 +96,14 @@ function PlannedCard({
 
       <div className="mt-[12px] flex items-center justify-between gap-2">
         <StatusChip status={card.status} />
-        <span className="inline-flex flex-shrink-0 items-center rounded-[8px] border border-action-border px-[14px] py-[5px] text-[11.5px] font-semibold text-teal">
-          {readOnly ? t('card.review') : t('card.open')}
-        </span>
+        <div className="flex flex-shrink-0 items-center gap-[6px]">
+          {card.canDelete ? (
+            <DeleteLessonControl planId={card.planId} lessonName={lessonName} />
+          ) : null}
+          <span className="inline-flex flex-shrink-0 items-center rounded-[8px] border border-action-border px-[14px] py-[5px] text-[11.5px] font-semibold text-teal">
+            {readOnly ? t('card.review') : t('card.open')}
+          </span>
+        </div>
       </div>
     </CardShell>
   );

@@ -161,8 +161,10 @@ export async function syncCurriculumWorkbook(
   }
 
   // ── Guard 1: never archive a lost key a live plan still references ─────────────
-  // lesson_plans has no soft-delete (its `status` enum is a workflow state, not an
-  // archive flag — migrations 0001/0003), so ANY referencing row counts as live.
+  // ANY referencing row counts as live — deliberately including soft-deleted
+  // (trashed) plans (migration 0048): a trashed plan can be restored, and a restored
+  // plan must never point at an archived curriculum lesson. So this reference check
+  // is intentionally NOT filtered on `deleted_at`.
   let skippedReferencedKeys: string[] = [];
   if (lostKeys.length > 0) {
     const { data: refRows, error: refError } = await supabase

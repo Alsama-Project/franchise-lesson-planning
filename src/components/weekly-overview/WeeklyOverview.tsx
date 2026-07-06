@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { CalendarView } from '@/components/weekly-overview/CalendarView';
 import { StatusView } from '@/components/weekly-overview/StatusView';
@@ -123,6 +124,28 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
               view={view}
             />
             <ViewToggle view={view} onChange={changeView} />
+            {/* Recycle bin — the per-teacher trash of soft-deleted lessons. */}
+            <Link
+              href="/trash"
+              aria-label={t('trash.link')}
+              title={t('trash.link')}
+              className="inline-flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] border border-border text-text-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            </Link>
             {/* §1 — compact download control. A single-subject board keeps the plain
                 icon button; a user-wide board turns it into a subject picker (each
                 choice exports that subject's week via the same /api/pdf/week route). */}

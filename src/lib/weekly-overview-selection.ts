@@ -65,6 +65,8 @@ export async function resolveWeekSlotKeys(
  * Read every plan whose `curriculum_lesson_id` is one of `slotKeys`, selecting
  * the given columns. RLS scopes visibility (class/centre/org within the user's
  * subject membership) — there is intentionally no class or date filter here.
+ * Trashed plans (`deleted_at` set — soft delete, migration 0048) are excluded so
+ * neither the board nor the weekly PDF (both route through here) shows a ghost card.
  * Returns an empty array when there are no lesson keys (the query is skipped).
  */
 export async function selectWeekPlanRows<T>(
@@ -76,6 +78,7 @@ export async function selectWeekPlanRows<T>(
   const { data } = await supabase
     .from('lesson_plans')
     .select(columns)
-    .in('curriculum_lesson_id', [...slotKeys]);
+    .in('curriculum_lesson_id', [...slotKeys])
+    .is('deleted_at', null);
   return (data ?? []) as unknown as T[];
 }

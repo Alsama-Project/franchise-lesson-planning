@@ -49,7 +49,7 @@ export function CardShell({
       // browser's native link drag-and-drop keeps that pointer drag clean; a
       // plain click still navigates to the plan.
       draggable={false}
-      className={cn(BASE, 'relative transition-colors hover:bg-surface-subtle')}
+      className={cn(BASE, 'group relative transition-colors hover:bg-surface-subtle')}
     >
       <LinkPending size={13} className="absolute end-[8px] top-[8px] text-teal" />
       {children}

@@ -166,6 +166,9 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
          )`
       )
       .eq('id', id)
+      // A trashed plan (soft delete, 0048) reads as not-found, so the editor,
+      // the read-only view, and the single-plan PDF (all delegate here) 404 it.
+      .is('deleted_at', null)
       .maybeSingle(),
     supabase
       .from('activity_bank')

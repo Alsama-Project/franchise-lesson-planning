@@ -32,6 +32,8 @@ export interface PlanCard {
   owner: PlanOwner | null;
   /** Whether the viewer may edit (drives editable-wizard vs read-only routing). */
   canEdit: boolean;
+  /** Whether the viewer may delete this plan — drives the card's trash affordance. */
+  canDelete: boolean;
   reviewNote: string | null;
 }
 
@@ -90,6 +92,7 @@ export function planCardsForYears(years: BoardYear[], ownerId: string | null): P
         scope: p.scope,
         owner: p.owner,
         canEdit: p.canEdit,
+        canDelete: p.canDelete,
         reviewNote: p.reviewNote,
       });
     }

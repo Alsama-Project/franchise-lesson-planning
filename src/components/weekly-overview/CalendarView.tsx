@@ -294,6 +294,7 @@ function toPlanCard(plan: BoardPlan): PlanCard {
     scope: plan.scope,
     owner: plan.owner,
     canEdit: plan.canEdit,
+    canDelete: plan.canDelete,
     reviewNote: plan.reviewNote,
   };
 }

@@ -70,6 +70,12 @@ export interface BoardPlan {
    * read-only-view routing AND whether the card is draggable.
    */
   canEdit: boolean;
+  /**
+   * Whether the signed-in user may delete (soft-delete) this plan from the board —
+   * the author of an `in_progress` plan, or a coordinator/admin of its space at any
+   * status. Drives the card's trash affordance; the RPC (0048) is the real gate.
+   */
+  canDelete: boolean;
   /** Coordinator note when returned (`needs_review`); null otherwise. */
   reviewNote: string | null;
   /** Daily learning outcome (stem-cleaned) — context for "+ make your own". */

@@ -495,6 +495,16 @@ export async function getBoardData(input: {
     isAdmin ||
     (!!p.school_id && !!p.subject_id && coordinatorSpaces.has(`${p.school_id}:${p.subject_id}`));
 
+  // Delete (soft-delete) rule — mirrors the RPC gate in migration 0048: a
+  // coordinator/admin of the plan's space may trash any status; the author may
+  // trash only their own `in_progress` draft.
+  const canDelete = (p: PlanRow): boolean => {
+    const coordinatorOrAdmin =
+      isAdmin ||
+      (!!p.school_id && !!p.subject_id && coordinatorSpaces.has(`${p.school_id}:${p.subject_id}`));
+    return coordinatorOrAdmin || (p.created_by === user.id && p.status === 'in_progress');
+  };
+
   // Index bands by (subjectCode|year) so a plan finds its band(s) by subject+year,
   // then the matching centre (or, for an org plan, the first band that subject/year).
   const bandsBySubjectYear = new Map<string, Band[]>();
@@ -535,6 +545,7 @@ export async function getBoardData(input: {
       scope: p.scope,
       owner: ownerById.get(p.created_by) ?? null,
       canEdit: canEdit(p),
+      canDelete: canDelete(p),
       reviewNote: p.review_note,
       dailyOutcome: outcomeByKey.get(p.curriculum_lesson_id) ?? '',
     };

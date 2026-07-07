@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { InfoButton } from './InfoButton';
 import type { SubjectOption } from './explorer-ui';
 import type { HoursPerMonth, LinguisticSkillHours, TopicsData } from '@/lib/curriculum/composition';
 import {
@@ -178,6 +179,7 @@ export function CurriculumInsights({
 function Card({
   title,
   headerRight,
+  info,
   footer,
   height,
   bodyClassName,
@@ -185,6 +187,9 @@ function Card({
 }: {
   title: string;
   headerRight?: React.ReactNode;
+  /** Optional "what this chart shows" description; renders an InfoButton at the header's
+   *  trailing (inline-end) edge, opposite the title. */
+  info?: string;
   footer?: React.ReactNode;
   height: number;
   bodyClassName?: string;
@@ -194,7 +199,10 @@ function Card({
     <section className="flex flex-col rounded-[15px] border border-[#ECE3D5] bg-surface p-[18px]" style={{ height }}>
       <div className="mb-[14px] flex shrink-0 items-center justify-between gap-[10px]">
         <span className="text-[14px] font-semibold text-ink">{title}</span>
-        {headerRight}
+        <span className="flex shrink-0 items-center gap-[8px]">
+          {headerRight}
+          {info ? <InfoButton description={info} /> : null}
+        </span>
       </div>
       <div className={cn('min-h-0 flex-1', bodyClassName)}>{children}</div>
       {footer ? <div className="mt-[14px] shrink-0">{footer}</div> : null}
@@ -290,6 +298,7 @@ function HoursPerMonthCard({
     <Card
       title={t('card1.title')}
       headerRight={<LensChip label={yearName(year)} years={years} value={year} yearName={yearName} onSelect={onYear} />}
+      info={t('info.card1')}
       height={ROW1_HEIGHT}
       bodyClassName="flex flex-col justify-center"
     >
@@ -357,6 +366,7 @@ function FocusAreaCard({
     <Card
       title={isSkillMode ? t('card2.titleSkill') : t('card2.titleFocus')}
       headerRight={<LensChip label={t('allYears')} />}
+      info={t('info.card2')}
       height={ROW1_HEIGHT}
       bodyClassName="overflow-y-auto pe-[4px]"
     >
@@ -419,6 +429,7 @@ function MatrixScaffold({
   panelId,
   title,
   headerRight,
+  info,
   view,
   yearName,
   labelWidth,
@@ -432,6 +443,8 @@ function MatrixScaffold({
   panelId: string;
   title: string;
   headerRight?: React.ReactNode;
+  /** "What this chart shows" description, forwarded to the Card's InfoButton. */
+  info?: string;
   view: MatrixView;
   yearName: (y: number) => string;
   labelWidth: number;
@@ -491,7 +504,7 @@ function MatrixScaffold({
     });
 
   return (
-    <Card title={title} headerRight={headerRight} height={ROW2_HEIGHT} bodyClassName="flex flex-col" footer={footer}>
+    <Card title={title} headerRight={headerRight} info={info} height={ROW2_HEIGHT} bodyClassName="flex flex-col" footer={footer}>
       {view.groups.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
@@ -648,6 +661,7 @@ function SpiralCard({
     <MatrixScaffold
       panelId="spiral"
       title={t('card3.title')}
+      info={t('info.card3')}
       headerRight={<LensChip label={t('allYears')} />}
       view={view}
       yearName={yearName}
@@ -732,6 +746,7 @@ function CoverageCard({
     <MatrixScaffold
       panelId="coverage"
       title={t('card4.title')}
+      info={t('info.card4')}
       headerRight={
         <span className="flex items-center gap-[8px]">
           <LensChip label={t('allYears')} />

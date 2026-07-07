@@ -11,6 +11,13 @@
     "allYears": "All years",
     "hoursShort": "{n} h",
     "openInExplorer": "Open in Explorer",
+    "infoLabel": "About this chart",
+    "info": {
+      "card1": "Total scheduled teaching hours in each month of the year for this subject, summed across every lesson. Use it to spot months that are unusually light or heavy.",
+      "card2": "How the subject's teaching hours divide across its main strands — the core linguistic skills (Listening, Reading, Speaking, Writing, Basic Literacy) for English, or focus areas for other subjects. Highlights where curriculum time is weighted.",
+      "card3": "Which topics recur across year groups (Prep–Y6). A filled cell means the topic appears somewhere in that year's curriculum. This shows presence and recurrence only — not how much depth or difficulty is added each year.",
+      "card4": "Where each topic is and isn't taught across the years. A marked cell flags a genuine gap — a year in which the topic never appears — so you can see holes in the spiral at a glance."
+    },
     "noCurriculum": "No curriculum has been synced yet.",
     "notAvailable": "Not available for this subject yet.",
     "fillsInNote": "Fills in automatically as mapped curriculum is imported.",

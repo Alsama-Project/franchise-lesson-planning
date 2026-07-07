@@ -28,7 +28,7 @@ function BlockedNote({ subjectName, year }: { subjectName: string; year: number 
   return (
     <p
       dir="auto"
-      className="flex h-full min-h-[224px] flex-col justify-center rounded-[16px] border-[1.5px] border-dashed border-border-strong px-[22px] py-[20px] text-[13px] leading-[1.5] text-text-muted"
+      className="flex h-full flex-col justify-center rounded-[12px] border-[1.5px] border-dashed border-border-strong px-[12px] py-[11px] text-[12px] leading-[1.45] text-text-muted"
     >
       {t('add.noClass', { subject: subjectName, year: formatNumber(year, locale) })}
     </p>
@@ -105,34 +105,34 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
         disabled={busy}
         aria-label={t('card.planAria', { topic })}
         className={cn(
-          'group flex min-h-[224px] w-full flex-1 flex-col rounded-[16px] border-[1.5px] border-dashed border-border-strong px-[22px] py-[20px] text-start transition-colors',
+          'group flex w-full flex-1 flex-col rounded-[12px] border-[1.5px] border-dashed border-border-strong px-[12px] py-[11px] text-start transition-colors',
           'hover:border-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal',
           busy && 'cursor-not-allowed',
         )}
       >
         <div className="min-w-0">
-          <div dir="auto" className="truncate text-[13px] font-medium text-text-faint">
+          <div dir="auto" className="truncate text-[11.5px] font-medium text-text-faint">
             {card.subjectName}
             {card.centreName ? <span className="text-text-faint"> · {card.centreName}</span> : null}
           </div>
-          <div className="mt-[2px] text-[22px] font-bold leading-[1.05] text-text-faint">
+          <div className="mt-[1px] text-[17px] font-bold leading-[1.05] text-text-faint">
             {t('card.year', { n: formatNumber(card.year, locale) })}
           </div>
         </div>
 
-        <p dir="auto" className="mt-[12px] line-clamp-3 flex-1 text-[15px] leading-[1.5] text-text-muted">
+        <p dir="auto" className="mt-[7px] line-clamp-2 flex-1 text-[12.5px] leading-[1.45] text-text-muted">
           {topic}
         </p>
 
-        <div className="mt-[16px] flex items-center justify-between gap-[10px]">
-          <span className="inline-flex items-center gap-[7px] text-[14px] font-medium text-text-muted">
+        <div className="mt-[9px] flex items-center justify-between gap-[8px]">
+          <span className="inline-flex items-center gap-[6px] whitespace-nowrap text-[12px] font-medium text-text-muted">
             <span
               aria-hidden
-              className="inline-block h-[9px] w-[9px] rounded-full border-[1.5px] border-status-idle-dot"
+              className="inline-block h-[8px] w-[8px] rounded-full border-[1.5px] border-status-idle-dot"
             />
             {t('status.not_started')}
           </span>
-          <span className="inline-flex flex-shrink-0 items-center rounded-[9px] border border-action-border px-[18px] py-[8px] text-[14px] font-semibold text-teal transition-colors group-hover:border-teal">
+          <span className="inline-flex flex-shrink-0 items-center rounded-[8px] border border-action-border px-[12px] py-[5px] text-[12px] font-semibold text-teal transition-colors group-hover:border-teal">
             {busy ? t('add.opening') : t('card.plan')}
           </span>
         </div>

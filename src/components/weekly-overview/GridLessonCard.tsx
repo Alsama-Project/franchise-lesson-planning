@@ -49,37 +49,37 @@ export function GridLessonCard({ card, readOnly = false }: { card: PlanCard; rea
     <Link
       href={href}
       draggable={false}
-      className="group relative flex h-full min-h-[224px] flex-col overflow-hidden rounded-[16px] border border-border bg-surface py-[20px] pe-[22px] ps-[24px] shadow-[0_14px_30px_-22px_rgba(60,40,30,0.55)] transition-colors hover:bg-surface-subtle"
+      className="group relative flex h-full flex-col overflow-hidden rounded-[12px] border border-border bg-surface py-[11px] pe-[12px] ps-[14px] shadow-[0_10px_24px_-20px_rgba(60,40,30,0.55)] transition-colors hover:bg-surface-subtle"
     >
-      <span aria-hidden className={cn('absolute inset-y-0 start-0 w-[6px]', accent.fill)} />
-      <LinkPending size={13} className="absolute end-[8px] top-[8px] text-teal" />
+      <span aria-hidden className={cn('absolute inset-y-0 start-0 w-[5px]', accent.fill)} />
+      <LinkPending size={12} className="absolute end-[7px] top-[7px] text-teal" />
 
-      <div className="flex items-start justify-between gap-[10px]">
+      <div className="flex items-start justify-between gap-[8px]">
         <div className="min-w-0">
-          <div dir="auto" className="truncate text-[13px] font-medium text-text-faint">
+          <div dir="auto" className="truncate text-[11.5px] font-medium text-text-faint">
             {card.subjectName}
             {card.centreName ? <span className="text-text-faint"> · {card.centreName}</span> : null}
           </div>
-          <div className="mt-[2px] text-[22px] font-bold leading-[1.05] text-ink">
+          <div className="mt-[1px] text-[17px] font-bold leading-[1.05] text-ink">
             {t('card.year', { n: formatNumber(card.year, locale) })}
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-[6px]">
           {card.canDelete ? <DeleteLessonControl planId={card.planId} lessonName={lessonName} /> : null}
-          {card.owner ? <OwnerAvatar owner={card.owner} size={30} /> : null}
+          {card.owner ? <OwnerAvatar owner={card.owner} size={26} /> : null}
         </div>
       </div>
 
-      <p dir="auto" className="mt-[12px] line-clamp-3 flex-1 text-[15px] leading-[1.5] text-text-muted">
+      <p dir="auto" className="mt-[7px] line-clamp-2 flex-1 text-[12.5px] leading-[1.45] text-text-muted">
         {topic}
       </p>
 
-      <div className="mt-[16px] flex items-center justify-between gap-[10px]">
-        <span className={cn('inline-flex items-center gap-[7px] text-[14px] font-semibold', accent.text)}>
-          <span aria-hidden className={cn('h-[9px] w-[9px] rounded-full', accent.fill)} />
+      <div className="mt-[9px] flex items-center justify-between gap-[8px]">
+        <span className={cn('inline-flex items-center gap-[6px] whitespace-nowrap text-[12px] font-semibold', accent.text)}>
+          <span aria-hidden className={cn('h-[8px] w-[8px] rounded-full', accent.fill)} />
           {t(`status.${card.status}`)}
         </span>
-        <span className="inline-flex flex-shrink-0 items-center rounded-[9px] border border-teal bg-teal px-[18px] py-[8px] text-[14px] font-semibold text-white transition-colors group-hover:bg-teal-deep">
+        <span className="inline-flex flex-shrink-0 items-center rounded-[8px] border border-teal bg-teal px-[12px] py-[5px] text-[12px] font-semibold text-white transition-colors group-hover:bg-teal-deep">
           {readOnly ? t('card.review') : t('card.open')}
         </span>
       </div>

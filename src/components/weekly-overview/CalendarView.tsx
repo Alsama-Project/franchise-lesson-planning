@@ -44,7 +44,7 @@ export function CalendarView({
     <section className="overflow-x-auto">
       {/* One grid: row 1 is the five period headers, then one row per year-band.
           Shared row tracks keep every year aligned across the five columns. */}
-      <div className="grid min-w-[900px] grid-cols-5 items-stretch gap-x-[20px] gap-y-[18px]">
+      <div className="grid min-w-[900px] grid-cols-5 items-stretch gap-x-[20px] gap-y-[10px]">
         {PERIODS.map((period) => (
           <PeriodHeader key={`h-${period}`} weekday={period} mondayDate={mondayDate} />
         ))}
@@ -82,7 +82,14 @@ function PeriodHeader({ weekday, mondayDate }: { weekday: number; mondayDate: st
   const periodLabel = t('column.period', { n: formatNumber(weekday, locale) });
 
   return (
-    <div className={cn('pb-[12px]', isToday ? 'border-b-2 border-teal' : 'border-b border-border')}>
+    <div
+      className={cn(
+        // Negative bottom margin pulls the first card row up under the divider so
+        // the header→card gap is tighter than the row-to-row gap (single grid).
+        'mb-[-5px] pb-[9px]',
+        isToday ? 'border-b-2 border-teal' : 'border-b border-border',
+      )}
+    >
       {dateLabel || isToday ? (
         <div className="flex items-center gap-[9px]">
           {dateLabel ? (

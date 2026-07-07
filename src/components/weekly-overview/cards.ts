@@ -6,7 +6,7 @@
 // live position in the day's stack.
 
 import type { PlanScope, PlanStatus } from '@/types/lesson';
-import type { BoardYear, PlanOwner } from '@/types/weekly-overview';
+import type { BoardLesson, BoardPlan, BoardYear, PlanOwner } from '@/types/weekly-overview';
 
 /** One plan as a board card (Calendar cell + Status column). */
 export interface PlanCard {
@@ -63,6 +63,28 @@ function defaultWeekday(period: number): number {
   return Math.min(5, Math.max(1, Math.trunc(period)));
 }
 
+/** True when a curriculum period maps onto a real P1..P5 column. */
+function isPeriodColumn(period: number): boolean {
+  return Number.isFinite(period) && period >= 1 && period <= 5;
+}
+
+/** Build a "Not started" card for one curriculum lesson in a band. */
+function lessonToEmptySlot(band: BoardYear, lesson: BoardLesson, showCentre: boolean): EmptySlotCard {
+  return {
+    key: `${band.key}:${lesson.lessonKey}`,
+    lessonKey: lesson.lessonKey,
+    year: band.year,
+    subjectName: band.subjectName,
+    subjectCode: band.subjectCode,
+    centreId: band.centreId,
+    centreName: showCentre ? band.centreName : null,
+    period: lesson.period,
+    weekday: defaultWeekday(lesson.period),
+    dailyOutcome: lesson.dailyOutcome,
+    focusArea: lesson.focusArea,
+  };
+}
+
 /**
  * Every plan card across the board, optionally filtered to one owner. Each card's
  * `period` is its 1-based position within its (year, weekday) stack — derived from
@@ -116,20 +138,101 @@ export function emptySlotCards(years: BoardYear[], showCentre: boolean): EmptySl
     const planned = new Set(band.plans.map((p) => p.lessonKey));
     for (const lesson of band.lessons) {
       if (planned.has(lesson.lessonKey)) continue;
-      out.push({
-        key: `${band.key}:${lesson.lessonKey}`,
-        lessonKey: lesson.lessonKey,
-        year: band.year,
-        subjectName: band.subjectName,
-        subjectCode: band.subjectCode,
-        centreId: band.centreId,
-        centreName: showCentre ? band.centreName : null,
-        period: lesson.period,
-        weekday: defaultWeekday(lesson.period),
-        dailyOutcome: lesson.dailyOutcome,
-        focusArea: lesson.focusArea,
-      });
+      out.push(lessonToEmptySlot(band, lesson, showCentre));
     }
   }
   return out;
+}
+
+// ── Calendar Year × Period matrix ────────────────────────────────────────────
+// The Calendar view is an aligned grid: columns are curriculum periods (P1..P5),
+// rows are year-bands. A card's position is derived ONLY from (year, period) — for
+// a plan, the period comes from its curriculum lesson (the lessonKey ↔ period map
+// in `band.lessons`), never from the drag-mutable `weekday` — so every column shows
+// the same year order and a planned card sits in its own year-row.
+
+/** The five curriculum periods, one per grid column. */
+export const PERIODS = [1, 2, 3, 4, 5] as const;
+
+/** One (year, period) cell: a started plan, a not-started ghost, or nothing. */
+export type GridCell =
+  | { kind: 'plan'; card: PlanCard }
+  | { kind: 'ghost'; card: EmptySlotCard }
+  | { kind: 'empty' };
+
+/** One band's row across the five period columns. */
+export interface GridRow {
+  /** Stable band identity (`centreId|subjectCode|year`). */
+  key: string;
+  year: number;
+  subjectName: string;
+  /** One cell per period, index 0 = P1 … 4 = P5. */
+  cells: GridCell[];
+}
+
+/** Map a board plan to a card, pinned to the given curriculum period (the column). */
+function boardPlanToCard(p: BoardPlan, period: number): PlanCard {
+  return {
+    key: p.id,
+    planId: p.id,
+    year: p.year,
+    subjectName: p.subjectName,
+    centreName: p.centreName,
+    weekday: p.weekday,
+    period,
+    topic: p.dailyOutcome,
+    status: p.status,
+    scope: p.scope,
+    owner: p.owner,
+    canEdit: p.canEdit,
+    canDelete: p.canDelete,
+    reviewNote: p.reviewNote,
+  };
+}
+
+/**
+ * Pick the plan that occupies a slot when several share a lessonKey (a colleague's
+ * plan can be visible alongside the viewer's within a shared space): prefer the one
+ * the viewer may edit (their own), else the first. One cell shows one card.
+ */
+function pickPlanForLesson(plans: BoardPlan[], lessonKey: string): BoardPlan | null {
+  const matches = plans.filter((p) => p.lessonKey === lessonKey);
+  if (matches.length === 0) return null;
+  return matches.find((p) => p.canEdit) ?? matches[0];
+}
+
+/**
+ * Build the Year × Period matrix for the Calendar view. For each band (row) and
+ * period P1..P5, resolve that year's curriculum cell for P and decide planned vs
+ * ghost by the SAME lessonKey set-difference the Status view uses. A period with no
+ * curriculum cell is left empty. Weekly-grain lessons (null / out-of-range period)
+ * have no period column, so the first such lesson is surfaced in P1 to stay
+ * reachable. Ghosts appear only where the viewer may author and is not in a
+ * filtered read view (`ownerId`) or the coordinator read-only board.
+ */
+export function buildPeriodGrid(
+  years: BoardYear[],
+  showCentre: boolean,
+  opts: { readOnly: boolean; ownerId: string | null },
+): GridRow[] {
+  return years.map((band) => {
+    const cells: GridCell[] = PERIODS.map((period) => {
+      const lesson =
+        band.lessons.find((l) => l.period === period) ??
+        (period === 1 ? band.lessons.find((l) => !isPeriodColumn(l.period)) : undefined);
+      if (!lesson) return { kind: 'empty' };
+
+      const plan = pickPlanForLesson(band.plans, lesson.lessonKey);
+      if (plan) {
+        // The owner filter is a read view — a plan owned by someone else is hidden.
+        if (opts.ownerId && plan.owner?.id !== opts.ownerId) return { kind: 'empty' };
+        return { kind: 'plan', card: boardPlanToCard(plan, period) };
+      }
+
+      // Not started → a ghost, but only where the viewer authors and isn't filtering.
+      if (opts.readOnly || opts.ownerId || !band.canAuthor) return { kind: 'empty' };
+      return { kind: 'ghost', card: lessonToEmptySlot(band, lesson, showCentre) };
+    });
+    return { key: band.key, year: band.year, subjectName: band.subjectName, cells };
+  });
 }

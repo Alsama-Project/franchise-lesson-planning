@@ -1,9 +1,9 @@
 'use client';
 
-// The board's planned-lesson card — one visual language shared by the Calendar
-// (day-column) and Status (kanban) views, ported from the grouped Status-board
-// design. A single `PlannedCard` renders both; the thin `CalendarLessonCard` /
-// `StatusLessonCard` wrappers keep the two call sites named.
+// The Status (kanban) view's planned-lesson card, ported from the grouped
+// Status-board design. `PlannedCard` does the rendering; the thin `StatusLessonCard`
+// wrapper keeps the call site named. (The Calendar view has its own grid card —
+// see `GridLessonCard` — so this is Status-only now.)
 //
 // Anatomy (top → bottom):
 //   • top row:  subject (muted label) over "Year N" (bold)   ·  assignee avatar
@@ -109,19 +109,6 @@ function PlannedCard({
       </div>
     </CardShell>
   );
-}
-
-/** Calendar-view planned card. */
-export function CalendarLessonCard({
-  card,
-  readOnly = false,
-}: {
-  card: PlanCard;
-  readOnly?: boolean;
-}) {
-  // The Calendar column header already carries the day and period, so the card's
-  // day·period line is redundant here — drop it (topic moves up under the header).
-  return <PlannedCard card={card} readOnly={readOnly} showSchedule={false} />;
 }
 
 /** Status-view planned card (individual cards in the four real-status columns). */

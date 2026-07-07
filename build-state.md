@@ -2,7 +2,73 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Review comments — unified Google-Docs floating cards ✅ (this phase)
+## Review cards — four refinements (in-editor pane, coupling, footer, gutter ＋) ✅ (this phase)
+
+Four presentation/interaction refinements on the shipped Google-Docs card rework.
+**No schema, no data-model change** — the annotation records, RLS, and server actions
+(`createAnnotation` / `addAnnotationReply` / `setAnnotationResolved` / `decideSuggestion`
+/ `decidePlan` / submit-resubmit) are all unchanged.
+
+### 1. Teacher works feedback IN the editor's Review step (no bounce to /view)
+
+- The old "Coordinator feedback → open review view" pointer is removed. In the editor
+  **Review step (step 5) only**, when the plan has annotations, the **same shipped
+  `AnnotationPane`** renders on the right in place of the worksheet (`embedded` prop),
+  so the teacher replies / accepts-rejects / resolves without leaving the editor. Other
+  steps, and the Review step with no feedback, keep the worksheet unchanged.
+- Reuse, not a fork: `plan/[id]/page.tsx` now loads the full annotations
+  (`getPlanAnnotations`) and passes them + `viewerName` + `phaseTitles` into
+  `LessonPlanEditor`, which wraps the pane in the existing `AnnotationProvider`
+  (`role="teacher"`, live editor `status`/`scope`). With no sections registered the pane
+  falls back to its flow (stacked) layout automatically.
+- **Clobber guard (correctness).** Accepting a suggestion applies it to
+  `lesson_plans.blocks` / `smartt_objective` server-side — the columns the editor
+  autosaves. A new effect re-seeds the editor's local `blocks`/objective from the fresh
+  server copy after a pane-driven `router.refresh` (keyed on a server content signature,
+  so it fires only when those columns actually changed — never on reply/resolve/reject,
+  and never for a plain editor with no pane), so a later autosave can't revert the
+  accepted change.
+- The pane's **footer is omitted in `embedded` mode**: in the editor it would only ever
+  be the teacher-Resubmit, which duplicates the editor's own header SubmitControl (and
+  that control, not the pane, tracks the editor's live status). The standalone `/view`
+  footer is fully intact. No handler/behaviour change.
+
+### 2. Hover + bidirectional section ↔ card coupling
+
+- `AnnotatedSection` now gives a commented section a **light-teal fill** (`#E7F1EE`) on
+  hover, and the **same fill when its card is selected** (activeId) — so the coupling
+  reads both ways. The existing teal left-border (solid open / muted resolved) is kept.
+
+### 3. General cards + footer consolidated at the bottom
+
+- Whole-plan (general) cards no longer float at the top. `AnnotationPane` now floats only
+  the **section-anchored** cards in the measured layer; the **general cards, the
+  plan-level ＋, and the role-aware footer** form one block at the **bottom** of the
+  column (section cards scroll above). Pure layout move — `decidePlan`/Resubmit and the
+  Approve-demotes-while-anything-open rule + hint are untouched.
+
+### 4. Add-comment ＋ moved into the right gutter
+
+- The per-section ＋ trigger is out of the block body and into the **right gutter**
+  beside each block (`AnnotatedSection`, absolute, `insetInlineEnd`, `hidden lg:block` to
+  avoid overflow when columns stack). `PhaseRow` / `ObjectiveAnnotations` no longer render
+  it; `AnnotatedSection` owns the trigger + the (reused) `CommentForm` composer, mapping
+  its `sectionKey` to the create params (`objective` vs `phase`+`phaseRef`). Same create
+  behaviour, coordinator-only.
+
+### i18n
+
+- No new strings. The now-unused `annotations.pointer.*` keys are left in place.
+
+### Notes for the next agent
+
+- The mock again wasn't in the workspace; ported from the written spec. The gutter ＋
+  offset (`insetInlineEnd: -44`) is tuned to the /view content column's 30px padding +
+  24px gap — worth an eyeball against the real layout.
+- Live auth'd verification (seeded Supabase + SSO) wasn't run; `tsc`, `next build`,
+  `eslint`, and `npm test` (78 pass / 8 pre-existing skips) are green.
+
+## Review comments — unified Google-Docs floating cards ✅ (previous phase)
 
 Reworked the coordinator-review annotation column (`/plan/[id]/view`) from a fixed rail
 (header + Open/Resolved tabs + stacked list + separate "general feedback" block) into a

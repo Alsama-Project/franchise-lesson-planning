@@ -19,7 +19,6 @@ import { formatNumber } from '@/lib/format';
 import type { TeachingPhase } from '@/types/lesson';
 import { useOptionalAnnotations } from './context';
 import { pendingSuggestion } from './finders';
-import { AddCommentButton } from './AddCommentButton';
 import { A } from './tokens';
 
 const PHASE_LABEL: Record<TeachingPhase, string> = { i_do: 'I do', we_do: 'We do', you_do: 'You do' };
@@ -39,7 +38,6 @@ export function PhaseRow({
   const ctx = useOptionalAnnotations();
   const t = useTranslations('review');
   const locale = useLocale();
-  const [comment, setComment] = useState(false);
   const [editing, setEditing] = useState<null | 'dur' | 'enum'>(null);
 
   const durSug = ctx?.suggestionFor(type, 'dur'); // non-rejected → pill / green
@@ -195,20 +193,8 @@ export function PhaseRow({
         {durationCell}
       </div>
 
-      {/* Add-comment ＋ — always available to a coordinator, independent of the inline
-          edits. The chat-bubble-＋ trigger replaces the old text "Comment" button. */}
-      {isCoordinator ? (
-        <div className="mt-[8px] flex flex-wrap items-center gap-[7px]">
-          <AddCommentButton
-            label={t('annotations.addComment')}
-            active={comment}
-            onClick={() => setComment((v) => !v)}
-          />
-        </div>
-      ) : null}
-      {isCoordinator && comment ? (
-        <CommentForm anchorType="phase" phaseRef={type} onClose={() => setComment(false)} />
-      ) : null}
+      {/* The add-comment ＋ now lives in the right gutter (AnnotatedSection), so the
+          block body stays clean — nothing rendered here. */}
     </>
   );
 }

@@ -36,7 +36,8 @@
     "focus": {
       "inFocus": "قيد التركيز · {value}",
       "inFocusPlain": "قيد التركيز",
-      "dailyOutcome": "ناتج التعلّم اليومي",
+      "skillTopic": "المهارة / الموضوع",
+      "dailyOutcome": "الناتج اليومي",
       "resources": "الموارد",
       "plan": "خطّط لهذا الدرس",
       "planning": "جارٍ البدء…",
@@ -81,7 +82,7 @@
       "themeCount": "{count, plural, zero {# ثيمة} one {ثيمة واحدة} two {ثيمتان} few {# ثيمات} many {# ثيمة} other {# ثيمة}}",
       "pickTopic": "اختر موضوعًا لمعرفة كيف يتكرّر عبر السنوات.",
       "notTaught": "لم يُدرَّس هذا العام",
-      "dailyLearningOutcome": "ناتج التعلّم اليومي",
+      "dailyLearningOutcome": "الناتج اليومي",
       "inFocusYear": "قيد التركيز · السنة {year}",
       "selectYear": "اختر سنة لعرض درسها.",
       "empty": "لا توجد مواضيع مسجّلة لـ {subject} بعد.",

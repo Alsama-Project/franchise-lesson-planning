@@ -961,6 +961,9 @@ function FocusCard({ row }: { row: BrowseRow }) {
         {t('focus.inFocus', { value: t('period', { n: formatNumber(row.period, locale) }) })}
       </p>
       <div className="rounded-[16px] border border-teal bg-surface p-[18px]">
+        <p className="mb-[10px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
+          {t('focus.skillTopic')}
+        </p>
         <div className="flex flex-wrap items-center gap-[8px]">
           {row.linguisticSkill ? (
             <span

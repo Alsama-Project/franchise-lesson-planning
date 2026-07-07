@@ -36,7 +36,8 @@
     "focus": {
       "inFocus": "In focus · {value}",
       "inFocusPlain": "In focus",
-      "dailyOutcome": "Daily learning outcome",
+      "skillTopic": "Skill / topic",
+      "dailyOutcome": "Daily outcome",
       "resources": "Resources",
       "plan": "Plan this lesson",
       "planning": "Starting…",
@@ -81,7 +82,7 @@
       "themeCount": "{count, plural, one {# theme} other {# themes}}",
       "pickTopic": "Select a topic to see how it recurs across the years.",
       "notTaught": "Not taught this year",
-      "dailyLearningOutcome": "Daily learning outcome",
+      "dailyLearningOutcome": "Daily outcome",
       "inFocusYear": "In focus · Year {year}",
       "selectYear": "Select a year to see its lesson.",
       "empty": "No topics recorded for {subject} yet.",

@@ -525,7 +525,7 @@ function DetailRail({ record, queryTokens }: { record: SearchRecord; queryTokens
   const locale = useLocale();
   return (
     <div className="rounded-[14px] border-[1.5px] border-teal bg-surface p-[15px] shadow-[0_14px_30px_-24px_rgba(31,122,108,0.6)]">
-      <FacetChips record={record} className="mb-[10px]" />
+      <FacetChips record={record} className="mb-[10px]" heading={t('focus.skillTopic')} />
       <div className="mb-[8px] text-[10px] text-[#A79E94]">{calendarPath(record, t, locale)}</div>
       <div className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#A79E94]">
         {t('focus.dailyOutcome')}
@@ -569,7 +569,15 @@ function InlineChip({ dim, label, onRemove, removeAria }: { dim: string; label: 
 }
 
 /** The matched facet chips for a record: Focus area, Topic (theme), and (canonical) Skill. */
-function FacetChips({ record, className }: { record: SearchRecord; className?: string }) {
+function FacetChips({
+  record,
+  className,
+  heading,
+}: {
+  record: SearchRecord;
+  className?: string;
+  heading?: string;
+}) {
   const chips: React.ReactNode[] = [];
   if (record.focusArea) {
     chips.push(
@@ -598,6 +606,16 @@ function FacetChips({ record, className }: { record: SearchRecord; className?: s
     );
   }
   if (chips.length === 0) return null;
+  if (heading) {
+    return (
+      <div className={className}>
+        <div className="mb-[7px] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#A79E94]">
+          {heading}
+        </div>
+        <div className="flex flex-wrap gap-[6px]">{chips}</div>
+      </div>
+    );
+  }
   return <div className={cn('flex flex-wrap gap-[6px]', className)}>{chips}</div>;
 }
 

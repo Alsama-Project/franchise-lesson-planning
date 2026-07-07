@@ -451,6 +451,9 @@ function TopicFocus({ thread, topicLabel }: { thread: TopicThreadYear; topicLabe
 
   return (
     <div className="rounded-[14px] border-[1.5px] border-teal bg-surface p-[15px] shadow-[0_14px_30px_-24px_rgba(31,122,108,0.6)]">
+      <div className="mb-[7px] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#A79E94]">
+        {t('focus.skillTopic')}
+      </div>
       <div className="mb-[10px] flex flex-wrap gap-[6px]">
         {thread.strandLabel ? (
           <span dir="auto" className="rounded-[7px] bg-surface-cream px-[9px] py-[3px] text-[11px] font-semibold text-[#8A6D57]">

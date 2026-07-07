@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { GridLessonCard } from '@/components/weekly-overview/GridLessonCard';
@@ -21,6 +22,14 @@ import type { BoardYear } from '@/types/weekly-overview';
  * curriculum period, not its drag-mutable `weekday` — so every column shows the same
  * year order and a planned card always sits in its own year-row (no state-based
  * flip). Placement is fixed by the curriculum, so there is no drag-reorder here.
+ *
+ * The body is one true CSS grid: each card is pinned to its cell by `grid-column`
+ * (period) and `grid-row` (year-band index), so the five period tracks stay aligned
+ * under the headers even when a row is sparse. Only year-bands that hold a card are
+ * emitted (see `buildPeriodGrid`); empty cells inside a shown row are simply left
+ * unrendered — the column track still holds their place, blank and border-less. For
+ * teachers every band has ghosts so nothing drops; for a ghost-less coordinator board
+ * the empty year-rows fall away instead of stacking into an uneven, floating grid.
  */
 export function CalendarView({
   years,
@@ -42,15 +51,27 @@ export function CalendarView({
 
   return (
     <section className="overflow-x-auto">
-      {/* One grid: row 1 is the five period headers, then one row per year-band.
-          Shared row tracks keep every year aligned across the five columns. */}
+      {/* One grid: row 1 is the five period headers (pinned there), then one row per
+          emitted year-band. Cards are placed explicitly by (period, band) so the five
+          column tracks stay aligned and empty cells hold their place without a spacer. */}
       <div className="grid min-w-[900px] grid-cols-5 items-stretch gap-x-[20px] gap-y-[10px]">
         {PERIODS.map((period) => (
-          <PeriodHeader key={`h-${period}`} weekday={period} mondayDate={mondayDate} />
+          <PeriodHeader
+            key={`h-${period}`}
+            weekday={period}
+            mondayDate={mondayDate}
+            style={{ gridColumn: period, gridRow: 1 }}
+          />
         ))}
-        {rows.map((row) =>
+        {rows.map((row, rowIndex) =>
           row.cells.map((cell, i) => (
-            <GridCellView key={`${row.key}:${PERIODS[i]}`} cell={cell} readOnly={readOnly} />
+            <GridCellView
+              key={`${row.key}:${PERIODS[i]}`}
+              cell={cell}
+              readOnly={readOnly}
+              period={PERIODS[i]}
+              rowIndex={rowIndex}
+            />
           )),
         )}
       </div>
@@ -58,16 +79,48 @@ export function CalendarView({
   );
 }
 
-/** One (year, period) cell: a plan card, a ghost, or a blank spacer that reserves
- *  the column so the year rows stay aligned across every period. */
-function GridCellView({ cell, readOnly }: { cell: GridCell; readOnly: boolean }) {
-  if (cell.kind === 'plan') return <GridLessonCard card={cell.card} readOnly={readOnly} />;
-  if (cell.kind === 'ghost') return <GhostLessonCard card={cell.card} />;
-  return <div aria-hidden />;
+/**
+ * One (year, period) cell, pinned by `grid-column` (period) and `grid-row`
+ * (year-band index + 2, since row 1 is the header). A plan or ghost renders its
+ * card; an empty cell renders nothing — the grid template still reserves the
+ * column track, so it stays blank and border-less without collapsing the row.
+ */
+function GridCellView({
+  cell,
+  readOnly,
+  period,
+  rowIndex,
+}: {
+  cell: GridCell;
+  readOnly: boolean;
+  period: number;
+  rowIndex: number;
+}) {
+  if (cell.kind === 'empty') return null;
+  // Nest a stretch-grid so the card fills the cell in both axes (as it did when it
+  // was itself the grid item), while the wrapper carries the explicit placement.
+  const style: CSSProperties = { gridColumn: period, gridRow: rowIndex + 2 };
+  return (
+    <div style={style} className="grid min-w-0">
+      {cell.kind === 'plan' ? (
+        <GridLessonCard card={cell.card} readOnly={readOnly} />
+      ) : (
+        <GhostLessonCard card={cell.card} />
+      )}
+    </div>
+  );
 }
 
 /** A period column header: the real date, "Period N", and the TODAY marker. */
-function PeriodHeader({ weekday, mondayDate }: { weekday: number; mondayDate: string | null }) {
+function PeriodHeader({
+  weekday,
+  mondayDate,
+  style,
+}: {
+  weekday: number;
+  mondayDate: string | null;
+  style?: CSSProperties;
+}) {
   const t = useTranslations('board');
   const locale = useLocale();
 
@@ -83,6 +136,7 @@ function PeriodHeader({ weekday, mondayDate }: { weekday: number; mondayDate: st
 
   return (
     <div
+      style={style}
       className={cn(
         // Negative bottom margin pulls the first card row up under the divider so
         // the header→card gap is tighter than the row-to-row gap (single grid).

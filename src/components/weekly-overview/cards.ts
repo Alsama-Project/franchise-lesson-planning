@@ -209,13 +209,18 @@ function pickPlanForLesson(plans: BoardPlan[], lessonKey: string): BoardPlan | n
  * have no period column, so the first such lesson is surfaced in P1 to stay
  * reachable. Ghosts appear only where the viewer may author and is not in a
  * filtered read view (`ownerId`) or the coordinator read-only board.
+ *
+ * A row is emitted ONLY when it holds at least one card (plan or ghost). For a
+ * teacher every band has ghosts, so no row drops and the grid is unchanged; for a
+ * coordinator's ghost-less board the empty year-rows fall away, leaving a clean
+ * grid of just the planned lessons instead of a sparse, staggered stack.
  */
 export function buildPeriodGrid(
   years: BoardYear[],
   showCentre: boolean,
   opts: { readOnly: boolean; ownerId: string | null },
 ): GridRow[] {
-  return years.map((band) => {
+  const rows = years.map((band) => {
     const cells: GridCell[] = PERIODS.map((period) => {
       const lesson =
         band.lessons.find((l) => l.period === period) ??
@@ -235,4 +240,5 @@ export function buildPeriodGrid(
     });
     return { key: band.key, year: band.year, subjectName: band.subjectName, cells };
   });
+  return rows.filter((row) => row.cells.some((cell) => cell.kind !== 'empty'));
 }

@@ -3,7 +3,7 @@ import { AppShell } from '@/components/app-shell/AppShell';
 import { LessonPlanEditor } from '@/components/editor/LessonPlanEditor';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
-import { planHasAnnotations } from '@/lib/review/annotations';
+import { getPlanAnnotations } from '@/lib/review/annotations';
 import { createClient } from '@/lib/supabase/server';
 import { boardHref, toBoardCoordinate, toBoardView } from '@/lib/board-nav';
 
@@ -27,15 +27,14 @@ export default async function PlanEditorPage({
   // The plan load and the shell-chrome identity are independent, so run them in
   // parallel rather than waterfalling.
   const supabase = await createClient();
-  // Whether the plan carries any coordinator feedback. The wizard no longer embeds
-  // the response thread — the teacher responds on /plan/[id]/view (one surface) — so
-  // here we only need to know whether to show the "feedback to review" pointer. RLS
-  // scopes the check to a plan the caller can see.
-  const [data, { data: { user } }, canCoordinate, hasFeedback] = await Promise.all([
+  // The plan load, the viewer, and the coordinator check run in parallel. Annotations
+  // are loaded after the plan (they need its `created_by` to tint authors); the editor
+  // now renders the SAME comments pane in its Review step when feedback exists, so the
+  // teacher works the feedback in place rather than being bounced to /view.
+  const [data, { data: { user } }, canCoordinate] = await Promise.all([
     loadPlanForEditor(id),
     supabase.auth.getUser(),
     canCoordinatePlan(id),
-    planHasAnnotations(id),
   ]);
   // A missing plan — genuinely absent, RLS-hidden, or SOFT-DELETED (loadPlanForEditor
   // filters deleted_at) — is not openable. Return to the board instead of a raw 404,
@@ -66,9 +65,22 @@ export default async function PlanEditorPage({
     .maybeSingle();
   const name = profile?.full_name ?? user?.email ?? 'there';
 
+  // Coordinator feedback for the Review step's in-place comments pane. The author is
+  // the plan's teacher, so annotations tint against `created_by`. Empty when there's
+  // no feedback (the Review step then keeps the worksheet on the right, unchanged).
+  const annotations = await getPlanAnnotations(id, data.plan.created_by);
+  // block.type → title, so a phase-anchored card can label itself in the pane.
+  const phaseTitles = Object.fromEntries(data.plan.blocks.map((b) => [b.type, b.title]));
+
   return (
     <AppShell name={name} subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}>
-      <LessonPlanEditor data={data} hasFeedback={hasFeedback} backHref={backHref} />
+      <LessonPlanEditor
+        data={data}
+        annotations={annotations}
+        viewerName={name}
+        phaseTitles={phaseTitles}
+        backHref={backHref}
+      />
     </AppShell>
   );
 }

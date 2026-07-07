@@ -1,18 +1,22 @@
 'use client';
 
-// The review annotation column — reworked into a Google-Docs-style floating stack.
-// There is no header note-count, no Open/Resolved tabs and no separate "general
-// feedback" section any more; instead EVERY annotation (comment, suggestion, whole-
-// plan) is one unified card (see AnnotationCard) and the cards float beside the
-// section they annotate. Whole-plan cards have no section, so they stack at the top
-// of the column. A small "N open · N resolved" line sits at the top (with the plan-
-// level ＋ trigger) and the role-aware footer (Return / Approve · Resubmit) below.
+// The review annotation column — a Google-Docs-style floating stack. Every annotation
+// (comment, suggestion, whole-plan) is one unified card (see AnnotationCard). The
+// SECTION-anchored cards float beside the section they annotate; the WHOLE-PLAN
+// (general) cards and the role-aware footer (Return / Approve · Resubmit) form one
+// block at the BOTTOM of the column, with the plan-level ＋ that adds a general
+// comment. A small "N open · N resolved" line sits at the top.
 //
 // Layout: on large screens each section's cards are absolutely positioned at the
 // section's measured vertical offset, then packed downward so groups never overlap —
 // this is what lines a card up beside its section. Below `lg` (and before the first
-// measurement) the groups simply stack in normal flow. The measurement re-runs on
-// resize and whenever a section or card changes height.
+// measurement, and in the `embedded` editor context where there are no sections to
+// measure) the groups stack in normal flow. The measurement re-runs on resize and
+// whenever a section or card changes height.
+//
+// `embedded` renders the pane inside the editor's Review step (its own scroll
+// container) rather than the standalone /view page: it drops the page-chrome sticky
+// offsets so the column simply scrolls.
 
 import {
   useCallback,
@@ -33,18 +37,15 @@ import { AddCommentButton } from './AddCommentButton';
 import { isResolvedCard, sectionKeyOf, useAnnotations } from './context';
 import { A } from './tokens';
 
-const GENERAL_KEY = '__general__';
-const GAP = 12; // vertical gap packed between stacked card groups (px)
+const GAP = 12; // vertical gap packed between stacked section-card groups (px)
 
-/** A group of cards that share a section (or the whole-plan group). */
+/** A group of cards that share a section. */
 interface CardGroup {
   key: string;
-  /** The section alignment key, or null for the whole-plan group. */
-  sectionKey: string | null;
   cards: Annotation[];
 }
 
-export function AnnotationPane() {
+export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations('review');
   const locale = useLocale();
   const ctx = useAnnotations();
@@ -53,8 +54,13 @@ export function AnnotationPane() {
   const [addingGeneral, setAddingGeneral] = useState(false);
 
   // ── group the cards ──────────────────────────────────────────────────────────
+  // Section-anchored groups float in the layer; general (whole-plan) cards live in
+  // the bottom block with the footer.
+  const generalCards = useMemo(
+    () => annotations.filter((a) => sectionKeyOf(a) === null),
+    [annotations],
+  );
   const groups = useMemo<CardGroup[]>(() => {
-    const general = annotations.filter((a) => sectionKeyOf(a) === null);
     const bySection = new Map<string, Annotation[]>();
     for (const a of annotations) {
       const key = sectionKeyOf(a);
@@ -66,20 +72,15 @@ export function AnnotationPane() {
       }
       arr.push(a);
     }
-    const sectionGroups: CardGroup[] = [];
-    for (const [key, cards] of bySection) sectionGroups.push({ key, sectionKey: key, cards });
-    const out: CardGroup[] = [];
-    if (general.length > 0 || addingGeneral) out.push({ key: GENERAL_KEY, sectionKey: null, cards: general });
-    out.push(...sectionGroups);
-    return out;
-  }, [annotations, addingGeneral]);
+    return [...bySection].map(([key, cards]) => ({ key, cards }));
+  }, [annotations]);
 
   // ── informational counts (INCLUDES whole-plan cards) ─────────────────────────
   const total = annotations.length;
   const resolved = annotations.filter(isResolvedCard).length;
   const openDisplay = total - resolved;
 
-  // ── position-aware alignment ─────────────────────────────────────────────────
+  // ── position-aware alignment (section groups only) ───────────────────────────
   const layerRef = useRef<HTMLDivElement>(null);
   const groupEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const [positions, setPositions] = useState<Map<string, number> | null>(null);
@@ -95,34 +96,25 @@ export function AnnotationPane() {
     const layer = layerRef.current;
     if (!layer) return;
     const isLg = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
-    // Flow mode — clear absolute positioning; groups stack naturally. Used below `lg`
-    // and, on first paint, until the sections have registered their nodes (measuring
-    // against an empty registry would pile every card at the top for one frame).
-    const needsSections = groups.some((g) => g.sectionKey !== null);
-    if (!isLg || groups.length === 0 || (needsSections && sectionsRef.current.size === 0)) {
+    // Flow mode — clear absolute positioning; groups stack naturally. Used when
+    // `embedded` (no sections to measure), below `lg`, when there are no groups, and
+    // on first paint until the sections register their nodes (measuring against an
+    // empty registry would pile every card at the top for one frame).
+    if (embedded || !isLg || groups.length === 0 || sectionsRef.current.size === 0) {
       setPositions(null);
       setLayerHeight(null);
       return;
     }
     const layerTop = layer.getBoundingClientRect().top;
 
-    // Desired top for each group: the general group pins to 0; a section group to its
-    // section's offset within the cards layer. Sort section groups by that offset so
-    // packing preserves the plan's reading order.
+    // Desired top for each group = its section's offset within the cards layer. Sort by
+    // that offset so packing preserves the plan's reading order.
     const desired = new Map<string, number>();
     for (const g of groups) {
-      if (g.sectionKey === null) {
-        desired.set(g.key, 0);
-      } else {
-        const el = sectionsRef.current.get(g.sectionKey);
-        desired.set(g.key, el ? el.getBoundingClientRect().top - layerTop : 0);
-      }
+      const el = sectionsRef.current.get(g.key);
+      desired.set(g.key, el ? el.getBoundingClientRect().top - layerTop : 0);
     }
-    const ordered = [...groups].sort((a, b) => {
-      if (a.sectionKey === null) return -1;
-      if (b.sectionKey === null) return 1;
-      return (desired.get(a.key) ?? 0) - (desired.get(b.key) ?? 0);
-    });
+    const ordered = [...groups].sort((a, b) => (desired.get(a.key) ?? 0) - (desired.get(b.key) ?? 0));
 
     // Pack downward: each group sits at max(its desired top, the running cursor).
     const next = new Map<string, number>();
@@ -135,7 +127,7 @@ export function AnnotationPane() {
     }
     setPositions(next);
     setLayerHeight(cursor);
-  }, [groups, sectionsRef]);
+  }, [groups, sectionsRef, embedded]);
 
   const schedule = useCallback(() => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -146,13 +138,9 @@ export function AnnotationPane() {
   }, [recompute]);
 
   // Recompute before paint on any change that can move a section or resize a card.
-  // This is the measure-then-position pattern: it reads live DOM geometry and commits
-  // the resulting card tops synchronously so the stack lands correctly on first paint
-  // (no flash). The set-state-in-effect lint rule can't model that, so it's disabled
-  // here deliberately.
   useLayoutEffect(() => {
     recompute();
-  }, [recompute, activeId, layoutVersion, addingGeneral]);
+  }, [recompute, activeId, layoutVersion]);
 
   // Observe section + group sizes and the window so the stack self-heals on resize
   // (inline edits, card expand/collapse, viewport changes). Re-attached whenever the
@@ -174,17 +162,17 @@ export function AnnotationPane() {
   }, []);
 
   const floating = positions !== null;
-
-  const onAddGeneral = () => {
-    setAddingGeneral(true);
-    schedule();
-  };
+  const canAuthorGeneral = role === 'coordinator';
 
   return (
     <section aria-label={t('annotations.title')} className="flex flex-col">
-      {/* Top line — "N open · N resolved" + plan-level ＋ (whole-plan comment). It
-          pins to the top; its solid background covers cards scrolling behind it. */}
-      <div className="z-20 mb-[10px] flex items-center gap-[8px] bg-surface py-[4px] lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]">
+      {/* Top line — "N open · N resolved". Pins to the top on the standalone view; its
+          solid background covers cards scrolling behind it. */}
+      <div
+        className={`z-20 mb-[10px] flex items-center gap-[8px] py-[4px] ${
+          embedded ? '' : 'bg-surface lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]'
+        }`}
+      >
         <span className="text-[12px] font-semibold" style={{ color: A.tabIdleFg }}>
           {total > 0
             ? t('annotations.counts', {
@@ -193,19 +181,10 @@ export function AnnotationPane() {
               })
             : t('annotations.countEmpty')}
         </span>
-        {role === 'coordinator' ? (
-          <span className="ms-auto">
-            <AddCommentButton
-              onClick={onAddGeneral}
-              active={addingGeneral}
-              label={t('annotations.addPlan')}
-            />
-          </span>
-        ) : null}
       </div>
 
-      {/* The floating card layer. Given an explicit height while floating so the
-          packed absolute cards reserve their space and the footer flows below. */}
+      {/* The floating card layer — SECTION-anchored cards. Given an explicit height
+          while floating so the packed absolute cards reserve their space. */}
       <div
         ref={layerRef}
         className="relative"
@@ -219,7 +198,7 @@ export function AnnotationPane() {
 
         {/* One stable structure across flow/floating so groups never remount: in
             floating mode each wrapper is absolutely positioned at its packed top; in
-            flow mode (mobile / pre-measure) they stack with a gap. */}
+            flow mode they stack with a gap. */}
         <div className={floating ? undefined : 'flex flex-col gap-[12px]'}>
           {groups.map((g) => (
             <div
@@ -227,57 +206,70 @@ export function AnnotationPane() {
               className={floating ? 'absolute inset-x-0' : undefined}
               style={floating ? { top: positions?.get(g.key) ?? 0 } : undefined}
             >
-              <GroupBox
-                group={g}
-                setRef={setGroupEl(g.key)}
-                onCreate={create}
-                pending={pending}
-                closeGeneral={() => setAddingGeneral(false)}
-              />
+              <div ref={setGroupEl(g.key)}>
+                <ul className="flex flex-col gap-[9px]">
+                  {g.cards.map((a) => (
+                    <AnnotationCard key={a.id} annotation={a} />
+                  ))}
+                </ul>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Role-aware footer, below the stack. */}
-      <div className="mt-[14px] lg:sticky lg:bottom-[14px]">
-        <Footer planId={ctx.planId} status={ctx.status} scope={ctx.scope} role={role} openCount={openCount} />
+      {/* Bottom block — whole-plan cards + plan-level ＋ + the role-aware footer, all
+          together. Section cards scroll above it; on the standalone view it pins to the
+          bottom so the decision buttons stay reachable. */}
+      <div
+        className={`mt-[14px] flex flex-col gap-[10px] ${embedded ? '' : 'lg:sticky lg:bottom-[14px]'}`}
+      >
+        {generalCards.length > 0 || canAuthorGeneral ? (
+          <div className="flex flex-col gap-[9px]">
+            {canAuthorGeneral ? (
+              <div className="flex items-center gap-[8px]">
+                <span
+                  className="text-[11px] font-bold uppercase tracking-[0.05em]"
+                  style={{ color: A.tabIdleFg }}
+                >
+                  {t('annotations.anchor.general')}
+                </span>
+                <span className="ms-auto">
+                  <AddCommentButton
+                    label={t('annotations.addPlan')}
+                    active={addingGeneral}
+                    onClick={() => setAddingGeneral((v) => !v)}
+                  />
+                </span>
+              </div>
+            ) : null}
+            {addingGeneral ? (
+              <GeneralComposer onCreate={create} pending={pending} onClose={() => setAddingGeneral(false)} />
+            ) : null}
+            {generalCards.length > 0 ? (
+              <ul className="flex flex-col gap-[9px]">
+                {generalCards.map((a) => (
+                  <AnnotationCard key={a.id} annotation={a} />
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* The role-aware footer belongs to the standalone /view. In the EMBEDDED
+            editor context the plan's own header SubmitControl already owns Resubmit
+            (and it, not the pane, tracks the editor's live status), so the pane omits
+            its footer to avoid a duplicate, drift-prone control. */}
+        {embedded ? null : (
+          <Footer planId={ctx.planId} status={ctx.status} scope={ctx.scope} role={role} openCount={openCount} />
+        )}
       </div>
     </section>
   );
 }
 
-/** One positioned group: a whole-plan composer (when open) + its cards. */
-function GroupBox({
-  group,
-  setRef,
-  onCreate,
-  pending,
-  closeGeneral,
-}: {
-  group: CardGroup;
-  setRef: (el: HTMLDivElement | null) => void;
-  onCreate: ReturnType<typeof useAnnotations>['create'];
-  pending: boolean;
-  closeGeneral: () => void;
-}) {
-  const isGeneral = group.sectionKey === null;
-  return (
-    <div ref={setRef} className="flex flex-col gap-[9px]">
-      {isGeneral ? <GeneralComposer onCreate={onCreate} pending={pending} onClose={closeGeneral} /> : null}
-      {group.cards.length > 0 ? (
-        <ul className="flex flex-col gap-[9px]">
-          {group.cards.map((a) => (
-            <AnnotationCard key={a.id} annotation={a} />
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-/** The whole-plan composer (coordinator only), shown at the top of the stack when
- *  the plan-level ＋ is pressed. It creates a `general` comment — same as today. */
+/** The whole-plan composer (coordinator only), shown in the bottom block when the
+ *  plan-level ＋ is pressed. It creates a `general` comment — same as today. */
 function GeneralComposer({
   onCreate,
   pending,
@@ -302,12 +294,6 @@ function GeneralComposer({
 
   return (
     <div className="rounded-[12px] border bg-white p-[11px]" style={{ borderColor: A.tealBorder }}>
-      <span
-        className="inline-flex rounded-[6px] px-[7px] py-[1px] text-[10.5px] font-semibold"
-        style={{ color: A.countFg, background: A.countBg }}
-      >
-        {t('annotations.anchor.general')}
-      </span>
       <textarea
         dir="auto"
         value={draft}
@@ -315,7 +301,7 @@ function GeneralComposer({
         rows={2}
         autoFocus
         placeholder={t('annotations.general.placeholder')}
-        className="mt-[8px] block w-full resize-none rounded-[10px] border bg-white px-[11px] py-[8px] text-[13px] leading-[1.5] text-ink outline-none focus:border-teal"
+        className="block w-full resize-none rounded-[10px] border bg-white px-[11px] py-[8px] text-[13px] leading-[1.5] text-ink outline-none focus:border-teal"
         style={{ borderColor: A.textareaBorder }}
       />
       <div className="mt-[7px] flex items-center gap-[8px]">

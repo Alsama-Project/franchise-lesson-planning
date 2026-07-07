@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { Block, LessonBlockType, PlanStatus } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
+import type { Annotation } from '@/types/annotation';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
 import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
@@ -27,7 +28,6 @@ import {
   unsubmitLessonPlan,
 } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
-import Link from 'next/link';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
@@ -41,6 +41,8 @@ import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
+import { AnnotationProvider } from '@/components/review/annotation/context';
+import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -70,21 +72,30 @@ function SaveIndicator({ state }: { state: SaveState }) {
 
 export function LessonPlanEditor({
   data,
-  hasFeedback,
+  annotations,
+  viewerName,
+  phaseTitles,
   backHref = '/',
 }: {
   data: EditorPlanData;
-  /** Whether the plan carries any coordinator annotations (comments/suggestions).
-   *  The wizard does NOT embed the response thread — the teacher responds on
-   *  /plan/[id]/view (one surface). When true, the Review step shows a lightweight
-   *  pointer that links there; the accept/reject/reply pane lives only on the view. */
-  hasFeedback: boolean;
+  /** Coordinator feedback on this plan. When present, the Review step (step 5) renders
+   *  the SAME comments pane in place of the worksheet on the right, so the teacher
+   *  replies / accepts / rejects / resolves without leaving the editor. Empty → the
+   *  Review step keeps the worksheet, unchanged. */
+  annotations: Annotation[];
+  /** The viewer's display name (the plan's author), for the annotation provider. */
+  viewerName: string;
+  /** block.type → title, so a phase-anchored card can label itself in the pane. */
+  phaseTitles: Record<string, string>;
   /** Where "‹ This week" returns — the board week this plan was opened from. */
   backHref?: string;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
-  const tReview = useTranslations('review');
+
+  // The plan carries coordinator feedback → the Review step swaps the worksheet for
+  // the comments pane. The teacher is the plan's author (annotation role 'teacher').
+  const hasFeedback = annotations.length > 0;
 
   const [step, setStep] = useState(1);
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
@@ -189,6 +200,28 @@ export function LessonPlanEditor({
       if (wsTimer.current) clearTimeout(wsTimer.current);
     };
   }, [worksheet, plan.id]);
+
+  // ── Re-seed plan fields when a pane action changed them on the server ────────
+  // The Review step's embedded comments pane refreshes the route after each mutation
+  // (router.refresh). Accepting a coordinator SUGGESTION applies it to the plan's
+  // `blocks` / `smartt_objective` server-side — the same columns this editor
+  // autosaves — so without re-syncing, a later autosave would write the stale local
+  // copy back and silently REVERT the accepted change. Keyed on the server content
+  // signature: it fires only when blocks/objective actually changed on the server
+  // (never on reply/resolve/reject refreshes, whose plan columns are untouched), and
+  // never for a plain editor with no pane (nothing refreshes its data mid-session).
+  const serverPlanSig = useRef<string | null>(null);
+  useEffect(() => {
+    const sig = JSON.stringify([plan.blocks, plan.smartt_objective]);
+    if (serverPlanSig.current === null) {
+      serverPlanSig.current = sig; // initial mount — local state is already seeded
+      return;
+    }
+    if (sig === serverPlanSig.current) return;
+    serverPlanSig.current = sig;
+    setBlocks(normalizeBlocks(plan.blocks));
+    setRemainder(stripStem(plan.smartt_objective));
+  }, [plan.blocks, plan.smartt_objective]);
 
   const goStep = useCallback((n: number) => {
     setStep(Math.max(1, Math.min(STEP_COUNT, n)));
@@ -491,32 +524,6 @@ export function LessonPlanEditor({
                   />
                 ) : null}
 
-                {step === STEP_COUNT && hasFeedback ? (
-                  <div className="mt-[22px]">
-                    <Link
-                      href={`/plan/${plan.id}/view`}
-                      className="flex items-center gap-[10px] rounded-[12px] border border-[#CBE1DA] bg-[#EEF6F3] px-[15px] py-[12px] transition-colors hover:bg-[#E4F0EC]"
-                    >
-                      <span className="inline-flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full bg-[#1F7A6C] text-white">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13.5px] font-semibold text-[#15433C]">
-                          {tReview('annotations.pointer.title')}
-                        </span>
-                        <span className="block text-[12.5px] text-[#5C6B66]">
-                          {tReview('annotations.pointer.body')}
-                        </span>
-                      </span>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F7A6C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 rtl:-scale-x-100" aria-hidden>
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
-                    </Link>
-                  </div>
-                ) : null}
-
                 {errorBox}
               </div>
             </section>
@@ -524,16 +531,38 @@ export function LessonPlanEditor({
             {/* RIGHT — the persistent student worksheet for Steps 2–5. One
                 WorksheetBuilder instance, editable at every step and every plan
                 status (never wrapped in the plan-lock fieldset); edits autosave
-                through `saveWorksheet`. Scrolls independently past `lg`. */}
+                through `saveWorksheet`. Scrolls independently past `lg`.
+
+                EXCEPTION — the Review step (step 5) WITH coordinator feedback swaps
+                the worksheet for the SAME comments pane (the shipped AnnotationPane,
+                embedded), so the teacher reads and works feedback (reply / accept-
+                reject / resolve) in place instead of being bounced to /view. Every
+                other step, and the Review step with no feedback, keeps the worksheet. */}
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
-              <div className="flex min-h-0 w-full flex-1 flex-col">
-                <WorksheetBuilder
-                  value={worksheet}
-                  onChange={setWorksheet}
-                  context={worksheetContext}
-                  vocabulary={resourceBank.vocabulary}
-                />
-              </div>
+              {step === STEP_COUNT && hasFeedback ? (
+                <AnnotationProvider
+                  planId={plan.id}
+                  status={status}
+                  scope={plan.scope}
+                  role="teacher"
+                  viewerName={viewerName}
+                  annotations={annotations}
+                  phaseTitles={phaseTitles}
+                >
+                  <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-[16px] lg:px-[24px]">
+                    <AnnotationPane embedded />
+                  </div>
+                </AnnotationProvider>
+              ) : (
+                <div className="flex min-h-0 w-full flex-1 flex-col">
+                  <WorksheetBuilder
+                    value={worksheet}
+                    onChange={setWorksheet}
+                    context={worksheetContext}
+                    vocabulary={resourceBank.vocabulary}
+                  />
+                </div>
+              )}
             </section>
           </>
         )}

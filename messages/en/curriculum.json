@@ -100,7 +100,8 @@
       "noMatchTitle": "No lessons match",
       "noMatchBody": "Try a different word or clear some filters.",
       "detailHeading": "Selected lesson",
-      "selectResult": "Select a result to see its lesson.",
+      "emptyDetailTitle": "No lesson selected",
+      "emptyDetailBody": "Search and choose a lesson to see its skill, outcome and resources.",
       "facets": {
         "year": "Year",
         "month": "Month",

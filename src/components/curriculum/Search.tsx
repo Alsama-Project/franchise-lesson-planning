@@ -270,8 +270,13 @@ export function Search({
     return scored;
   }, [data.records, effectiveFacets, hasQuery, queryTokens]);
 
+  // Nothing is selected until the user explicitly picks a result — no default to
+  // results[0]. A previously-picked lesson that has fallen out of the current results
+  // (query/facets narrowed past it, or query cleared) resolves back to null → empty pane.
   const selected =
-    results.find((r) => r.record.lessonKey === selectedKey)?.record ?? results[0]?.record ?? null;
+    selectedKey != null
+      ? results.find((r) => r.record.lessonKey === selectedKey)?.record ?? null
+      : null;
 
   // ── Grouping (Group by Topic / Year / Month) ──────────────────────────────────────
   const groups = useMemo(() => groupResults(results.map((r) => r.record), groupBy, yearLabel), [results, groupBy, yearLabel]);
@@ -459,13 +464,16 @@ export function Search({
         {/* Detail rail — same rail + Plan handoff as Topics/Calendar */}
         <div className="self-start">
           <div className="mb-[8px] text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#A79E94]">
-            {selected ? t('search.detailHeading') : t('focus.inFocusPlain')}
+            {t('search.detailHeading')}
           </div>
           {selected ? (
             <DetailRail record={selected} queryTokens={queryTokens} />
           ) : (
-            <div className="rounded-[14px] border border-border bg-surface-subtle p-[15px] text-[13px] text-text-muted">
-              {t('search.selectResult')}
+            <div className="rounded-[14px] border border-dashed border-[#DBCDBB] bg-surface-subtle p-[15px]">
+              <div className="text-[13px] font-semibold text-ink">{t('search.emptyDetailTitle')}</div>
+              <p dir="auto" className="mt-[5px] text-[12.5px] leading-[1.45] text-text-muted">
+                {t('search.emptyDetailBody')}
+              </p>
             </div>
           )}
         </div>

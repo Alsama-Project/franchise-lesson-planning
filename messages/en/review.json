@@ -81,6 +81,9 @@
       "title": "Comments",
       "count": "{count} notes",
       "countEmpty": "No comments",
+      "counts": "{open} open · {resolved} resolved",
+      "addComment": "Add comment",
+      "addPlan": "Comment on the whole plan",
       "filter": {
         "open": "Open",
         "resolved": "Resolved"

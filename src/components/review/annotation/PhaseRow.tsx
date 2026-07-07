@@ -19,6 +19,7 @@ import { formatNumber } from '@/lib/format';
 import type { TeachingPhase } from '@/types/lesson';
 import { useOptionalAnnotations } from './context';
 import { pendingSuggestion } from './finders';
+import { AddCommentButton } from './AddCommentButton';
 import { A } from './tokens';
 
 const PHASE_LABEL: Record<TeachingPhase, string> = { i_do: 'I do', we_do: 'We do', you_do: 'You do' };
@@ -194,11 +195,12 @@ export function PhaseRow({
         {durationCell}
       </div>
 
-      {/* Comment — always available to a coordinator, independent of the inline edits. */}
+      {/* Add-comment ＋ — always available to a coordinator, independent of the inline
+          edits. The chat-bubble-＋ trigger replaces the old text "Comment" button. */}
       {isCoordinator ? (
         <div className="mt-[8px] flex flex-wrap items-center gap-[7px]">
-          <AuthorButton
-            label={t('annotations.author.comment')}
+          <AddCommentButton
+            label={t('annotations.addComment')}
             active={comment}
             onClick={() => setComment((v) => !v)}
           />
@@ -280,34 +282,6 @@ export function CountBadge({
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
       {formatNumber(count, locale)}
-    </button>
-  );
-}
-
-function AuthorButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-[5px] rounded-[8px] border px-[9px] py-[4px] text-[11.5px] font-semibold transition-colors"
-      style={
-        active
-          ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
-          : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
-      }
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-      {label}
     </button>
   );
 }

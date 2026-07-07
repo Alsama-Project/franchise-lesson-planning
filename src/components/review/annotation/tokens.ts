@@ -73,4 +73,10 @@ export const A = {
   emptyTitle: '#15433C',
   emptyBody: '#756B64',
   replyBorder: '#D8E4DF',
+
+  // section ↔ card coupling (Google-Docs left border on a commented section)
+  sectionOpen: '#1F7A6C', // solid teal — the section has an open card
+  sectionMuted: '#BFD8D2', // muted teal — the section's card is resolved
+  // resolved card chrome (greyed, reduced opacity handled inline)
+  resolvedFg: '#8A958F',
 } as const;

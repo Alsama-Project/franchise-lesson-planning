@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useOptionalAnnotations } from './context';
 import { CountBadge, CommentForm } from './PhaseRow';
-import { A } from './tokens';
+import { AddCommentButton } from './AddCommentButton';
 
 export function ObjectiveAnnotations() {
   const ctx = useOptionalAnnotations();
@@ -32,21 +32,11 @@ export function ObjectiveAnnotations() {
           <CountBadge count={cards.length} onClick={() => ctx.setActiveId(cards[0]?.id)} locale={locale} />
         ) : null}
         {isCoordinator ? (
-          <button
-            type="button"
+          <AddCommentButton
+            label={t('annotations.addComment')}
+            active={authoring}
             onClick={() => setAuthoring((v) => !v)}
-            className="inline-flex items-center gap-[5px] rounded-[8px] border px-[9px] py-[3px] text-[11px] font-semibold transition-colors"
-            style={
-              authoring
-                ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
-                : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
-            }
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            {t('annotations.author.comment')}
-          </button>
+          />
         ) : null}
       </div>
       {isCoordinator && authoring ? (

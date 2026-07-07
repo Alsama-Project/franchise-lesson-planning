@@ -81,6 +81,9 @@
       "title": "التعليقات",
       "count": "{count} ملاحظة",
       "countEmpty": "لا توجد تعليقات",
+      "counts": "{open} مفتوحة · {resolved} مُعالَجة",
+      "addComment": "إضافة تعليق",
+      "addPlan": "التعليق على الخطة كاملة",
       "filter": {
         "open": "مفتوحة",
         "resolved": "مُعالَجة"

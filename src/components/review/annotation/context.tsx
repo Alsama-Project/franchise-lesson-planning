@@ -13,10 +13,13 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   useTransition,
+  type MutableRefObject,
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
@@ -33,7 +36,6 @@ import {
 } from '@/lib/actions/annotations';
 
 export type ReviewTab = 'lesson' | 'worksheet';
-export type AnnotationFilter = 'open' | 'resolved';
 
 interface AnnotationContextValue {
   planId: string;
@@ -58,8 +60,16 @@ interface AnnotationContextValue {
   setActiveId: (id: string | null) => void;
   tab: ReviewTab;
   setTab: (tab: ReviewTab) => void;
-  filter: AnnotationFilter;
-  setFilter: (f: AnnotationFilter) => void;
+
+  // ── section ↔ card alignment (Google-Docs floating stack) ────────────────────
+  /** Live map of a plan section's alignment key → its DOM node, so the floating
+   *  card column can measure each section's vertical position and lay its cards
+   *  out beside it. Keyed by {@link sectionKeyOf} (e.g. 'objective', a block type). */
+  sectionsRef: MutableRefObject<Map<string, HTMLElement>>;
+  /** A commented section registers/unregisters its node here; bumps layoutVersion. */
+  registerSection: (key: string, el: HTMLElement | null) => void;
+  /** Bumps whenever a section mounts/unmounts, so the pane recomputes card tops. */
+  layoutVersion: number;
 
   // ── mutations (each refreshes the route) ─────────────────────────────────────
   pending: boolean;
@@ -95,6 +105,37 @@ interface AnnotationContextValue {
 export function isOpenAnnotation(a: Annotation): boolean {
   if (a.anchorType === 'general') return false;
   return a.kind === 'suggestion' ? a.status === 'pending' : !a.resolved;
+}
+
+/**
+ * Whether a card reads as "resolved" in the unified floating stack — a decided
+ * suggestion (accepted/rejected) or a resolved comment. Unlike {@link isOpenAnnotation}
+ * this INCLUDES general (whole-plan) cards, because they too resolve; it drives the
+ * card's greyed state and the pane's informational "N open · N resolved" line. The
+ * coordinator Approve gate still reads {@link isOpenAnnotation} (anchored-only), so a
+ * general note never blocks approval.
+ */
+export function isResolvedCard(a: Annotation): boolean {
+  return a.kind === 'suggestion' ? a.status !== 'pending' : a.resolved;
+}
+
+/**
+ * The plan section a card sits beside in the floating column. Phase-family anchors
+ * couple to their block; the objective to its box; a worksheet anchor to the
+ * independent-practice block that renders it. `general` (whole-plan) cards return
+ * `null` — they have no section and stack at the top of the column.
+ */
+export function sectionKeyOf(a: Annotation): string | null {
+  switch (a.anchorType) {
+    case 'general':
+      return null;
+    case 'objective':
+      return 'objective';
+    case 'worksheet_block':
+      return 'independent_practice';
+    default:
+      return a.phaseRef; // phase · phase_description · phase_duration · phase_enum
+  }
 }
 
 const Ctx = createContext<AnnotationContextValue | null>(null);
@@ -139,7 +180,18 @@ export function AnnotationProvider({
   const [pending, startTransition] = useTransition();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tab, setTab] = useState<ReviewTab>('lesson');
-  const [filter, setFilter] = useState<AnnotationFilter>('open');
+
+  // Section registry for the Google-Docs floating stack: each commented section
+  // registers its node so the pane can align cards beside it. A version counter
+  // (not the map, whose identity is stable) is what triggers a pane recompute.
+  const sectionsRef = useRef<Map<string, HTMLElement>>(new Map());
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  const registerSection = useCallback((key: string, el: HTMLElement | null) => {
+    const map = sectionsRef.current;
+    if (el) map.set(key, el);
+    else map.delete(key);
+    setLayoutVersion((v) => v + 1);
+  }, []);
 
   const editable = status === 'needs_review' || status === 'in_progress';
 
@@ -169,8 +221,9 @@ export function AnnotationProvider({
       setActiveId,
       tab,
       setTab,
-      filter,
-      setFilter,
+      sectionsRef,
+      registerSection,
+      layoutVersion,
       pending,
       create: (input) => runAndRefresh(() => createAnnotation(planId, input)),
       reply: (annotationId, body) => runAndRefresh(() => addAnnotationReply(annotationId, body)),
@@ -205,7 +258,7 @@ export function AnnotationProvider({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, status, scope, role, viewerName, editable, annotations, phaseTitles, activeId, tab, filter, pending]);
+  }, [planId, status, scope, role, viewerName, editable, annotations, phaseTitles, activeId, tab, layoutVersion, registerSection, pending]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

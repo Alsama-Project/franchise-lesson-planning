@@ -10,6 +10,7 @@ import { PartContent } from '@/components/editor/PartContent';
 import { PhaseRow } from '@/components/review/annotation/PhaseRow';
 import { ObjectiveAnnotations } from '@/components/review/annotation/ObjectiveAnnotations';
 import { ObjectiveField } from '@/components/review/annotation/ObjectiveField';
+import { AnnotatedSection } from '@/components/review/annotation/AnnotatedSection';
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES, ROUTINE_BLOCK_TYPES } from '@/lib/blocks';
 import { routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
@@ -185,7 +186,12 @@ export function ReadOnlyPlan({
           <h2 className="mb-[8px] text-[13px] font-bold uppercase tracking-[0.05em] text-text-faint">
             SMARTT objective
           </h2>
-          <div className="rounded-[11px] border border-border bg-surface px-[15px] py-[13px] text-[14px] leading-[1.5] text-neutral-900">
+          {/* The objective box is a commented SECTION — it carries the teal left
+              border and its card floats beside it (sectionKey 'objective'). */}
+          <AnnotatedSection
+            sectionKey="objective"
+            className="rounded-[11px] border border-border bg-surface px-[15px] py-[13px] text-[14px] leading-[1.5] text-neutral-900"
+          >
             {/* Stem is a fixed scaffold rendered OUTSIDE the editable value (like
                 the wizard editor); only the remainder is fed to ProseField, so a
                 coordinator's inline edit never captures the scaffold. */}
@@ -193,7 +199,7 @@ export function ReadOnlyPlan({
               value={plan.smartt_objective}
               placeholder="No objective written yet."
             />
-          </div>
+          </AnnotatedSection>
           {/* Comment trigger + composer sit BELOW the objective — never a floating
               box above it (plain-clicking the text now edits it in place). */}
           <ObjectiveAnnotations />
@@ -227,8 +233,11 @@ export function ReadOnlyPlan({
               </div>
             ) : null}
             {contentBlocks.map((block, i) => (
-              <div
+              // Each content block is a commented SECTION (sectionKey = its block
+              // type) — the teal left border marks it and its cards float beside it.
+              <AnnotatedSection
                 key={`${block.type}-${i}`}
+                sectionKey={block.type}
                 className="rounded-[11px] border border-border bg-surface px-[15px] py-[12px]"
               >
                 <PhaseRow
@@ -248,7 +257,7 @@ export function ReadOnlyPlan({
                     techniques={techniquesFor(block.type)}
                   />
                 </div>
-              </div>
+              </AnnotatedSection>
             ))}
           </div>
         </section>
@@ -256,21 +265,14 @@ export function ReadOnlyPlan({
         </div>
 
         {rightRail ? (
-          // The rail WRAPPER is the sticky element — its containing block is the
-          // flex row, whose height is driven by the (tall) plan content beside it,
-          // so the pane has room to travel and actually sticks. (Sticky on the inner
-          // card instead would pin it to this short wrapper and scroll away.)
-          // `lg:self-start` keeps the wrapper its content height under the row's
-          // `items-start`; `lg:mt-[22px]` matches the content block's top padding so
-          // the rail's top lines up with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
-          // `top` clears the full fixed chrome (header + TEST MODE bar when present)
-          // via the --app-chrome-height token set in AppShell, plus a 16px gap, so the
-          // "Coordinator comments" title sits fully below the nav and is never clipped.
-          // NOTE: the underscores are REQUIRED — Tailwind v4 mis-parses a `+` with no
-          // surrounding whitespace inside calc() (it emitted a bogus `top` here, which
-          // is why the pane rode up under the nav); `_` becomes a literal space so the
-          // calc is valid CSS: `calc(var(--app-chrome-height,64px) + 16px)`.
-          <aside className="mt-6 lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)] lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-start">
+          // The rail STRETCHES to the row's full height (driven by the tall plan
+          // content beside it) so the floating card stack can position each card at
+          // its section's vertical offset down the whole column — Google-Docs style.
+          // The pane pins its own "N open · N resolved" line (top) and footer (bottom)
+          // with sticky, so both stay reachable while the cards scroll with the plan.
+          // `lg:mt-[22px]` matches the content block's top padding so the top line
+          // aligns with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
+          <aside className="mt-6 lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-stretch">
             {rightRail}
           </aside>
         ) : null}

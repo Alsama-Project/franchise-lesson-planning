@@ -1,159 +1,291 @@
 'use client';
 
-// The annotation pane on the plan review view — the strict port of the Coordinator
-// Review · Annotation Layer design. It replaces the old flat comment sidebar. The
-// pane lists ANCHORED annotations (comments + suggestions) under an Open/Resolved
-// filter, a General feedback section for whole-plan comments, and a role-aware
-// footer (coordinator: Return / Approve via decidePlan; teacher: Resubmit via the
-// existing submit action). Read-side pills/badges live in ReadOnlyPlan; both sides
-// share the AnnotationProvider so they cross-highlight.
+// The review annotation column — reworked into a Google-Docs-style floating stack.
+// There is no header note-count, no Open/Resolved tabs and no separate "general
+// feedback" section any more; instead EVERY annotation (comment, suggestion, whole-
+// plan) is one unified card (see AnnotationCard) and the cards float beside the
+// section they annotate. Whole-plan cards have no section, so they stack at the top
+// of the column. A small "N open · N resolved" line sits at the top (with the plan-
+// level ＋ trigger) and the role-aware footer (Return / Approve · Resubmit) below.
+//
+// Layout: on large screens each section's cards are absolutely positioned at the
+// section's measured vertical offset, then packed downward so groups never overlap —
+// this is what lines a card up beside its section. Below `lg` (and before the first
+// measurement) the groups simply stack in normal flow. The measurement re-runs on
+// resize and whenever a section or card changes height.
 
-import { useState, useTransition } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
 import { decidePlan, submitLessonPlanById } from '@/lib/actions/lesson-plan';
+import type { Annotation } from '@/types/annotation';
 import { AnnotationCard } from './AnnotationCard';
-import { isOpenAnnotation, useAnnotations } from './context';
+import { AddCommentButton } from './AddCommentButton';
+import { isResolvedCard, sectionKeyOf, useAnnotations } from './context';
 import { A } from './tokens';
+
+const GENERAL_KEY = '__general__';
+const GAP = 12; // vertical gap packed between stacked card groups (px)
+
+/** A group of cards that share a section (or the whole-plan group). */
+interface CardGroup {
+  key: string;
+  /** The section alignment key, or null for the whole-plan group. */
+  sectionKey: string | null;
+  cards: Annotation[];
+}
 
 export function AnnotationPane() {
   const t = useTranslations('review');
   const locale = useLocale();
-  const {
-    planId,
-    status,
-    scope,
-    role,
-    annotations,
-    openCount,
-    filter,
-    setFilter,
-    create,
-    pending,
-  } = useAnnotations();
+  const ctx = useAnnotations();
+  const { annotations, role, activeId, sectionsRef, layoutVersion, openCount, create, pending } = ctx;
 
-  const general = annotations.filter((a) => a.anchorType === 'general');
-  const anchored = annotations.filter((a) => a.anchorType !== 'general');
+  const [addingGeneral, setAddingGeneral] = useState(false);
 
-  // Open vs Resolved share ONE predicate with the footer (isOpenAnnotation): open =
-  // pending suggestions + unresolved comments; resolved = everything else anchored
-  // (decided suggestions + resolved comments), so a decided suggestion stays visible
-  // under Resolved and no longer counts against Open. openCards.length === openCount.
-  const openCards = anchored.filter(isOpenAnnotation);
-  const resolvedCards = anchored.filter((a) => !isOpenAnnotation(a));
-  const shown = filter === 'open' ? openCards : resolvedCards;
+  // ── group the cards ──────────────────────────────────────────────────────────
+  const groups = useMemo<CardGroup[]>(() => {
+    const general = annotations.filter((a) => sectionKeyOf(a) === null);
+    const bySection = new Map<string, Annotation[]>();
+    for (const a of annotations) {
+      const key = sectionKeyOf(a);
+      if (key === null) continue;
+      let arr = bySection.get(key);
+      if (!arr) {
+        arr = [];
+        bySection.set(key, arr);
+      }
+      arr.push(a);
+    }
+    const sectionGroups: CardGroup[] = [];
+    for (const [key, cards] of bySection) sectionGroups.push({ key, sectionKey: key, cards });
+    const out: CardGroup[] = [];
+    if (general.length > 0 || addingGeneral) out.push({ key: GENERAL_KEY, sectionKey: null, cards: general });
+    out.push(...sectionGroups);
+    return out;
+  }, [annotations, addingGeneral]);
 
+  // ── informational counts (INCLUDES whole-plan cards) ─────────────────────────
   const total = annotations.length;
+  const resolved = annotations.filter(isResolvedCard).length;
+  const openDisplay = total - resolved;
+
+  // ── position-aware alignment ─────────────────────────────────────────────────
+  const layerRef = useRef<HTMLDivElement>(null);
+  const groupEls = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [positions, setPositions] = useState<Map<string, number> | null>(null);
+  const [layerHeight, setLayerHeight] = useState<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const setGroupEl = useCallback((key: string) => (el: HTMLDivElement | null) => {
+    if (el) groupEls.current.set(key, el);
+    else groupEls.current.delete(key);
+  }, []);
+
+  const recompute = useCallback(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const isLg = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+    // Flow mode — clear absolute positioning; groups stack naturally. Used below `lg`
+    // and, on first paint, until the sections have registered their nodes (measuring
+    // against an empty registry would pile every card at the top for one frame).
+    const needsSections = groups.some((g) => g.sectionKey !== null);
+    if (!isLg || groups.length === 0 || (needsSections && sectionsRef.current.size === 0)) {
+      setPositions(null);
+      setLayerHeight(null);
+      return;
+    }
+    const layerTop = layer.getBoundingClientRect().top;
+
+    // Desired top for each group: the general group pins to 0; a section group to its
+    // section's offset within the cards layer. Sort section groups by that offset so
+    // packing preserves the plan's reading order.
+    const desired = new Map<string, number>();
+    for (const g of groups) {
+      if (g.sectionKey === null) {
+        desired.set(g.key, 0);
+      } else {
+        const el = sectionsRef.current.get(g.sectionKey);
+        desired.set(g.key, el ? el.getBoundingClientRect().top - layerTop : 0);
+      }
+    }
+    const ordered = [...groups].sort((a, b) => {
+      if (a.sectionKey === null) return -1;
+      if (b.sectionKey === null) return 1;
+      return (desired.get(a.key) ?? 0) - (desired.get(b.key) ?? 0);
+    });
+
+    // Pack downward: each group sits at max(its desired top, the running cursor).
+    const next = new Map<string, number>();
+    let cursor = 0;
+    for (const g of ordered) {
+      const h = groupEls.current.get(g.key)?.offsetHeight ?? 0;
+      const top = Math.max(desired.get(g.key) ?? 0, cursor);
+      next.set(g.key, top);
+      cursor = top + h + GAP;
+    }
+    setPositions(next);
+    setLayerHeight(cursor);
+  }, [groups, sectionsRef]);
+
+  const schedule = useCallback(() => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      recompute();
+    });
+  }, [recompute]);
+
+  // Recompute before paint on any change that can move a section or resize a card.
+  // This is the measure-then-position pattern: it reads live DOM geometry and commits
+  // the resulting card tops synchronously so the stack lands correctly on first paint
+  // (no flash). The set-state-in-effect lint rule can't model that, so it's disabled
+  // here deliberately.
+  useLayoutEffect(() => {
+    recompute();
+  }, [recompute, activeId, layoutVersion, addingGeneral]);
+
+  // Observe section + group sizes and the window so the stack self-heals on resize
+  // (inline edits, card expand/collapse, viewport changes). Re-attached whenever the
+  // set of sections or groups changes.
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => schedule());
+    for (const el of sectionsRef.current.values()) ro.observe(el);
+    for (const el of groupEls.current.values()) ro.observe(el);
+    window.addEventListener('resize', schedule);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
+    };
+  }, [schedule, sectionsRef, layoutVersion, groups]);
+
+  useEffect(() => () => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const floating = positions !== null;
+
+  const onAddGeneral = () => {
+    setAddingGeneral(true);
+    schedule();
+  };
 
   return (
-    <section
-      aria-label={t('annotations.title')}
-      className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border shadow-[0_18px_50px_-28px_rgba(20,12,8,0.4)] lg:max-h-[calc(100vh-var(--app-chrome-height,64px)-32px)]"
-      style={{ background: A.pane, borderColor: A.paneBorder }}
-    >
-      {/* Header — message icon + "Comments" + count pill. */}
-      <div className="flex flex-shrink-0 items-center gap-[9px] border-b px-[18px] py-[14px]" style={{ borderColor: A.headBorder }}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={A.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-        <span className="text-[14.5px] font-semibold" style={{ color: A.title }}>
-          {t('annotations.title')}
-        </span>
-        <span
-          className="rounded-full border px-[8px] py-[2px] text-[11.5px] font-semibold"
-          style={{ color: A.countFg, background: A.countBg, borderColor: A.countBorder }}
-        >
+    <section aria-label={t('annotations.title')} className="flex flex-col">
+      {/* Top line — "N open · N resolved" + plan-level ＋ (whole-plan comment). It
+          pins to the top; its solid background covers cards scrolling behind it. */}
+      <div className="z-20 mb-[10px] flex items-center gap-[8px] bg-surface py-[4px] lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]">
+        <span className="text-[12px] font-semibold" style={{ color: A.tabIdleFg }}>
           {total > 0
-            ? t('annotations.count', { count: formatNumber(total, locale) })
+            ? t('annotations.counts', {
+                open: formatNumber(openDisplay, locale),
+                resolved: formatNumber(resolved, locale),
+              })
             : t('annotations.countEmpty')}
         </span>
-      </div>
-
-      {/* Open / Resolved filter tabs — shown once any annotation exists. */}
-      {total > 0 ? (
-        <div className="flex flex-shrink-0 gap-[6px] border-b px-[14px] py-[9px]" style={{ borderColor: A.headBorder }}>
-          {(['open', 'resolved'] as const).map((f) => {
-            const count = f === 'open' ? openCount : resolvedCards.length;
-            const active = filter === f;
-            return (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className="rounded-[8px] border px-[11px] py-[5px] text-[12px] font-semibold transition-colors"
-                style={
-                  active
-                    ? { background: A.tabActiveBg, color: A.tabActiveFg, borderColor: A.tabBorder }
-                    : { background: 'transparent', color: A.tabIdleFg, borderColor: 'transparent' }
-                }
-              >
-                {t(`annotations.filter.${f}`)} · {formatNumber(count, locale)}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* Scrolling body — anchored cards + general feedback. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-[14px] pb-[14px] pt-[13px]">
-        {total === 0 ? (
-          <div className="py-[26px] text-center">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={A.tabIdleFg} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-[10px]" aria-hidden>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <p className="text-[13.5px] font-semibold" style={{ color: A.emptyTitle }}>
-              {t('annotations.empty.title')}
-            </p>
-            <p className="mx-auto mt-[5px] max-w-[260px] text-[12.5px] leading-[1.5]" style={{ color: A.emptyBody }}>
-              {t('annotations.empty.body')}
-            </p>
-          </div>
-        ) : shown.length > 0 ? (
-          <ul className="flex flex-col gap-[9px]">
-            {shown.map((a, i) => (
-              <AnnotationCard key={a.id} annotation={a} index={i + 1} />
-            ))}
-          </ul>
-        ) : (
-          <p className="px-[4px] py-[16px] text-center text-[12.5px]" style={{ color: A.emptyBody }}>
-            {t(`annotations.filterEmpty.${filter}`)}
-          </p>
-        )}
-
-        {/* General feedback · whole plan — always available to a coordinator (so the
-            FIRST whole-plan comment can be added), and shown to the teacher when any
-            general feedback exists. */}
-        {general.length > 0 || role === 'coordinator' ? (
-          <div className="mt-[16px] border-t pt-[13px]" style={{ borderColor: A.headBorder }}>
-            <p className="mb-[9px] text-[11px] font-bold uppercase tracking-[0.05em]" style={{ color: A.tabIdleFg }}>
-              {t('annotations.general.heading')}
-            </p>
-            {general.length > 0 ? (
-              <ul className="flex flex-col gap-[9px]">
-                {general.map((a, i) => (
-                  <AnnotationCard key={a.id} annotation={a} index={i + 1} />
-                ))}
-              </ul>
-            ) : null}
-            {role === 'coordinator' ? <GeneralComposer onCreate={create} pending={pending} /> : null}
-          </div>
+        {role === 'coordinator' ? (
+          <span className="ms-auto">
+            <AddCommentButton
+              onClick={onAddGeneral}
+              active={addingGeneral}
+              label={t('annotations.addPlan')}
+            />
+          </span>
         ) : null}
       </div>
 
-      {/* Footer — role-aware. */}
-      <Footer planId={planId} status={status} scope={scope} role={role} openCount={openCount} />
+      {/* The floating card layer. Given an explicit height while floating so the
+          packed absolute cards reserve their space and the footer flows below. */}
+      <div
+        ref={layerRef}
+        className="relative"
+        style={floating && layerHeight != null ? { height: layerHeight } : undefined}
+      >
+        {total === 0 && !addingGeneral ? (
+          <p className="py-[6px] text-[12.5px] leading-[1.5]" style={{ color: A.emptyBody }}>
+            {t('annotations.empty.body')}
+          </p>
+        ) : null}
+
+        {/* One stable structure across flow/floating so groups never remount: in
+            floating mode each wrapper is absolutely positioned at its packed top; in
+            flow mode (mobile / pre-measure) they stack with a gap. */}
+        <div className={floating ? undefined : 'flex flex-col gap-[12px]'}>
+          {groups.map((g) => (
+            <div
+              key={g.key}
+              className={floating ? 'absolute inset-x-0' : undefined}
+              style={floating ? { top: positions?.get(g.key) ?? 0 } : undefined}
+            >
+              <GroupBox
+                group={g}
+                setRef={setGroupEl(g.key)}
+                onCreate={create}
+                pending={pending}
+                closeGeneral={() => setAddingGeneral(false)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Role-aware footer, below the stack. */}
+      <div className="mt-[14px] lg:sticky lg:bottom-[14px]">
+        <Footer planId={ctx.planId} status={ctx.status} scope={ctx.scope} role={role} openCount={openCount} />
+      </div>
     </section>
   );
 }
 
-/** The whole-plan feedback composer (coordinator only). */
+/** One positioned group: a whole-plan composer (when open) + its cards. */
+function GroupBox({
+  group,
+  setRef,
+  onCreate,
+  pending,
+  closeGeneral,
+}: {
+  group: CardGroup;
+  setRef: (el: HTMLDivElement | null) => void;
+  onCreate: ReturnType<typeof useAnnotations>['create'];
+  pending: boolean;
+  closeGeneral: () => void;
+}) {
+  const isGeneral = group.sectionKey === null;
+  return (
+    <div ref={setRef} className="flex flex-col gap-[9px]">
+      {isGeneral ? <GeneralComposer onCreate={onCreate} pending={pending} onClose={closeGeneral} /> : null}
+      {group.cards.length > 0 ? (
+        <ul className="flex flex-col gap-[9px]">
+          {group.cards.map((a) => (
+            <AnnotationCard key={a.id} annotation={a} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** The whole-plan composer (coordinator only), shown at the top of the stack when
+ *  the plan-level ＋ is pressed. It creates a `general` comment — same as today. */
 function GeneralComposer({
   onCreate,
   pending,
+  onClose,
 }: {
   onCreate: ReturnType<typeof useAnnotations>['create'];
   pending: boolean;
+  onClose: () => void;
 }) {
   const t = useTranslations('review');
   const [draft, setDraft] = useState('');
@@ -162,34 +294,56 @@ function GeneralComposer({
     const note = draft.trim();
     if (!note || pending) return;
     const ok = await onCreate({ kind: 'comment', anchorType: 'general', note });
-    if (ok) setDraft('');
+    if (ok) {
+      setDraft('');
+      onClose();
+    }
   };
 
   return (
-    <div className="mt-[10px]">
+    <div className="rounded-[12px] border bg-white p-[11px]" style={{ borderColor: A.tealBorder }}>
+      <span
+        className="inline-flex rounded-[6px] px-[7px] py-[1px] text-[10.5px] font-semibold"
+        style={{ color: A.countFg, background: A.countBg }}
+      >
+        {t('annotations.anchor.general')}
+      </span>
       <textarea
         dir="auto"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={2}
+        autoFocus
         placeholder={t('annotations.general.placeholder')}
-        className="block w-full resize-none rounded-[10px] border bg-white px-[11px] py-[8px] text-[13px] leading-[1.5] text-ink outline-none focus:border-teal"
+        className="mt-[8px] block w-full resize-none rounded-[10px] border bg-white px-[11px] py-[8px] text-[13px] leading-[1.5] text-ink outline-none focus:border-teal"
         style={{ borderColor: A.textareaBorder }}
       />
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={!draft.trim() || pending}
-        className="mt-[7px] rounded-[9px] px-[13px] py-[7px] text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        style={{ background: A.teal }}
-      >
-        {t('annotations.general.submit')}
-      </button>
+      <div className="mt-[7px] flex items-center gap-[8px]">
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={!draft.trim() || pending}
+          className="rounded-[9px] px-[13px] py-[7px] text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: A.teal }}
+        >
+          {t('annotations.general.submit')}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[12.5px] font-medium"
+          style={{ color: A.neutralFg }}
+        >
+          {t('annotations.reply.cancel')}
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Role-aware footer: coordinator decides (decidePlan), teacher resubmits. */
+/** Role-aware footer: coordinator decides (decidePlan), teacher resubmits. Unchanged
+ *  behaviour — including the Approve-demotes-while-anything-open rule (openCount is
+ *  the shared anchored-only open count, so a whole-plan note never blocks approval). */
 function Footer({
   planId,
   status,
@@ -201,8 +355,6 @@ function Footer({
   status: string;
   scope: string;
   role: string;
-  /** Shared open-annotation count (see isOpenAnnotation) — the SAME value the pane's
-   *  "Open · N" tab shows. Drives which coordinator action leads while `submitted`. */
   openCount: number;
 }) {
   const t = useTranslations('review');
@@ -219,14 +371,10 @@ function Footer({
     });
   };
 
-  // Teacher: hint + Resubmit, on a returned (needs_review) plan. Only a CLASS plan
-  // is editable/resubmittable by a teacher; a centre/org plan is read-only to them,
-  // so it offers nothing to resubmit — suppress the whole footer (no hint, no
-  // Resubmit) rather than show an action that would be rejected.
   if (role === 'teacher') {
     if (status !== 'needs_review' || scope !== 'class') return null;
     return (
-      <div className="flex-shrink-0 border-t bg-white px-[16px] py-[13px]" style={{ borderColor: A.paneBorder }}>
+      <div className="rounded-[14px] border bg-white px-[16px] py-[13px] shadow-[0_18px_50px_-28px_rgba(20,12,8,0.4)]" style={{ borderColor: A.paneBorder }}>
         <p className="mb-[9px] text-[11.5px] leading-[1.4]" style={{ color: A.hint }}>
           {t('annotations.footer.teacherHint')}
         </p>
@@ -244,16 +392,9 @@ function Footer({
     );
   }
 
-  // Coordinator: decide, status-aware.
   return (
-    <div className="flex-shrink-0 border-t bg-white px-[16px] py-[13px]" style={{ borderColor: A.paneBorder }}>
+    <div className="rounded-[14px] border bg-white px-[16px] py-[13px] shadow-[0_18px_50px_-28px_rgba(20,12,8,0.4)]" style={{ borderColor: A.paneBorder }}>
       {status === 'submitted' ? (
-        // Anything OPEN (a suggestion or comment still needing the teacher) means the
-        // plan should go back: Return LEADS (filled teal, larger) and Approve is
-        // DEMOTED to a teal-outline secondary — still visible + clickable (the escape
-        // hatch), with a hint saying why. Nothing open → Approve leads as before.
-        // `hasOpen` reads the SAME openCount the pane's "Open · N" shows, so the two
-        // never disagree. No destructive red: both actions are teal, one filled.
         (() => {
           const hasOpen = openCount > 0;
           return (

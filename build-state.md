@@ -2,6 +2,86 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
+## Review comments — unified Google-Docs floating cards ✅ (this phase)
+
+Reworked the coordinator-review annotation column (`/plan/[id]/view`) from a fixed rail
+(header + Open/Resolved tabs + stacked list + separate "general feedback" block) into a
+Google-Docs-style floating stack. **Presentation + interaction only — no schema, RLS,
+or server-action change.** The annotation records, `createAnnotation` /
+`addAnnotationReply` / `setAnnotationResolved` / `decideSuggestion` / `decidePlan`, the
+coordinator inline-authoring flow and the teacher respond flow are all untouched.
+
+### The unified card model
+
+- **One card component, one interaction** for every annotation
+  (`AnnotationCard.tsx`): comment → **Resolve**; suggestion → **Accept / Reject** +
+  its `from→to` pill (dur/enum) or tracked-change diff (text); general (whole-plan) →
+  **Resolve**, plan-level. Accept/reject + apply logic and the pill/diff rendering are
+  the **existing** ones in a new shell.
+- Collapsed = a **one-line clamp** preview (avatar + note + resolved ✓ / reply count).
+  Selected = expands, **lifts** (shadow) and **shifts ~8px toward the plan**
+  (`-translate-x-[8px]`, RTL-mirrored); author row (avatar · name · role · time), the
+  **section-name tag AFTER the author row** (no COMMENT/SUGGESTION type tag), the
+  suggestion strip, note, reply thread + reply composer, and the action row.
+- Resolved cards are **greyed + reduced opacity**, not hidden.
+
+### Section ↔ card coupling
+
+- `AnnotatedSection.tsx` wraps each commented section (the SMARTT objective box and
+  every content block, via `ReadOnlyPlan`). It paints a **teal left border** — solid
+  `#1F7A6C` while a card is open, muted `#BFD8D2` once all its cards are resolved — and
+  **toggles the section's card open/closed on a background click** (clicks on inner
+  controls — the ＋ trigger, inline editors, pills — pass through).
+- Cards **line up beside their section**: `AnnotationPane.tsx` measures each section's
+  vertical offset (registered through the provider's `sectionsRef` / `registerSection`
+  / `layoutVersion`) and absolutely positions each section's card group at that offset,
+  packing groups downward so they never overlap. Re-measures on resize and on any
+  section/card height change (ResizeObserver + window resize). Below `lg`, and until the
+  sections register on first paint, it falls back to a plain stacked flow.
+
+### Where general cards go + removed furniture
+
+- **General (whole-plan) cards stack at the top of the column**, tagged **"Whole plan"**
+  (`annotations.anchor.general`) — same stack, not a separate section.
+- Removed: the header note-count, the **Open / Resolved** tabs, and the separate
+  "GENERAL FEEDBACK · WHOLE PLAN" block. Replaced by a small **`N open · N resolved`**
+  line at the top of the column (`annotations.counts`; counts **include** whole-plan
+  cards — purely informational). The coordinator **Approve gate still reads the shared
+  anchored-only `openCount`** (`isOpenAnnotation`), so a whole-plan note never blocks
+  approval, and the **Approve-demotes-while-anything-open** rule is intact.
+
+### Add-comment trigger
+
+- The text "Comment" buttons are replaced by a **chat-bubble-with-＋ icon**
+  (`AddCommentButton.tsx`): one per section (in `PhaseRow` / `ObjectiveAnnotations`,
+  same inline-composer create behaviour) and one at **plan level** in the pane's top
+  line that drops a **general** comment into the stack.
+
+### Kept / preserved
+
+- Role-aware footer below the stack (coordinator **Return / Approve**, teacher
+  **Resubmit**) — unchanged, including the Approve-demote rule. Reply threads + composer.
+  `dir="auto"` on all bodies. Counts via `formatNumber`. Reject stays **neutral** (never
+  `#B23A2E`); resolved muted `#BFD8D2`/greyed; teal chrome; Sora.
+
+### i18n
+
+- New keys in `messages/en/review.json` + `messages/ar/review.json`:
+  `annotations.counts` (`{open} open · {resolved} resolved`), `annotations.addComment`,
+  `annotations.addPlan`. **Arabic is machine-translated — flagged for Kadria's review.**
+
+### Notes for the next agent
+
+- The attached mock (`ReviewCommentsPane.jsx` / `review-comments-pane.html`) was **not
+  present in the workspace**, so the port was driven from the written spec + the existing
+  annotation data model. The mock shows only comments; **suggestion cards** (dur/enum
+  pill, text diff) and their Accept/Reject were mapped onto the same unified card shell
+  using the existing logic. **Worksheet-block** anchors (no UI creates them today) couple
+  to the `independent_practice` section as a safe default.
+- `npx tsc --noEmit`, `next build`, `eslint`, and `npm test` (78 pass / 8 pre-existing
+  skips) are green. The authenticated review view was **not** driven live (needs a seeded
+  Supabase + SSO); verification was static + build/type/lint/test.
+
 ## Per-subject curriculum VERSIONING (foundation) ✅ (this phase)
 
 A re-authored subject creates a NEW version instead of overwriting rows; existing

@@ -100,7 +100,8 @@
       "noMatchTitle": "لا توجد دروس مطابقة",
       "noMatchBody": "جرّب كلمة مختلفة أو أزل بعض عوامل التصفية.",
       "detailHeading": "الدرس المحدد",
-      "selectResult": "اختر نتيجة لعرض درسها.",
+      "emptyDetailTitle": "لم يتم اختيار درس",
+      "emptyDetailBody": "ابحث واختر درسًا لعرض مهارته ونتيجته وموارده.",
       "facets": {
         "year": "السنة",
         "month": "الشهر",

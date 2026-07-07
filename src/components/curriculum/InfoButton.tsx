@@ -79,8 +79,8 @@ export function InfoButton({ description }: { description: string }) {
           setOpen(false);
           pointerActive.current = false;
         }}
-        className="inline-flex size-[18px] items-center justify-center rounded-full border bg-surface text-[11px] font-semibold leading-none transition-colors hover:bg-[#EAF4F1] focus:outline-none focus-visible:ring-2 focus-visible:ring-teal/40"
-        style={{ borderColor: TEAL, color: TEAL }}
+        className="inline-flex size-[18px] items-center justify-center leading-none transition-opacity hover:opacity-70 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal/60"
+        style={{ color: TEAL }}
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="10" />

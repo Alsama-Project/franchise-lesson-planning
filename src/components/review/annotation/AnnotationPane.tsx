@@ -2,21 +2,22 @@
 
 // The review annotation column — a Google-Docs-style floating stack. Every annotation
 // (comment, suggestion, whole-plan) is one unified card (see AnnotationCard). The
-// SECTION-anchored cards float beside the section they annotate; the WHOLE-PLAN
-// (general) cards and the role-aware footer (Return / Approve · Resubmit) form one
-// block at the BOTTOM of the column, with the plan-level ＋ that adds a general
-// comment. A small "N open · N resolved" line sits at the top.
+// "N open · N resolved" line, the WHOLE-PLAN (general) cards + the plan-level ＋, and
+// the role-aware footer (Return / Approve · Resubmit) form one block at the TOP of the
+// column; the SECTION-anchored cards float BELOW it, each beside the section it
+// annotates, and scroll beneath the top block.
 //
 // Layout: on large screens each section's cards are absolutely positioned at the
 // section's measured vertical offset, then packed downward so groups never overlap —
 // this is what lines a card up beside its section. Below `lg` (and before the first
-// measurement, and in the `embedded` editor context where there are no sections to
-// measure) the groups stack in normal flow. The measurement re-runs on resize and
-// whenever a section or card changes height.
+// measurement, and when there are no sections to measure) the groups stack in normal
+// flow. The measurement re-runs on resize and whenever a section or card changes height.
 //
-// `embedded` renders the pane inside the editor's Review step (its own scroll
-// container) rather than the standalone /view page: it drops the page-chrome sticky
-// offsets so the column simply scrolls.
+// `embedded` renders the pane inside the editor's Review step rather than the
+// standalone /view page. Both surfaces now render the SAME section-anchored plan body
+// (ReadOnlyPlan), so both float; `embedded` only drops the page-chrome sticky offsets
+// (the editor supplies its own scroll container) and omits the pane footer, since the
+// editor's header SubmitControl already owns Resubmit.
 
 import {
   useCallback,
@@ -96,11 +97,13 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     const layer = layerRef.current;
     if (!layer) return;
     const isLg = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
-    // Flow mode — clear absolute positioning; groups stack naturally. Used when
-    // `embedded` (no sections to measure), below `lg`, when there are no groups, and
-    // on first paint until the sections register their nodes (measuring against an
-    // empty registry would pile every card at the top for one frame).
-    if (embedded || !isLg || groups.length === 0 || sectionsRef.current.size === 0) {
+    // Flow mode — clear absolute positioning; groups stack naturally. Used below `lg`,
+    // when there are no groups, and on first paint until the sections register their
+    // nodes (measuring against an empty registry would pile every card at the top for
+    // one frame). The `embedded` editor Review step now renders the SAME section-
+    // anchored plan body as /view, so it floats too — it is gated only by the
+    // section-registry check, not by `embedded`.
+    if (!isLg || groups.length === 0 || sectionsRef.current.size === 0) {
       setPositions(null);
       setLayerHeight(null);
       return;
@@ -127,7 +130,7 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     }
     setPositions(next);
     setLayerHeight(cursor);
-  }, [groups, sectionsRef, embedded]);
+  }, [groups, sectionsRef]);
 
   const schedule = useCallback(() => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -166,64 +169,28 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <section aria-label={t('annotations.title')} className="flex flex-col">
-      {/* Top line — "N open · N resolved". Pins to the top on the standalone view; its
+      {/* TOP block — "N open · N resolved", the whole-plan (general) cards + plan-level
+          ＋, and the role-aware footer (Return / Approve · Resubmit), all grouped
+          together at the TOP of the column. The section-anchored cards float BELOW and
+          scroll beneath it. On the standalone /view it pins to the top so the counts
+          and the decision buttons stay reachable while the section cards scroll; its
           solid background covers cards scrolling behind it. */}
       <div
-        className={`z-20 mb-[10px] flex items-center gap-[8px] py-[4px] ${
+        className={`z-20 mb-[14px] flex flex-col gap-[10px] ${
           embedded ? '' : 'bg-surface lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]'
         }`}
       >
-        <span className="text-[12px] font-semibold" style={{ color: A.tabIdleFg }}>
-          {total > 0
-            ? t('annotations.counts', {
-                open: formatNumber(openDisplay, locale),
-                resolved: formatNumber(resolved, locale),
-              })
-            : t('annotations.countEmpty')}
-        </span>
-      </div>
-
-      {/* The floating card layer — SECTION-anchored cards. Given an explicit height
-          while floating so the packed absolute cards reserve their space. */}
-      <div
-        ref={layerRef}
-        className="relative"
-        style={floating && layerHeight != null ? { height: layerHeight } : undefined}
-      >
-        {total === 0 && !addingGeneral ? (
-          <p className="py-[6px] text-[12.5px] leading-[1.5]" style={{ color: A.emptyBody }}>
-            {t('annotations.empty.body')}
-          </p>
-        ) : null}
-
-        {/* One stable structure across flow/floating so groups never remount: in
-            floating mode each wrapper is absolutely positioned at its packed top; in
-            flow mode they stack with a gap. */}
-        <div className={floating ? undefined : 'flex flex-col gap-[12px]'}>
-          {groups.map((g) => (
-            <div
-              key={g.key}
-              className={floating ? 'absolute inset-x-0' : undefined}
-              style={floating ? { top: positions?.get(g.key) ?? 0 } : undefined}
-            >
-              <div ref={setGroupEl(g.key)}>
-                <ul className="flex flex-col gap-[9px]">
-                  {g.cards.map((a) => (
-                    <AnnotationCard key={a.id} annotation={a} />
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center gap-[8px] py-[4px]">
+          <span className="text-[12px] font-semibold" style={{ color: A.tabIdleFg }}>
+            {total > 0
+              ? t('annotations.counts', {
+                  open: formatNumber(openDisplay, locale),
+                  resolved: formatNumber(resolved, locale),
+                })
+              : t('annotations.countEmpty')}
+          </span>
         </div>
-      </div>
 
-      {/* Bottom block — whole-plan cards + plan-level ＋ + the role-aware footer, all
-          together. Section cards scroll above it; on the standalone view it pins to the
-          bottom so the decision buttons stay reachable. */}
-      <div
-        className={`mt-[14px] flex flex-col gap-[10px] ${embedded ? '' : 'lg:sticky lg:bottom-[14px]'}`}
-      >
         {generalCards.length > 0 || canAuthorGeneral ? (
           <div className="flex flex-col gap-[9px]">
             {canAuthorGeneral ? (
@@ -263,6 +230,42 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
         {embedded ? null : (
           <Footer planId={ctx.planId} status={ctx.status} scope={ctx.scope} role={role} openCount={openCount} />
         )}
+      </div>
+
+      {/* The floating card layer — SECTION-anchored cards, scrolling BELOW the top
+          block. Given an explicit height while floating so the packed absolute cards
+          reserve their space. */}
+      <div
+        ref={layerRef}
+        className="relative"
+        style={floating && layerHeight != null ? { height: layerHeight } : undefined}
+      >
+        {total === 0 && !addingGeneral ? (
+          <p className="py-[6px] text-[12.5px] leading-[1.5]" style={{ color: A.emptyBody }}>
+            {t('annotations.empty.body')}
+          </p>
+        ) : null}
+
+        {/* One stable structure across flow/floating so groups never remount: in
+            floating mode each wrapper is absolutely positioned at its packed top; in
+            flow mode they stack with a gap. */}
+        <div className={floating ? undefined : 'flex flex-col gap-[12px]'}>
+          {groups.map((g) => (
+            <div
+              key={g.key}
+              className={floating ? 'absolute inset-x-0' : undefined}
+              style={floating ? { top: positions?.get(g.key) ?? 0 } : undefined}
+            >
+              <div ref={setGroupEl(g.key)}>
+                <ul className="flex flex-col gap-[9px]">
+                  {g.cards.map((a) => (
+                    <AnnotationCard key={a.id} annotation={a} />
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

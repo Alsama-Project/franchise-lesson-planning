@@ -41,6 +41,7 @@ import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
+import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
 import { AnnotationProvider } from '@/components/review/annotation/context';
 import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
 
@@ -401,6 +402,25 @@ export function LessonPlanEditor({
     </div>
   ) : null;
 
+  // The Review step (WITH feedback) renders the SAME surface as the coordinator's
+  // /view — ReadOnlyPlan (teal-bordered, gutter-＋, section-anchored) beside the
+  // AnnotationPane — reusing both components, not a forked pane. ReadOnlyPlan reads
+  // a plan snapshot, so feed it the editor's LIVE state (blocks / objective /
+  // worksheet / materials / status) rather than the load-time `data.plan`, so any
+  // in-session edit is reflected here and the section↔card coupling stays keyed on
+  // the current block types.
+  const reviewData: EditorPlanData = {
+    ...data,
+    plan: {
+      ...data.plan,
+      status,
+      blocks,
+      smartt_objective: composeObjective(remainder),
+      worksheet,
+      requiredMaterials: materials,
+    },
+  };
+
   return (
     // Full-bleed, viewport-tall shell (past `lg`): the context strip + pipeline
     // tracker pin to the top and the working area fills the rest with full height.
@@ -457,8 +477,36 @@ export function LessonPlanEditor({
               {errorBox}
             </div>
           </section>
+        ) : step === STEP_COUNT && hasFeedback ? (
+          // REVIEW STEP WITH FEEDBACK — render the EXACT surface the coordinator's
+          // /view uses: ReadOnlyPlan (teal section left-borders, the ＋ in the right
+          // gutter, section-anchored cards, hover coupling) beside the reused
+          // AnnotationPane, wrapped in the shared AnnotationProvider (role 'teacher',
+          // so the pane shows author actions — accept/reject/resolve/reply — not the
+          // coordinator footer). One full-width scroll column, no worksheet, no
+          // forked pane; the teacher works feedback in place without bouncing to /view.
+          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[16px] lg:px-[30px]">
+            <div className="mx-auto max-w-[1340px]">{errorBox}</div>
+            <AnnotationProvider
+              planId={plan.id}
+              status={status}
+              scope={plan.scope}
+              role="teacher"
+              viewerName={viewerName}
+              annotations={annotations}
+              phaseTitles={phaseTitles}
+            >
+              <ReadOnlyPlan
+                data={reviewData}
+                decisionBar={null}
+                rightRail={<AnnotationPane embedded />}
+                embedded
+              />
+            </AnnotationProvider>
+          </section>
         ) : (
-          // STEPS 2–5 — split: plan (left) · persistent worksheet (right).
+          // STEPS 2–5 (and the Review step with NO feedback) — split: plan (left) ·
+          // persistent worksheet (right).
           <>
             <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
               <div className="mx-auto max-w-[820px]">
@@ -533,36 +581,20 @@ export function LessonPlanEditor({
                 status (never wrapped in the plan-lock fieldset); edits autosave
                 through `saveWorksheet`. Scrolls independently past `lg`.
 
-                EXCEPTION — the Review step (step 5) WITH coordinator feedback swaps
-                the worksheet for the SAME comments pane (the shipped AnnotationPane,
-                embedded), so the teacher reads and works feedback (reply / accept-
-                reject / resolve) in place instead of being bounced to /view. Every
-                other step, and the Review step with no feedback, keeps the worksheet. */}
+                The Review step (step 5) WITH coordinator feedback is handled ABOVE
+                as its own full-width branch — it renders the coordinator /view
+                surface (ReadOnlyPlan + AnnotationPane) so the teacher works feedback
+                in place — so this split (and its worksheet) is only reached by Steps
+                2–4 and the Review step with NO feedback. */}
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
-              {step === STEP_COUNT && hasFeedback ? (
-                <AnnotationProvider
-                  planId={plan.id}
-                  status={status}
-                  scope={plan.scope}
-                  role="teacher"
-                  viewerName={viewerName}
-                  annotations={annotations}
-                  phaseTitles={phaseTitles}
-                >
-                  <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-[16px] lg:px-[24px]">
-                    <AnnotationPane embedded />
-                  </div>
-                </AnnotationProvider>
-              ) : (
-                <div className="flex min-h-0 w-full flex-1 flex-col">
-                  <WorksheetBuilder
-                    value={worksheet}
-                    onChange={setWorksheet}
-                    context={worksheetContext}
-                    vocabulary={resourceBank.vocabulary}
-                  />
-                </div>
-              )}
+              <div className="flex min-h-0 w-full flex-1 flex-col">
+                <WorksheetBuilder
+                  value={worksheet}
+                  onChange={setWorksheet}
+                  context={worksheetContext}
+                  vocabulary={resourceBank.vocabulary}
+                />
+              </div>
             </section>
           </>
         )}

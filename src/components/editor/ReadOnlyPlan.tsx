@@ -38,6 +38,7 @@ export function ReadOnlyPlan({
   backHref = '/',
   editHref,
   editLabel,
+  embedded = false,
 }: {
   data: EditorPlanData;
   /** Coordinator decision bar, rendered at the top of the content column when the
@@ -56,6 +57,13 @@ export function ReadOnlyPlan({
    *  translated caption, resolved by the async page. */
   editHref?: string;
   editLabel?: string;
+  /** Rendered inside the editor's Review step (not the standalone /view page). The
+   *  editor already supplies its own chrome (sub-header · pipeline tracker ·
+   *  Submit control), so the page-level header (back-link · Year · "Read only"
+   *  badge · edit action · minute total) is dropped and the outer page-padding
+   *  compensation is removed — only the reviewable surface (plan sections + the
+   *  comments rail) is kept, identical to /view. */
+  embedded?: boolean;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const total = inSessionMinutes(plan.blocks);
@@ -122,11 +130,13 @@ export function ReadOnlyPlan({
   const context = [classContext.subjectName, classContext.schoolName].filter(Boolean).join(' · ');
 
   return (
-    <div className="mx-auto -my-8 max-w-[1340px]">
+    <div className={embedded ? 'mx-auto max-w-[1340px]' : 'mx-auto -my-8 max-w-[1340px]'}>
       {/* The decision bar + plan header sit ABOVE the content/rail split, width-capped
           to the content column. That way the comments rail (right, below) top-aligns
           with the lesson content block (DAILY OUTCOME / GRAMMAR & VOCAB / THEME row)
-          rather than with the back-link header. */}
+          rather than with the back-link header. In the embedded editor context this
+          whole header is dropped — the editor's own chrome already owns it. */}
+      {embedded ? null : (
       <div className="lg:max-w-[940px]">
         {decisionBar}
         <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
@@ -173,6 +183,7 @@ export function ReadOnlyPlan({
           </div>
         </div>
       </div>
+      )}
 
       {/* Content column + reserved right rail. On large screens the content sits in a
           width-capped left column so the ~360px comments rail slots beside it via

@@ -2,7 +2,87 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Review cards — four refinements (in-editor pane, coupling, footer, gutter ＋) ✅ (this phase)
+## Teacher Review pane = the coordinator pane (reuse, not fork) + footer to top ✅ (this phase)
+
+The previous slice put an `AnnotationPane embedded` on the right of the editor's Review
+step, but **beside the wizard's lesson-parts table** — not beside a section-anchored plan
+body. With no `AnnotatedSection`s to measure, the pane fell back to flat flow layout: no
+teal section left-borders, no ＋ in the gutter, no cards anchored to their sections — a
+loose beige sidebar, a second pane in all but name. This slice makes the teacher render
+the **same** surface as the coordinator `/view`. **No schema, no data-model change** —
+presentation/wiring only; every server action (`createAnnotation` / `addAnnotationReply`
+/ `setAnnotationResolved` / `decideSuggestion` / `decidePlan` / submit-resubmit) untouched.
+
+### 1. The teacher's Review step now mounts the coordinator surface (reused, not forked)
+
+- **`LessonPlanEditor`**: the Review step (step 5) **with feedback** is now its own
+  full-width branch that renders exactly what `/view` renders —
+  `AnnotationProvider` → `ReadOnlyPlan` (teal section left-borders, section-anchored
+  cards, hover coupling, the ＋ in the right gutter) with `rightRail={<AnnotationPane />}`.
+  Role is `teacher`, so the shared pane shows author actions (accept-reject / resolve /
+  reply) and no coordinator footer — the only role difference from `/view`.
+- **No forked component was deleted** because there never was a *separate* one — the fork
+  was the SAME `AnnotationPane` rendered without a section-anchored body. The fix removes
+  that mismatch: the Review-step column no longer shows the lesson-parts table + lone
+  pane; it shows the `ReadOnlyPlan` + pane pair. The pane component (`AnnotationPane`) and
+  the section wrapper (`AnnotatedSection`) are the single shared implementation across
+  both surfaces.
+- **`ReadOnlyPlan`** gained an optional **`embedded`** prop: drops the page-level header
+  (back-link · Year · "Read only" badge · Edit action · min-total) and the `-my-8`
+  page-padding compensation, since the editor's own chrome (sub-header · pipeline tracker
+  · Submit control) already owns those. The reviewable surface (plan sections + comments
+  rail) is otherwise identical to `/view`.
+- **Live data**: `ReadOnlyPlan` reads a plan snapshot, so the editor feeds it a snapshot
+  built from its **live** state (blocks / objective / worksheet / materials / status),
+  not the load-time `data.plan` — so in-session edits show and the section↔card coupling
+  stays keyed on the current block types. Accepting a suggestion still `router.refresh()`es
+  and the existing `serverPlanSig` re-seed keeps local state and the pane consistent.
+- Constraints held: **Review step only** (other steps keep the worksheet); the surface
+  mounts **only when annotations exist** (`hasFeedback`); no bounce to `/view`.
+
+### 2. Whole-plan cards + footer moved to the TOP of the card column
+
+- **`AnnotationPane`**: the `N open · N resolved` line, the whole-plan (general) cards +
+  the plan-level ＋, and the role-aware footer (Return / Approve · Resubmit) are now one
+  block at the **top** of the column (pinned with `lg:sticky` on `/view`); the
+  section-anchored cards float **below** it and scroll beneath. Pure layout move —
+  `decidePlan` / Resubmit, the Approve-demotes-while-anything-open rule + hint, and the
+  ＋ "add general comment" trigger are all unchanged. Applies to both surfaces (one
+  component).
+- **`embedded` decoupled from flow layout**: it previously forced flat flow (there were
+  no sections to measure). Now that the editor renders the same `AnnotatedSection` body,
+  `embedded` floats too — the flow-vs-float choice is gated only by the section-registry
+  check (and `lg`), not by `embedded`. `embedded` now means only: drop the page-chrome
+  sticky offsets, and omit the pane footer (the editor header's SubmitControl owns Resubmit).
+
+### 3. "Unlock for editing" — reported, NOT removed (depended-upon; see handoff)
+
+- The only "Unlock for editing" control is `SubmitControl`'s **`submitted`-state** button,
+  wired to `onUnlock` → `handleUnlock` → **`unsubmitLessonPlan`** (recall submitted →
+  `in_progress`). The **`approved`-state** "Recall to edit" button shares the same
+  handler. It is the **sole self-service exit from the locked (submitted/approved)
+  states** ("the only exit from the locked state" per SubmitControl's own doc). It does
+  **not** render for `needs_review` (which shows "Submit for approval" and is already
+  editable — nothing to remove there).
+- Per the task's guard ("if it currently calls an unsubmit/unlock action and something
+  depends on it, report and stop"), the button was **left in place** — removing it would
+  strand submitted plans with no teacher-side way back to editing. Flagged in the handoff.
+
+### Preserved (no change)
+
+- Annotation schema + RLS + server actions; the unified card model
+  (accept-reject / resolve / reply); hover/selected light-teal section coupling;
+  `N open · N resolved`; the Approve-demote rule + hint; the `needs_review` editable gate;
+  `dir="auto"` on bodies; counts via `formatNumber`. No new i18n strings.
+
+### Verified
+
+- `npx tsc --noEmit` clean · `next build` (Next 16.2.9) passes.
+- Same component tree on both surfaces: `/view` and the editor Review step both render
+  `AnnotationProvider` → `ReadOnlyPlan` + `AnnotationPane`; the only render-time
+  difference is `role` (teacher vs coordinator) and the `embedded` chrome/footer drop.
+
+## Review cards — four refinements (in-editor pane, coupling, footer, gutter ＋) ✅ (previous phase)
 
 Four presentation/interaction refinements on the shipped Google-Docs card rework.
 **No schema, no data-model change** — the annotation records, RLS, and server actions

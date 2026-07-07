@@ -36,8 +36,8 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
     getSpaceSwitcher(),
     getConsoleAccess(),
   ]);
-  // Coordinator/admin only — surfaces the Curriculum split-button dropdown (Insights).
-  const canSeeInsights = access.isAdmin || access.isCoordinator;
+  // Admin only — surfaces the Curriculum split-button dropdown (Insights).
+  const canSeeInsights = access.isAdmin;
 
   // Dev-only RTL preview toggle, surfaced in the user menu. Gated on an explicit
   // flag (NOT NODE_ENV) so it can be exercised in production, which doubles as

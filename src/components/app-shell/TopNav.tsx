@@ -11,11 +11,11 @@ import { cn } from '@/lib/cn';
  * current pathname (teal text on a pale-teal pill). "Lesson Planning" also owns the editor
  * route (`/plan/...`); "Curriculum" is the read-only browse view.
  *
- * The Curriculum pill is a SPLIT BUTTON for coordinators/admins (`canSeeInsights`): the
- * label still navigates straight to the Explorer (high-traffic — no extra click for
- * teachers, who get a plain pill), while a caret opens a small dropdown of curriculum
- * surfaces — "Browser" (the Explorer, same destination as the label) and the
- * coordinator-only "Insights", with room for more. Teachers never see the caret, and
+ * The Curriculum pill is a SPLIT BUTTON for admins (`canSeeInsights`): the label still
+ * navigates straight to the Explorer (high-traffic — no extra click for non-admins, who
+ * get a plain pill), while a caret opens a small dropdown of curriculum surfaces —
+ * "Browser" (the Explorer, same destination as the label) and the admin-only "Insights",
+ * with room for more. Coordinators and teachers never see the caret, and
  * `/curriculum/insights` redirects them regardless.
  */
 export function TopNav({ canSeeInsights = false }: { canSeeInsights?: boolean }) {
@@ -154,62 +154,20 @@ function CurriculumSplit({
             role="menuitem"
             href="/curriculum"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-[9px] px-[12px] py-[9px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
+            className="flex items-center px-[12px] py-[9px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
           >
-            <BrowserIcon />
             {browserLabel}
           </Link>
           <Link
             role="menuitem"
             href="/curriculum/insights"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-[9px] px-[12px] py-[9px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
+            className="flex items-center px-[12px] py-[9px] text-[13px] font-medium text-neutral-900 transition-colors hover:bg-surface-subtle"
           >
-            <InsightsIcon />
             {insightsLabel}
           </Link>
         </div>
       ) : null}
     </div>
-  );
-}
-
-function BrowserIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="text-teal"
-    >
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M3 9h18M9 4v16" />
-    </svg>
-  );
-}
-
-function InsightsIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="text-teal"
-    >
-      <path d="M3 3v18h18" />
-      <path d="M7 14l3-4 3 3 4-6" />
-    </svg>
   );
 }

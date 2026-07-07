@@ -23,11 +23,10 @@ type SearchParams = {
 /**
  * Curriculum → Insights — read-only analytics over one subject's scheme of work.
  *
- * COORDINATOR / ADMIN ONLY. The gate is the existing `getConsoleAccess()` role check
- * (the same one the Settings console uses): coordinator-ness lives in `subject_membership`,
- * not `profiles.role`, so `requireRole('coordinator')` would miss it. A teacher (neither
- * admin nor coordinator of any space) is redirected to `/` and never renders this route;
- * the entry link in the Explorer is gated on the same signal, so they never see it either.
+ * ADMIN ONLY. The gate is the existing `getConsoleAccess()` role check (the same one the
+ * Settings console uses); we key on `access.isAdmin` alone. A non-admin (coordinator or
+ * teacher) is redirected to `/` and never renders this route; the dropdown entry link is
+ * gated on the same admin signal, so they never see it either.
  */
 export default async function CurriculumInsightsPage({
   searchParams,
@@ -35,7 +34,7 @@ export default async function CurriculumInsightsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const access = await getConsoleAccess();
-  if (!access.isAdmin && !access.isCoordinator) redirect('/');
+  if (!access.isAdmin) redirect('/');
 
   const { subject, year } = await searchParams;
   const yearNum = year ? Number(year) : undefined;

@@ -144,30 +144,27 @@ export function emptySlotCards(years: BoardYear[], showCentre: boolean): EmptySl
   return out;
 }
 
-// ── Calendar Year × Period matrix ────────────────────────────────────────────
-// The Calendar view is an aligned grid: columns are curriculum periods (P1..P5),
-// rows are year-bands. A card's position is derived ONLY from (year, period) — for
-// a plan, the period comes from its curriculum lesson (the lessonKey ↔ period map
-// in `band.lessons`), never from the drag-mutable `weekday` — so every column shows
-// the same year order and a planned card sits in its own year-row.
+// ── Calendar period columns ──────────────────────────────────────────────────
+// The Calendar view is five period columns (P1..P5); each column is a top-aligned
+// stack of the cards whose curriculum period is that column, ordered by YEAR
+// ASCENDING and nothing else. A card's column comes ONLY from its curriculum period
+// (the lessonKey ↔ period map in `band.lessons`), never the drag-mutable `weekday`;
+// its slot within the column is its year. There are no year-rows: a column packs its
+// cards to the top, so a sparse coordinator board shows its handful of plans flush
+// under the headers instead of staggering them down empty bands.
 
 /** The five curriculum periods, one per grid column. */
 export const PERIODS = [1, 2, 3, 4, 5] as const;
 
-/** One (year, period) cell: a started plan, a not-started ghost, or nothing. */
-export type GridCell =
+/** One placed card in a period column: a started plan or a not-started ghost. */
+export type PeriodCell =
   | { kind: 'plan'; card: PlanCard }
-  | { kind: 'ghost'; card: EmptySlotCard }
-  | { kind: 'empty' };
+  | { kind: 'ghost'; card: EmptySlotCard };
 
-/** One band's row across the five period columns. */
-export interface GridRow {
-  /** Stable band identity (`centreId|subjectCode|year`). */
-  key: string;
-  year: number;
-  subjectName: string;
-  /** One cell per period, index 0 = P1 … 4 = P5. */
-  cells: GridCell[];
+/** One period column: its period (1..5) and its cards, ordered year ascending. */
+export interface PeriodColumn {
+  period: number;
+  cards: PeriodCell[];
 }
 
 /** Map a board plan to a card, pinned to the given curriculum period (the column). */
@@ -202,43 +199,47 @@ function pickPlanForLesson(plans: BoardPlan[], lessonKey: string): BoardPlan | n
 }
 
 /**
- * Build the Year × Period matrix for the Calendar view. For each band (row) and
- * period P1..P5, resolve that year's curriculum cell for P and decide planned vs
- * ghost by the SAME lessonKey set-difference the Status view uses. A period with no
- * curriculum cell is left empty. Weekly-grain lessons (null / out-of-range period)
- * have no period column, so the first such lesson is surfaced in P1 to stay
- * reachable. Ghosts appear only where the viewer may author and is not in a
- * filtered read view (`ownerId`) or the coordinator read-only board.
+ * Build the five period columns for the Calendar view. For each period P1..P5, walk
+ * the bands and resolve that year's curriculum cell for P — planned vs ghost by the
+ * SAME lessonKey set-difference the Status view uses — collecting only the cards
+ * that exist (no placeholder for a year with no lesson in P). Weekly-grain lessons
+ * (null / out-of-range period) have no period column, so the first such lesson is
+ * surfaced in P1 to stay reachable. Ghosts appear only where the viewer may author
+ * and is not in a filtered read view (`ownerId`) or the coordinator read-only board.
  *
- * A row is emitted ONLY when it holds at least one card (plan or ghost). For a
- * teacher every band has ghosts, so no row drops and the grid is unchanged; for a
- * coordinator's ghost-less board the empty year-rows fall away, leaving a clean
- * grid of just the planned lessons instead of a sparse, staggered stack.
+ * Each column's cards are sorted by YEAR ASCENDING and nothing else — never
+ * planned-state, never `weekday` — so the stack order is stable and every column
+ * shows the same year sequence top-to-bottom. Columns top-pack: a period that has
+ * cards for only some years leaves no gaps, which is what removes the coordinator
+ * stagger while leaving the teacher's full-grid columns reading as aligned rows.
  */
-export function buildPeriodGrid(
+export function buildPeriodColumns(
   years: BoardYear[],
   showCentre: boolean,
   opts: { readOnly: boolean; ownerId: string | null },
-): GridRow[] {
-  const rows = years.map((band) => {
-    const cells: GridCell[] = PERIODS.map((period) => {
+): PeriodColumn[] {
+  return PERIODS.map((period) => {
+    const cards: PeriodCell[] = [];
+    for (const band of years) {
       const lesson =
         band.lessons.find((l) => l.period === period) ??
         (period === 1 ? band.lessons.find((l) => !isPeriodColumn(l.period)) : undefined);
-      if (!lesson) return { kind: 'empty' };
+      if (!lesson) continue;
 
       const plan = pickPlanForLesson(band.plans, lesson.lessonKey);
       if (plan) {
         // The owner filter is a read view — a plan owned by someone else is hidden.
-        if (opts.ownerId && plan.owner?.id !== opts.ownerId) return { kind: 'empty' };
-        return { kind: 'plan', card: boardPlanToCard(plan, period) };
+        if (opts.ownerId && plan.owner?.id !== opts.ownerId) continue;
+        cards.push({ kind: 'plan', card: boardPlanToCard(plan, period) });
+        continue;
       }
 
       // Not started → a ghost, but only where the viewer authors and isn't filtering.
-      if (opts.readOnly || opts.ownerId || !band.canAuthor) return { kind: 'empty' };
-      return { kind: 'ghost', card: lessonToEmptySlot(band, lesson, showCentre) };
-    });
-    return { key: band.key, year: band.year, subjectName: band.subjectName, cells };
+      if (opts.readOnly || opts.ownerId || !band.canAuthor) continue;
+      cards.push({ kind: 'ghost', card: lessonToEmptySlot(band, lesson, showCentre) });
+    }
+    // Year ascending only — the ordering that keeps the state-based flip fixed.
+    cards.sort((a, b) => a.card.year - b.card.year);
+    return { period, cards };
   });
-  return rows.filter((row) => row.cells.some((cell) => cell.kind !== 'empty'));
 }

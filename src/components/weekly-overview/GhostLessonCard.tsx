@@ -120,7 +120,9 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
           </div>
         </div>
 
-        <p dir="auto" className="mt-[7px] line-clamp-2 flex-1 text-[12.5px] leading-[1.45] text-text-muted">
+        {/* Reserve a full 2-line height (not just clamp-max-2) so a short outcome
+            doesn't shrink the card and break the top-packed columns' row alignment. */}
+        <p dir="auto" className="mt-[7px] line-clamp-2 min-h-[2.9em] flex-1 text-[12.5px] leading-[1.45] text-text-muted">
           {topic}
         </p>
 

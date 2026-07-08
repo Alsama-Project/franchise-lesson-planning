@@ -34,6 +34,7 @@
       "placeholder": "read five short sentences about a family and identify the family words.",
       "check": "Check my objective",
       "checking": "Checking…",
+      "checkingStatus": "Aya is checking your objective…",
       "askAriaLabel": "Ask Aya about your objective",
       "askTitle": "Ask Aya for help with your objective",
       "feedback": "Feedback",

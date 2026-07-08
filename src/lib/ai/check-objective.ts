@@ -346,7 +346,19 @@ export async function checkObjective(
     message = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
-      system: systemPrompt,
+      // Single static system block with a cache breakpoint at its end — cloned
+      // from generate-resource. The whole prefix (role framing + active SMARTT
+      // guide + FLOOR, plus the Arabic directive when locale is `ar`) is
+      // byte-identical across calls for a given guide+locale, so it is a stable
+      // prompt-cache prefix; it self-busts when the guide text changes. The
+      // per-objective text lives in the user message, after the breakpoint.
+      system: [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
       messages: [{ role: 'user', content: buildUserPrompt(objective, context) }],
       output_config: {
         format: {
@@ -362,6 +374,15 @@ export async function checkObjective(
       status >= 500 ? 502 : status,
     );
   }
+
+  // TEMPORARY diagnostic (remove after George's timing read): surface token
+  // usage + cache engagement to the Vercel logs. Read `cache_creation_input_tokens`
+  // and `cache_read_input_tokens` here — if creation is written once and reads are
+  // non-zero on later calls, the prefix is caching. If BOTH stay 0 across calls the
+  // static prefix is under Sonnet 4.6's 2048-token cache floor (likely when only
+  // DEFAULT_SMARTT_GUIDE is active, with no uploaded guide) and caching silently
+  // is not engaging.
+  console.log('[check-objective] usage', message.usage);
 
   return parseResult(extractText(message));
 }

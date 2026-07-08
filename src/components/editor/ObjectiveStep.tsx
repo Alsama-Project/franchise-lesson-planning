@@ -7,7 +7,6 @@ import {
   smarttDimensionLabel,
   type ObjectiveCheckResult,
 } from '@/lib/editor/objective-check';
-import { Spinner } from '@/components/ui/Spinner';
 
 /** The four-point Aya sparkle, reused for the hint button and the check button. */
 function SparkIcon({ size = 14 }: { size?: number }) {
@@ -21,10 +20,26 @@ function SparkIcon({ size = 14 }: { size?: number }) {
 function SmarttPill({
   label,
   result,
+  checking,
 }: {
   label: string;
   result: ObjectiveCheckResult[keyof ObjectiveCheckResult] | undefined;
+  checking: boolean;
 }) {
+  // While a check is in flight, every letter shows the same teal "evaluating"
+  // treatment. This is honest: the six letters are assessed together in one call
+  // and resolve together, so we never fabricate per-letter progress. A stale prior
+  // result is overridden by this state until the fresh result lands.
+  if (checking) {
+    return (
+      <span
+        aria-busy
+        className="animate-pulse rounded-full border border-teal-tint-border bg-teal-tint px-[11px] py-1 text-[11px] font-semibold text-teal"
+      >
+        {label}
+      </span>
+    );
+  }
   // No check yet → neutral guidance pill.
   if (!result || typeof result === 'string' || Array.isArray(result)) {
     return (
@@ -130,9 +145,27 @@ export function ObjectiveStep({
 
       <div className="mt-[14px] flex flex-wrap gap-1.5">
         {SMARTT_LETTERS.map((l) => (
-          <SmarttPill key={l.key} label={l.label} result={checkResult?.[l.key]} />
+          <SmarttPill
+            key={l.key}
+            label={l.label}
+            result={checkResult?.[l.key]}
+            checking={checking}
+          />
         ))}
       </div>
+
+      {/* Honest active state: the pills above go teal while Aya evaluates; this
+          line names what's happening so the wait reads as work, not a hang. It
+          replaces the old indeterminate button spinner as the progress signal. */}
+      {checking ? (
+        <div
+          aria-live="polite"
+          className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-teal"
+        >
+          <SparkIcon size={12} />
+          <span>{t('checkingStatus')}</span>
+        </div>
+      ) : null}
 
       {/* "Yours" — a pink block holding a white field. The stem is baked in and
           non-editable; the teacher writes only the remainder. */}
@@ -193,7 +226,7 @@ export function ObjectiveStep({
             aria-busy={checking || undefined}
             className="inline-flex shrink-0 items-center gap-[7px] rounded-[9px] bg-teal px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {checking ? <Spinner size={14} /> : <SparkIcon size={14} />}
+            <SparkIcon size={14} />
             {checking ? t('checking') : t('check')}
           </button>
         </div>

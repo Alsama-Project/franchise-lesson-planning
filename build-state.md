@@ -2,7 +2,15 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Review layout: lesson/comments split shares the curriculum's grid ✅ (this phase)
+## Review: per-section ＋ always visible ✅ (this phase)
+
+The add-comment ＋ on each lesson block (and the objective) now renders **persistently at
+rest** instead of only on hover/focus of the block. Removed the `opacity-0
+group-hover:opacity-100` gating (and the now-dead `group` class) in `AnnotatedSection`;
+position, teal-when-active state, and behaviour are unchanged. Applies to both `/view` and
+the teacher Review step (one shared component).
+
+## Review layout: lesson/comments split shares the curriculum's grid ✅ (prior phase)
 
 Alignment fix on the shared review surface (`ReadOnlyPlan`, both `/view` and the editor
 Review step). Presentation only; no schema/RLS/server-action change.

@@ -108,7 +108,7 @@ export function AnnotatedSection({
       ref={ref}
       onClick={toggle}
       data-section-key={sectionKey}
-      className={`group relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
+      className={`relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
       style={{
         ...style,
         ...borderStyle,
@@ -118,20 +118,13 @@ export function AnnotatedSection({
     >
       {children}
 
-      {/* Add-comment ＋ (coordinator only, md+). The left/right columns share the
-          curriculum's 14px gap, too narrow to seat the ＋ in it, so the ＋ sits at the
-          section's top-right INSIDE the left column and reveals on hover (or stays shown
-          when this section is active / composing) — clear of the comment column beside it,
-          which begins across the gap. Pressing it opens a "New comment" card in the right
-          column (pane, keyed on composingKey); the active section's ＋ is the teal-filled
-          variant. */}
+      {/* Add-comment ＋ (coordinator only, md+). It sits at the section's top-right INSIDE
+          the left column — clear of the comment column beside it, which begins across the
+          shared 14px gap — and is ALWAYS visible at rest (not hover-gated). Pressing it opens
+          a "New comment" card in the right column (pane, keyed on composingKey); the active
+          section's ＋ is the teal-filled variant. */}
       {canAuthor ? (
-        <div
-          className={`absolute z-30 hidden transition-opacity md:block ${
-            composingHere || activeHere ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          }`}
-          style={{ insetInlineEnd: 8, top: 8 }}
-        >
+        <div className="absolute z-30 hidden md:block" style={{ insetInlineEnd: 8, top: 8 }}>
           <AddCommentButton
             label={t('annotations.addComment')}
             active={composingHere}

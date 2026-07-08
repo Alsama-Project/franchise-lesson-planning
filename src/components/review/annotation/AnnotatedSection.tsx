@@ -13,15 +13,16 @@
 //   • toggles the section's card open/closed on a background click (clicks that land
 //     on an inner control — the ＋ trigger, inline editors, pills — pass through);
 //   • hosts the per-section add-comment ＋ trigger OUT in the right gutter (coordinator
-//     only), tying it visually to the card column rather than the block body.
+//     only), tying it visually to the card column rather than the block body. Pressing
+//     it opens a "New comment" card in the RIGHT MARGIN beside this section (the pane
+//     renders it, keyed on `composingKey`) — never an inline box in the block body.
 //
 // Without a provider (a non-member's plain read-only plan, or the editor's Review
 // step) it renders its children in a plain wrapper with the untouched border.
 
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { isResolvedCard, sectionKeyOf, useOptionalAnnotations } from './context';
-import { CommentForm } from './PhaseRow';
 import { AddCommentButton } from './AddCommentButton';
 import { A } from './tokens';
 
@@ -44,7 +45,6 @@ export function AnnotatedSection({
   const ctx = useOptionalAnnotations();
   const t = useTranslations('review');
   const ref = useRef<HTMLDivElement>(null);
-  const [composing, setComposing] = useState(false);
   // Grab the STABLE registrar (useCallback([]) in the provider) — depending on the
   // whole ctx object here would re-run this effect on every layoutVersion bump and
   // loop, since re-registering bumps layoutVersion again.
@@ -71,18 +71,29 @@ export function AnnotatedSection({
   const anyOpen = cards.some((a) => !isResolvedCard(a));
   const activeHere = cards.some((a) => a.id === ctx.activeId);
   const canAuthor = ctx.role === 'coordinator';
+  const composingHere = ctx.composingKey === sectionKey;
+  // A section reads as "active" (selected card OR its ＋ composer open) — it gets the
+  // full teal treatment; a section that merely carries a card is coupled but calmer.
+  const active = activeHere || composingHere;
 
-  // Solid teal while a card is open (or its card is the selected one); muted once all
-  // of the section's cards are resolved. No cards → the section's own border, untouched.
-  const borderStyle: CSSProperties = hasCards
+  // Left border marks a commented (or composing) section: SOLID teal while it is active
+  // or any card is open, MUTED once all its cards are resolved. A composing-but-empty
+  // section (＋ open, no cards yet) gets the solid teal too. No cards + not composing →
+  // the section's own border, untouched.
+  const marked = hasCards || composingHere;
+  const borderStyle: CSSProperties = marked
     ? {
         borderInlineStartWidth: 3,
-        borderInlineStartColor: anyOpen || activeHere ? A.sectionOpen : A.sectionMuted,
+        borderInlineStartColor: anyOpen || active ? A.sectionOpen : A.sectionMuted,
       }
     : {};
-  // Selected card → light-teal fill on its section (the same fill hover gives), so the
-  // coupling reads both ways. Hover is handled by a class below.
-  const selectedBg: CSSProperties = activeHere ? { background: A.sectionHoverBg } : {};
+  // Active → light-teal fill (mock #F0F7F4); a resolved-only commented section gets the
+  // fainter wash (mock #FBFDFC). Hover is handled by a class below.
+  const fillBg: CSSProperties = active
+    ? { background: A.sectionActiveBg }
+    : hasCards && !anyOpen
+      ? { background: A.sectionHoverMuted }
+      : {};
 
   const toggle = (e: MouseEvent<HTMLDivElement>) => {
     if (!hasCards) return;
@@ -91,12 +102,6 @@ export function AnnotatedSection({
     const activeCard = cards.find((a) => a.id === ctx.activeId);
     ctx.setActiveId(activeCard ? null : cards[0].id);
   };
-
-  // Comment create params from the section: the objective box vs a phase/block row.
-  const createProps =
-    sectionKey === 'objective'
-      ? ({ anchorType: 'objective' } as const)
-      : ({ anchorType: 'phase', phaseRef: sectionKey } as const);
 
   return (
     <div
@@ -107,7 +112,7 @@ export function AnnotatedSection({
       style={{
         ...style,
         ...borderStyle,
-        ...selectedBg,
+        ...fillBg,
         ...(hasCards ? { cursor: 'pointer' } : null),
       }}
     >
@@ -115,22 +120,16 @@ export function AnnotatedSection({
 
       {/* Add-comment ＋ in the right gutter (coordinator only, lg+). Absolutely placed
           beside the block — out past the content column's padding into the gutter
-          between the plan and the card column — so the block body stays clean. Hidden
-          below lg to avoid horizontal overflow when the columns stack. */}
+          between the plan and the card column — so the block body stays clean. Pressing
+          it opens a "New comment" card in the right margin (pane, keyed on composingKey);
+          the active section's ＋ is the teal-filled variant. Hidden below lg. */}
       {canAuthor ? (
         <div className="absolute hidden lg:block" style={{ insetInlineEnd: -44, top: 12 }}>
           <AddCommentButton
             label={t('annotations.addComment')}
-            active={composing}
-            onClick={() => setComposing((v) => !v)}
+            active={composingHere}
+            onClick={() => ctx.setComposingKey(composingHere ? null : sectionKey)}
           />
-        </div>
-      ) : null}
-
-      {/* Composer — appears in-section when the gutter ＋ is toggled. */}
-      {canAuthor && composing ? (
-        <div className="mt-[10px]">
-          <CommentForm {...createProps} onClose={() => setComposing(false)} />
         </div>
       ) : null}
     </div>

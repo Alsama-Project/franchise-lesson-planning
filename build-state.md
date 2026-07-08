@@ -2,7 +2,52 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Teacher Review pane = the coordinator pane (reuse, not fork) + footer to top ✅ (this phase)
+## RH rework: decision in the header · floating margin cards · in-card composer ✅ (this phase)
+
+Reworked the **shared** review surface (the `AnnotationProvider` → `ReadOnlyPlan` +
+`AnnotationPane` pair rendered by BOTH the coordinator `/view` and the editor's Review
+step) to the Google-Docs model of the mock. **Reworked in place — NOT forked.** No schema,
+RLS, or server-action change; every action (`createAnnotation` / `addAnnotationReply` /
+`setAnnotationResolved` / `decideSuggestion` / `decidePlan` / submit-resubmit) untouched.
+
+- **Decision buttons → plan header.** The footer at the top of the card column is gone;
+  Return / Approve (and the teacher's Resubmit) now live in the plan header beside the
+  `N / N min` total, via a new client `PlanDecisionButtons` reading the shared provider and
+  passed to `ReadOnlyPlan` as `decision`. Approve stays **demoted (greyed) with an amber
+  "N open" pill** while anything is open and becomes filled-primary at 0 open — the same
+  `openCount` gate, now a button state. Helper text removed. (Embedded editor keeps its own
+  SubmitControl for Resubmit, so no `decision` is passed there.)
+- **No pane — cards float in the right margin.** `AnnotationPane` no longer renders a footer;
+  its floating layer positions each section's card group at the section's measured offset and
+  packs downward (unchanged algorithm). Every card (`AnnotationCard`) now carries the mock's
+  header on collapse AND expand: **[number badge] · [Open/Resolved status tag] · [section
+  name] · [chevron]**. The status tag reads `isResolvedCard` — the SAME source as the
+  "N open · N resolved" count — so tag and count can't disagree: **Open = teal, Resolved =
+  grey** (applies to comments and suggestions alike; a suggestion is Resolved once
+  accepted/rejected). Card numbering is 1-based across all cards in load order.
+- **Composer floats in the margin.** The `+` in each section's gutter (`AnnotatedSection`)
+  now sets `composingKey` on the provider; the pane floats a **"New comment" card** (lifted,
+  teal ring, shifted toward the plan) beside that section — typing happens on the RIGHT, never
+  inline on the left. A section with no cards yet gets a synthetic group so its compose card
+  still anchors beside it. Whole-plan composing stays in the top block, tagged "Whole plan".
+  (Removed the old inline `CommentForm` + authoring helpers from `PhaseRow`.)
+- **Return decoupled from commenting; no "Reopen as draft".** The reopen button is gone.
+  Return only moves the plan to `needs_review`; the coordinator's gutter `+` / card
+  affordances were never status-gated, so they stay live on a returned plan.
+- **Teacher lands in the editor.** The board card (`canEdit` → `/plan/[id]`) and bell
+  (`outcome` → `/plan/[id]`) already route a returned plan to the editor, not `/view`; the
+  editor now also **opens on the Review step** when the plan is `needs_review` with feedback,
+  so the reworked comments surface is where the teacher lands.
+- **i18n:** `annotations.status.open/resolved`, `annotations.header.open` ("{n} open"),
+  `annotations.compose.newComment/submit` added to `en` + `ar` (flag **Kadria**).
+- **Card ↔ section alignment + collision:** unchanged from the prior slice — measure each
+  registered section's `getBoundingClientRect().top` relative to the layer, sort by offset,
+  pack downward with a min-gap (`GAP`), reflow via `ResizeObserver` + rAF on select / expand /
+  compose / resize. The selected/composing card lifts (`translateX(-10px)`); its section gets
+  the teal fill (`#F0F7F4`) + solid left-bar, a resolved-only section the muted wash
+  (`#FBFDFC`) + muted bar.
+
+## Teacher Review pane = the coordinator pane (reuse, not fork) + footer to top ✅ (prior phase)
 
 The previous slice put an `AnnotationPane embedded` on the right of the editor's Review
 step, but **beside the wizard's lesson-parts table** — not beside a section-anchored plan

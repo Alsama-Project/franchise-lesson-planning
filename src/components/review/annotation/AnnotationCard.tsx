@@ -6,13 +6,17 @@
 //   • comment / whole-plan → Resolve (checkmark); resolved = greyed + reduced opacity.
 //   • suggestion → Accept / Reject + its from→to pill (dur/enum) or tracked-change
 //     diff (text). Accept/reject + apply are the EXISTING logic, in a new shell.
-// Collapsed, a card is a one-line clamp preview; selected it expands, lifts (shadow)
-// and shifts ~8px toward the plan, and its section highlights (teal left border). The
-// section-name tag sits AFTER the author row — there is no COMMENT/SUGGESTION tag.
+// Every card — collapsed OR expanded — carries the same header row, as the mock draws:
+//   [number badge] · [status tag Open/Resolved] · [section name] · [chevron]
+// The status tag reads from isResolvedCard — the SAME source as the "N open · N
+// resolved" count — so tag and count can never disagree: Open = teal, Resolved = grey.
+// Collapsed shows just that header; selected it expands (author row · from→to/diff ·
+// note · replies · actions · reply box), lifts (shadow) and shifts ~8px toward the
+// plan, and its section highlights (teal left border).
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { APP_TIME_ZONE, formatDate } from '@/lib/format';
+import { APP_TIME_ZONE, formatDate, formatNumber } from '@/lib/format';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { Annotation, AnnotationRole } from '@/types/annotation';
 import { textDiffSegments } from '@/lib/review/textDiff';
@@ -47,7 +51,15 @@ function Avatar({ role, name, size = 26 }: { role: AnnotationRole; name: string;
   );
 }
 
-export function AnnotationCard({ annotation }: { annotation: Annotation }) {
+export function AnnotationCard({
+  annotation,
+  number,
+}: {
+  annotation: Annotation;
+  /** 1-based ordinal shown in the card's number badge (its position across all cards,
+   *  in reading order) — matches the mock's Google-Docs numbering. */
+  number: number;
+}) {
   const t = useTranslations('review');
   const locale = useLocale();
   const { role, editable, activeId, setActiveId, pending, reply, resolve, decide, phaseTitles } =
@@ -105,23 +117,67 @@ export function AnnotationCard({ annotation }: { annotation: Annotation }) {
     opacity: resolvedCard && !expanded ? 0.6 : 1,
   };
 
+  // The header row, present collapsed AND expanded (the mock draws it on every card):
+  // [number badge] · [Open/Resolved status tag] · [section name] · [chevron]. Clicking
+  // it toggles the card. The status tag reads isResolvedCard — one source with the
+  // "N open · N resolved" count — so Open (teal) / Resolved (grey) always agree.
+  const header = (
+    <button
+      type="button"
+      onClick={() => setActiveId(expanded ? null : annotation.id)}
+      className="flex w-full items-center gap-[8px] px-[13px] py-[11px] text-start"
+    >
+      <span
+        aria-hidden
+        className="inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+        style={{ color: A.badgeFg, background: A.badgeBg }}
+      >
+        {formatNumber(number, locale)}
+      </span>
+      <span
+        className="flex-shrink-0 rounded-[4px] px-[7px] py-[2px] text-[9px] font-bold uppercase tracking-[0.05em]"
+        style={
+          resolvedCard
+            ? { color: A.resolvedTagFg, background: A.resolvedTagBg }
+            : { color: A.openTagFg, background: A.openTagBg }
+        }
+      >
+        {resolvedCard ? t('annotations.status.resolved') : t('annotations.status.open')}
+      </span>
+      <span dir="auto" className="min-w-0 flex-1 truncate text-[11px]" style={{ color: A.tabIdleFg }}>
+        {sectionTag}
+      </span>
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={A.tabIdleFg}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={`flex-shrink-0 transition-transform ${expanded ? '-rotate-180' : ''}`}
+        aria-hidden
+      >
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+    </button>
+  );
+
   return (
     <li
       ref={ref}
       id={`annotation-${annotation.id}`}
-      className={`rounded-[12px] border bg-white transition-[transform,box-shadow] ${
+      className={`overflow-hidden rounded-[12px] border bg-white transition-[transform,box-shadow] ${
         expanded ? '-translate-x-[8px] rtl:translate-x-[8px]' : ''
       }`}
       style={shell}
     >
+      {header}
       {expanded ? (
-        <div className="px-[13px] pb-[12px] pt-[12px]">
+        <div className="border-t px-[13px] pb-[12px] pt-[11px]" style={{ borderColor: A.cardBorder }}>
           {/* Author row. */}
-          <button
-            type="button"
-            onClick={() => setActiveId(null)}
-            className="flex w-full items-start gap-[10px] text-start"
-          >
+          <div className="flex items-start gap-[10px]">
             <Avatar role={annotation.authorRole} name={annotation.authorName} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-[6px]">
@@ -142,15 +198,8 @@ export function AnnotationCard({ annotation }: { annotation: Annotation }) {
                   {time(annotation.createdAt)}
                 </span>
               </div>
-              {/* Section-name tag — AFTER the author row. */}
-              <span
-                className="mt-[5px] inline-flex rounded-[6px] px-[7px] py-[1px] text-[10.5px] font-semibold"
-                style={{ color: A.countFg, background: A.countBg }}
-              >
-                {sectionTag}
-              </span>
             </div>
-          </button>
+          </div>
 
           {/* from → to strip for dur/enum suggestions. */}
           {isSuggestion && annotation.suggestionShape !== 'text' ? (
@@ -330,43 +379,7 @@ export function AnnotationCard({ annotation }: { annotation: Annotation }) {
             ) : null}
           </div>
         </div>
-      ) : (
-        // Collapsed — a one-line clamp preview; click selects (expands) the card.
-        <button
-          type="button"
-          onClick={() => setActiveId(annotation.id)}
-          className="flex w-full items-center gap-[9px] px-[12px] py-[10px] text-start"
-        >
-          <Avatar role={annotation.authorRole} name={annotation.authorName} size={22} />
-          <span
-            dir="auto"
-            className="min-w-0 flex-1 truncate text-[12.5px]"
-            style={{ color: resolvedCard ? A.resolvedFg : A.cardText }}
-          >
-            {annotation.note}
-          </span>
-          {resolvedCard ? (
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={A.acceptedFg}
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="flex-shrink-0"
-              aria-hidden
-            >
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-          ) : annotation.replies.length > 0 ? (
-            <span className="flex-shrink-0 text-[11px] font-semibold" style={{ color: A.tabIdleFg }}>
-              {annotation.replies.length}
-            </span>
-          ) : null}
-        </button>
-      )}
+      ) : null}
     </li>
   );
 }

@@ -84,6 +84,17 @@
       "counts": "{open} open · {resolved} resolved",
       "addComment": "Add comment",
       "addPlan": "Comment on the whole plan",
+      "status": {
+        "open": "Open",
+        "resolved": "Resolved"
+      },
+      "header": {
+        "open": "{n} open"
+      },
+      "compose": {
+        "newComment": "New comment",
+        "submit": "Comment"
+      },
       "filter": {
         "open": "Open",
         "resolved": "Resolved"

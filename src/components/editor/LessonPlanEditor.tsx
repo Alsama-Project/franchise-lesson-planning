@@ -98,7 +98,13 @@ export function LessonPlanEditor({
   // the comments pane. The teacher is the plan's author (annotation role 'teacher').
   const hasFeedback = annotations.length > 0;
 
-  const [step, setStep] = useState(1);
+  // A returned plan carrying feedback opens straight on the Review step, where the
+  // reworked coordinator surface (comments in the right margin) lives — the teacher
+  // came here from the board card / bell to work those comments, with no /view stop.
+  // Any other entry (a fresh draft, an approved plan) starts at step 1.
+  const [step, setStep] = useState(() =>
+    plan.status === 'needs_review' && hasFeedback ? STEP_COUNT : 1,
+  );
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
   const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
   const [worksheet, setWorksheet] = useState<unknown>(() => plan.worksheet);

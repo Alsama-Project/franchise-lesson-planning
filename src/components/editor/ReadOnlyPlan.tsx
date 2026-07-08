@@ -34,6 +34,7 @@ const SCOPE_LABEL = {
 export function ReadOnlyPlan({
   data,
   decisionBar,
+  decision,
   rightRail,
   backHref = '/',
   editHref,
@@ -44,6 +45,11 @@ export function ReadOnlyPlan({
   /** Coordinator decision bar, rendered at the top of the content column when the
    *  viewer may decide on this plan. Omitted (null) for non-coordinators. */
   decisionBar?: ReactNode;
+  /** The decision cluster (Return / Approve · Resubmit), rendered in the plan HEADER
+   *  beside the minute total per the mock. A client node reading the AnnotationProvider;
+   *  omitted (null) on a non-member plain read-only view and in the embedded editor
+   *  (where the editor's own SubmitControl owns the teacher's Resubmit). */
+  decision?: ReactNode;
   /** Reserved ~360px right rail. The comments sidebar slots in here in a later
    *  slice; the content column is width-capped so adding it never reflows the
    *  plan body. Nothing is rendered here in this slice. */
@@ -179,6 +185,9 @@ export function ReadOnlyPlan({
               <span className={`text-[13.5px] font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>
                 {total} / {IN_SESSION_TARGET_MINUTES} min
               </span>
+              {/* Decision cluster (Return / Approve · Resubmit) — beside the total,
+                  per the mock. A divider precedes it (rendered by the cluster). */}
+              {decision}
             </div>
           </div>
         </div>

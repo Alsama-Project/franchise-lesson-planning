@@ -5,6 +5,7 @@ import { AppShell } from '@/components/app-shell/AppShell';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
 import { AnnotationProvider } from '@/components/review/annotation/context';
 import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
+import { PlanDecisionButtons } from '@/components/review/annotation/PlanDecisionButtons';
 import { canCoordinatePlan } from '@/lib/actions/lesson-plan';
 import { getPlanAnnotations } from '@/lib/review/annotations';
 import { loadPlanForEditor } from '@/lib/editor/load-plan';
@@ -125,7 +126,7 @@ export default async function PlanViewPage({
           annotations={annotations}
           phaseTitles={phaseTitles}
         >
-          <ReadOnlyPlan data={data} decisionBar={null} rightRail={<AnnotationPane />} backHref={backHref} editHref={editHref} editLabel={editLabel} />
+          <ReadOnlyPlan data={data} decisionBar={null} decision={<PlanDecisionButtons />} rightRail={<AnnotationPane />} backHref={backHref} editHref={editHref} editLabel={editLabel} />
         </AnnotationProvider>
       ) : (
         <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} backHref={backHref} editHref={editHref} editLabel={editLabel} />

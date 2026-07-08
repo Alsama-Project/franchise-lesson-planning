@@ -1,11 +1,12 @@
 'use client';
 
 // The review annotation column — a Google-Docs-style floating stack. Every annotation
-// (comment, suggestion, whole-plan) is one unified card (see AnnotationCard). The
-// "N open · N resolved" line, the WHOLE-PLAN (general) cards + the plan-level ＋, and
-// the role-aware footer (Return / Approve · Resubmit) form one block at the TOP of the
-// column; the SECTION-anchored cards float BELOW it, each beside the section it
-// annotates, and scroll beneath the top block.
+// (comment, suggestion, whole-plan) is one unified card (see AnnotationCard). There is
+// NO comments pane and NO decision footer here anymore: the decision buttons live in
+// the plan header (PlanDecisionButtons) and the cards FLOAT in the right margin, each
+// beside the section it annotates. The "N open · N resolved" line and the WHOLE-PLAN
+// (general) cards + the plan-level ＋ form one block at the TOP of the column; the
+// SECTION-anchored cards float BELOW it, each beside its section, and scroll beneath.
 //
 // Layout: on large screens each section's cards are absolutely positioned at the
 // section's measured vertical offset, then packed downward so groups never overlap —
@@ -13,11 +14,14 @@
 // measurement, and when there are no sections to measure) the groups stack in normal
 // flow. The measurement re-runs on resize and whenever a section or card changes height.
 //
+// The in-margin composer: pressing a section's ＋ (in the gutter, AnnotatedSection) sets
+// `composingKey`; the pane then floats a "New comment" card beside that section — typing
+// happens on the RIGHT, where the comment will land, never inline in the lesson body.
+//
 // `embedded` renders the pane inside the editor's Review step rather than the
-// standalone /view page. Both surfaces now render the SAME section-anchored plan body
+// standalone /view page. Both surfaces render the SAME section-anchored plan body
 // (ReadOnlyPlan), so both float; `embedded` only drops the page-chrome sticky offsets
-// (the editor supplies its own scroll container) and omits the pane footer, since the
-// editor's header SubmitControl already owns Resubmit.
+// (the editor supplies its own scroll container).
 
 import {
   useCallback,
@@ -26,12 +30,10 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
 } from 'react';
-import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
-import { decidePlan, submitLessonPlanById } from '@/lib/actions/lesson-plan';
+import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { Annotation } from '@/types/annotation';
 import { AnnotationCard } from './AnnotationCard';
 import { AddCommentButton } from './AddCommentButton';
@@ -50,13 +52,34 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations('review');
   const locale = useLocale();
   const ctx = useAnnotations();
-  const { annotations, role, activeId, sectionsRef, layoutVersion, openCount, create, pending } = ctx;
+  const {
+    annotations,
+    role,
+    activeId,
+    sectionsRef,
+    layoutVersion,
+    composingKey,
+    setComposingKey,
+    phaseTitles,
+    viewerName,
+    create,
+    pending,
+  } = ctx;
 
   const [addingGeneral, setAddingGeneral] = useState(false);
 
+  // ── numbering (1-based, reading order across ALL cards) ──────────────────────
+  // The map is over the whole annotation list (already ordered oldest→newest by the
+  // loader), so a card's badge number is stable regardless of which group renders it.
+  const numberById = useMemo(() => {
+    const m = new Map<string, number>();
+    annotations.forEach((a, i) => m.set(a.id, i + 1));
+    return m;
+  }, [annotations]);
+
   // ── group the cards ──────────────────────────────────────────────────────────
   // Section-anchored groups float in the layer; general (whole-plan) cards live in
-  // the bottom block with the footer.
+  // the top block with the counts.
   const generalCards = useMemo(
     () => annotations.filter((a) => sectionKeyOf(a) === null),
     [annotations],
@@ -73,8 +96,15 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
       }
       arr.push(a);
     }
-    return [...bySection].map(([key, cards]) => ({ key, cards }));
-  }, [annotations]);
+    const list = [...bySection].map(([key, cards]) => ({ key, cards }));
+    // A section whose ＋ is open but which has no cards yet still needs a slot in the
+    // margin so its "New comment" card floats beside it (composing on the objective or
+    // a phase — general composing lives in the top block, not here).
+    if (composingKey !== null && composingKey !== '__general__' && !bySection.has(composingKey)) {
+      list.push({ key: composingKey, cards: [] });
+    }
+    return list;
+  }, [annotations, composingKey]);
 
   // ── informational counts (INCLUDES whole-plan cards) ─────────────────────────
   const total = annotations.length;
@@ -100,9 +130,8 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     // Flow mode — clear absolute positioning; groups stack naturally. Used below `lg`,
     // when there are no groups, and on first paint until the sections register their
     // nodes (measuring against an empty registry would pile every card at the top for
-    // one frame). The `embedded` editor Review step now renders the SAME section-
-    // anchored plan body as /view, so it floats too — it is gated only by the
-    // section-registry check, not by `embedded`.
+    // one frame). The `embedded` editor Review step renders the SAME section-anchored
+    // plan body as /view, so it floats too — gated only by the section-registry check.
     if (!isLg || groups.length === 0 || sectionsRef.current.size === 0) {
       setPositions(null);
       setLayerHeight(null);
@@ -140,10 +169,11 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     });
   }, [recompute]);
 
-  // Recompute before paint on any change that can move a section or resize a card.
+  // Recompute before paint on any change that can move a section or resize a card
+  // (selecting a card, opening a composer, a section mount/unmount).
   useLayoutEffect(() => {
     recompute();
-  }, [recompute, activeId, layoutVersion]);
+  }, [recompute, activeId, composingKey, layoutVersion]);
 
   // Observe section + group sizes and the window so the stack self-heals on resize
   // (inline edits, card expand/collapse, viewport changes). Re-attached whenever the
@@ -167,14 +197,15 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
   const floating = positions !== null;
   const canAuthorGeneral = role === 'coordinator';
 
+  const sectionLabel = (key: string) =>
+    key === 'objective' ? t('annotations.anchor.objective') : phaseTitles[key] ?? t('annotations.anchor.phase');
+
   return (
     <section aria-label={t('annotations.title')} className="flex flex-col">
-      {/* TOP block — "N open · N resolved", the whole-plan (general) cards + plan-level
-          ＋, and the role-aware footer (Return / Approve · Resubmit), all grouped
-          together at the TOP of the column. The section-anchored cards float BELOW and
-          scroll beneath it. On the standalone /view it pins to the top so the counts
-          and the decision buttons stay reachable while the section cards scroll; its
-          solid background covers cards scrolling behind it. */}
+      {/* TOP block — "N open · N resolved" and the whole-plan (general) cards + the
+          plan-level ＋. The section-anchored cards float BELOW and scroll beneath it.
+          On the standalone /view it pins to the top so the counts stay reachable while
+          the section cards scroll; its solid background covers cards scrolling behind. */}
       <div
         className={`z-20 mb-[14px] flex flex-col gap-[10px] ${
           embedded ? '' : 'bg-surface lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]'
@@ -211,25 +242,28 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
               </div>
             ) : null}
             {addingGeneral ? (
-              <GeneralComposer onCreate={create} pending={pending} onClose={() => setAddingGeneral(false)} />
+              <MarginComposer
+                tagLabel={t('annotations.compose.newComment')}
+                sectionLabel={t('annotations.anchor.general')}
+                viewerName={viewerName}
+                roleLabel={t('activity.role.coordinator')}
+                placeholder={t('annotations.general.placeholder')}
+                submitLabel={t('annotations.compose.submit')}
+                cancelLabel={t('annotations.reply.cancel')}
+                pending={pending}
+                onSubmit={(note) => create({ kind: 'comment', anchorType: 'general', note })}
+                onClose={() => setAddingGeneral(false)}
+              />
             ) : null}
             {generalCards.length > 0 ? (
               <ul className="flex flex-col gap-[9px]">
                 {generalCards.map((a) => (
-                  <AnnotationCard key={a.id} annotation={a} />
+                  <AnnotationCard key={a.id} annotation={a} number={numberById.get(a.id) ?? 0} />
                 ))}
               </ul>
             ) : null}
           </div>
         ) : null}
-
-        {/* The role-aware footer belongs to the standalone /view. In the EMBEDDED
-            editor context the plan's own header SubmitControl already owns Resubmit
-            (and it, not the pane, tracks the editor's live status), so the pane omits
-            its footer to avoid a duplicate, drift-prone control. */}
-        {embedded ? null : (
-          <Footer planId={ctx.planId} status={ctx.status} scope={ctx.scope} role={role} openCount={openCount} />
-        )}
       </div>
 
       {/* The floating card layer — SECTION-anchored cards, scrolling BELOW the top
@@ -240,7 +274,7 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
         className="relative"
         style={floating && layerHeight != null ? { height: layerHeight } : undefined}
       >
-        {total === 0 && !addingGeneral ? (
+        {total === 0 && !addingGeneral && composingKey === null ? (
           <p className="py-[6px] text-[12.5px] leading-[1.5]" style={{ color: A.emptyBody }}>
             {t('annotations.empty.body')}
           </p>
@@ -259,8 +293,31 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
               <div ref={setGroupEl(g.key)}>
                 <ul className="flex flex-col gap-[9px]">
                   {g.cards.map((a) => (
-                    <AnnotationCard key={a.id} annotation={a} />
+                    <AnnotationCard key={a.id} annotation={a} number={numberById.get(a.id) ?? 0} />
                   ))}
+                  {composingKey === g.key ? (
+                    <li>
+                      <MarginComposer
+                        lifted
+                        tagLabel={t('annotations.compose.newComment')}
+                        sectionLabel={sectionLabel(g.key)}
+                        viewerName={viewerName}
+                        roleLabel={t('activity.role.coordinator')}
+                        placeholder={t('annotations.author.commentPlaceholder')}
+                        submitLabel={t('annotations.compose.submit')}
+                        cancelLabel={t('annotations.reply.cancel')}
+                        pending={pending}
+                        onSubmit={(note) =>
+                          create(
+                            g.key === 'objective'
+                              ? { kind: 'comment', anchorType: 'objective', note }
+                              : { kind: 'comment', anchorType: 'phase', phaseRef: g.key, note },
+                          )
+                        }
+                        onClose={() => setComposingKey(null)}
+                      />
+                    </li>
+                  ) : null}
                 </ul>
               </div>
             </div>
@@ -271,24 +328,42 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-/** The whole-plan composer (coordinator only), shown in the bottom block when the
- *  plan-level ＋ is pressed. It creates a `general` comment — same as today. */
-function GeneralComposer({
-  onCreate,
+/** A "New comment" card that opens in the RIGHT MARGIN beside the section it belongs
+ *  to (or, for a whole-plan note, in the top block). Matches the mock: a header (tag +
+ *  section name), the author row, a textarea styled as the input, and Comment + Cancel.
+ *  When `lifted` it wears the selected-card chrome (teal ring, shifted toward the plan).
+ *  Typing happens here on the right — never inline in the lesson body on the left. */
+function MarginComposer({
+  tagLabel,
+  sectionLabel,
+  viewerName,
+  roleLabel,
+  placeholder,
+  submitLabel,
+  cancelLabel,
   pending,
+  onSubmit,
   onClose,
+  lifted = false,
 }: {
-  onCreate: ReturnType<typeof useAnnotations>['create'];
+  tagLabel: string;
+  sectionLabel: string;
+  viewerName: string;
+  roleLabel: string;
+  placeholder: string;
+  submitLabel: string;
+  cancelLabel: string;
   pending: boolean;
+  onSubmit: (note: string) => Promise<boolean>;
   onClose: () => void;
+  lifted?: boolean;
 }) {
-  const t = useTranslations('review');
   const [draft, setDraft] = useState('');
 
   const submit = async () => {
     const note = draft.trim();
     if (!note || pending) return;
-    const ok = await onCreate({ kind: 'comment', anchorType: 'general', note });
+    const ok = await onSubmit(note);
     if (ok) {
       setDraft('');
       onClose();
@@ -296,165 +371,87 @@ function GeneralComposer({
   };
 
   return (
-    <div className="rounded-[12px] border bg-white p-[11px]" style={{ borderColor: A.tealBorder }}>
-      <textarea
-        dir="auto"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        rows={2}
-        autoFocus
-        placeholder={t('annotations.general.placeholder')}
-        className="block w-full resize-none rounded-[10px] border bg-white px-[11px] py-[8px] text-[13px] leading-[1.5] text-ink outline-none focus:border-teal"
-        style={{ borderColor: A.textareaBorder }}
-      />
-      <div className="mt-[7px] flex items-center gap-[8px]">
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={!draft.trim() || pending}
-          className="rounded-[9px] px-[13px] py-[7px] text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-          style={{ background: A.teal }}
+    <div
+      className={`overflow-hidden rounded-[13px] border bg-white ${
+        lifted ? '-translate-x-[10px] rtl:translate-x-[10px]' : ''
+      }`}
+      style={{
+        borderColor: A.teal,
+        boxShadow: lifted
+          ? `0 0 0 3px ${A.suggestionBg}, 0 26px 52px -22px rgba(20,40,36,0.55)`
+          : '0 10px 28px -18px rgba(20,40,36,0.45)',
+      }}
+    >
+      <div
+        className="flex items-center gap-[8px] border-b px-[13px] py-[11px]"
+        style={{ borderColor: A.cardBorder }}
+      >
+        <span
+          className="flex-shrink-0 rounded-[4px] px-[7px] py-[2px] text-[9px] font-bold uppercase tracking-[0.05em]"
+          style={{ color: A.openTagFg, background: A.openTagBg }}
         >
-          {t('annotations.general.submit')}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-[12.5px] font-medium"
-          style={{ color: A.neutralFg }}
-        >
-          {t('annotations.reply.cancel')}
-        </button>
+          {tagLabel}
+        </span>
+        <span dir="auto" className="min-w-0 flex-1 truncate text-[11px]" style={{ color: A.tabIdleFg }}>
+          {sectionLabel}
+        </span>
       </div>
-    </div>
-  );
-}
-
-/** Role-aware footer: coordinator decides (decidePlan), teacher resubmits. Unchanged
- *  behaviour — including the Approve-demotes-while-anything-open rule (openCount is
- *  the shared anchored-only open count, so a whole-plan note never blocks approval). */
-function Footer({
-  planId,
-  status,
-  scope,
-  role,
-  openCount,
-}: {
-  planId: string;
-  status: string;
-  scope: string;
-  role: string;
-  openCount: number;
-}) {
-  const t = useTranslations('review');
-  const router = useRouter();
-  const [busy, startBusy] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  const run = (fn: () => Promise<{ ok: boolean }>) => {
-    setError(null);
-    startBusy(async () => {
-      const res = await fn();
-      if (res.ok) router.refresh();
-      else setError(t('annotations.footer.error'));
-    });
-  };
-
-  if (role === 'teacher') {
-    if (status !== 'needs_review' || scope !== 'class') return null;
-    return (
-      <div className="rounded-[14px] border bg-white px-[16px] py-[13px] shadow-[0_18px_50px_-28px_rgba(20,12,8,0.4)]" style={{ borderColor: A.paneBorder }}>
-        <p className="mb-[9px] text-[11.5px] leading-[1.4]" style={{ color: A.hint }}>
-          {t('annotations.footer.teacherHint')}
-        </p>
-        <button
-          type="button"
-          onClick={() => run(() => submitLessonPlanById(planId))}
-          disabled={busy}
-          className="inline-flex w-full items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ background: A.teal }}
-        >
-          {busy ? t('annotations.footer.working') : t('annotations.footer.resubmit')}
-        </button>
-        {error ? <p className="mt-[8px] text-[12px] font-medium text-pink">{error}</p> : null}
+      <div className="px-[13px] pb-[13px] pt-[12px]">
+        <div className="mb-[9px] flex items-start gap-[9px]">
+          <span
+            aria-hidden
+            className="mt-[1px] inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+            style={{ background: A.avCoord }}
+          >
+            {initialsOf(viewerName)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-[6px]">
+              <span dir="auto" className="text-[12.5px] font-semibold text-ink">
+                {viewerName}
+              </span>
+              <span
+                className="rounded-[4px] px-[5px] py-[1px] text-[9px] font-bold uppercase tracking-[0.04em]"
+                style={{ color: A.badgeCoordFg, background: A.badgeCoordBg }}
+              >
+                {roleLabel}
+              </span>
+            </div>
+          </div>
+        </div>
+        <textarea
+          dir="auto"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={2}
+          autoFocus
+          placeholder={placeholder}
+          className="block w-full resize-none rounded-[9px] border bg-white px-[11px] py-[9px] text-[12.5px] leading-[1.5] text-ink outline-none"
+          style={{ borderColor: A.teal, boxShadow: '0 0 0 3px rgba(31,122,108,0.12)' }}
+        />
+        <div className="mt-[10px] flex items-center gap-[8px]">
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!draft.trim() || pending}
+            className="inline-flex items-center gap-[6px] rounded-[8px] px-[15px] py-[8px] text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            style={{ background: A.teal }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {submitLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-[4px] py-[8px] text-[12px] font-medium"
+            style={{ color: A.neutralFg }}
+          >
+            {cancelLabel}
+          </button>
+        </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="rounded-[14px] border bg-white px-[16px] py-[13px] shadow-[0_18px_50px_-28px_rgba(20,12,8,0.4)]" style={{ borderColor: A.paneBorder }}>
-      {status === 'submitted' ? (
-        (() => {
-          const hasOpen = openCount > 0;
-          return (
-            <>
-              <div className="flex gap-[9px]">
-                <button
-                  type="button"
-                  onClick={() => run(() => decidePlan(planId, 'return'))}
-                  disabled={busy}
-                  className={`inline-flex items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 ${
-                    hasOpen ? 'text-white' : 'border bg-white'
-                  }`}
-                  style={{
-                    flex: hasOpen ? '1.4' : '1',
-                    ...(hasOpen
-                      ? { background: A.teal }
-                      : { color: A.teal, borderColor: A.tealBorder }),
-                  }}
-                >
-                  {t('annotations.footer.return')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => run(() => decidePlan(planId, 'approve'))}
-                  disabled={busy}
-                  className={`inline-flex items-center justify-center gap-[6px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 ${
-                    hasOpen ? 'border bg-white' : 'text-white'
-                  }`}
-                  style={{
-                    flex: hasOpen ? '1' : '1.4',
-                    ...(hasOpen
-                      ? { color: A.teal, borderColor: A.tealBorder }
-                      : { background: A.teal }),
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  {busy ? t('annotations.footer.working') : t('annotations.footer.approve')}
-                </button>
-              </div>
-              {hasOpen ? (
-                <p className="mt-[9px] text-[11px] leading-[1.4]" style={{ color: A.hint }}>
-                  {t('annotations.footer.resolveBeforeApprove')}
-                </p>
-              ) : null}
-            </>
-          );
-        })()
-      ) : status === 'approved' ? (
-        <button
-          type="button"
-          onClick={() => run(() => decidePlan(planId, 'undo'))}
-          disabled={busy}
-          className="inline-flex w-full items-center justify-center rounded-[10px] border bg-white px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ color: A.teal, borderColor: A.tealBorder }}
-        >
-          {busy ? t('annotations.footer.working') : t('annotations.footer.undo')}
-        </button>
-      ) : status === 'needs_review' ? (
-        <button
-          type="button"
-          onClick={() => run(() => decidePlan(planId, 'reopen'))}
-          disabled={busy}
-          className="inline-flex w-full items-center justify-center rounded-[10px] border bg-white px-[12px] py-[10px] text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ color: A.teal, borderColor: A.tealBorder }}
-        >
-          {busy ? t('annotations.footer.working') : t('annotations.footer.reopen')}
-        </button>
-      ) : null}
-      {error ? <p className="mt-[8px] text-end text-[12px] font-medium text-pink">{error}</p> : null}
     </div>
   );
 }

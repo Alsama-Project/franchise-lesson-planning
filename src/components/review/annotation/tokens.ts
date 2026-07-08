@@ -77,7 +77,24 @@ export const A = {
   // section ↔ card coupling (Google-Docs left border on a commented section)
   sectionOpen: '#1F7A6C', // solid teal — the section has an open card
   sectionMuted: '#BFD8D2', // muted teal — the section's card is resolved
-  sectionHoverBg: '#E7F1EE', // light-teal fill on hover / when its card is selected
+  sectionHoverBg: '#E7F1EE', // light-teal fill on hover
+  sectionActiveBg: '#F0F7F4', // stronger teal fill — the selected / composing section (mock)
+  sectionHoverMuted: '#FBFDFC', // fainter teal wash — a section whose only cards are resolved
   // resolved card chrome (greyed, reduced opacity handled inline)
   resolvedFg: '#8A958F',
+
+  // card number badge (Google-Docs style ordinal beside each card)
+  badgeFg: '#186155',
+  badgeBg: '#DCEBE6',
+
+  // status tag on every card — Open (teal) vs Resolved (muted grey). One source with
+  // the "N open · N resolved" count (isResolvedCard), so the tag and count agree.
+  openTagFg: '#17685B',
+  openTagBg: '#DCEBE6',
+  resolvedTagFg: '#8A958F',
+  resolvedTagBg: '#EEECE7',
+
+  // header "N open" pill on the demoted Approve button (amber)
+  amberPillBg: '#F6ECDA',
+  amberPillBorder: '#E8D6B8',
 } as const;

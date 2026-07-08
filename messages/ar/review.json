@@ -84,6 +84,17 @@
       "counts": "{open} مفتوحة · {resolved} مُعالَجة",
       "addComment": "إضافة تعليق",
       "addPlan": "التعليق على الخطة كاملة",
+      "status": {
+        "open": "مفتوحة",
+        "resolved": "مُعالَجة"
+      },
+      "header": {
+        "open": "{n} مفتوحة"
+      },
+      "compose": {
+        "newComment": "تعليق جديد",
+        "submit": "تعليق"
+      },
       "filter": {
         "open": "مفتوحة",
         "resolved": "مُعالَجة"

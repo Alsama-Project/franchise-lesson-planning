@@ -61,6 +61,14 @@ interface AnnotationContextValue {
   tab: ReviewTab;
   setTab: (tab: ReviewTab) => void;
 
+  // ── in-margin composer (Google-Docs) ─────────────────────────────────────────
+  /** The section key whose ＋ is open, so the PANE floats a "New comment" card in the
+   *  right margin beside it (typing happens on the right, never inline on the left).
+   *  `null` = no section composer open. Whole-plan composing is tracked separately in
+   *  the pane's top block. */
+  composingKey: string | null;
+  setComposingKey: (key: string | null) => void;
+
   // ── section ↔ card alignment (Google-Docs floating stack) ────────────────────
   /** Live map of a plan section's alignment key → its DOM node, so the floating
    *  card column can measure each section's vertical position and lay its cards
@@ -180,6 +188,7 @@ export function AnnotationProvider({
   const [pending, startTransition] = useTransition();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tab, setTab] = useState<ReviewTab>('lesson');
+  const [composingKey, setComposingKey] = useState<string | null>(null);
 
   // Section registry for the Google-Docs floating stack: each commented section
   // registers its node so the pane can align cards beside it. A version counter
@@ -221,6 +230,8 @@ export function AnnotationProvider({
       setActiveId,
       tab,
       setTab,
+      composingKey,
+      setComposingKey,
       sectionsRef,
       registerSection,
       layoutVersion,
@@ -258,7 +269,7 @@ export function AnnotationProvider({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, status, scope, role, viewerName, editable, annotations, phaseTitles, activeId, tab, layoutVersion, registerSection, pending]);
+  }, [planId, status, scope, role, viewerName, editable, annotations, phaseTitles, activeId, tab, composingKey, layoutVersion, registerSection, pending]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

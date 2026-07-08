@@ -272,43 +272,6 @@ export function CountBadge({
   );
 }
 
-export function CommentForm({
-  anchorType,
-  phaseRef,
-  blockRef,
-  onClose,
-}: {
-  anchorType: 'objective' | 'phase' | 'worksheet_block';
-  phaseRef?: string;
-  blockRef?: string;
-  onClose: () => void;
-}) {
-  const ctx = useOptionalAnnotations();
-  const t = useTranslations('review');
-  const [note, setNote] = useState('');
-
-  if (!ctx) return null;
-  const submit = async () => {
-    const body = note.trim();
-    if (!body || ctx.pending) return;
-    const ok = await ctx.create({
-      kind: 'comment',
-      anchorType,
-      phaseRef: phaseRef ?? null,
-      blockRef: blockRef ?? null,
-      note: body,
-    });
-    if (ok) onClose();
-  };
-
-  return (
-    <AuthoringShell>
-      <AuthoringNote value={note} onChange={setNote} placeholder={t('annotations.author.commentPlaceholder')} autoFocus />
-      <AuthoringActions onSubmit={() => void submit()} onCancel={onClose} submitLabel={t('annotations.author.comment')} disabled={!note.trim() || ctx.pending} />
-    </AuthoringShell>
-  );
-}
-
 /** Compact inline duration editor — the stepper sits in the duration cell itself
  *  (no box below), committing on ✓ / cancelling on ✕. */
 function DurInline({
@@ -387,69 +350,6 @@ function CancelLink({ onClick }: { onClick: () => void }) {
     <button type="button" onClick={onClick} className="text-[12px] font-medium" style={{ color: A.neutralFg }}>
       {t('annotations.author.cancel')}
     </button>
-  );
-}
-
-function AuthoringShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-[10px] border bg-white p-[11px]" style={{ borderColor: A.pillTealBorder }}>
-      <div className="flex flex-col gap-[9px]">{children}</div>
-    </div>
-  );
-}
-
-function AuthoringNote({
-  value,
-  onChange,
-  placeholder,
-  autoFocus,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  autoFocus?: boolean;
-}) {
-  return (
-    <textarea
-      dir="auto"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      rows={2}
-      autoFocus={autoFocus}
-      placeholder={placeholder}
-      className="block w-full resize-none rounded-[9px] border bg-white px-[10px] py-[7px] text-[12.5px] leading-[1.5] text-ink outline-none focus:border-teal"
-      style={{ borderColor: A.textareaBorder }}
-    />
-  );
-}
-
-function AuthoringActions({
-  onSubmit,
-  onCancel,
-  submitLabel,
-  disabled,
-}: {
-  onSubmit: () => void;
-  onCancel: () => void;
-  submitLabel: string;
-  disabled: boolean;
-}) {
-  const t = useTranslations('review');
-  return (
-    <div className="flex items-center gap-[8px]">
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={disabled}
-        className="rounded-[8px] px-[12px] py-[6px] text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        style={{ background: A.teal }}
-      >
-        {submitLabel}
-      </button>
-      <button type="button" onClick={onCancel} className="text-[12px] font-medium" style={{ color: A.neutralFg }}>
-        {t('annotations.author.cancel')}
-      </button>
-    </div>
   );
 }
 

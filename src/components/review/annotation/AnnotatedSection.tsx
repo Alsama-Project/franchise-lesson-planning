@@ -108,7 +108,7 @@ export function AnnotatedSection({
       ref={ref}
       onClick={toggle}
       data-section-key={sectionKey}
-      className={`relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
+      className={`group relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
       style={{
         ...style,
         ...borderStyle,
@@ -118,13 +118,20 @@ export function AnnotatedSection({
     >
       {children}
 
-      {/* Add-comment ＋ in the GUTTER between the left-half lesson and the right-half card
-          lane (coordinator only, lg+). The lesson content is capped to the left half, so
-          the ＋ sits just past the section's right edge — clear of both the content and
-          the card lane. Pressing it opens a "New comment" card in the right half (pane,
-          keyed on composingKey); the active section's ＋ is the teal-filled variant. */}
+      {/* Add-comment ＋ (coordinator only, md+). The left/right columns share the
+          curriculum's 14px gap, too narrow to seat the ＋ in it, so the ＋ sits at the
+          section's top-right INSIDE the left column and reveals on hover (or stays shown
+          when this section is active / composing) — clear of the comment column beside it,
+          which begins across the gap. Pressing it opens a "New comment" card in the right
+          column (pane, keyed on composingKey); the active section's ＋ is the teal-filled
+          variant. */}
       {canAuthor ? (
-        <div className="absolute z-30 hidden lg:block" style={{ insetInlineEnd: -42, top: 12 }}>
+        <div
+          className={`absolute z-30 hidden transition-opacity md:block ${
+            composingHere || activeHere ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+          style={{ insetInlineEnd: 8, top: 8 }}
+        >
           <AddCommentButton
             label={t('annotations.addComment')}
             active={composingHere}

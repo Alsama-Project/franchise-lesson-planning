@@ -178,13 +178,14 @@ export function ReadOnlyPlan({
         <CurriculumBand curriculum={curriculum} />
       </div>
 
-      {/* Two halves (lg+) BEGIN at the SMARTT objective: the objective + lesson steps sit in
-          the LEFT half; the comment cards float in the RIGHT half, each anchored to the
-          vertical position of its step. Only the header + the curriculum block above span
-          the full width. Below lg both halves stack. */}
-      <div className="relative">
-        <div className="min-w-0 lg:w-1/2">
-          <div className="px-[22px] pb-10 pt-[24px] lg:px-[30px]">
+      {/* Split BEGINS at the SMARTT objective, and uses the SAME grid as the curriculum
+          block above — 1.6fr / 1fr columns, 14px gap, same page padding — so the columns
+          line up top-to-bottom as ONE grid: the objective + lesson steps take the
+          daily-outcome (left) column; the comment cards take the grammar/theme (right)
+          column — same width, same left edge. The divide sits on one line the whole way
+          down. Below md both columns stack (matching the curriculum band's md breakpoint). */}
+      <div className="px-[22px] pb-10 pt-[24px] md:grid md:grid-cols-[1.6fr_1fr] md:gap-[14px] lg:px-[30px]">
+        <div className="min-w-0">
         <section>
           <h2 className="mb-[8px] text-[13px] font-bold uppercase tracking-[0.05em] text-text-faint">
             SMARTT objective
@@ -264,24 +265,16 @@ export function ReadOnlyPlan({
             ))}
           </div>
         </section>
-          </div>
         </div>
 
         {rightRail ? (
-          // RIGHT HALF: the comment cards float in the right half of the page, each
+          // RIGHT COLUMN (the grammar/theme track): the comment cards live here, each
           // anchored to the vertical position of its section (the pane measures section
-          // offsets and packs cards down to avoid overlap). A card LANE starts just right
-          // of the midline so cards sit beside their sections — NOT a bordered column or
-          // reserved grid track, just floating cards in the right-hand space. Absolute so
-          // it never reflows the left half. `pointer-events-none` lets clicks fall through
-          // the empty space; the cards re-enable pointer events on themselves. Shown lg+;
-          // below lg the pane stacks in normal flow beneath the plan.
-          <div className="pointer-events-none relative mt-6 px-[22px] lg:absolute lg:inset-y-0 lg:start-1/2 lg:top-0 lg:mt-0 lg:w-[360px] lg:px-0 lg:ps-[22px] lg:pt-[24px]">
-            {/* Wrapper is click-through; the pane re-enables pointer events on the cards
-                themselves, so the empty space (and the section ＋ beside it) stays
-                interactive. */}
-            <div className="lg:h-full">{rightRail}</div>
-          </div>
+          // offsets and packs cards down to avoid overlap). It's a grid column, so its left
+          // edge and width match the curriculum's grammar/theme column exactly and its
+          // presence never reflows the left column's width. Below md it stacks under the
+          // plan; the pane floats (anchors cards) at lg+.
+          <div className="relative mt-6 min-w-0 md:mt-0">{rightRail}</div>
         ) : null}
       </div>
     </div>

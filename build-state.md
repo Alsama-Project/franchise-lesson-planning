@@ -2,7 +2,29 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Review layout: full-width curriculum, split begins at the objective ✅ (this phase)
+## Review layout: lesson/comments split shares the curriculum's grid ✅ (this phase)
+
+Alignment fix on the shared review surface (`ReadOnlyPlan`, both `/view` and the editor
+Review step). Presentation only; no schema/RLS/server-action change.
+
+- The lesson-steps (left) / comments (right) split now uses the **same grid as the curriculum
+  block above it** — `md:grid-cols-[1.6fr_1fr]`, `gap-[14px]`, same `px-[22px] lg:px-[30px]`
+  page padding — so the two rows line up top-to-bottom as ONE grid. The objective + lesson
+  steps take the **daily-outcome (1.6fr) column**; the comment cards take the **grammar/theme
+  (1fr) column** — same width, same left edge. The vertical divide sits on one line the whole
+  way down (verified with a guide line at the column boundary). Below `md` both columns stack,
+  matching the curriculum band's own `md` breakpoint.
+- The comments column is now a real **grid track** (not an absolute right-edge overlay), so it
+  can't reflow the left column's width and its edges match the curriculum's right column
+  exactly. The pane still measures section offsets vs its card layer and packs cards down to
+  avoid overlap (unchanged), and still floats/anchors at `lg`; at `md`–`lg` cards stack in the
+  column.
+- The per-section ＋ moved from the old wide gutter to the section's **top-right inside the
+  left column** (revealing on hover / staying shown when active or composing), since the shared
+  14px gap is too narrow to seat it — clear of the comment column across the gap, so it never
+  overlaps a card.
+
+## Review layout: full-width curriculum, split begins at the objective ✅ (prior phase)
 
 Refinement to the halves layout on the shared surface (`ReadOnlyPlan`, both `/view` and the
 editor Review step). Presentation only; no schema/RLS/server-action change.

@@ -11,6 +11,7 @@
 // key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
+import { resolveActiveMembership, type MembershipFull } from '@/lib/active-space';
 import { resolveCurrentTermWeekNo, resolveNearestTermWeekNo, resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav } from '@/lib/curriculumUtils';
 import { resolveWeekSlotKeys, selectWeekPlanRows } from '@/lib/weekly-overview-selection';
@@ -83,9 +84,12 @@ function byDayOrder(a: BoardPlan, b: BoardPlan): number {
 }
 
 interface MembershipRow {
+  id: string;
   school_id: string;
   subject_id: string;
   role: 'teacher' | 'coordinator';
+  is_primary: boolean;
+  created_at: string;
   subjects: { code: string; name: string } | null;
   schools: { name: string } | null;
 }
@@ -180,7 +184,9 @@ export async function getBoardData(input: {
       .eq('teacher_id', user.id),
     supabase
       .from('subject_membership')
-      .select('school_id, subject_id, role, subjects ( code, name ), schools ( name )')
+      .select(
+        'id, school_id, subject_id, role, is_primary, created_at, subjects ( code, name ), schools ( name )',
+      )
       .eq('profile_id', user.id),
   ]);
 
@@ -188,17 +194,12 @@ export async function getBoardData(input: {
     (profile as { full_name?: string | null } | null)?.full_name ?? user.email ?? 'there';
   const isAdmin = (profile as { role?: string } | null)?.role === 'admin';
 
-  // The teacher's (non-archived) classes. They define the taught years within each
-  // space — but membership, NOT class assignment, is the visibility boundary (see
-  // below). Archived classes are removed from planning.
-  const taught = ((ctRows ?? []) as unknown as Array<{ classes: TaughtClassRow | null }>)
+  // All the teacher's (non-archived) classes across every space they teach in.
+  // Scoped to the active space just below — a class outside it must not draw a band.
+  const taughtAll = ((ctRows ?? []) as unknown as Array<{ classes: TaughtClassRow | null }>)
     .map((r) => r.classes)
     .filter((c): c is TaughtClassRow => !!c && !c.archived_at);
 
-  // The (centre, subject) spaces the teacher belongs to. A member of "English at
-  // Shatila" sees that space's lessons — centre- and year-scoped plans (no class)
-  // included — whether or not they teach a class in it. Visibility is gated on this
-  // membership plus each plan's scope, never on class membership.
   const memberships = (memRows ?? []) as unknown as MembershipRow[];
 
   // The coordinator spaces the teacher belongs to — drives per-plan edit rights.
@@ -208,41 +209,55 @@ export async function getBoardData(input: {
       .map((m) => `${m.school_id}:${m.subject_id}`),
   );
 
-  // Enumerate every space the user belongs to — the board is USER-WIDE, so it unions
-  // over all of them rather than collapsing to one subject. Memberships are the
-  // authoritative list; a class in a space with no matching membership (a data edge)
-  // is folded in defensively so a taught class is never dropped.
-  const spaceMap = new Map<string, Space>();
-  for (const m of memberships) {
-    const key = `${m.school_id}:${m.subject_id}`;
-    if (spaceMap.has(key)) continue;
-    spaceMap.set(key, {
-      key,
-      centreId: m.school_id,
-      subjectId: m.subject_id,
-      centreName: m.schools?.name ?? '',
-      subjectCode: m.subjects?.code ?? '',
-      subjectName: m.subjects?.name ?? '',
-      isCoordinator: m.role === 'coordinator',
-    });
-  }
-  for (const c of taught) {
-    const key = `${c.school_id}:${c.subject_id}`;
-    if (spaceMap.has(key)) continue;
-    spaceMap.set(key, {
-      key,
-      centreId: c.school_id,
-      subjectId: c.subject_id,
-      centreName: c.schools?.name ?? '',
-      subjectCode: c.subjects?.code ?? '',
-      subjectName: c.subjects?.name ?? '',
-      isCoordinator: coordinatorSpaces.has(key),
-    });
-  }
-  const spaces = [...spaceMap.values()];
+  // Resolve the ONE active subject space through the SAME resolver the header chip
+  // reads (`resolveActiveMembership`, src/lib/active-space.ts) over the SAME
+  // subject_membership rows — so the chip and the board share a single source of
+  // truth and can never disagree. Previously the board was USER-WIDE: it unioned
+  // EVERY membership AND every taught class and never read the active space, so a
+  // drifted membership/class link in another subject (e.g. Arabic) drew its own
+  // band while the chip still read English. `is_primary` wins; else English-first;
+  // else earliest-joined — identical to what `getActiveSpace()` returns.
+  const active = resolveActiveMembership(
+    memberships.map(
+      (m): MembershipFull => ({
+        id: m.id,
+        schoolId: m.school_id,
+        subjectId: m.subject_id,
+        subjectCode: m.subjects?.code ?? '',
+        subjectName: m.subjects?.name ?? '',
+        schoolName: m.schools?.name ?? '',
+        role: m.role,
+        isPrimary: m.is_primary,
+        createdAt: m.created_at,
+      }),
+    ),
+  );
 
-  // No classes and no subject membership — nothing to plan against.
-  if (spaces.length === 0) return emptyBoard(teacherName);
+  // No subject membership — nothing to plan against.
+  if (!active) return emptyBoard(teacherName);
+
+  // Scope taught classes to the active space. The board's per-year bands and the
+  // "my classes" list derive from these, so constraining them here is what stops a
+  // drifted class link in another subject/centre from rendering a stray band — the
+  // defensive fold that used to turn ANY taught class into its own board space.
+  const taught = taughtAll.filter(
+    (c) => c.school_id === active.schoolId && c.subject_id === active.subjectId,
+  );
+
+  // The board is PER-SPACE: exactly the active (centre, subject). Switching the
+  // header space flips `is_primary`, which re-resolves `active` here on the next
+  // render, so the board content swaps — not just the chip label.
+  const spaces: Space[] = [
+    {
+      key: `${active.schoolId}:${active.subjectId}`,
+      centreId: active.schoolId,
+      subjectId: active.subjectId,
+      centreName: active.schoolName,
+      subjectCode: active.subjectCode,
+      subjectName: active.subjectName,
+      isCoordinator: active.role === 'coordinator',
+    },
+  ];
 
   // Whether the board describes one space or many — drives the header prefix (kept
   // only for a single space) and the per-card centre label (shown only across >1

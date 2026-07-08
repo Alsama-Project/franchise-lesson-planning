@@ -144,3 +144,68 @@ and **creating** the other three:
    resolves to >1 row) and any unexpected FK roll the whole thing back.
 
 Run both in the Supabase SQL editor (service-role). Never from a user request.
+
+## `trim_test_personas_to_english.sql`
+
+Converges the two **canonical impersonation personas** — `teacher1`
+(`4d8be40e-…`) and `coordinator1` (`a4e79fa9-…`) — onto a **single** subject-space,
+**Shatila 1 · English**, across **both** coordinator models. The account chip's
+space switcher renders one row per `subject_membership` row (`getSpaceSwitcher` in
+`src/lib/active-space.ts`), so a persona sitting in eight spaces shows eight switcher
+entries; trimming each to one membership collapses the switcher to a single entry,
+shared across both personas.
+
+**⚠️ Writes TWO tables because the app is half-migrated.** Migrations `0040`/`0041`
+("Role-first access model") moved coordinator-ness out of
+`subject_membership.role='coordinator'` into the school-agnostic table
+`coordinator_subject(profile_id, subject_id)`. After `0041`, coordinator **power**
+(the `setPlanStatus` approval gate + RLS via `is_coordinator_of_subject`) reads
+**only** `coordinator_subject`, and `0041` **deletes** every `subject_membership`
+coordinator row. But four client reads for coordinator **chrome** were **not**
+migrated and still key off `subject_membership.role='coordinator'`:
+`src/lib/weekly-overview.ts` (board), `src/lib/notifications.ts` (review bell),
+`src/lib/console.ts`, and `src/components/app-shell/UserMenu.tsx` (switcher label).
+Migrating those four is a **separate** task. Until then `coordinator1` needs a row in
+**both** tables — `subject_membership(Shatila 1, English, coordinator)` for chrome
+**and** `coordinator_subject(English)` for power — so this script writes both.
+
+Two consequences:
+- **Apply this script LAST**, after all pending migrations through `0042`. The
+  `subject_membership` coordinator row is old-model chrome and is **fragile**: any
+  re-run of `0041` deletes it (the toggle would then silently revert to teacher
+  chrome), so the trim must run after `0041`.
+- This script **supersedes `0039` A3 for `coordinator1`.** `0039` A3 derived the
+  space with a non-deterministic `limit 1` over `teacher1`'s memberships and inserted
+  a now-transient `subject_membership` coordinator row (possibly in the wrong
+  subject); the convergent writes here — pinned to English, cleaning up any
+  wrong-subject `coordinator_subject` row — are the source of truth for the persona.
+
+Data-only. Touches **nothing** in the impersonation engine, the Teacher/Coordinator
+toggle, the banner, `resolve_impersonation_persona`, or the `impersonation_canonical`
+designation table, and **no schema** (no enum/constraint/table-shape change). Leaves
+`is_test_persona`, `can_impersonate`, `profiles.role`, and the four half-migrated
+client reads as-is.
+
+Three parts, run in order in the Supabase SQL editor (service-role):
+
+1. **PART A** — read-only. Verifies the pinned `Shatila 1` school id
+   (`42c11721-…`, name `ilike 'shatila%'`) and resolves **English** by the stable
+   key `subjects.code = 'english'` (never a hardcoded uuid). STOP if the school
+   isn't Shatila or English doesn't resolve to exactly one row.
+2. **PART B** — read-only preview of **both** tables for both personas
+   (`subject_membership` + `coordinator_subject`, with centre/subject/role), so the
+   full before-state is visible before any write. Eyeball the counts.
+3. **PART C** — ⚠️ writes, ONE transaction, bound to the **two literal uids only**.
+   Converges to: `teacher1` → one `subject_membership(Shatila 1, English, teacher)`
+   and **zero** `coordinator_subject`; `coordinator1` → one
+   `subject_membership(Shatila 1, English, coordinator)` **and** one
+   `coordinator_subject(English)`. Re-asserts PART A's guards; any failure rolls back.
+   **Idempotent** — re-running leaves both personas at exactly that end-state. Ends
+   with a both-tables verification SELECT.
+
+**Durability note (why no reseed re-introduces the clutter):** nothing in the repo
+grants a persona all-subject memberships — the only persona `subject_membership`
+inserts are `seed_test_personas.sql` (one **teacher** row at Shatila · English) and
+migration `0039` A3 (one **coordinator** row for `coordinator1` in `teacher1`'s
+derived space). Neither loops over subjects, so the eight-space clutter was a
+manual / data-reset artifact, and PART C is sufficient to fix it.

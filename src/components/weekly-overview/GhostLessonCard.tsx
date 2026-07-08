@@ -1,7 +1,7 @@
 'use client';
 
 // The Calendar grid's "not started" curriculum lesson — a GHOST card. It fills its
-// (year, period) cell as a fill-less, dotted placeholder against the solid plan
+// (year, period) cell as a fill-less, solid-bordered placeholder against the solid plan
 // cards, still showing WHICH lesson it is (subject · year over the daily outcome),
 // so the teacher selects a real, identifiable lesson rather than creating from a
 // blank picker. This replaces the old dashed "+ Add lesson" button + dropdown.
@@ -38,7 +38,7 @@ function BlockedNote({ subjectName, year }: { subjectName: string; year: number 
 /**
  * One ghost card for a not-started curriculum lesson. Mirrors the solid plan card's
  * anatomy (subject · year header over the daily-outcome topic) so the two read as
- * one visual language, but fill-less with only a light dotted border to signal
+ * one visual language, but fill-less with only a light solid border to signal
  * locked curriculum content the teacher can turn into an editable plan.
  */
 export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
@@ -105,7 +105,7 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
         disabled={busy}
         aria-label={t('card.planAria', { topic })}
         className={cn(
-          'group flex w-full flex-1 flex-col rounded-[12px] border-[1.5px] border-dashed border-border-strong px-[12px] py-[11px] text-start transition-colors',
+          'group flex w-full flex-1 flex-col rounded-[12px] border-[1.5px] border-solid border-border-strong px-[12px] py-[11px] text-start transition-colors',
           'hover:border-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal',
           busy && 'cursor-not-allowed',
         )}

@@ -505,7 +505,7 @@ export function LessonPlanEditor({
               <ReadOnlyPlan
                 data={reviewData}
                 decisionBar={null}
-                rightRail={<AnnotationPane embedded />}
+                rightRail={<AnnotationPane />}
                 embedded
               />
             </AnnotationProvider>

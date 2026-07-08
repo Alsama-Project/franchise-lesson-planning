@@ -31,13 +31,12 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
-import { formatNumber } from '@/lib/format';
+import { useTranslations } from 'next-intl';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { Annotation } from '@/types/annotation';
 import { AnnotationCard } from './AnnotationCard';
 import { AddCommentButton } from './AddCommentButton';
-import { isResolvedCard, sectionKeyOf, useAnnotations } from './context';
+import { sectionKeyOf, useAnnotations } from './context';
 import { A } from './tokens';
 
 const GAP = 12; // vertical gap packed between stacked section-card groups (px)
@@ -48,9 +47,8 @@ interface CardGroup {
   cards: Annotation[];
 }
 
-export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
+export function AnnotationPane() {
   const t = useTranslations('review');
-  const locale = useLocale();
   const ctx = useAnnotations();
   const {
     annotations,
@@ -106,10 +104,8 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     return list;
   }, [annotations, composingKey]);
 
-  // ── informational counts (INCLUDES whole-plan cards) ─────────────────────────
+  // Whether any card exists at all — drives the empty-state note.
   const total = annotations.length;
-  const resolved = annotations.filter(isResolvedCard).length;
-  const openDisplay = total - resolved;
 
   // ── position-aware alignment (section groups only) ───────────────────────────
   const layerRef = useRef<HTMLDivElement>(null);
@@ -139,12 +135,15 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     }
     const layerTop = layer.getBoundingClientRect().top;
 
-    // Desired top for each group = its section's offset within the cards layer. Sort by
-    // that offset so packing preserves the plan's reading order.
+    // Desired top for each group = its section's offset within the cards layer, PLUS a
+    // clearance so the first card never sits on the section's ＋ (which floats at the
+    // section's top-right). Only the coordinator sees the ＋, so only they need it. Sort
+    // by offset so packing preserves the plan's reading order.
+    const CLEAR = role === 'coordinator' ? 44 : 0;
     const desired = new Map<string, number>();
     for (const g of groups) {
       const el = sectionsRef.current.get(g.key);
-      desired.set(g.key, el ? el.getBoundingClientRect().top - layerTop : 0);
+      desired.set(g.key, (el ? el.getBoundingClientRect().top - layerTop : 0) + CLEAR);
     }
     const ordered = [...groups].sort((a, b) => (desired.get(a.key) ?? 0) - (desired.get(b.key) ?? 0));
 
@@ -159,7 +158,7 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
     }
     setPositions(next);
     setLayerHeight(cursor);
-  }, [groups, sectionsRef]);
+  }, [groups, sectionsRef, role]);
 
   const schedule = useCallback(() => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -202,26 +201,11 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <section aria-label={t('annotations.title')} className="flex flex-col">
-      {/* TOP block — "N open · N resolved" and the whole-plan (general) cards + the
-          plan-level ＋. The section-anchored cards float BELOW and scroll beneath it.
-          On the standalone /view it pins to the top so the counts stay reachable while
-          the section cards scroll; its solid background covers cards scrolling behind. */}
-      <div
-        className={`z-20 mb-[14px] flex flex-col gap-[10px] ${
-          embedded ? '' : 'bg-surface lg:sticky lg:top-[calc(var(--app-chrome-height,64px)_+_16px)]'
-        }`}
-      >
-        <div className="flex items-center gap-[8px] py-[4px]">
-          <span className="text-[12px] font-semibold" style={{ color: A.tabIdleFg }}>
-            {total > 0
-              ? t('annotations.counts', {
-                  open: formatNumber(openDisplay, locale),
-                  resolved: formatNumber(resolved, locale),
-                })
-              : t('annotations.countEmpty')}
-          </span>
-        </div>
-
+      {/* TOP block — the whole-plan (general) cards + the plan-level ＋, floated at the
+          top of the right margin. There is NO "N open · N resolved" line here: the count
+          lives solely as the "N open" pill on the Approve button (its single source). The
+          section-anchored cards float BELOW and scroll beneath this block. */}
+      <div className="pointer-events-auto mb-[14px] flex flex-col gap-[10px]">
         {generalCards.length > 0 || canAuthorGeneral ? (
           <div className="flex flex-col gap-[9px]">
             {canAuthorGeneral ? (
@@ -287,7 +271,7 @@ export function AnnotationPane({ embedded = false }: { embedded?: boolean }) {
           {groups.map((g) => (
             <div
               key={g.key}
-              className={floating ? 'absolute inset-x-0' : undefined}
+              className={floating ? 'pointer-events-auto absolute inset-x-0' : 'pointer-events-auto'}
               style={floating ? { top: positions?.get(g.key) ?? 0 } : undefined}
             >
               <div ref={setGroupEl(g.key)}>
@@ -359,6 +343,15 @@ function MarginComposer({
   lifted?: boolean;
 }) {
   const [draft, setDraft] = useState('');
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus the field WITHOUT scrolling: the compose card is absolutely positioned and,
+  // on the first paint of a brand-new section group, briefly sits at top 0 before the
+  // layout pass places it — a plain autofocus there would yank the page to the top.
+  // `preventScroll` keeps the page exactly where the coordinator clicked the ＋.
+  useEffect(() => {
+    areaRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const submit = async () => {
     const note = draft.trim();
@@ -420,11 +413,11 @@ function MarginComposer({
           </div>
         </div>
         <textarea
+          ref={areaRef}
           dir="auto"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={2}
-          autoFocus
           placeholder={placeholder}
           className="block w-full resize-none rounded-[9px] border bg-white px-[11px] py-[9px] text-[12.5px] leading-[1.5] text-ink outline-none"
           style={{ borderColor: A.teal, boxShadow: '0 0 0 3px rgba(31,122,108,0.12)' }}

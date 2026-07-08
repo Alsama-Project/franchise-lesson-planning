@@ -68,23 +68,19 @@ export default async function PlanViewPage({
   const isMemberViewer = canDecide || isCreator;
   const role = canDecide ? 'coordinator' : 'teacher';
 
-  // The plan's AUTHOR may leave this read-only surface for the editor while the plan
-  // is still editable (a draft, or one returned for changes) — matching the editor's
-  // own lock (`in_progress` / `needs_review` unlocked). A non-author (incl. a
-  // reviewing coordinator) or a `submitted`/`approved` plan gets no editor affordance.
-  // Carry the FULL board query (month/week/view) through so returning from the editor
-  // lands on the same week AND the same board tab.
-  const canAuthorEdit = isCreator && (status === 'needs_review' || status === 'in_progress');
-  let editHref: string | undefined;
-  let editLabel: string | undefined;
-  if (canAuthorEdit) {
+  // The teacher's OWN editable plan (a draft, or one returned for changes) belongs in
+  // the EDITOR, not this read-only surface: they work the coordinator's comments on the
+  // editor's Review step and edit freely in the other steps. So redirect the author of
+  // an editable plan straight into the editor — no `/view` stop, no "Edit plan" click.
+  // A non-author (incl. a reviewing coordinator) or a submitted/approved plan is
+  // unaffected. Carry the board query through so the editor's "‹ This week" still works.
+  if (isCreator && (status === 'needs_review' || status === 'in_progress')) {
     const q = new URLSearchParams();
     if (month) q.set('month', month);
     if (week) q.set('week', week);
     if (view) q.set('view', view);
     const qs = q.toString();
-    editHref = qs ? `/plan/${id}?${qs}` : `/plan/${id}`;
-    editLabel = (await getTranslations('review'))('readonly.editPlan');
+    redirect(qs ? `/plan/${id}?${qs}` : `/plan/${id}`);
   }
 
   const annotations = isMemberViewer
@@ -126,10 +122,10 @@ export default async function PlanViewPage({
           annotations={annotations}
           phaseTitles={phaseTitles}
         >
-          <ReadOnlyPlan data={data} decisionBar={null} decision={<PlanDecisionButtons />} rightRail={<AnnotationPane />} backHref={backHref} editHref={editHref} editLabel={editLabel} />
+          <ReadOnlyPlan data={data} decisionBar={null} decision={<PlanDecisionButtons />} rightRail={<AnnotationPane />} backHref={backHref} />
         </AnnotationProvider>
       ) : (
-        <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} backHref={backHref} editHref={editHref} editLabel={editLabel} />
+        <ReadOnlyPlan data={data} decisionBar={draftNote} rightRail={null} backHref={backHref} />
       )}
     </AppShell>
   );

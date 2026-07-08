@@ -47,11 +47,11 @@ export function AddCommentButton({
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className="inline-flex h-[28px] w-[28px] items-center justify-center rounded-[8px] border transition-colors"
+      className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-[9px] border shadow-[0_2px_6px_-2px_rgba(20,12,8,0.18)] transition-colors"
       style={
         active
-          ? { background: A.suggestionBg, color: A.suggestionFg, borderColor: A.pillTealBorder }
-          : { background: 'transparent', color: A.tabIdleFg, borderColor: A.tabBorder }
+          ? { background: A.teal, color: '#fff', borderColor: A.teal }
+          : { background: '#fff', color: A.tabIdleFg, borderColor: A.tabBorder }
       }
     >
       <ChatPlusIcon size={size} />

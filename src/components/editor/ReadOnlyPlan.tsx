@@ -37,8 +37,6 @@ export function ReadOnlyPlan({
   decision,
   rightRail,
   backHref = '/',
-  editHref,
-  editLabel,
   embedded = false,
 }: {
   data: EditorPlanData;
@@ -56,13 +54,6 @@ export function ReadOnlyPlan({
   rightRail?: ReactNode;
   /** Where "‹ This week" returns — the board week this plan was opened from. */
   backHref?: string;
-  /** When set, render an "Edit plan" action in the header that leaves this read-only
-   *  view for the editor. The page passes this ONLY for the plan's author while the
-   *  plan is editable (`in_progress` / `needs_review`); a non-author or a
-   *  `submitted`/`approved` plan gets no button (undefined). `editLabel` is the
-   *  translated caption, resolved by the async page. */
-  editHref?: string;
-  editLabel?: string;
   /** Rendered inside the editor's Review step (not the standalone /view page). The
    *  editor already supplies its own chrome (sub-header · pipeline tracker ·
    *  Submit control), so the page-level header (back-link · Year · "Read only"
@@ -136,14 +127,12 @@ export function ReadOnlyPlan({
   const context = [classContext.subjectName, classContext.schoolName].filter(Boolean).join(' · ');
 
   return (
-    <div className={embedded ? 'mx-auto max-w-[1340px]' : 'mx-auto -my-8 max-w-[1340px]'}>
-      {/* The decision bar + plan header sit ABOVE the content/rail split, width-capped
-          to the content column. That way the comments rail (right, below) top-aligns
-          with the lesson content block (DAILY OUTCOME / GRAMMAR & VOCAB / THEME row)
-          rather than with the back-link header. In the embedded editor context this
+    <div className={embedded ? 'relative mx-auto max-w-[1340px]' : 'relative mx-auto -my-8 max-w-[1340px]'}>
+      {/* The decision bar + plan header span the FULL width (the decision cluster sits
+          flush right, beside the minute total). In the embedded editor context this
           whole header is dropped — the editor's own chrome already owns it. */}
       {embedded ? null : (
-      <div className="lg:max-w-[940px]">
+      <div>
         {decisionBar}
         <div className="border-b border-[#EFE8DD] px-[22px] py-4 lg:px-[30px]">
           <Link
@@ -167,21 +156,9 @@ export function ReadOnlyPlan({
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-[14px]">
-              {/* Author-only escape hatch from this read-only surface into the editor.
-                  Rendered only when the page passes editHref (creator + editable
-                  plan), so a coordinator / non-author never sees it. */}
-              {editHref ? (
-                <Link
-                  href={editHref}
-                  className="inline-flex items-center gap-[6px] rounded-[10px] bg-teal px-[13px] py-[7px] text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                  </svg>
-                  {editLabel}
-                </Link>
-              ) : null}
+              {/* No "Edit plan" affordance: the author of an editable plan is redirected
+                  from /view straight into the editor, so this surface is only ever the
+                  coordinator's (or a non-author's read-only) view. */}
               <span className={`text-[13.5px] font-bold ${onTarget ? 'text-[#2E7D5B]' : 'text-[#B0651E]'}`}>
                 {total} / {IN_SESSION_TARGET_MINUTES} min
               </span>
@@ -194,11 +171,11 @@ export function ReadOnlyPlan({
       </div>
       )}
 
-      {/* Content column + reserved right rail. On large screens the content sits in a
-          width-capped left column so the ~360px comments rail slots beside it via
-          `rightRail` without reflowing the plan body. */}
-      <div className="lg:flex lg:items-start lg:gap-6">
-        <div className="min-w-0 lg:flex-1 lg:max-w-[940px]">
+      {/* Full-width plan body. The comment cards are an ABSOLUTE OVERLAY pinned to the
+          right margin (below), NOT a reserved column — so the body spans the full width
+          and its width never changes whether or not comments exist. */}
+      <div className="relative">
+        <div className="min-w-0">
           <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
         <CurriculumBand curriculum={curriculum} />
 
@@ -285,16 +262,19 @@ export function ReadOnlyPlan({
         </div>
 
         {rightRail ? (
-          // The rail STRETCHES to the row's full height (driven by the tall plan
-          // content beside it) so the floating card stack can position each card at
-          // its section's vertical offset down the whole column — Google-Docs style.
-          // The pane pins its own "N open · N resolved" line (top) and footer (bottom)
-          // with sticky, so both stay reachable while the cards scroll with the plan.
-          // `lg:mt-[22px]` matches the content block's top padding so the top line
-          // aligns with the DAILY OUTCOME / GRAMMAR & VOCAB / THEME row.
-          <aside className="mt-6 lg:mt-[22px] lg:w-[360px] lg:flex-shrink-0 lg:self-stretch">
-            {rightRail}
-          </aside>
+          // OVERLAY, not a column: absolutely positioned in the right margin, spanning
+          // the plan body's full height so the floating card stack can place each card
+          // at its section's vertical offset (Google-Docs). Because it is absolute, it
+          // never reflows the body — the plan is full-width with or without comments.
+          // `pointer-events-none` lets clicks fall through the empty margin to the plan;
+          // the cards re-enable pointer events on themselves. Shown lg+ only; below lg
+          // the pane stacks in normal flow via the sibling below.
+          <div className="pointer-events-none relative mt-6 px-[22px] lg:absolute lg:inset-y-0 lg:end-[30px] lg:top-0 lg:mt-0 lg:w-[320px] lg:px-0 lg:pt-[22px]">
+            {/* Wrapper is click-through; the pane re-enables pointer events on the cards
+                themselves, so the empty margin (and the section ＋ beneath it) stays
+                interactive. */}
+            <div className="lg:h-full">{rightRail}</div>
+          </div>
         ) : null}
       </div>
     </div>

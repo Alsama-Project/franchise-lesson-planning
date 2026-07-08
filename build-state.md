@@ -2,7 +2,43 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## RH rework: decision in the header · floating margin cards · in-card composer ✅ (this phase)
+## RH rework fixes: full-width body · overlay margin cards · ＋ scroll · teacher → Review ✅ (this phase)
+
+Four fixes on the shared review surface (`ReadOnlyPlan` + `AnnotationPane`, still shared
+across the coordinator `/view` and the editor Review step — fixed in place, not forked).
+No schema, RLS, or server-action change.
+
+1. **＋ no longer jumps the page to the top.** The compose card is absolutely positioned
+   and, on the first paint of a brand-new section group, briefly sat at top 0 before the
+   layout pass — a plain `autoFocus` there yanked the page up. The `MarginComposer` now
+   focuses its textarea with `focus({ preventScroll: true })` via a ref, so the page stays
+   exactly where the ＋ was clicked. (All ＋/Comment/Cancel/Resolve/Reply buttons were
+   already `type="button"`.)
+2. **Full-width plan body; cards are an overlay, not a column; no sticky count line.**
+   `ReadOnlyPlan` dropped the `lg:max-w-[940px]` content cap and the reserved 360px rail
+   flex column. The plan header, curriculum cards, and lesson sections now span the full
+   width; the decision cluster sits flush right. The comment pane renders as an **absolute
+   overlay** pinned to the right margin (`lg:absolute inset-y-0 end-[30px] w-[320px]`,
+   `pointer-events-none` wrapper so the empty margin and the ＋ beneath stay clickable; the
+   cards re-enable pointer events on themselves) — so toggling comments never reflows the
+   body. Below `lg` the same pane falls back to normal flow under the plan. The
+   "N open · N resolved" line + its `lg:sticky` header are **removed**: the count lives
+   solely as the "N open" pill on the Approve button.
+3. **Composer no longer overlaps its ＋.** The ＋ moved to each section's top-right (mock's
+   white rounded square; teal-filled when active) and reveals on hover / when active, at
+   `z-30` above the cards. The pane packs each section's card group with a **44px top
+   clearance** (`CLEAR`, coordinator-only) so the first card / compose card opens *below*
+   the ＋ with a gap, never on it.
+4. **Teacher opens the editor on the Review step — no `/view`, no "Edit plan".** The board
+   card (`canEdit` → `/plan/[id]`) and bell (`outcome` → `/plan/[id]`) already deep-link to
+   the editor; the editor already lands on the Review step for a `needs_review` plan with
+   feedback (prior phase). This phase closes the loop: `/plan/[id]/view` now **redirects the
+   author of an editable plan straight into the editor** (carrying the board query), and the
+   "Edit plan" affordance is removed from `ReadOnlyPlan` entirely. `/view` stays the
+   coordinator's surface; the teacher's completion action stays Resubmit (editor header).
+   Stepping back through the wizard edits freely; comments stay anchored on the Review step.
+
+## RH rework: decision in the header · floating margin cards · in-card composer ✅ (prior phase)
 
 Reworked the **shared** review surface (the `AnnotationProvider` → `ReadOnlyPlan` +
 `AnnotationPane` pair rendered by BOTH the coordinator `/view` and the editor's Review

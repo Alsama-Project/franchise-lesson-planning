@@ -135,15 +135,14 @@ export function AnnotationPane() {
     }
     const layerTop = layer.getBoundingClientRect().top;
 
-    // Desired top for each group = its section's offset within the cards layer, PLUS a
-    // clearance so the first card never sits on the section's ＋ (which floats at the
-    // section's top-right). Only the coordinator sees the ＋, so only they need it. Sort
-    // by offset so packing preserves the plan's reading order.
-    const CLEAR = role === 'coordinator' ? 44 : 0;
+    // Desired top for each group = its section's vertical offset within the cards layer,
+    // so each card floats beside the step it annotates. The ＋ lives in the gutter to the
+    // LEFT of the card lane, so cards need no extra clearance for it. Sort by offset so
+    // packing (below) preserves the plan's reading order.
     const desired = new Map<string, number>();
     for (const g of groups) {
       const el = sectionsRef.current.get(g.key);
-      desired.set(g.key, (el ? el.getBoundingClientRect().top - layerTop : 0) + CLEAR);
+      desired.set(g.key, el ? el.getBoundingClientRect().top - layerTop : 0);
     }
     const ordered = [...groups].sort((a, b) => (desired.get(a.key) ?? 0) - (desired.get(b.key) ?? 0));
 
@@ -158,7 +157,7 @@ export function AnnotationPane() {
     }
     setPositions(next);
     setLayerHeight(cursor);
-  }, [groups, sectionsRef, role]);
+  }, [groups, sectionsRef]);
 
   const schedule = useCallback(() => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);

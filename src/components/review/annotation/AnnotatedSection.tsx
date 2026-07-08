@@ -108,7 +108,7 @@ export function AnnotatedSection({
       ref={ref}
       onClick={toggle}
       data-section-key={sectionKey}
-      className={`group relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
+      className={`relative ${hasCards ? 'transition-colors hover:bg-[#E7F1EE]' : ''} ${className ?? ''}`}
       style={{
         ...style,
         ...borderStyle,
@@ -118,19 +118,13 @@ export function AnnotatedSection({
     >
       {children}
 
-      {/* Add-comment ＋ at the section's top-right (coordinator only, lg+). The plan body
-          is full-width and the comment cards overlay the right margin, so there is no
-          gutter — the ＋ reveals on hover (or when this section is active/composing) and
-          sits ABOVE the cards (z-30). The cards are packed with a top clearance so they
-          open below it, never on it. Pressing it opens a "New comment" card in the right
-          margin (pane, keyed on composingKey). */}
+      {/* Add-comment ＋ in the GUTTER between the left-half lesson and the right-half card
+          lane (coordinator only, lg+). The lesson content is capped to the left half, so
+          the ＋ sits just past the section's right edge — clear of both the content and
+          the card lane. Pressing it opens a "New comment" card in the right half (pane,
+          keyed on composingKey); the active section's ＋ is the teal-filled variant. */}
       {canAuthor ? (
-        <div
-          className={`absolute z-30 hidden transition-opacity lg:block ${
-            composingHere || activeHere ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          }`}
-          style={{ insetInlineEnd: 8, top: 8 }}
-        >
+        <div className="absolute z-30 hidden lg:block" style={{ insetInlineEnd: -42, top: 12 }}>
           <AddCommentButton
             label={t('annotations.addComment')}
             active={composingHere}

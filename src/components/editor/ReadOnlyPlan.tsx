@@ -171,11 +171,12 @@ export function ReadOnlyPlan({
       </div>
       )}
 
-      {/* Full-width plan body. The comment cards are an ABSOLUTE OVERLAY pinned to the
-          right margin (below), NOT a reserved column — so the body spans the full width
-          and its width never changes whether or not comments exist. */}
+      {/* Two halves (lg+): the lesson + curriculum content is capped to the LEFT half
+          (it stops at the midline, it does NOT span the page); the comment cards float in
+          the RIGHT half, each anchored to the vertical position of its section (below).
+          Only the plan header row (above) spans the full width. Below lg both stack. */}
       <div className="relative">
-        <div className="min-w-0">
+        <div className="min-w-0 lg:w-1/2">
           <div className="px-[22px] pb-10 pt-[22px] lg:px-[30px]">
         <CurriculumBand curriculum={curriculum} />
 
@@ -262,16 +263,17 @@ export function ReadOnlyPlan({
         </div>
 
         {rightRail ? (
-          // OVERLAY, not a column: absolutely positioned in the right margin, spanning
-          // the plan body's full height so the floating card stack can place each card
-          // at its section's vertical offset (Google-Docs). Because it is absolute, it
-          // never reflows the body — the plan is full-width with or without comments.
-          // `pointer-events-none` lets clicks fall through the empty margin to the plan;
-          // the cards re-enable pointer events on themselves. Shown lg+ only; below lg
-          // the pane stacks in normal flow via the sibling below.
-          <div className="pointer-events-none relative mt-6 px-[22px] lg:absolute lg:inset-y-0 lg:end-[30px] lg:top-0 lg:mt-0 lg:w-[320px] lg:px-0 lg:pt-[22px]">
+          // RIGHT HALF: the comment cards float in the right half of the page, each
+          // anchored to the vertical position of its section (the pane measures section
+          // offsets and packs cards down to avoid overlap). A card LANE starts just right
+          // of the midline so cards sit beside their sections — NOT a bordered column or
+          // reserved grid track, just floating cards in the right-hand space. Absolute so
+          // it never reflows the left half. `pointer-events-none` lets clicks fall through
+          // the empty space; the cards re-enable pointer events on themselves. Shown lg+;
+          // below lg the pane stacks in normal flow beneath the plan.
+          <div className="pointer-events-none relative mt-6 px-[22px] lg:absolute lg:inset-y-0 lg:start-1/2 lg:top-0 lg:mt-0 lg:w-[360px] lg:px-0 lg:ps-[22px] lg:pt-[22px]">
             {/* Wrapper is click-through; the pane re-enables pointer events on the cards
-                themselves, so the empty margin (and the section ＋ beneath it) stays
+                themselves, so the empty space (and the section ＋ beside it) stays
                 interactive. */}
             <div className="lg:h-full">{rightRail}</div>
           </div>

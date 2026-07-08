@@ -2,7 +2,44 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## RH rework fixes: full-width body · overlay margin cards · ＋ scroll · teacher → Review ✅ (this phase)
+## Review layout: left-half lesson / right-half floating cards (both surfaces) ✅ (this phase)
+
+Replaced the full-width-body + right-edge-overlay model (which let the whole-plan card sit
+OVER the grammar/theme band and drifted section cards mid-page) with a clean two-half split
+on the shared surface (`ReadOnlyPlan` + `AnnotationPane`, used by both the coordinator
+`/view` and the teacher editor Review step — fixed in place, not forked). No schema, RLS, or
+server-action change.
+
+- **Left half = lesson.** `ReadOnlyPlan`'s content column is capped to `lg:w-1/2`: the
+  daily-outcome / grammar / theme cards and the lesson sections stop at the midline and no
+  longer span the page. The **plan header row stays full-width** (decision cluster flush
+  right). Below `lg` it's a single stacked column.
+- **Right half = comment zone.** The pane is absolutely positioned in the right half
+  (`lg:absolute lg:inset-y-0 lg:start-1/2 lg:w-[360px]`) — a floating card LANE just right
+  of the midline, NOT a bordered column or reserved grid track. Because it's absolute it
+  never reflows the left half. In the editor this right half IS the worksheet's slot on the
+  Review step (comments replace the worksheet there; other steps keep the worksheet).
+- **Card vertical anchoring + collision.** Unchanged algorithm: each commented section
+  registers its DOM node; the pane measures `getBoundingClientRect().top` relative to the
+  card layer, sorts groups by that offset, and packs downward with `max(desired, cursor)` +
+  a `GAP`, so a lower card is nudged down to clear the one above — anchored to its step,
+  never stacked on the same pixels. Reflows via `ResizeObserver` + rAF on select / expand /
+  compose / resize. The **whole-plan card floats at the top of the right half** (the pane's
+  top block), above the section-anchored cards — no longer over the grammar band.
+- **＋ moved to the gutter.** With the lesson capped to the left half there's a real gutter
+  between it and the card lane, so the per-section ＋ sits there (`insetInlineEnd: -42`,
+  `z-30`, coordinator-only, lg+) — clear of both the content and the cards. Removed the
+  ＋-clearance offset the overlay model needed (cards now align directly to their section
+  tops; the ＋ is horizontally clear in the gutter).
+- **The four bugs** (carried/confirmed): ＋ opens the compose card in place with no
+  jump-to-top (`focus({ preventScroll: true })`, all buttons `type="button"`); no content
+  spans the page except the header; no sticky "N open · N resolved" line (count lives only
+  on the Approve "N open" pill); compose card never overlaps the ＋ or other cards; and the
+  teacher's returned plan opens the editor on the Review step (`/view` redirects the author
+  of an editable plan into the editor; the "Edit plan" affordance is gone; Resubmit stays in
+  the editor header; stepping back through the wizard edits freely, comments stay on Review).
+
+## RH rework fixes: full-width body · overlay margin cards · ＋ scroll · teacher → Review ✅ (prior phase)
 
 Four fixes on the shared review surface (`ReadOnlyPlan` + `AnnotationPane`, still shared
 across the coordinator `/view` and the editor Review step — fixed in place, not forked).

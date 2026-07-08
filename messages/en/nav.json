@@ -19,6 +19,8 @@
     "roleTeacher": "Teacher",
     "roleCoordinator": "Coordinator",
     "updatingSpace": "Updating…",
-    "switchError": "Couldn't switch space — try again"
+    "switchError": "Couldn't switch space — try again",
+    "switchErrorSession": "Your session expired — refresh the page and try again",
+    "switchErrorMembership": "You're no longer a member of that space"
   }
 }

@@ -19,6 +19,8 @@
     "roleTeacher": "معلّم",
     "roleCoordinator": "منسّق",
     "updatingSpace": "جارٍ التحديث…",
-    "switchError": "تعذّر تبديل المساحة — حاول مرة أخرى"
+    "switchError": "تعذّر تبديل المساحة — حاول مرة أخرى",
+    "switchErrorSession": "انتهت جلستك — أعد تحميل الصفحة وحاول مرة أخرى",
+    "switchErrorMembership": "لم تعد عضوًا في تلك المساحة"
   }
 }

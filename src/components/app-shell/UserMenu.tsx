@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { signOut } from '@/lib/actions/auth';
-import { setActiveSpace } from '@/lib/actions/active-space';
+import { setActiveSpace, type SwitchFailure } from '@/lib/actions/active-space';
 import { LocaleSwitcher } from '@/components/app-shell/LocaleSwitcher';
 import { ForceRtlToggle } from '@/components/app-shell/ForceRtlToggle';
 import { useImpersonationActions } from '@/components/app-shell/useImpersonationActions';
@@ -66,17 +66,29 @@ export function UserMenu({
   // the transition settles with no server change, so it reverts on its own.
   const [activeId, setOptimisticActiveId] = useOptimistic(serverActiveId);
   const [pending, startTransition] = useTransition();
-  const [failed, setFailed] = useState(false);
-  const status = pending ? t('updatingSpace') : failed ? t('switchError') : '';
+  const [failure, setFailure] = useState<SwitchFailure | null>(null);
+  // Map the specific failure to a specific message; fall back to the generic one.
+  const errorKey: Record<SwitchFailure, string> = {
+    'no-session': 'switchErrorSession',
+    'not-a-member': 'switchErrorMembership',
+    failed: 'switchError',
+  };
+  const status = pending
+    ? t('updatingSpace')
+    : failure
+      ? t(errorKey[failure])
+      : '';
 
   function choose(space: SwitcherSpace) {
     if (space.membershipId === activeId || pending) return;
-    setFailed(false);
+    setFailure(null);
     startTransition(async () => {
       setOptimisticActiveId(space.membershipId);
       const res = await setActiveSpace(space.schoolId, space.subjectId);
       if (!res.ok) {
-        setFailed(true);
+        // The optimistic marker reverts on its own as the transition settles with
+        // no server change; surface the specific reason for the failure.
+        setFailure(res.reason);
         return;
       }
       // Re-render every server surface (chip, board, curriculum default) at once.

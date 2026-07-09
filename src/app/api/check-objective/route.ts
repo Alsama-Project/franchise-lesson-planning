@@ -126,12 +126,9 @@ export async function POST(request: NextRequest) {
         }
 
         const message = await stream.finalMessage();
-        console.log('[check-objective] stream timing', {
-          firstDeltaMs,
-          lastDeltaMs,
-          deltaCount,
-          totalMs: Date.now() - t0,
-        });
+        console.log(
+          `[check-objective] stream firstDeltaMs=${firstDeltaMs} lastDeltaMs=${lastDeltaMs} deltaCount=${deltaCount} totalMs=${Date.now() - t0}`,
+        );
         console.log('[check-objective] usage', message.usage);
 
         // Authoritative: the validated result sets all six pills, resolving any

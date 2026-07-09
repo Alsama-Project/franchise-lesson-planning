@@ -10,9 +10,7 @@ import {
   type AccessRole,
   type UsersActionResult,
 } from '@/lib/actions/users';
-import { setUserImpersonation } from '@/lib/actions/console';
 import { avatarColors, initialsOf } from '@/components/weekly-overview/avatar';
-import { Checkbox } from './ui';
 import { cn } from '@/lib/cn';
 
 // ── icons (inline, matching lucide's paths — no lucide dependency in this app) ──
@@ -35,14 +33,6 @@ function ShieldIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
-function EyeIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -113,7 +103,6 @@ export function EditAccessModal({
     return new Set(user.spaces.filter((s) => s.role === src && s.subjectId).map((s) => s.subjectId!));
   });
   const [isDeactivated, setIsDeactivated] = useState(user.isDeactivated);
-  const [canImpersonate, setCanImpersonate] = useState(user.canImpersonate);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -184,17 +173,6 @@ export function EditAccessModal({
       () => setSubjectIds(next),
       () => setSubjectIds(subjectIds),
       () => commit(role, schoolIds, next),
-    );
-  }
-
-  function toggleImpersonation(next: boolean) {
-    // Reuse the existing definer RPC (0036) via the console action — it re-asserts
-    // is_admin() and is column-scoped to can_impersonate. Real admins are eligible
-    // regardless, so this row is shown implied-on for them and never toggled.
-    persist(
-      () => setCanImpersonate(next),
-      () => setCanImpersonate(!next),
-      () => setUserImpersonation({ targetUserId: user.userId, enabled: next }),
     );
   }
 
@@ -414,56 +392,6 @@ export function EditAccessModal({
               </div>
             </div>
           ) : null}
-
-          {/* Impersonation — a standalone org-level control (not part of the role
-              model). Grants test-bar access (profiles.can_impersonate). Real admins
-              are always eligible (eligibility is can_impersonate OR admin), so for an
-              admin the row is rendered implied-on and non-interactive. */}
-          <div className="mt-[24px] border-t border-[#EFE7DA] pt-[20px]">
-            <div className="mb-[10px] text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
-              {t('users.impersonation')}
-            </div>
-            <div
-              className={cn(
-                'flex items-center gap-[12px] rounded-[11px] border px-[14px] py-[12px]',
-                isAdmin || canImpersonate ? 'border-[#CFE6E0] bg-[#F7FBFA]' : 'border-[#E7DECF] bg-white',
-              )}
-            >
-              <Checkbox
-                checked={isAdmin ? true : canImpersonate}
-                locked={isAdmin}
-                onChange={toggleImpersonation}
-                aria-label={
-                  isAdmin
-                    ? t('members.testBar.adminLabel', { name })
-                    : t('members.testBar.toggleLabel', { name })
-                }
-              />
-              <span
-                className={cn(
-                  'inline-flex size-[34px] shrink-0 items-center justify-center rounded-[9px]',
-                  isAdmin || canImpersonate ? 'bg-[#E4F0ED] text-[#186155]' : 'bg-[#F3ECE2] text-[#8A8178]',
-                )}
-              >
-                <EyeIcon />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[14px] font-semibold text-ink">{t('users.impersonation')}</div>
-                <div
-                  className={cn(
-                    'text-[12px]',
-                    isAdmin || canImpersonate ? 'text-[#186155]' : 'text-[#8A8178]',
-                  )}
-                >
-                  {isAdmin
-                    ? t('users.impersonationAdmin')
-                    : canImpersonate
-                      ? t('users.impersonationOn')
-                      : t('users.impersonationOff')}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* ── Footer strip ─────────────────────────────────────────────────────── */}

@@ -83,7 +83,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
 
   return (
     <BoardReturnProvider query={returnQuery}>
-    <ScopeChooserProvider>
+    <ScopeChooserProvider coordinatorAuthor={data.coordinatorAuthor}>
       <div>
         {/* Header: context + filters + week nav + view toggle */}
         <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">

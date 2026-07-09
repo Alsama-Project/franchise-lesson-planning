@@ -40,18 +40,22 @@ import {
 const ERROR_RE = /^#(REF|VALUE|N\/?A|NAME|DIV\/?0|NULL|NUM)[!?]?$/i;
 
 /**
- * Canonical sheet per subject — the exact tab the live `curriculum_lesson` gold master
- * was built from, for workbooks that ship multiple curriculum-shaped sheets (drafts /
- * versions). Column-shape heuristics can't tell which draft was actually imported
- * (Professionalism V1/V2/V4 all parse; Arabic ships two full curricula), so we pin it.
- * When set, this sheet is used and MUST exist — a rename throws rather than silently
- * falling back to a wrong draft and orphaning live plans. An explicit `opts.sheet`
- * still overrides. Verified: each named sheet reproduces its subject's full gold key
- * set (zero missing).
+ * Canonical sheet per subject — a pin for workbooks that ship MULTIPLE VISIBLE
+ * curriculum-shaped sheets that the shape heuristic can't disambiguate. Arabic ships two
+ * full curricula (`Arabic Curriculum (2)` is the live one; the other holds taxonomy-code
+ * junk) so it is pinned. When set, this sheet is used and MUST exist — a rename throws
+ * rather than silently falling back to a wrong draft and orphaning live plans. An
+ * explicit `opts.sheet` still overrides.
+ *
+ * NOT for disambiguating draft VERSIONS by visibility — hidden/very-hidden tabs are
+ * archived legacy versions and are excluded from selection outright (see selectSheet), so
+ * they never need a pin. Professionalism was previously pinned here to `V1`, which turned
+ * out to be a HIDDEN, stale sheet: the visible current sheet is `V4`. Removing the pin
+ * lets selectSheet choose the single visible sheet (V4), and the hidden-sheet guard makes
+ * ingesting a stale hidden tab impossible.
  */
 const CANONICAL_SHEET: Record<string, string> = {
   arabic: 'Arabic Curriculum (2)',
-  professionalism: 'V1',
 };
 
 // ── English weekly-field cleanups (live-DB provenance, NOT migration 0024) ─────────
@@ -433,8 +437,32 @@ interface SheetSelection {
   ambiguous: boolean;
 }
 
-/** Choose the curriculum sheet. Never just `sheetnames[0]`. */
+/**
+ * Per-sheet visibility, by name. SheetJS records it on `workbook.Workbook.Sheets`
+ * (index-aligned with `SheetNames`): Hidden 0 = visible, 1 = hidden, 2 = veryHidden.
+ * Absent metadata is treated as visible.
+ */
+function sheetVisibility(workbook: XLSX.WorkBook): Map<string, number> {
+  const vis = new Map<string, number>();
+  const meta = workbook.Workbook?.Sheets ?? [];
+  workbook.SheetNames.forEach((name, i) => vis.set(name, meta[i]?.Hidden ?? 0));
+  return vis;
+}
+
+/**
+ * Choose the curriculum sheet — from the VISIBLE sheets only. Hidden / very-hidden tabs
+ * are archived legacy versions by convention here (e.g. professionalism ships `V4`
+ * visible with `V1`/`V2`/`Detail*` hidden), so they are never eligible: the heuristic
+ * ignores them, and an explicit request (`CANONICAL_SHEET` / `opts.sheet`) that resolves
+ * to a hidden sheet THROWS rather than silently ingesting stale content — the guard that
+ * makes ingesting a hidden, stale sheet structurally impossible. If zero or more than one
+ * visible curriculum-shaped sheet remains, we STOP rather than guess (pin the right one).
+ */
 function selectSheet(workbook: XLSX.WorkBook, requested?: string): SheetSelection {
+  const vis = sheetVisibility(workbook);
+  const isHidden = (name: string): boolean => (vis.get(name) ?? 0) !== 0;
+  const hiddenLabel = (name: string): string => (vis.get(name) === 2 ? 'very hidden' : 'hidden');
+
   const evals: SheetEval[] = [];
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name];
@@ -448,36 +476,40 @@ function selectSheet(workbook: XLSX.WorkBook, requested?: string): SheetSelectio
     if (!ev) {
       throw new Error(`Requested sheet "${requested}" has no recognisable curriculum header.`);
     }
-    const others = evals.filter((e) => e.shaped && e.name !== ev.name).map((e) => e.name);
+    // A hidden sheet is an archived legacy version — never ingest it, even when pinned.
+    if (isHidden(ev.name)) {
+      throw new Error(
+        `Requested sheet "${ev.name}" is ${hiddenLabel(ev.name)}; hidden sheets are archived ` +
+          `legacy versions and must not be ingested. Point at the visible curriculum sheet.`,
+      );
+    }
+    const others = evals
+      .filter((e) => e.shaped && !isHidden(e.name) && e.name !== ev.name)
+      .map((e) => e.name);
     return { chosen: ev, candidateSheets: others, ambiguous: false };
   }
 
-  const shaped = evals.filter((e) => e.shaped);
+  // Heuristic: only VISIBLE curriculum-shaped sheets are eligible, so a stale hidden draft
+  // can never be chosen. We do NOT rank multiple candidates — if more than one visible
+  // curriculum sheet survives, that is genuinely ambiguous and must be pinned, not guessed.
+  const shaped = evals.filter((e) => e.shaped && !isHidden(e.name));
   if (shaped.length === 0) {
+    const hiddenShaped = evals.filter((e) => e.shaped).map((e) => e.name);
     throw new Error(
-      'Could not find a curriculum sheet: no header row mapping Subject/Year/Month and a learning-outcome column.',
+      'Could not find a VISIBLE curriculum sheet mapping Subject/Year/Month and a ' +
+        `learning-outcome column.${
+          hiddenShaped.length ? ` Only hidden curriculum sheets exist: ${hiddenShaped.join(', ')}.` : ''
+        }`,
     );
   }
-  if (shaped.length === 1) {
-    return { chosen: shaped[0], candidateSheets: [], ambiguous: false };
+  if (shaped.length > 1) {
+    throw new Error(
+      `Ambiguous: ${shaped.length} visible curriculum-shaped sheets (${shaped
+        .map((e) => e.name)
+        .join(', ')}). Pin the correct one in CANONICAL_SHEET or pass opts.sheet.`,
+    );
   }
-
-  // (a) most mapped fields, then (b) FIRST sheet in workbook order. We deliberately do
-  // NOT prefer a higher `V<n>` or the last sheet: the imported draft is not necessarily
-  // the newest tab (gold was built from Professionalism V1, not V4; Arabic's first tab,
-  // not its last). Subjects whose imported draft is genuinely ambiguous are pinned in
-  // CANONICAL_SHEET and never reach this fallback.
-  const order = new Map(workbook.SheetNames.map((n, i) => [n, i] as const));
-  const ranked = [...shaped].sort(
-    (a, b) =>
-      b.fieldCount - a.fieldCount || (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0),
-  );
-  const chosen = ranked[0];
-  return {
-    chosen,
-    candidateSheets: shaped.filter((e) => e.name !== chosen.name).map((e) => e.name),
-    ambiguous: true,
-  };
+  return { chosen: shaped[0], candidateSheets: [], ambiguous: false };
 }
 
 // ── The parse ─────────────────────────────────────────────────────────────────────
@@ -538,6 +570,12 @@ export function parseCurriculumWorkbook(
   let skippedLessonRows = 0;
   let nonInstructional = 0;
   let refSeen = false;
+  // Two source rows collapsing onto one lesson_key = silent data loss: the later row
+  // overwrites the earlier in `lessonRows` (e.g. a week whose period labels are missing,
+  // so every period row keys to the same `…|wk`). Count + sample it so the source error
+  // surfaces instead of quietly dropping lessons. Detection only — never auto-resolved.
+  let lessonKeyCollisions = 0;
+  const collisionSamples: string[] = [];
 
   const hasWeekCol = byField.has('week');
   const hasPeriodCol = byField.has('period');
@@ -664,6 +702,12 @@ export function parseCurriculumWorkbook(
       const weeklyKnowledgeResolved = cleanWeeklyKnowledge(
         hasWeekCol ? value('weeklyKnowledgeLearningOutcome') : rawWeeklyKnowledge,
       );
+      if (lessonRows.has(lessonKey)) {
+        lessonKeyCollisions++;
+        if (collisionSamples.length < 5 && !collisionSamples.includes(lessonKey)) {
+          collisionSamples.push(lessonKey);
+        }
+      }
       lessonRows.set(lessonKey, {
         subject_code: subjectCode,
         year: yearIndex,
@@ -722,6 +766,8 @@ export function parseCurriculumWorkbook(
     nonInstructional,
     refSeen,
     skippedLessonRows,
+    lessonKeyCollisions,
+    collisionSamples,
   });
 
   return { records: recordList, report, lessonRows: [...lessonRows.values()], skippedLessonRows };
@@ -742,6 +788,8 @@ interface ReportArgs {
   nonInstructional: number;
   refSeen: boolean;
   skippedLessonRows: number;
+  lessonKeyCollisions: number;
+  collisionSamples: string[];
 }
 
 /** Canonical fields we generally expect to find; absence is reported. */
@@ -801,6 +849,14 @@ function buildReport(a: ReportArgs): ImportReport {
   if (a.skippedLessonRows > 0) {
     warnings.push(
       `${a.skippedLessonRows} records lack the year/month/week needed by curriculum_lesson (NOT NULL) and are not written.`,
+    );
+  }
+  if (a.lessonKeyCollisions > 0) {
+    warnings.push(
+      `${a.lessonKeyCollisions} source row(s) collapsed onto an already-seen lesson_key and ` +
+        `OVERWROTE an earlier lesson (silent data loss — usually missing period labels in the ` +
+        `source, so a week's periods all key to "…|wk"). Fix the source and re-import. ` +
+        `e.g. ${a.collisionSamples.join(', ')}`,
     );
   }
   for (const cf of criticalFields) {

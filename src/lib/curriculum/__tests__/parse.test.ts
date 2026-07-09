@@ -301,47 +301,95 @@ test('hyperlink resources: URL captured though display text says "Click for Reso
   ]);
 });
 
-// ── Multiple candidate sheets (non-pinned subject) → pick FIRST, flag for review ──
+// ── Sheet visibility drives selection: hidden tabs are archived legacy versions ───
 //
-// The heuristic deliberately does NOT prefer a higher V-number or the last sheet: the
-// imported draft is not necessarily the newest tab (gold was built from Professionalism
-// V1, not V4). For a non-pinned subject it falls to (most fields, then first sheet).
+// Hidden / very-hidden sheets are excluded outright (never ingested), so a stale hidden
+// draft can never be chosen — the exact bug behind professionalism (DB was ingested from
+// the hidden, stale V1 while V4 is the visible current sheet).
 
-test('multiple curriculum sheets: selects the FIRST shaped sheet, flags needsReview', () => {
+test('hidden sheets are excluded — the single VISIBLE curriculum sheet is chosen', () => {
   const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
-  const data: CellSpec[] = ['', 'Year 4', 'June', 1, 'Period 1', 'Practice'];
-  const block = [...headerBlock(headers), data];
+  const v4: CellSpec[] = ['', 'Year 4', 'June', 1, 'Period 1', 'Current V4 content'];
+  const v1: CellSpec[] = ['', 'Year 4', 'June', 1, 'Period 1', 'Stale V1 content'];
+  // Real professionalism: V4 visible, V1/V2 hidden legacy. V1 first — order must not matter.
+  const wb = makeWorkbook(
+    {
+      V1: [...headerBlock(headers), v1],
+      V2: [...headerBlock(headers), v1],
+      V4: [...headerBlock(headers), v4],
+    },
+    { hidden: ['V1', 'V2'] },
+  );
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'professionalism');
+  assert.equal(report.selectedSheet, 'V4');
+  assert.equal(lessonRows[0].daily_outcome, 'Current V4 content');
+});
+
+test('a hidden sheet is never ingested, even when explicitly requested', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  const block = [...headerBlock(headers), ['', 'Year 4', 'June', 1, 'Period 1', 'x']];
+  const wb = makeWorkbook(
+    { 'English Curriculum': block, Current: block },
+    { hidden: ['English Curriculum'] },
+  );
+  assert.throws(
+    () => parseCurriculumWorkbook(wb, 'english', { sheet: 'English Curriculum' }),
+    /hidden/,
+  );
+});
+
+test('multiple VISIBLE curriculum sheets (no pin): STOP rather than guess', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  const block = [...headerBlock(headers), ['', 'Year 4', 'June', 1, 'Period 1', 'Practice']];
   const wb = makeWorkbook({
     Cover: [['Welcome'], ['not a curriculum sheet']],
     'Curriculum A': block,
     'Curriculum B': block,
   });
-
-  const { report } = parseCurriculumWorkbook(wb, 'maths'); // maths is not pinned
-  assert.equal(report.selectedSheet, 'Curriculum A');
-  assert.equal(report.needsReview, true);
-  assert.deepEqual(report.candidateSheets, ['Curriculum B']);
-  assert.ok(report.warnings.some((w) => w.includes('Multiple curriculum-shaped sheets')));
+  assert.throws(
+    () => parseCurriculumWorkbook(wb, 'maths'), // maths is not pinned
+    /Ambiguous: 2 visible curriculum-shaped sheets/,
+  );
 });
 
-// ── Canonical sheet pin (professionalism/arabic) overrides the heuristic ──────────
+// ── Canonical sheet pin (arabic) disambiguates multiple VISIBLE candidates ─────────
 
-test('canonical sheet pin selects the imported draft, not the highest version', () => {
+test('canonical pin selects the pinned sheet among multiple visible candidates', () => {
   const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
-  const data: CellSpec[] = ['', 'Year 4', 'June', 1, 'Period 1', 'Practice'];
-  const block = [...headerBlock(headers), data];
-  // Real professionalism ships V1/V2/V4; gold was built from V1. Order must not matter.
-  const wb = makeWorkbook({ V4: block, V2: block, V1: block });
+  const block = [...headerBlock(headers), ['', 'Year 4', 'June', 1, 'Period 1', 'Practice']];
+  // Arabic ships two curriculum-shaped sheets; the pin disambiguates without guessing.
+  const wb = makeWorkbook({ 'Arabic Curriculum': block, 'Arabic Curriculum (2)': block });
 
-  const { report } = parseCurriculumWorkbook(wb, 'professionalism');
-  assert.equal(report.selectedSheet, 'V1');
+  const { report } = parseCurriculumWorkbook(wb, 'arabic');
+  assert.equal(report.selectedSheet, 'Arabic Curriculum (2)');
 });
 
-test('canonical sheet pin throws (never silently falls back) when the sheet is absent', () => {
+test('canonical pin throws (never silently falls back) when the pinned sheet is absent', () => {
   const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
-  const data: CellSpec[] = ['', 'Year 4', 'June', 1, 'Period 1', 'Practice'];
-  const wb = makeWorkbook({ V4: [...headerBlock(headers), data] }); // no V1
-  assert.throws(() => parseCurriculumWorkbook(wb, 'professionalism'), /V1/);
+  const wb = makeWorkbook({
+    'Arabic Curriculum': [...headerBlock(headers), ['', 'Year 4', 'June', 1, 'Period 1', 'x']],
+  });
+  assert.throws(() => parseCurriculumWorkbook(wb, 'arabic'), /Arabic Curriculum \(2\)/);
+});
+
+// ── Period-null key collision is counted + surfaced (silent data loss) ─────────────
+
+test('two rows collapsing onto one lesson_key are counted and warned', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  // A week whose Period labels are MISSING: two rows, same year/month/week, blank period →
+  // both key to "…|wk" → the second overwrites the first (arabic W15 in the real data).
+  const r1: CellSpec[] = ['', 'Year 5', 'December', 15, '', 'Lesson one'];
+  const r2: CellSpec[] = ['', '', '', '', '', 'Lesson two']; // merged year/month/week, blank period
+  const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), r1, r2] });
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'science');
+  const collapsed = lessonRows.filter((r) => r.period == null && r.week === 15);
+  assert.equal(collapsed.length, 1); // both rows collapsed onto one key
+  assert.ok(
+    report.warnings.some((w) => /collapsed onto an already-seen lesson_key/.test(w)),
+    `expected a collision warning, got: ${report.warnings.join(' | ')}`,
+  );
 });
 
 // ── A brand-new column does not break the parse; it is surfaced ──────────────────

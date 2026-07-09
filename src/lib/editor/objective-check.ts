@@ -110,13 +110,40 @@ export function isObjectiveCheckResult(value: unknown): value is ObjectiveCheckR
 export class ObjectiveCheckRequestError extends Error {}
 
 /**
- * POST the objective (and optional context) to `/api/check-objective` and return
- * the structured assessment. Throws {@link ObjectiveCheckRequestError} with a
- * teacher-facing message on any non-OK response or malformed reply.
+ * A single SMARTT letter resolved mid-stream, delivered as a `pill` SSE frame so
+ * the editor can flip that pill from evaluating → met/unmet the moment its object
+ * closes. Liveness only — the final validated result is authoritative.
+ */
+export interface SmarttPillFrame {
+  key: SmarttDimensionKey;
+  status: LetterStatus;
+  note: string;
+}
+
+function isPillFrame(value: unknown): value is SmarttPillFrame {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    SMARTT_DIMENSION_KEYS.includes(v.key as SmarttDimensionKey) &&
+    (v.status === 'strong' || v.status === 'needs work') &&
+    typeof v.note === 'string'
+  );
+}
+
+/**
+ * POST the objective (and optional context) to `/api/check-objective` and read
+ * the streamed assessment. Each `pill` frame is handed to {@link onPill} as it
+ * arrives (progressive reveal); the promise resolves with the final validated
+ * {@link ObjectiveCheckResult}. Throws {@link ObjectiveCheckRequestError} with a
+ * teacher-facing message on any error frame, transport failure, or malformed reply.
+ *
+ * Pre-flight failures (bad body, empty objective, missing key) still come back as
+ * a JSON error with a status code, and are surfaced the same way as before.
  */
 export async function requestObjectiveCheck(
   objective: string,
   context?: ObjectiveCheckRequestContext,
+  onPill?: (frame: SmarttPillFrame) => void,
 ): Promise<ObjectiveCheckResult> {
   let res: Response;
   try {
@@ -129,23 +156,79 @@ export async function requestObjectiveCheck(
     throw new ObjectiveCheckRequestError('Could not reach the objective checker. Try again.');
   }
 
-  let body: unknown = null;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
+  const contentType = res.headers.get('content-type') ?? '';
 
-  if (!res.ok) {
-    const message =
-      body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
-        ? (body as { error: string }).error
-        : 'The objective check failed. Try again.';
-    throw new ObjectiveCheckRequestError(message);
-  }
-
-  if (!isObjectiveCheckResult(body)) {
+  // Pre-flight errors (and any non-stream reply) come back as JSON, as before.
+  if (!res.ok || !contentType.includes('text/event-stream') || !res.body) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    if (!res.ok) {
+      const message =
+        body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error
+          : 'The objective check failed. Try again.';
+      throw new ObjectiveCheckRequestError(message);
+    }
+    // 200 but not a stream: tolerate a plain JSON result if the shape validates.
+    if (isObjectiveCheckResult(body)) return body;
     throw new ObjectiveCheckRequestError('The objective check returned an unexpected result.');
   }
-  return body;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let result: ObjectiveCheckResult | null = null;
+  let errorMessage: string | null = null;
+
+  const handleFrame = (raw: string) => {
+    let event = 'message';
+    const dataLines: string[] = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+    }
+    if (dataLines.length === 0) return;
+    let data: unknown;
+    try {
+      data = JSON.parse(dataLines.join('\n'));
+    } catch {
+      return;
+    }
+    if (event === 'pill') {
+      if (onPill && isPillFrame(data)) onPill(data);
+    } else if (event === 'result') {
+      if (isObjectiveCheckResult(data)) result = data;
+      else errorMessage = 'The objective check returned an unexpected result.';
+    } else if (event === 'error') {
+      errorMessage =
+        data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string'
+          ? (data as { error: string }).error
+          : 'The objective check failed. Try again.';
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf('\n\n')) !== -1) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        if (frame.trim().length > 0) handleFrame(frame);
+      }
+    }
+  } catch {
+    throw new ObjectiveCheckRequestError('The objective check was interrupted. Try again.');
+  }
+  if (buf.trim().length > 0) handleFrame(buf); // flush a trailing frame without \n\n
+
+  if (errorMessage) throw new ObjectiveCheckRequestError(errorMessage);
+  if (!result) throw new ObjectiveCheckRequestError('The objective check did not complete. Try again.');
+  return result;
 }

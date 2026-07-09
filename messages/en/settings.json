@@ -55,13 +55,7 @@
         "class": "Class",
         "spaces": "Subject spaces",
         "status": "Status",
-        "testBar": "Test bar",
         "actions": "Actions"
-      },
-      "testBar": {
-        "toggleLabel": "Test-bar access for {name}",
-        "adminLabel": "Test-bar access for {name} (admin — always on)",
-        "adminHint": "Admins always have test-bar access."
       },
       "edit": "Edit",
       "remove": "Remove",
@@ -269,10 +263,6 @@
       "editAccessFor": "Edit access for {name}",
       "globalAccess": "Global access",
       "standardAccess": "Standard access",
-      "impersonation": "Impersonation",
-      "impersonationOn": "Can switch to test personas from the impersonation bar",
-      "impersonationOff": "No test-bar access",
-      "impersonationAdmin": "Always on for admins",
       "notUsedWhileAdmin": "Not used while admin",
       "spaceCol": "Space",
       "done": "Done",

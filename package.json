@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/loader-register.mjs --test src/lib/curriculum/__tests__/columnMatcher.test.ts src/lib/curriculum/__tests__/gaps.test.ts src/lib/curriculum/__tests__/insights.test.ts src/lib/curriculum/__tests__/parse.test.ts src/lib/curriculum/__tests__/parity.test.ts src/lib/curriculum/__tests__/taxonomy.test.ts src/lib/curriculum/__tests__/search-match.test.ts src/lib/curriculum/__tests__/version-labels.test.ts src/lib/editor/__tests__/pagination.test.ts src/lib/editor/__tests__/worksheet-migrate.test.ts",
+    "test": "node --import ./scripts/loader-register.mjs --test src/lib/curriculum/__tests__/columnMatcher.test.ts src/lib/curriculum/__tests__/gaps.test.ts src/lib/curriculum/__tests__/insights.test.ts src/lib/curriculum/__tests__/parse.test.ts src/lib/curriculum/__tests__/parity.test.ts src/lib/curriculum/__tests__/audit-extract.test.ts src/lib/curriculum/__tests__/audit-reconciliation.test.ts src/lib/curriculum/__tests__/taxonomy.test.ts src/lib/curriculum/__tests__/search-match.test.ts src/lib/curriculum/__tests__/version-labels.test.ts src/lib/editor/__tests__/pagination.test.ts src/lib/editor/__tests__/worksheet-migrate.test.ts",
     "ingest:curriculum": "node --import ./scripts/loader-register.mjs scripts/ingest-curriculum.ts",
     "redact:goldmaster": "node --import ./scripts/loader-register.mjs scripts/redact-goldmaster.ts",
     "parity:report": "node --import ./scripts/loader-register.mjs scripts/parity-report.ts",
+    "audit:curriculum": "node --import ./scripts/loader-register.mjs scripts/audit-curriculum.ts",
     "worksheet:dryrun": "node --import ./scripts/loader-register.mjs scripts/worksheet-migrate-dryrun.ts",
     "gen:types": "supabase gen types typescript --local > src/types/database.types.ts"
   },
@@ -46,6 +47,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-image-crop": "^11.1.2",
+    "react-resizable-panels": "^4.12.1",
     "turndown": "^7.2.4",
     "xlsx": "^0.18.5"
   },

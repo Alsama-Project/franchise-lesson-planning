@@ -16,8 +16,13 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import { createTeacherPlan, type EligibleClass } from '@/lib/actions/create-lesson';
+import {
+  createTeacherPlan,
+  createCoordinatorPlan,
+  type EligibleClass,
+} from '@/lib/actions/create-lesson';
 import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
+import { useCoordinatorAuthor } from '@/components/weekly-overview/ScopeChooser';
 import { formatNumber } from '@/lib/format';
 import type { EmptySlotCard } from '@/components/weekly-overview/cards';
 
@@ -46,6 +51,7 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
   const locale = useLocale();
   const router = useRouter();
   const planHref = usePlanHref();
+  const coordinatorAuthor = useCoordinatorAuthor();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set when the teacher teaches several eligible classes for this slot — pick one.
@@ -65,9 +71,24 @@ export function GhostLessonCard({ card }: { card: EmptySlotCard }) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    // A coordinator of the active subject authors a born-approved plan (Save, not
+    // Submit) — no class binding, straight into the editor.
+    if (coordinatorAuthor) {
+      const res = await createCoordinatorPlan({
+        lessonKey: card.lessonKey,
+        weekday: card.weekday,
+        period: card.period,
+      });
+      if (res.ok) {
+        router.push(planHref(`/plan/${res.planId}`));
+        return;
+      }
+      setBusy(false);
+      setError(res.error);
+      return;
+    }
     const res = await createTeacherPlan({
       lessonKey: card.lessonKey,
-      centreId: card.centreId,
       weekday: card.weekday,
       period: card.period,
       classId,

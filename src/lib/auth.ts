@@ -125,6 +125,30 @@ export async function getMyMemberships(): Promise<Membership[]> {
   }));
 }
 
+/**
+ * The subject ids the caller COORDINATES — read from `coordinator_subject`, the
+ * school-agnostic source of truth for coordinator-ness (migration 0040; legacy
+ * per-school `subject_membership` coordinator rows were backfilled here and removed
+ * in 0041). This is the SAME source the `lp_select`/`lp_write` RLS policies and
+ * `is_coordinator_of_subject` read, so board routing, the review queue, and RLS all
+ * agree on "who is a coordinator." RLS (`cs_self_read`) scopes the read to the
+ * caller's own rows. Returns an empty set when signed out or coordinating nothing.
+ */
+export async function getMyCoordinatedSubjectIds(): Promise<Set<string>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return new Set();
+
+  const { data } = await supabase
+    .from('coordinator_subject')
+    .select('subject_id')
+    .eq('profile_id', user.id);
+
+  return new Set(((data ?? []) as Array<{ subject_id: string }>).map((r) => r.subject_id));
+}
+
 /** True when the caller is a member of the (school, subject) space. */
 export async function isMemberOf(schoolId: string, subjectId: string): Promise<boolean> {
   const supabase = await createClient();

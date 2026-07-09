@@ -30,11 +30,22 @@ export function makeSheet(rows: CellSpec[][]): XLSX.WorkSheet {
   return ws;
 }
 
-/** Build a workbook buffer from {sheetName: rows}. */
-export function makeWorkbook(sheets: Record<string, CellSpec[][]>): Buffer {
+/** Build a workbook buffer from {sheetName: rows}. `opts.hidden` marks sheets hidden
+ *  (SheetJS `Workbook.Sheets[i].Hidden = 1`) so the visibility-aware sheet selection can
+ *  be exercised. */
+export function makeWorkbook(
+  sheets: Record<string, CellSpec[][]>,
+  opts: { hidden?: string[] } = {},
+): Buffer {
   const wb = XLSX.utils.book_new();
   for (const [name, rows] of Object.entries(sheets)) {
     XLSX.utils.book_append_sheet(wb, makeSheet(rows), name);
+  }
+  if (opts.hidden && opts.hidden.length > 0) {
+    const hide = new Set(opts.hidden);
+    wb.Workbook = {
+      Sheets: wb.SheetNames.map((n) => ({ name: n, Hidden: (hide.has(n) ? 1 : 0) as 0 | 1 })),
+    };
   }
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 }

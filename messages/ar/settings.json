@@ -55,13 +55,7 @@
         "class": "الصف",
         "spaces": "مساحات المواد",
         "status": "الحالة",
-        "testBar": "شريط الاختبار",
         "actions": "إجراءات"
-      },
-      "testBar": {
-        "toggleLabel": "صلاحية شريط الاختبار لـ {name}",
-        "adminLabel": "صلاحية شريط الاختبار لـ {name} (مشرف — مفعّلة دائماً)",
-        "adminHint": "المشرفون لديهم صلاحية شريط الاختبار دائماً."
       },
       "edit": "تعديل",
       "remove": "إزالة",
@@ -269,10 +263,6 @@
       "editAccessFor": "تعديل صلاحيات {name}",
       "globalAccess": "الوصول العام",
       "standardAccess": "وصول قياسي",
-      "impersonation": "انتحال الهوية",
-      "impersonationOn": "يمكنه التبديل إلى شخصيات الاختبار من شريط انتحال الهوية",
-      "impersonationOff": "لا وصول إلى شريط الاختبار",
-      "impersonationAdmin": "مُفعَّل دائمًا للمشرفين",
       "notUsedWhileAdmin": "غير مستخدَم أثناء كونه مشرفًا",
       "spaceCol": "المساحة",
       "done": "تم",

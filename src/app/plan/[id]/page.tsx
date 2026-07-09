@@ -72,6 +72,12 @@ export default async function PlanEditorPage({
   // block.type → title, so a phase-anchored card can label itself in the pane.
   const phaseTitles = Object.fromEntries(data.plan.blocks.map((b) => [b.type, b.title]));
 
+  // A coordinator viewing their OWN plan in a subject they coordinate authored it as
+  // the approval authority: it is born `approved` and edited via Save, never the
+  // submit/review lifecycle. (A coordinator viewing someone else's plan was already
+  // redirected to /view above, so this only ever flags the author's own plan.)
+  const coordinatorAuthor = canCoordinate && data.plan.created_by === user?.id;
+
   return (
     <AppShell name={name} subtitle={`${data.classContext.schoolName} · ${data.classContext.subjectName}`}>
       <LessonPlanEditor
@@ -80,6 +86,7 @@ export default async function PlanEditorPage({
         viewerName={name}
         phaseTitles={phaseTitles}
         backHref={backHref}
+        coordinatorAuthor={coordinatorAuthor}
       />
     </AppShell>
   );

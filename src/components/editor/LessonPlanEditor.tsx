@@ -21,6 +21,8 @@ import {
   ObjectiveCheckRequestError,
   SMARTT_LETTERS,
   type ObjectiveCheckResult,
+  type SmarttDimensionKey,
+  type SmarttLetterAssessment,
 } from '@/lib/editor/objective-check';
 import {
   saveLessonPlan,
@@ -32,6 +34,7 @@ import { recordUsageAction } from '@/lib/actions/resources';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
+import { Spinner } from '@/components/ui/Spinner';
 import { LockedBanner } from '@/components/editor/LockedBanner';
 import { CurriculumCard } from '@/components/editor/CurriculumCard';
 import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
@@ -43,6 +46,7 @@ import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
+import { WorksheetPipelineSplit } from '@/components/editor/WorksheetPipelineSplit';
 import { AnnotationProvider } from '@/components/review/annotation/context';
 import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
 
@@ -78,6 +82,7 @@ export function LessonPlanEditor({
   viewerName,
   phaseTitles,
   backHref = '/',
+  coordinatorAuthor = false,
 }: {
   data: EditorPlanData;
   /** Coordinator feedback on this plan. When present, the Review step (step 5) renders
@@ -91,6 +96,13 @@ export function LessonPlanEditor({
   phaseTitles: Record<string, string>;
   /** Where "‹ This week" returns — the board week this plan was opened from. */
   backHref?: string;
+  /**
+   * True when the viewer is the plan's author AND coordinates its subject — a
+   * coordinator authoring their own plan. Such a plan is born `approved`, so there is
+   * no submit/review lifecycle: the plan stays editable at every status (never
+   * locked) and the primary control is "Save", not "Submit for approval".
+   */
+  coordinatorAuthor?: boolean;
 }) {
   const { plan, classContext, curriculum, activitiesByBlock, resourceBank } = data;
   const t = useTranslations('wizard');
@@ -137,6 +149,11 @@ export function LessonPlanEditor({
     return composeObjective(seed) || seed;
   });
   const [checking, setChecking] = useState(false);
+  // Letters resolved so far during a streamed check, for the progressive pill
+  // reveal. Reset at the start of each check and cleared when it settles.
+  const [partialPills, setPartialPills] = useState<
+    Partial<Record<SmarttDimensionKey, SmarttLetterAssessment>>
+  >({});
   const [checkError, setCheckError] = useState<string | null>(null);
 
   const [status, setStatus] = useState<PlanStatus>(plan.status);
@@ -149,7 +166,9 @@ export function LessonPlanEditor({
   // `submitted` and `approved` both lock the plan pane read-only; `in_progress`
   // and `needs_review` leave it editable. The student WORKSHEET pane is exempt —
   // it stays editable at every status (its writes go through `saveWorksheet`).
-  const locked = status === 'submitted' || status === 'approved';
+  // A coordinator-authored plan is born `approved` but has no review lifecycle, so
+  // it is NEVER locked — its author keeps editing and just Saves.
+  const locked = !coordinatorAuthor && (status === 'submitted' || status === 'approved');
 
   const total = useMemo(() => inSessionMinutes(blocks), [blocks]);
 
@@ -251,7 +270,9 @@ export function LessonPlanEditor({
   // (`submitted_at` is cleared when a plan is recalled to `in_progress`, so status
   // is the durable signal. A recalled plan re-gates, but its stored pass is
   // re-seeded above, so it stays approved without a redundant re-check.)
-  const objectiveGateActive = status === 'in_progress';
+  // A coordinator authoring their own plan IS the approval authority, so the Aya
+  // objective gate never applies to them.
+  const objectiveGateActive = status === 'in_progress' && !coordinatorAuthor;
 
   // The exact string a check would evaluate for the current objective — mirrors the
   // stored-objective composition and the `handleCheck` payload.
@@ -349,18 +370,28 @@ export function LessonPlanEditor({
   async function handleCheck() {
     setChecking(true);
     setCheckError(null);
+    setPartialPills({});
     // The exact string Aya evaluates — captured at fire time and stored alongside
     // the result so approval binds to this payload, not a stale one. Mirrors the
     // stored-objective composition, so it equals what autosave/submit persist.
     const payload = composeObjective(remainder) || remainder;
     setLastCheckedPayload(payload);
     try {
-      const result = await requestObjectiveCheck(payload, {
-        dailyOutcome: curriculum?.dailyLO || undefined,
-        grammarVocab: curriculum?.grammarVocab || undefined,
-        theme: curriculum?.theme || undefined,
-        year: classContext.year,
-      });
+      const result = await requestObjectiveCheck(
+        payload,
+        {
+          dailyOutcome: curriculum?.dailyLO || undefined,
+          grammarVocab: curriculum?.grammarVocab || undefined,
+          theme: curriculum?.theme || undefined,
+          year: classContext.year,
+        },
+        // Progressive reveal: flip each pill as its letter closes in the stream.
+        (frame) =>
+          setPartialPills((prev) => ({
+            ...prev,
+            [frame.key]: { status: frame.status, note: frame.note },
+          })),
+      );
       setCheckResult(result);
     } catch (err) {
       setCheckError(
@@ -368,6 +399,7 @@ export function LessonPlanEditor({
       );
     } finally {
       setChecking(false);
+      setPartialPills({});
     }
   }
 
@@ -411,7 +443,40 @@ export function LessonPlanEditor({
     }
   }
 
-  const submitControl = (
+  // A coordinator-authored plan has no submit lifecycle — flush the pending autosave
+  // and persist immediately. Status is untouched (stays `approved`); no submit, no
+  // notification. RLS (`lp_update`, author branch) and the unchanged
+  // `enforce_approval_role` (status doesn't change) both permit this write.
+  async function handleSave() {
+    setSubmitting(true);
+    setSubmitError(null);
+    if (timer.current) clearTimeout(timer.current);
+    const res = await saveLessonPlan({
+      id: plan.id,
+      smartt_objective: composeObjective(remainder),
+      blocks,
+      required_materials: materials,
+      smartt_check: checkResult ?? undefined,
+    });
+    setSubmitting(false);
+    setSaveState(res.ok ? 'saved' : 'error');
+    if (!res.ok) setSubmitError(res.error ?? t('errors.couldNotSubmit'));
+  }
+
+  const submitControl = coordinatorAuthor ? (
+    // Coordinator-author: Save, not Submit. The plan is already `approved`; this
+    // just commits edits, so it reads as a plain primary action.
+    <button
+      type="button"
+      onClick={handleSave}
+      disabled={submitting}
+      aria-busy={submitting || undefined}
+      className="inline-flex min-w-[92px] items-center justify-center gap-[7px] rounded-[9px] border-none bg-[#1F7A6C] px-4 py-[9px] text-[13px] font-semibold text-white hover:bg-[#186155] disabled:cursor-not-allowed disabled:bg-[#AFD0CA]"
+    >
+      {submitting ? <Spinner size={15} /> : null}
+      {submitting ? t('save.saving') : t('submit.save')}
+    </button>
+  ) : (
     <SubmitControl
       status={status}
       canSubmit={canSubmit}
@@ -543,6 +608,7 @@ export function LessonPlanEditor({
                   checkResult={checkResult}
                   checkApplies={checkAppliesToCurrent}
                   checking={checking}
+                  partial={partialPills}
                   checkError={checkError}
                   onCheck={handleCheck}
                   locked={locked}
@@ -580,9 +646,13 @@ export function LessonPlanEditor({
           </section>
         ) : (
           // STEPS 2–5 (and the Review step with NO feedback) — split: plan (left) ·
-          // persistent worksheet (right).
-          <>
-            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:border-e lg:border-[#EFE8DD] lg:px-[30px]">
+          // persistent worksheet (right). Past `lg` the divider between them is a
+          // draggable handle (WorksheetPipelineSplit); below `lg` the two panes
+          // stack, unchanged. The divider is owned by the split's handle now, so
+          // the left pane no longer draws its own `lg:border-e`.
+          <WorksheetPipelineSplit
+            pipeline={
+            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:px-[30px]">
               <div className="mx-auto max-w-[820px]">
                 {locked && step < STEP_COUNT ? (
                   <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
@@ -649,8 +719,9 @@ export function LessonPlanEditor({
                 {errorBox}
               </div>
             </section>
-
-            {/* RIGHT — the persistent student worksheet for Steps 2–5. One
+            }
+            worksheet={
+            /* RIGHT — the persistent student worksheet for Steps 2–5. One
                 WorksheetBuilder instance, editable at every step and every plan
                 status (never wrapped in the plan-lock fieldset); edits autosave
                 through `saveWorksheet`. Scrolls independently past `lg`.
@@ -659,7 +730,7 @@ export function LessonPlanEditor({
                 as its own full-width branch — it renders the coordinator /view
                 surface (ReadOnlyPlan + AnnotationPane) so the teacher works feedback
                 in place — so this split (and its worksheet) is only reached by Steps
-                2–4 and the Review step with NO feedback. */}
+                2–4 and the Review step with NO feedback. */
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
               <div className="flex min-h-0 w-full flex-1 flex-col">
                 <WorksheetPane
@@ -671,7 +742,8 @@ export function LessonPlanEditor({
                 />
               </div>
             </section>
-          </>
+            }
+          />
         )}
       </div>
     </div>

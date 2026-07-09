@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { LinkItTechnique } from '@/types/lesson';
 import type { ActivityBankItem } from '@/lib/editor/load-plan';
@@ -76,14 +76,38 @@ function AddTechnique({
 }) {
   const t = useTranslations('wizard.linkIt');
   const [open, setOpen] = useState(false);
+  const [flipUp, setFlipUp] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   // An already-added technique drops out of the list.
   const available = activities.filter((a) => !selected.some((s) => s.technique === a.id));
+
+  // Decide the open direction at the moment of opening (not in an effect) so the
+  // panel's first paint is already on the correct side — no downward-then-flip
+  // flicker. The trigger's viewport rect is only read client-side in this handler,
+  // so it never touches `window` during render / SSR / build.
+  // PANEL = 280px max-height + 6px offset; conservative flip against the constant
+  // avoids measuring the panel itself (which is what would force a re-flow flicker).
+  const toggle = () => {
+    setOpen((wasOpen) => {
+      if (wasOpen) return false;
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const PANEL = 286;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        // Open up only when down doesn't fit and up is roomier; otherwise stay down.
+        setFlipUp(spaceBelow < PANEL && spaceAbove > spaceBelow);
+      }
+      return true;
+    });
+  };
 
   return (
     <div className="relative inline-block">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-expanded={open}
         className="inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-teal-tint-border bg-teal-tint px-[12px] py-[8px] text-[13px] font-semibold text-teal hover:bg-[#d8ebe6]"
       >
@@ -94,7 +118,7 @@ function AddTechnique({
         <>
           {/* Click-away backdrop. */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute start-0 top-[calc(100%+6px)] z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)]">
+          <div className={`absolute start-0 z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)] ${flipUp ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'}`}>
             {available.length === 0 ? (
               <div className="px-[10px] py-[12px] text-center text-[12.5px] text-neutral-400">
                 {t('allAdded')}

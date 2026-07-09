@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
-  checkObjective,
+  openObjectiveCheckStream,
+  finalizeStreamedCheck,
+  createLetterScanner,
   ObjectiveCheckError,
   type ObjectiveCheckContext,
 } from '@/lib/ai/check-objective';
@@ -9,10 +11,20 @@ import {
  * POST /api/check-objective
  *
  * Backend-only endpoint that runs Claude against a teacher's SMARTT lesson
- * objective and returns structured, per-letter feedback. The prompt, model call,
- * and parsing all live in `@/lib/ai/check-objective`; this handler is just the
- * HTTP boundary — it validates the request body, delegates, and maps errors to
- * status codes.
+ * objective and streams structured, per-letter feedback. The prompt, model call,
+ * validation, and the per-letter scanner all live in `@/lib/ai/check-objective`;
+ * this handler is the HTTP boundary — it validates the request body, then relays
+ * the Anthropic stream to the browser as Server-Sent Events.
+ *
+ * Transport: a `text/event-stream` response with three frame types —
+ *   - `pill`   {key,status,note}  — a SMARTT letter resolved as its object closes
+ *                                    in the accumulating JSON (liveness only).
+ *   - `result` <ObjectiveCheckResult> — the validated result at stream end. This
+ *                                    is authoritative and sets all six pills.
+ *   - `error`  {error,status}     — a late failure (validation/API) once we've
+ *                                    already committed to a 200 stream.
+ * Pre-flight failures (bad body, empty objective, missing key) are returned as a
+ * plain JSON error with the same status codes as before, before any stream opens.
  *
  * Request body:
  *   {
@@ -61,13 +73,70 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Pre-flight (missing key / empty input) throws before any stream opens, so it
+  // still maps to the same HTTP status as before. Once streaming starts we've
+  // committed to a 200 SSE response; late failures arrive as an `error` frame.
+  let stream: Awaited<ReturnType<typeof openObjectiveCheckStream>>;
   try {
-    const result = await checkObjective(body.objective, parseContext(body.context));
-    return NextResponse.json(result);
+    stream = await openObjectiveCheckStream(body.objective, parseContext(body.context));
   } catch (err) {
     if (err instanceof ObjectiveCheckError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     return NextResponse.json({ error: 'Unexpected error checking objective.' }, { status: 500 });
   }
+
+  const encoder = new TextEncoder();
+  const scanner = createLetterScanner();
+
+  const sse = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      let buffer = '';
+      let scannerOk = true;
+
+      try {
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            buffer += event.delta.text;
+            // Liveness frames. If the scanner ever throws, disable it for the rest
+            // of the stream — pills simply stay pulsing until the result frame.
+            if (scannerOk && !scanner.done()) {
+              try {
+                for (const frame of scanner.scan(buffer)) send('pill', frame);
+              } catch {
+                scannerOk = false;
+              }
+            }
+          }
+        }
+
+        // Authoritative: the validated result sets all six pills, resolving any
+        // stragglers the scanner missed. finalMessage() → extractText → parseResult
+        // runs isObjectiveCheckResult() unchanged and throws 502 on a malformed reply.
+        const result = finalizeStreamedCheck(await stream.finalMessage());
+        send('result', result);
+      } catch (err) {
+        const status =
+          err instanceof ObjectiveCheckError && typeof err.status === 'number' ? err.status : 502;
+        const message =
+          err instanceof Error ? err.message : 'Unexpected error checking objective.';
+        send('error', { error: message, status });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(sse, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }

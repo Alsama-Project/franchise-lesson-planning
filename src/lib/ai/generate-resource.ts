@@ -320,7 +320,12 @@ export async function generateResource(
   try {
     message = await client.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      // Hard ceiling on the only expensive axis (output at $15/M). A single
+      // one-page worksheet — fresh or an Adjust that returns the full doc — sits
+      // well under this; the cap just bounds runaway generations. If a legitimate
+      // resource ever truncates here (incomplete JSON → GenerateResourceError 502),
+      // raise it deliberately rather than removing the ceiling.
+      max_tokens: 1536,
       // Single static system block with a cache breakpoint at its end: the whole
       // prefix (role + floor + contract + language guard + guide) is byte-identical across calls
       // and self-busts when the guide changes. The per-lesson context lives in the

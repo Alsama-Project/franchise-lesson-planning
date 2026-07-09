@@ -6,7 +6,12 @@ import {
   SMARTT_LETTERS,
   smarttDimensionLabel,
   type ObjectiveCheckResult,
+  type SmarttDimensionKey,
+  type SmarttLetterAssessment,
 } from '@/lib/editor/objective-check';
+
+/** Per-letter assessments resolved so far during a streamed check. */
+export type PartialSmarttResult = Partial<Record<SmarttDimensionKey, SmarttLetterAssessment>>;
 
 /** The four-point Aya sparkle, reused for the hint button and the check button. */
 function SparkIcon({ size = 14 }: { size?: number }) {
@@ -19,17 +24,36 @@ function SparkIcon({ size = 14 }: { size?: number }) {
 
 function SmarttPill({
   label,
-  result,
+  assessment,
   checking,
 }: {
   label: string;
-  result: ObjectiveCheckResult[keyof ObjectiveCheckResult] | undefined;
+  /** The resolved assessment for this letter — streamed mid-check or from the
+   *  final result. When absent while `checking`, the pill pulses teal. */
+  assessment: SmarttLetterAssessment | undefined;
   checking: boolean;
 }) {
-  // While a check is in flight, every letter shows the same teal "evaluating"
-  // treatment. This is honest: the six letters are assessed together in one call
-  // and resolve together, so we never fabricate per-letter progress. A stale prior
-  // result is overridden by this state until the fresh result lands.
+  // A resolved assessment always wins: during a streamed check a letter flips from
+  // the teal "evaluating" pulse to its real met/unmet treatment the moment its
+  // object closes; on completion the validated result fills every pill.
+  if (assessment) {
+    const strong = assessment.status === 'strong';
+    return (
+      <span
+        title={assessment.note}
+        className={
+          'cursor-help rounded-full border px-[11px] py-1 text-[11px] font-semibold ' +
+          (strong
+            ? 'border-[#C9E4D5] bg-[#E2F0E8] text-[#2E7D5B]'
+            : 'border-[#E8D6B8] bg-[#F6ECDA] text-[#B0651E]')
+        }
+      >
+        {strong ? '✓' : '~'} {label}
+      </span>
+    );
+  }
+  // Still evaluating this letter → teal pulse. Honest: no fabricated progress, the
+  // pill resolves only when its own letter lands (or the final result arrives).
   if (checking) {
     return (
       <span
@@ -41,25 +65,9 @@ function SmarttPill({
     );
   }
   // No check yet → neutral guidance pill.
-  if (!result || typeof result === 'string' || Array.isArray(result)) {
-    return (
-      <span className="rounded-full border border-border bg-surface px-[11px] py-1 text-[11px] font-semibold text-neutral-600">
-        {label}
-      </span>
-    );
-  }
-  const strong = result.status === 'strong';
   return (
-    <span
-      title={result.note}
-      className={
-        'cursor-help rounded-full border px-[11px] py-1 text-[11px] font-semibold ' +
-        (strong
-          ? 'border-[#C9E4D5] bg-[#E2F0E8] text-[#2E7D5B]'
-          : 'border-[#E8D6B8] bg-[#F6ECDA] text-[#B0651E]')
-      }
-    >
-      {strong ? '✓' : '~'} {label}
+    <span className="rounded-full border border-border bg-surface px-[11px] py-1 text-[11px] font-semibold text-neutral-600">
+      {label}
     </span>
   );
 }
@@ -75,6 +83,7 @@ export function ObjectiveStep({
   checkResult,
   checkApplies = true,
   checking,
+  partial,
   checkError,
   onCheck,
   locked = false,
@@ -89,6 +98,9 @@ export function ObjectiveStep({
    *  feedback disclosure still shows the last check's notes as advisory context. */
   checkApplies?: boolean;
   checking: boolean;
+  /** Letters resolved so far during a streamed check; drives the progressive
+   *  pill reveal while `checking`. Ignored once the final result lands. */
+  partial?: PartialSmarttResult;
   checkError: string | null;
   onCheck: () => void;
   /** When true the plan is submitted/approved: the objective is read-only and the
@@ -155,24 +167,17 @@ export function ObjectiveStep({
           <SmarttPill
             key={l.key}
             label={l.label}
-            result={checkApplies ? checkResult?.[l.key] : undefined}
+            // While checking, resolve from the streamed `partial` letters (each
+            // pops as it lands). Otherwise show the final result — but only while it
+            // still applies to the current objective (`checkApplies`); a stale result
+            // falls back to the idle pill. The pills are the sole progress indicator.
+            assessment={
+              checking ? partial?.[l.key] : checkApplies ? checkResult?.[l.key] : undefined
+            }
             checking={checking}
           />
         ))}
       </div>
-
-      {/* Honest active state: the pills above go teal while Aya evaluates; this
-          line names what's happening so the wait reads as work, not a hang. It
-          replaces the old indeterminate button spinner as the progress signal. */}
-      {checking ? (
-        <div
-          aria-live="polite"
-          className="mt-2 flex items-center gap-1.5 text-[12px] font-medium text-teal"
-        >
-          <SparkIcon size={12} />
-          <span>{t('checkingStatus')}</span>
-        </div>
-      ) : null}
 
       {/* "Yours" — a pink block holding a white field. The stem is baked in and
           non-editable; the teacher writes only the remainder. */}

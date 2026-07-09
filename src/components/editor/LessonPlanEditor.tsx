@@ -21,6 +21,8 @@ import {
   ObjectiveCheckRequestError,
   SMARTT_LETTERS,
   type ObjectiveCheckResult,
+  type SmarttDimensionKey,
+  type SmarttLetterAssessment,
 } from '@/lib/editor/objective-check';
 import {
   saveLessonPlan,
@@ -147,6 +149,11 @@ export function LessonPlanEditor({
     return composeObjective(seed) || seed;
   });
   const [checking, setChecking] = useState(false);
+  // Letters resolved so far during a streamed check, for the progressive pill
+  // reveal. Reset at the start of each check and cleared when it settles.
+  const [partialPills, setPartialPills] = useState<
+    Partial<Record<SmarttDimensionKey, SmarttLetterAssessment>>
+  >({});
   const [checkError, setCheckError] = useState<string | null>(null);
 
   const [status, setStatus] = useState<PlanStatus>(plan.status);
@@ -363,18 +370,28 @@ export function LessonPlanEditor({
   async function handleCheck() {
     setChecking(true);
     setCheckError(null);
+    setPartialPills({});
     // The exact string Aya evaluates — captured at fire time and stored alongside
     // the result so approval binds to this payload, not a stale one. Mirrors the
     // stored-objective composition, so it equals what autosave/submit persist.
     const payload = composeObjective(remainder) || remainder;
     setLastCheckedPayload(payload);
     try {
-      const result = await requestObjectiveCheck(payload, {
-        dailyOutcome: curriculum?.dailyLO || undefined,
-        grammarVocab: curriculum?.grammarVocab || undefined,
-        theme: curriculum?.theme || undefined,
-        year: classContext.year,
-      });
+      const result = await requestObjectiveCheck(
+        payload,
+        {
+          dailyOutcome: curriculum?.dailyLO || undefined,
+          grammarVocab: curriculum?.grammarVocab || undefined,
+          theme: curriculum?.theme || undefined,
+          year: classContext.year,
+        },
+        // Progressive reveal: flip each pill as its letter closes in the stream.
+        (frame) =>
+          setPartialPills((prev) => ({
+            ...prev,
+            [frame.key]: { status: frame.status, note: frame.note },
+          })),
+      );
       setCheckResult(result);
     } catch (err) {
       setCheckError(
@@ -382,6 +399,7 @@ export function LessonPlanEditor({
       );
     } finally {
       setChecking(false);
+      setPartialPills({});
     }
   }
 
@@ -590,6 +608,7 @@ export function LessonPlanEditor({
                   checkResult={checkResult}
                   checkApplies={checkAppliesToCurrent}
                   checking={checking}
+                  partial={partialPills}
                   checkError={checkError}
                   onCheck={handleCheck}
                   locked={locked}

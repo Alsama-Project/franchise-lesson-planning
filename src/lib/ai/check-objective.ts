@@ -389,25 +389,7 @@ export async function openObjectiveCheckStream(
  * (502) on a malformed reply. API-side schema enforcement was never the floor —
  * this validator is, and it stays byte-for-byte identical to the non-streaming path.
  */
-/**
- * TEMPORARY cost diagnostic (removed with the `usage` log in this branch's final
- * commit). Prints real USD per call from the response usage at Sonnet 4.6 rates:
- * input $3/M, output $15/M, cache write (5-min) 1.25×=$3.75/M, cache read 0.1×=$0.30/M.
- */
-function logAnthropicCost(endpoint: string, usage: Anthropic.Usage): void {
-  const input = usage.input_tokens ?? 0;
-  const output = usage.output_tokens ?? 0;
-  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
-  const cacheRead = usage.cache_read_input_tokens ?? 0;
-  const usd =
-    (input / 1e6) * 3 + (output / 1e6) * 15 + (cacheWrite / 1e6) * 3.75 + (cacheRead / 1e6) * 0.3;
-  console.log(
-    `[cost] ${endpoint} in=${input} out=${output} cache_write=${cacheWrite} cache_read=${cacheRead} usd=${usd.toFixed(6)}`,
-  );
-}
-
 export function finalizeStreamedCheck(message: Anthropic.Message): ObjectiveCheckResult {
-  logAnthropicCost('check-objective', message.usage); // TEMPORARY — see note above
   return parseResult(extractText(message));
 }
 

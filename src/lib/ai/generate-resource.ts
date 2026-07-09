@@ -320,7 +320,12 @@ export async function generateResource(
   try {
     message = await client.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      // Hard ceiling on the only expensive axis (output at $15/M). A single
+      // one-page worksheet — fresh or an Adjust that returns the full doc — sits
+      // well under this; the cap just bounds runaway generations. If a legitimate
+      // resource ever truncates here (incomplete JSON → GenerateResourceError 502),
+      // raise it deliberately rather than removing the ceiling.
+      max_tokens: 1536,
       // Single static system block with a cache breakpoint at its end: the whole
       // prefix (role + floor + contract + language guard + guide) is byte-identical across calls
       // and self-busts when the guide changes. The per-lesson context lives in the
@@ -345,24 +350,6 @@ export async function generateResource(
     throw new GenerateResourceError(
       `Claude request failed: ${err instanceof Error ? err.message : 'unknown error'}`,
       status >= 500 ? 502 : status,
-    );
-  }
-
-  // TEMPORARY cost diagnostic (removed in this branch's final commit). Real USD
-  // per call from the response usage at Sonnet 4.6 rates: input $3/M, output
-  // $15/M, cache write (5-min) 1.25×=$3.75/M, cache read 0.1×=$0.30/M. Defined
-  // locally rather than imported from check-objective to keep this module free of
-  // the next-intl / server-client graph (see the LANGUAGE INVARIANT above).
-  {
-    const u = message.usage;
-    const input = u.input_tokens ?? 0;
-    const output = u.output_tokens ?? 0;
-    const cacheWrite = u.cache_creation_input_tokens ?? 0;
-    const cacheRead = u.cache_read_input_tokens ?? 0;
-    const usd =
-      (input / 1e6) * 3 + (output / 1e6) * 15 + (cacheWrite / 1e6) * 3.75 + (cacheRead / 1e6) * 0.3;
-    console.log(
-      `[cost] generate-resource in=${input} out=${output} cache_write=${cacheWrite} cache_read=${cacheRead} usd=${usd.toFixed(6)}`,
     );
   }
 

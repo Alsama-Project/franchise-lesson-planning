@@ -95,23 +95,12 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
 
-      // TEMPORARY timing instrumentation (remove with the usage log after George
-      // reads it): does structured-output decoding actually stream deltas across
-      // the wall clock (progressive reveal works) or cluster at the very end
-      // (buffering — the SSE build wins nothing on its own)?
-      const t0 = Date.now();
-      let firstDeltaMs: number | null = null;
-      let lastDeltaMs = 0;
-      let deltaCount = 0;
       let buffer = '';
       let scannerOk = true;
 
       try {
         for await (const event of stream) {
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            if (firstDeltaMs === null) firstDeltaMs = Date.now() - t0;
-            lastDeltaMs = Date.now() - t0;
-            deltaCount++;
             buffer += event.delta.text;
             // Liveness frames. If the scanner ever throws, disable it for the rest
             // of the stream — pills simply stay pulsing until the result frame.
@@ -125,15 +114,10 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const message = await stream.finalMessage();
-        console.log(
-          `[check-objective] stream firstDeltaMs=${firstDeltaMs} lastDeltaMs=${lastDeltaMs} deltaCount=${deltaCount} totalMs=${Date.now() - t0}`,
-        );
-        console.log('[check-objective] usage', message.usage);
-
         // Authoritative: the validated result sets all six pills, resolving any
-        // stragglers the scanner missed. Unchanged floor — throws 502 on malformed.
-        const result = finalizeStreamedCheck(message);
+        // stragglers the scanner missed. finalMessage() → extractText → parseResult
+        // runs isObjectiveCheckResult() unchanged and throws 502 on a malformed reply.
+        const result = finalizeStreamedCheck(await stream.finalMessage());
         send('result', result);
       } catch (err) {
         const status =

@@ -103,6 +103,15 @@ function calloutNode(el: FloatingTextBox): DocNode | null {
   return { type: 'blockquote', content };
 }
 
+/** A text box that overlaps an image flattened into a `caption` node (placed
+ *  immediately after that image so the label stays with its figure). Null when the
+ *  box has no real content. */
+function captionNode(el: FloatingTextBox): DocNode | null {
+  const content = Array.isArray(el.doc?.content) ? (el.doc!.content as DocNode[]) : [];
+  if (!nodesHaveText(content)) return null;
+  return { type: 'caption', content };
+}
+
 // ── Floating-over-image overlap detection (report, don't silently flatten) ──
 
 interface Rect {
@@ -176,13 +185,36 @@ export function migrateWorksheetToV3(raw: unknown): WorksheetV3 {
       : [];
     content.push(...docContent);
 
-    // …then its block-owned floating overlays, flattened into the flow in stacking
-    // (z) order so what sat on top reads last.
+    // …then its block-owned floating overlays, flattened into the flow. A text box
+    // that OVERLAPS an image (a label-over-figure) becomes a `caption` placed
+    // immediately AFTER that specific image, so the label stays with its figure
+    // rather than being dumped at the block end. Every other text box becomes an
+    // inline callout. Emission is in stacking (z) order.
     const floats = [...block.elements].sort((a, b) => a.z - b.z);
+    const overlaps = findFloatingOverImage(block.elements);
+    // Each overlapping text box is captioned under its first (lowest-z) image.
+    const captionsByImage = new Map<string, string>(); // imageId → textBoxId (first wins)
+    const captionedBoxes = new Set<string>();
+    for (const el of floats) {
+      if (el.kind !== 'image') continue;
+      for (const o of overlaps) {
+        if (o.imageId === el.id && !captionedBoxes.has(o.textBoxId)) {
+          if (!captionsByImage.has(el.id)) captionsByImage.set(el.id, o.textBoxId);
+          captionedBoxes.add(o.textBoxId);
+        }
+      }
+    }
+    const boxById = new Map(
+      floats.filter((e): e is FloatingTextBox => e.kind === 'textbox').map((e) => [e.id, e]),
+    );
     for (const el of floats) {
       if (el.kind === 'image') {
         content.push(inlineImageNode(el));
-      } else {
+        const boxId = captionsByImage.get(el.id);
+        const box = boxId ? boxById.get(boxId) : undefined;
+        const caption = box ? captionNode(box) : null;
+        if (caption) content.push(caption);
+      } else if (!captionedBoxes.has(el.id)) {
         const callout = calloutNode(el);
         if (callout) content.push(callout);
       }

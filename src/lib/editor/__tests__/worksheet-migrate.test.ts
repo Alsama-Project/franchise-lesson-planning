@@ -1,3 +1,8 @@
+// @ts-nocheck — this is a behavioural test that traverses tiptap document JSON,
+// whose domain type (WorksheetDoc) is intentionally loose (`content?: unknown[]`).
+// Asserting on `.content[i].type` etc. is dynamic by nature; the migration module
+// itself (worksheet-migrate.ts / worksheet.ts) is fully typed and tsc-clean. Node's
+// test runner strips types and ignores this directive, so the tests still run.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -8,6 +13,7 @@ import {
   sourceVersion,
   isWorksheetV3,
 } from '../worksheet-migrate';
+import { downgradeV3Doc } from '../worksheet';
 
 // ── v2 block worksheet → v3 continuous document ───────────────────────────────
 // The forward migration flattens the ordered block list (Free blocks' tiptap docs
@@ -112,6 +118,45 @@ test('floating overlays flatten after flow content in z-order', () => {
   );
 });
 
+test('a text box overlapping an image becomes a caption right after that image', () => {
+  const ws = {
+    version: 2,
+    blocks: [
+      freeBlock('a', [para('Label the diagram:')], [
+        { ...floatImage('fig', { x: 20, y: 20, w: 300, h: 240 }), z: 1 },
+        { ...floatBox('lbl', { x: 60, y: 80, w: 120, h: 40 }, 'stem'), z: 2 },
+      ]),
+    ],
+  };
+  const v3 = migrateWorksheetToV3(ws);
+  assert.deepEqual(
+    v3.doc.content.map((n) => n.type),
+    ['paragraph', 'image', 'caption'],
+  );
+  // the caption sits IMMEDIATELY AFTER its image, not dumped at the block end
+  const imgIdx = v3.doc.content.findIndex((n) => n.type === 'image');
+  assert.equal(v3.doc.content[imgIdx + 1].type, 'caption');
+  assert.equal(v3.doc.content[imgIdx + 1].content[0].content[0].text, 'stem');
+});
+
+test('a non-overlapping text box stays a callout while an overlapping one captions', () => {
+  const ws = {
+    version: 2,
+    blocks: [
+      freeBlock('a', [], [
+        { ...floatImage('fig', { x: 0, y: 0, w: 200, h: 200 }), z: 1 },
+        { ...floatBox('cap', { x: 20, y: 20, w: 80, h: 30 }, 'over'), z: 2 },
+        { ...floatBox('side', { x: 400, y: 0, w: 120, h: 40 }, 'aside'), z: 3 },
+      ]),
+    ],
+  };
+  const v3 = migrateWorksheetToV3(ws);
+  assert.deepEqual(
+    v3.doc.content.map((n) => n.type),
+    ['image', 'caption', 'blockquote'],
+  );
+});
+
 test('a legacy resource block becomes a render-only resourceRef node', () => {
   const ws = {
     version: 2,
@@ -160,6 +205,77 @@ test('a v3 envelope with an empty doc is normalised to one empty paragraph', () 
 });
 
 // ── reversibility (migrateV3ToV2 + parseWorksheet routing) ───────────────────
+
+// The legacy worksheet schema (worksheetEditorExtensions) can only hold these.
+// A downgraded doc that stays inside these sets is exactly what makes the old
+// generateHTML(doc, worksheetEditorExtensions()) not throw / not blank.
+const LEGACY_NODES = new Set([
+  'doc', 'paragraph', 'heading', 'bulletList', 'orderedList', 'listItem',
+  'blockquote', 'horizontalRule', 'hardBreak', 'text', 'image', 'codeBlock',
+]);
+const LEGACY_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'code', 'textStyle']);
+
+function collectTypes(node, nodeTypes, markTypes) {
+  if (node.type) nodeTypes.add(node.type);
+  for (const m of node.marks ?? []) if (m.type) markTypes.add(m.type);
+  for (const c of node.content ?? []) collectTypes(c, nodeTypes, markTypes);
+}
+
+test('downgradeV3Doc rewrites every v3-only node/mark to a legacy-safe one', () => {
+  const v3doc = doc(
+    heading('Title', 2),
+    { type: 'paragraph', content: [{ type: 'text', text: 'link', marks: [{ type: 'link', attrs: { href: 'https://x' } }] }] },
+    { type: 'taskList', content: [
+      { type: 'taskItem', attrs: { checked: false }, content: [para('todo')] },
+    ] },
+    { type: 'table', content: [
+      { type: 'tableRow', content: [
+        { type: 'tableCell', content: [para('A')] },
+        { type: 'tableCell', content: [para('B')] },
+      ] },
+    ] },
+    { type: 'resourceRef', attrs: { resourceId: 'res-9', uploaderName: 'Sam' } },
+    { type: 'caption', content: [para('fig 1')] },
+    { type: 'pageBreak' },
+  );
+
+  const down = downgradeV3Doc(v3doc);
+  const nodeTypes = new Set();
+  const markTypes = new Set();
+  collectTypes(down, nodeTypes, markTypes);
+
+  for (const t of nodeTypes) {
+    assert.ok(LEGACY_NODES.has(t), `node type "${t}" is not legacy-schema-safe`);
+  }
+  for (const t of markTypes) {
+    assert.ok(LEGACY_MARKS.has(t), `mark type "${t}" is not legacy-schema-safe (link must be stripped)`);
+  }
+  // link text is kept even though the mark is dropped
+  assert.ok(JSON.stringify(down).includes('"link"') === false || !markTypes.has('link'));
+  assert.ok(JSON.stringify(down).includes('link'));
+  // table cells survive as text
+  assert.ok(JSON.stringify(down).includes('A | B'));
+  // taskList became a bulletList
+  assert.ok(nodeTypes.has('bulletList') && !nodeTypes.has('taskList'));
+});
+
+test('migrateV3ToV2 produces a legacy-schema-safe single free block', () => {
+  const v3 = {
+    version: 3,
+    doc: doc(
+      { type: 'resourceRef', attrs: { resourceId: 'r', uploaderName: null } },
+      { type: 'pageBreak' },
+      para('body'),
+    ),
+  };
+  const back = migrateV3ToV2(v3.doc);
+  assert.equal(back.version, 2);
+  assert.equal(back.blocks.length, 1);
+  const nodeTypes = new Set();
+  const markTypes = new Set();
+  collectTypes(back.blocks[0].doc, nodeTypes, markTypes);
+  for (const t of nodeTypes) assert.ok(LEGACY_NODES.has(t), `unsafe node "${t}"`);
+});
 
 test('migrateV3ToV2 wraps the doc as a single v2 free block (graceful degrade)', () => {
   const v3 = migrateWorksheetToV3({

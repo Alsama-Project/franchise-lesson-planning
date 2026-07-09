@@ -38,7 +38,7 @@ import { ObjectiveStep } from '@/components/editor/ObjectiveStep';
 import { ObjectiveBanner } from '@/components/editor/ObjectiveBanner';
 import { WritingStep } from '@/components/editor/WritingStep';
 import { PractiseStep } from '@/components/editor/PractiseStep';
-import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder';
+import { WorksheetPane } from '@/components/editor/worksheet/WorksheetPane';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
@@ -662,11 +662,12 @@ export function LessonPlanEditor({
                 2–4 and the Review step with NO feedback. */}
             <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
               <div className="flex min-h-0 w-full flex-1 flex-col">
-                <WorksheetBuilder
+                <WorksheetPane
                   value={worksheet}
                   onChange={setWorksheet}
                   context={worksheetContext}
                   vocabulary={resourceBank.vocabulary}
+                  saveState={saveState}
                 />
               </div>
             </section>

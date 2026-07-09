@@ -385,6 +385,171 @@ html:lang(ar) body {
 }
 
 /*
+ * The v3 continuous-document editor surface (`.ws-doc`). A curated type scale
+ * (Heading = h2, Subheading = h3, Body = paragraph — NO arbitrary font/size), the
+ * flowing lists / checklist / table / image / caption / page-break / resource-ref
+ * nodes, and the section-title placeholder ("Exercise N").
+ */
+.ws-doc {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-ink);
+  outline: none;
+}
+.ws-doc:focus {
+  outline: none;
+}
+.ws-doc > * + * {
+  margin-top: 12px;
+}
+.ws-doc h2 {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  margin-top: 22px;
+}
+.ws-doc h3 {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--color-ink);
+  margin-top: 18px;
+}
+.ws-doc p {
+  margin: 0;
+}
+/* Per-paragraph bidi (bilingual worksheets): each block resolves its own direction. */
+.ws-doc p,
+.ws-doc h2,
+.ws-doc h3,
+.ws-doc li,
+.ws-doc td,
+.ws-doc th,
+.ws-doc figcaption {
+  unicode-bidi: plaintext;
+}
+.ws-doc ul {
+  list-style: disc;
+  padding-left: 26px;
+}
+.ws-doc ol {
+  list-style: decimal;
+  padding-left: 26px;
+}
+.ws-doc li {
+  margin: 4px 0;
+}
+.ws-doc ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 4px;
+}
+.ws-doc ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.ws-doc ul[data-type='taskList'] li > label {
+  margin-top: 3px;
+  user-select: none;
+}
+.ws-doc ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+.ws-doc img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.ws-doc .ws-img-nv {
+  max-width: 100%;
+}
+.ws-doc .ws-img-nv img {
+  margin: 0;
+}
+/* Tables */
+.ws-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  table-layout: fixed;
+  overflow: hidden;
+}
+.ws-doc td,
+.ws-doc th {
+  border: 1px solid #D8C9B4;
+  padding: 7px 10px;
+  vertical-align: top;
+  position: relative;
+}
+.ws-doc th {
+  background: #FBF6EF;
+  font-weight: 700;
+  text-align: start;
+}
+.ws-doc .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(182, 42, 92, 0.08);
+  pointer-events: none;
+}
+.ws-doc .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #B62A5C;
+  cursor: col-resize;
+}
+/* Figure caption (label-over-figure migration + slash "caption") */
+.ws-doc figcaption,
+.ws-doc .ws-caption {
+  font-size: 13px;
+  color: var(--color-neutral-500, #8A8178);
+  font-style: italic;
+  text-align: center;
+  margin-top: 4px;
+}
+/* Blockquote "callout" (from migrated floating text boxes) */
+.ws-doc blockquote {
+  border-inline-start: 3px solid #E6D9C7;
+  padding: 4px 14px;
+  color: #5C544E;
+  background: #FBF8F3;
+  border-radius: 0 8px 8px 0;
+}
+/* Explicit page break: a subtle labelled divider on screen; a real break in print */
+.ws-doc .ws-page-break {
+  position: relative;
+  height: 0;
+  margin: 22px 0;
+  border-top: 2px dashed #D8C9B4;
+  text-align: center;
+}
+.ws-doc .ws-page-break__label {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #A18A6E;
+}
+/* Section-title placeholder ("Exercise N") + empty-body hint */
+.ws-doc .is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-neutral-400, #B7ADA0);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/*
  * Worksheet editor: full-screen + print.
  *
  * `.ws-no-print` hides editor chrome (toolbar, zoom, rail, block bars, the
@@ -438,8 +603,64 @@ html:lang(ar) body {
   .ws-no-print {
     display: none !important;
   }
+
+  /* ── v3 continuous document export ──────────────────────────────────────
+   * The masthead is a normal flow element at the very top, so it prints on the
+   * FIRST page only (Word's "Different First Page"). An explicit page break forces
+   * a fresh sheet; images / tables / resource cards / captions avoid mid-split. */
+  .ws-doc-page {
+    width: auto !important;
+  }
+  .ws-doc .ws-page-break {
+    break-before: page;
+    page-break-before: always;
+    border: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+  }
+  .ws-doc .ws-page-break__label {
+    display: none !important;
+  }
+  .ws-doc img,
+  .ws-doc table,
+  .ws-doc figure,
+  .ws-doc figcaption,
+  .ws-doc blockquote,
+  .ws-resource-ref,
+  .ws-doc h2 {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* A heading should not print as the last line of a page, orphaned from its body. */
+  .ws-doc h2,
+  .ws-doc h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  /* The screen footer is hidden; the running footer repeats on every printed page. */
+  .ws-doc-footer-screen {
+    display: none !important;
+  }
+  .ws-print-footer {
+    display: flex !important;
+    visibility: visible !important;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
   @page {
     size: A4 portrait;
-    margin: 0;
+    /* Room for the fixed running footer. */
+    margin: 0 0 14mm 0;
+    @bottom-right {
+      content: 'Page ' counter(page) ' of ' counter(pages);
+    }
   }
+}
+
+/* The running footer only exists for print; hidden on screen. */
+.ws-print-footer {
+  display: none;
 }

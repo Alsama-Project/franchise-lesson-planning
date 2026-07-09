@@ -375,6 +375,36 @@ export async function getCurriculumWeekCells(
 }
 
 /**
+ * Whether a subject is "single-period" — at most one DISTINCT period across ALL of its
+ * active curriculum rows (`COUNT(DISTINCT period) ≤ 1`). The two such subjects have
+ * DIFFERENT shapes: Yoga is daily-grain with `period = 1` on every row; Awareness is
+ * weekly-grain with `period = NULL`. Both collapse to a single period-per-week, and
+ * this predicate captures both (Yoga → {1}; Awareness → {}) without hardcoding subject
+ * names/ids or a schema flag.
+ *
+ * Computed per SUBJECT (not per subject+year) so the classification is stable across
+ * year navigation and a thin/partial year can never misclassify it. Reads only the
+ * `period` column and dedupes in JS. Real curricula carry a tiny contiguous {1..N}
+ * period set, so the PostgREST 1000-row cap cannot flip the boolean: a genuinely
+ * multi-period subject surfaces ≥ 2 distinct periods within any 1000-row slice.
+ */
+export async function isSinglePeriodSubject(subjectCode: string): Promise<boolean> {
+  if (!subjectCode) return false;
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('curriculum_lesson_active')
+    .select('period')
+    .eq('subject_code', subjectCode)
+    .eq('is_active', true);
+  if (error) throw new Error(`Curriculum period-count read failed: ${error.message}`);
+  const periods = new Set<number>();
+  for (const r of (data ?? []) as Array<{ period: number | null }>) {
+    if (r.period != null) periods.add(r.period);
+  }
+  return periods.size <= 1;
+}
+
+/**
  * The distinct subject codes that have at least one active curriculum row. Reads the
  * `curriculum_active_subjects` view (0045) — a DISTINCT of ~7 rows that is uncapped by
  * construction, so the picker's subject list can never be truncated by the PostgREST

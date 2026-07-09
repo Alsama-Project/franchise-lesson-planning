@@ -110,6 +110,22 @@ export interface CurriculumBrowseData {
   monthly: MonthlyOutcome;
   /** The week's rows, one per period, ascending. Empty when the week has none. */
   rows: BrowseRow[];
+  /**
+   * True when the subject has at most one period per week (Yoga / Awareness — see
+   * `isSinglePeriodSubject`). Drives the collapsed single-period view: no Weekly/Monthly
+   * toggle, a full-width Monthly Outcome block, no Weekly Outcome block, a month-stepping
+   * navigator, and one table row per week of the month (from `monthWeekRows`). Always
+   * false for normal multi-period subjects, which render exactly as before.
+   */
+  singlePeriod: boolean;
+  /**
+   * One row per week of the resolved month, ascending by week — the single-period view's
+   * table body. Unlike `monthGrid` (period-indexed, which drops weekly-grain rows whose
+   * `period` is NULL), this keeps each week's single row regardless of period so both
+   * Yoga (period 1) and Awareness (period NULL) render. Empty for multi-period subjects
+   * (and when the month has no rows); the row label is the week's ordinal, not its period.
+   */
+  monthWeekRows: BrowseRow[];
   /** The selected month's calendar grid — one entry per week, each with its five
    *  period cells (Task 6 monthly view). Empty when the month has no lessons. */
   monthGrid: BrowseMonthWeek[];

@@ -13,6 +13,10 @@
       "toReview": "Review",
       "thisWeek": "This week"
     },
+    "objectiveGate": {
+      "mustPass": "Run the objective check and pass all SMARTT criteria to continue.",
+      "stale": "Your objective changed since the last check — re-run it to continue."
+    },
     "save": {
       "saving": "Saving…",
       "failed": "Save failed — retrying on next edit",
@@ -117,6 +121,7 @@
       "resubmit": "Resubmit",
       "submit": "Submit",
       "submitForApproval": "Submit for approval",
+      "save": "Save",
       "submitting": "Submitting…",
       "unlock": "Unlock for editing",
       "unlocking": "Unlocking…",

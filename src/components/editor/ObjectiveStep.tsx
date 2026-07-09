@@ -81,6 +81,7 @@ export function ObjectiveStep({
   remainder,
   onChange,
   checkResult,
+  checkApplies = true,
   checking,
   partial,
   checkError,
@@ -90,6 +91,12 @@ export function ObjectiveStep({
   remainder: string;
   onChange: (next: string) => void;
   checkResult: ObjectiveCheckResult | null;
+  /** Whether `checkResult` still describes the CURRENT objective text. When false
+   *  (the teacher edited the objective since the last check, or a stored result no
+   *  longer matches), the six SMARTT pills fall back to their idle state — the
+   *  result no longer applies, so it must not read as a live pass/fail verdict. The
+   *  feedback disclosure still shows the last check's notes as advisory context. */
+  checkApplies?: boolean;
   checking: boolean;
   /** Letters resolved so far during a streamed check; drives the progressive
    *  pill reveal while `checking`. Ignored once the final result lands. */
@@ -161,9 +168,12 @@ export function ObjectiveStep({
             key={l.key}
             label={l.label}
             // While checking, resolve from the streamed `partial` letters (each
-            // pops as it lands); otherwise from the final result. The pills are
-            // the progress indicator — no separate status copy.
-            assessment={checking ? partial?.[l.key] : checkResult?.[l.key]}
+            // pops as it lands). Otherwise show the final result — but only while it
+            // still applies to the current objective (`checkApplies`); a stale result
+            // falls back to the idle pill. The pills are the sole progress indicator.
+            assessment={
+              checking ? partial?.[l.key] : checkApplies ? checkResult?.[l.key] : undefined
+            }
             checking={checking}
           />
         ))}

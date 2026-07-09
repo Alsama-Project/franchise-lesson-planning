@@ -2,7 +2,77 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Review: per-section ＋ always visible ✅ (this phase)
+## Slot-scoped visibility + coordinator authoring + retire impersonation ✅ (this phase)
+
+Three coupled changes on `claude/slot-scoped-and-unify`. **The two SQL migrations are
+PRINTED, NOT APPLIED — George runs them by hand** (Supabase SQL editor), like every prior
+`0018/0019/0028/0048`. **Do not land while the room is testing** — this rewrites
+auth/visibility and removes the test bar; merge between sessions. PR only, no merge.
+
+### 1. Plan visibility is now SUBJECT-based, not centre/space-based
+A plan is keyed to a curriculum slot (subject, year, month/week/period). **Centre and class
+are provenance** (`school_id` / `class_id` / `created_by` still recorded on every new plan) —
+they no longer gate who sees a plan.
+
+- **Migration `0057_lesson_plans_subject_visibility.sql` (PRINTED).** Splits the single
+  `lp_member_all` FOR ALL policy into:
+  - `lp_select` (SELECT) — **widened**: `is_participant_of_subject(subject)` — a member OR
+    coordinator of the plan's SUBJECT, at ANY centre. New school-agnostic helper
+    `is_participant_of_subject(subject_id)` (unions `subject_membership` + `coordinator_subject`,
+    carries the `is_deactivated()` guard). `subject_id` stays in the predicate → **cross-subject
+    isolation is fully retained** (a Maths participant never sees English).
+  - `lp_insert` + `lp_update` (WRITE) — **tightened**: `created_by = me OR is_admin() OR
+    is_coordinator_of_subject(...)`. A plain co-member can no longer write a colleague's plan
+    ("edit only your own" is now true at the DB, not just `canEdit` in the component). The
+    coordinator branch is kept **specifically so the review path still works** — a coordinator
+    UPDATEs a submitted plan they didn't author (approve/return/worksheet); `enforce_approval_role`
+    still gates the status transition. DELETE stays denied by the restrictive `lp_no_direct_delete`
+    (0048); soft-delete/trash/restore/purge are SECURITY DEFINER RPCs, unaffected.
+  - **Blast radius:** teachers newly SEE all their subject's plans across every centre (intended);
+    teachers lose the incidental RLS ability to write a co-member's plan (the app already hid it);
+    coordinators unchanged (already cross-centre). Admins/cross-subject unchanged.
+
+### 2. Coordinators author + review in their subject (born approved)
+- `getBoardData` rewritten to **slot-scope by (subject, year)**: resolves ONE active subject
+  (teacher → active membership; **pure coordinator** with no membership → their coordinated
+  subjects, English-first, so a coordinator with no class still gets a board), lists **all**
+  plans for that subject's slots across every centre (no centre-drop), each with its author
+  label + a provenance centre label when the visible plans span >1 centre. The blanket
+  `boardReadOnly` is gone — **per-card routing** off each plan's `canEdit` (`created_by == me ||
+  admin`) decides edit vs review. Coordinator-detection everywhere now reads **`coordinator_subject`**
+  (the RLS source of truth), not stale `subject_membership role='coordinator'` — fixed in
+  `getBoardData`, `getReviewNotifications`, and a new `getMyCoordinatedSubjectIds()` helper in
+  `@/lib/auth`.
+- `createCoordinatorPlan` (new): a coordinator authors a born-**`approved`** plan for a slot —
+  `scope='org'`, `class_id=null`, `school_id=null`, subject_id + year recorded. Never `submitted`,
+  so no review notification and no queue entry. Guarded by `coordinator_subject` membership.
+- **Migration `0058_born_approved_insert_guard.sql` (PRINTED).** BEFORE INSERT twin of
+  `enforce_approval_role`: an INSERT with `status in ('approved','needs_review')` by a
+  non-coordinator/non-admin is downgraded to `in_progress` (defence-in-depth; the trigger only
+  fired on UPDATE before).
+- Editor: a coordinator viewing their OWN plan in a coordinated subject (`coordinatorAuthor`) is
+  never locked and the primary control is **Save** (`wizard.submit.save`), not Submit — the plan
+  stays `approved` and Save just persists. The Aya objective gate never applies to them.
+- `createTeacherPlan` no longer takes `centreId` — eligible classes now match by (subject, year)
+  across all the teacher's centres (centre is provenance, resolved from the chosen class).
+- A plan with `class_id=null` is now fully visible to the subject and editable by its author —
+  the old "class-less centre plan is invisible / read-only 404" trap is retired.
+- Calendar view renders **all** plans for a slot (two teachers → two cards), not one collapsed
+  card. (Duplicate merge/dedup deliberately NOT built — edge case.)
+
+### 3. Impersonation retired
+Deleted the bar, hook, route, `test-impersonation.ts`, `test-roles.ts`, both `test-bar.json`;
+un-wired `AppShell` (fixed 64px chrome) / `UserMenu` (plain Sign out). Removed the admin
+`can_impersonate` toggle (EditAccessModal + `console.ts` `canImpersonate` + `setUserImpersonation`
+action + settings strings). **Persona rows, DB columns, and migrations left intact** (code refs
+out only). The `{ok:false}` space-switch path is gone with the route; the real multi-space
+`setActiveSpace` switcher is untouched.
+
+### Status
+`npx tsc --noEmit` ✅ · `next build` ✅ · ESLint ✅ on changed files. New Arabic string
+(`wizard.submit.save` → "حفظ") **flagged for Kadria**. Migrations 0057 + 0058 await George.
+
+## Review: per-section ＋ always visible ✅ (prior phase)
 
 The add-comment ＋ on each lesson block (and the objective) now renders **persistently at
 rest** instead of only on hover/focus of the block. Removed the `opacity-0

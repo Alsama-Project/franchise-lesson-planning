@@ -26,7 +26,11 @@ import {
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import { createTeacherPlan, type EligibleClass } from '@/lib/actions/create-lesson';
+import {
+  createTeacherPlan,
+  createCoordinatorPlan,
+  type EligibleClass,
+} from '@/lib/actions/create-lesson';
 import { usePlanHref } from '@/components/weekly-overview/BoardReturn';
 import { formatNumber } from '@/lib/format';
 
@@ -50,22 +54,44 @@ interface ScopeChooserApi {
 
 const ScopeChooserContext = createContext<ScopeChooserApi | null>(null);
 
+/**
+ * Whether the board viewer COORDINATES the active subject. When true, the board's
+ * create affordances author a born-approved coordinator plan (`createCoordinatorPlan`)
+ * instead of the teacher submit-for-approval path. Board-wide (single active
+ * subject), so it lives in one context both create entry points read.
+ */
+const CoordinatorAuthorContext = createContext<boolean>(false);
+
 export function useScopeChooser(): ScopeChooserApi {
   const ctx = useContext(ScopeChooserContext);
   if (!ctx) throw new Error('useScopeChooser must be used within ScopeChooserProvider');
   return ctx;
 }
 
-export function ScopeChooserProvider({ children }: { children: ReactNode }) {
+/** Whether the viewer authors as a coordinator of the board's active subject. */
+export function useCoordinatorAuthor(): boolean {
+  return useContext(CoordinatorAuthorContext);
+}
+
+export function ScopeChooserProvider({
+  children,
+  coordinatorAuthor = false,
+}: {
+  children: ReactNode;
+  /** True when the viewer coordinates the active subject — born-approved authoring. */
+  coordinatorAuthor?: boolean;
+}) {
   const [target, setTarget] = useState<ScopeTarget | null>(null);
   const openChooser = useCallback((next: ScopeTarget) => setTarget(next), []);
   const closeChooser = useCallback(() => setTarget(null), []);
 
   return (
-    <ScopeChooserContext.Provider value={{ openChooser }}>
-      {children}
-      {target ? <ConfirmLessonDialog target={target} onClose={closeChooser} /> : null}
-    </ScopeChooserContext.Provider>
+    <CoordinatorAuthorContext.Provider value={coordinatorAuthor}>
+      <ScopeChooserContext.Provider value={{ openChooser }}>
+        {children}
+        {target ? <ConfirmLessonDialog target={target} onClose={closeChooser} /> : null}
+      </ScopeChooserContext.Provider>
+    </CoordinatorAuthorContext.Provider>
   );
 }
 
@@ -159,6 +185,7 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
   const locale = useLocale();
   const router = useRouter();
   const planHref = usePlanHref();
+  const coordinatorAuthor = useCoordinatorAuthor();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set when the teacher teaches several classes for this slot — pick one.
@@ -170,9 +197,25 @@ function ConfirmLessonDialog({ target, onClose }: { target: ScopeTarget; onClose
   const start = async (classId?: string) => {
     setBusy(true);
     setError(null);
+    // A coordinator of the active subject authors a born-approved plan (Save, not
+    // Submit) — no class binding, straight into the editor. A teacher binds to one
+    // of their own classes for the slot (auto / pick / blocked).
+    if (coordinatorAuthor) {
+      const res = await createCoordinatorPlan({
+        lessonKey: target.lessonKey,
+        weekday: target.weekday,
+        period: target.period,
+      });
+      if (res.ok) {
+        router.push(planHref(`/plan/${res.planId}`));
+        return;
+      }
+      setBusy(false);
+      setError(res.error);
+      return;
+    }
     const res = await createTeacherPlan({
       lessonKey: target.lessonKey,
-      centreId: target.centreId,
       weekday: target.weekday,
       period: target.period,
       classId,

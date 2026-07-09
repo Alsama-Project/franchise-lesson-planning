@@ -110,21 +110,23 @@ export interface BoardYear {
   /** Stable band identity: `centreId|subjectCode|year`. */
   key: string;
   year: number;
-  /** The band's centre (school) id — the centre a new plan here is created against. */
+  /**
+   * Provenance-only now: the viewer's own centre for the subject (empty for a pure
+   * coordinator). Centre is no longer a band scope — a band is `(subject, year)` and
+   * holds plans from every centre. Retained so consumers compile; not used to gate.
+   */
   centreId: string;
-  /** The band's centre display name (for the card's centre label). */
+  /** The viewer's own centre display name for the subject (provenance hint). */
   centreName: string;
   /** The band's subject `code`. */
   subjectCode: string;
   /** The band's subject display name. */
   subjectName: string;
   /**
-   * Whether the viewer may AUTHOR (create) lessons in this band — i.e. they teach
-   * an active class for its `(centre, subject, year)`. Drives whether the board's
-   * "+ Add lesson" and "Not started" affordances appear for the band: a coordinator
-   * who reviews a subject they don't teach sees none (review only). This is the same
-   * eligible-class rule `createTeacherPlan` binds on; the action stays the
-   * authoritative guard, this only hides affordances that would otherwise mislead.
+   * Whether the viewer may AUTHOR a lesson for this (subject, year): a teacher who
+   * teaches an active class that year, OR a coordinator of the subject (who authors
+   * born-approved plans for any year). Drives the "+ Add lesson" / "Not started"
+   * affordances; the create actions stay the authoritative guard.
    */
   canAuthor: boolean;
   plans: BoardPlan[];
@@ -229,13 +231,19 @@ export interface BoardData {
   /** False when the teacher teaches no classes yet (calm empty state). */
   hasClasses: boolean;
   /**
-   * True when the viewer is a COORDINATOR of the board's resolved (centre, subject)
-   * space. The board then becomes a space-wide, read-only review surface: cards are
-   * not draggable and carry no status control, they open the read-only review view,
-   * and the Status board omits the "Not started" column. False for a teacher's own
-   * board (unchanged behaviour).
+   * Legacy blanket read-only flag. The board is no longer a whole-board review
+   * surface — per-card routing off each plan's `canEdit` decides edit vs review, so
+   * this is always `false` now and retained only so consumers compile. A coordinator
+   * viewing someone else's plan gets a read-only route from that card's `canEdit`,
+   * not from this flag.
    */
   boardReadOnly: boolean;
+  /**
+   * True when the viewer COORDINATES the board's active subject. Coordinator-authored
+   * plans are born `approved` (Save, not Submit), so the create affordances use this
+   * to pick the coordinator create path over the teacher (submit-for-approval) one.
+   */
+  coordinatorAuthor: boolean;
   /**
    * The teacher's own classes (via `class_teachers`) in the board subject, keyed
    * by year — drives the "My class" choice in the scope chooser. A year with more

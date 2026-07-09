@@ -7,9 +7,7 @@ import { Logo } from '@/components/ui/Logo';
 import { TopNav } from '@/components/app-shell/TopNav';
 import { UserMenu } from '@/components/app-shell/UserMenu';
 import { NotificationBell } from '@/components/app-shell/NotificationBell';
-import { TestUserBar } from '@/components/app-shell/TestUserBar';
 import { getBellNotifications } from '@/lib/notifications';
-import { getImpersonationState } from '@/lib/test-impersonation';
 import { getSpaceSwitcher } from '@/lib/active-space';
 import { getConsoleAccess } from '@/lib/console';
 
@@ -30,8 +28,7 @@ type AppShellProps = {
  * unread dot shows only when that list is non-empty.
  */
 export async function AppShell({ name, subtitle, children }: AppShellProps) {
-  const [impersonation, notifications, spaces, access] = await Promise.all([
-    getImpersonationState(),
+  const [notifications, spaces, access] = await Promise.all([
     getBellNotifications(),
     getSpaceSwitcher(),
     getConsoleAccess(),
@@ -49,32 +46,18 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
 
   const t = await getTranslations('nav');
 
-  // The combined height of the fixed/sticky chrome above the content: the 64px
-  // (h-16) header, plus the 40px (h-10) TEST MODE bar when impersonating. Exposed
-  // as a CSS variable so sticky panes (e.g. the coordinator comments rail) can
-  // offset their `top` below the chrome and stay correct if it grows/shrinks.
-  const chromeHeight = impersonation.active ? '104px' : '64px';
+  // The height of the fixed/sticky chrome above the content: the 64px (h-16) header.
+  // Exposed as a CSS variable so sticky panes (e.g. the coordinator comments rail)
+  // can offset their `top` below the chrome and stay correct if it changes.
+  const chromeHeight = '64px';
 
   return (
     <div
       className="flex min-h-screen flex-col"
       style={{ ['--app-chrome-height' as string]: chromeHeight }}
     >
-      {impersonation.active ? (
-        <TestUserBar
-          impersonating={impersonation.impersonating}
-          availableRoles={impersonation.availableRoles}
-          currentRole={impersonation.currentRole}
-          realDisplayName={impersonation.realDisplayName}
-        />
-      ) : null}
-
-      {/* The shell header sticks just below the test bar when it is present, so
-          neither occludes the other; otherwise it sticks to the very top. */}
       <header
-        className={`sticky z-50 flex h-16 items-center gap-6 border-b border-border bg-surface px-[30px] ${
-          impersonation.active ? 'top-10' : 'top-0'
-        }`}
+        className="sticky top-0 z-50 flex h-16 items-center gap-6 border-b border-border bg-surface px-[30px]"
       >
         {/* Brand — links home to the Weekly Overview */}
         <Link
@@ -100,7 +83,6 @@ export async function AppShell({ name, subtitle, children }: AppShellProps) {
             spaces={spaces}
             pseudoRtlEnabled={pseudoRtlEnabled}
             pseudoRtlOn={pseudoRtlOn}
-            impersonating={impersonation.impersonating}
           />
         </div>
       </header>

@@ -188,24 +188,15 @@ function boardPlanToCard(p: BoardPlan, period: number): PlanCard {
 }
 
 /**
- * Pick the plan that occupies a slot when several share a lessonKey (a colleague's
- * plan can be visible alongside the viewer's within a shared space): prefer the one
- * the viewer may edit (their own), else the first. One cell shows one card.
- */
-function pickPlanForLesson(plans: BoardPlan[], lessonKey: string): BoardPlan | null {
-  const matches = plans.filter((p) => p.lessonKey === lessonKey);
-  if (matches.length === 0) return null;
-  return matches.find((p) => p.canEdit) ?? matches[0];
-}
-
-/**
  * Build the five period columns for the Calendar view. For each period P1..P5, walk
  * the bands and resolve that year's curriculum cell for P — planned vs ghost by the
  * SAME lessonKey set-difference the Status view uses — collecting only the cards
- * that exist (no placeholder for a year with no lesson in P). Weekly-grain lessons
- * (null / out-of-range period) have no period column, so the first such lesson is
- * surfaced in P1 to stay reachable. Ghosts appear only where the viewer may author
- * and is not in a filtered read view (`ownerId`) or the coordinator read-only board.
+ * that exist (no placeholder for a year with no lesson in P). Since visibility is
+ * subject-wide, several plans can share one slot (two teachers, or two centres); ALL
+ * of them render as separate cards in the column (no collapse), each author-labelled.
+ * Weekly-grain lessons (null / out-of-range period) have no period column, so the
+ * first such lesson is surfaced in P1 to stay reachable. Ghosts appear only where the
+ * viewer may author and is not in a filtered read view (`ownerId`) or a read-only board.
  *
  * Each column's cards are sorted by YEAR ASCENDING and nothing else — never
  * planned-state, never `weekday` — so the stack order is stable and every column
@@ -226,11 +217,15 @@ export function buildPeriodColumns(
         (period === 1 ? band.lessons.find((l) => !isPeriodColumn(l.period)) : undefined);
       if (!lesson) continue;
 
-      const plan = pickPlanForLesson(band.plans, lesson.lessonKey);
-      if (plan) {
-        // The owner filter is a read view — a plan owned by someone else is hidden.
-        if (opts.ownerId && plan.owner?.id !== opts.ownerId) continue;
-        cards.push({ kind: 'plan', card: boardPlanToCard(plan, period) });
+      const matches = band.plans.filter((p) => p.lessonKey === lesson.lessonKey);
+      if (matches.length > 0) {
+        // Every plan for the slot renders — a colleague's plan sits alongside the
+        // viewer's. The owner filter is a read view, so it hides non-matching cards
+        // but the slot still counts as planned (no ghost even if all are filtered).
+        for (const plan of matches) {
+          if (opts.ownerId && plan.owner?.id !== opts.ownerId) continue;
+          cards.push({ kind: 'plan', card: boardPlanToCard(plan, period) });
+        }
         continue;
       }
 

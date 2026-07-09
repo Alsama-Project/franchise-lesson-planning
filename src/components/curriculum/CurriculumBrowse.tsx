@@ -63,7 +63,14 @@ export function CurriculumBrowse({
     <>
       <Header data={data} view={view} />
       <div className="border-t border-border p-[22px]">
-        {view === 'monthly' ? (
+        {data.singlePeriod ? (
+          // Single-period subjects (Yoga/Awareness): one collapsed view, keyed on the
+          // month so the selected-week state re-initialises on month navigation.
+          <SinglePeriodBody
+            key={`${data.selected.subjectCode}-${data.selected.year}-${data.selected.month}`}
+            data={data}
+          />
+        ) : view === 'monthly' ? (
           // Key on the resolved coordinate so the grid selection re-initialises when
           // the month changes (month nav / subject / year) — the component otherwise
           // stays mounted across navigation and would hold stale cell indices.
@@ -127,6 +134,11 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
 
   const coordHref = (c: BrowseCoordinate) => buildHref({ month: c.month, week: c.week });
 
+  // Single-period subjects (Yoga/Awareness) collapse to one month-stepping view: no
+  // Weekly/Monthly toggle, no week picker, no per-week topic chip. The navigator reuses
+  // the month stepper (prevMonth/nextMonth), matching the month-of-weeks table below.
+  const singlePeriod = data.singlePeriod;
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] px-[22px] py-[15px]">
       <div className="flex flex-wrap items-center gap-[12px]">
@@ -145,7 +157,7 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
             label: t('year', { n: formatNumber(y, locale) }),
           }))}
         />
-        {view === 'monthly' ? (
+        {singlePeriod || view === 'monthly' ? (
           <MonthNav
             label={month || t('empty')}
             prevHref={data.prevMonth ? coordHref(data.prevMonth) : null}
@@ -179,7 +191,7 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
             }}
           />
         )}
-        {view === 'weekly' && data.topicChip ? (
+        {!singlePeriod && view === 'weekly' && data.topicChip ? (
           <span
             dir="auto"
             className="inline-flex items-center rounded-full border border-[#ece4d7] bg-surface-cream px-[11px] py-[4px] text-[12.5px] font-medium text-[#8a6a3a]"
@@ -188,9 +200,11 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
           </span>
         ) : null}
       </div>
-      <div className="flex items-center gap-[14px]">
-        <ViewToggle weeklyHref={buildHref({ view: 'weekly' })} monthlyHref={buildHref({ view: 'monthly' })} view={view} />
-      </div>
+      {singlePeriod ? null : (
+        <div className="flex items-center gap-[14px]">
+          <ViewToggle weeklyHref={buildHref({ view: 'weekly' })} monthlyHref={buildHref({ view: 'monthly' })} view={view} />
+        </div>
+      )}
     </div>
   );
 }
@@ -360,6 +374,72 @@ function WeeklyBody({ data }: { data: CurriculumBrowseData }) {
         <WeekGrid data={data} />
       )}
     </>
+  );
+}
+
+// ── Single-period body: full-width monthly outcome + month-of-weeks table ────────
+//
+// Yoga / Awareness have one period per week (see `isSinglePeriodSubject`), so the
+// weekly/monthly split doesn't apply: we render ONE collapsed view. The Monthly
+// Outcome block spans full width (the Weekly Outcome block is gone) and shows ONLY
+// when it has content — locked curriculum content is never faked with an empty box.
+// The table shows one row per week of the selected month (from `monthWeekRows`),
+// reusing the existing week table; the row label is the week's ordinal within the
+// month, not the DB period (1 for every Yoga row, NULL for Awareness).
+function SinglePeriodBody({ data }: { data: CurriculumBrowseData }) {
+  const t = useTranslations('curriculum');
+  const rows = data.monthWeekRows;
+
+  const monthlyLOs = useMemo(() => parseMonthlyOutcome(data.monthly), [data.monthly]);
+  const hasMonthly =
+    monthlyLOs.skills.length > 0 ||
+    monthlyLOs.knowledge.length > 0 ||
+    Boolean(data.monthly.combined);
+
+  return (
+    <>
+      {hasMonthly ? <MonthlyPanel data={data} /> : null}
+      {rows.length === 0 ? (
+        <p
+          className={cn(
+            'rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted',
+            hasMonthly && 'mt-[20px]',
+          )}
+        >
+          {t('monthGrid.noLessons')}
+        </p>
+      ) : (
+        <SinglePeriodGrid rows={rows} spaced={hasMonthly} />
+      )}
+    </>
+  );
+}
+
+/** The month-of-weeks table + sticky focus card for a single-period subject. */
+function SinglePeriodGrid({ rows, spaced }: { rows: BrowseRow[]; spaced: boolean }) {
+  const t = useTranslations('curriculum');
+  const locale = useLocale();
+  // Default-select the first week; clicking a row re-points the focus card.
+  const [selected, setSelected] = useState(0);
+  const safeIndex = Math.min(selected, rows.length - 1);
+  const focusRow = rows[safeIndex];
+
+  // Row label = the week's ordinal within the displayed month (1..N — 5 in a 5-week
+  // month), reusing the existing `period` key. Deliberately NOT the DB `period`.
+  const rowLabel = (i: number) => t('period', { n: formatNumber(i + 1, locale) });
+
+  return (
+    <div
+      className={cn(
+        'grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]',
+        spaced && 'mt-[20px]',
+      )}
+    >
+      <WeekTable rows={rows} selected={safeIndex} onSelect={setSelected} rowLabel={rowLabel} />
+      <div className="lg:sticky lg:top-[80px]">
+        <FocusCard row={focusRow} periodLabel={rowLabel(safeIndex)} />
+      </div>
+    </div>
   );
 }
 
@@ -791,10 +871,14 @@ function WeekTable({
   rows,
   selected,
   onSelect,
+  rowLabel,
 }: {
   rows: BrowseRow[];
   selected: number;
   onSelect: (i: number) => void;
+  /** Overrides the PERIOD cell label (single-period view uses the week ordinal). When
+   *  omitted, the cell reads the row's own DB period — multi-period behaviour, unchanged. */
+  rowLabel?: (index: number) => string;
 }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
@@ -862,7 +946,7 @@ function WeekTable({
                     tint,
                   )}
                 >
-                  {t('period', { n: formatNumber(row.period, locale) })}
+                  {rowLabel ? rowLabel(i) : t('period', { n: formatNumber(row.period, locale) })}
                 </td>
                 <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
                   {row.dailyOutcome ? (
@@ -929,7 +1013,7 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 // ── Focus card (teal-accented) ──────────────────────────────────────────────────
 
-function FocusCard({ row }: { row: BrowseRow }) {
+function FocusCard({ row, periodLabel }: { row: BrowseRow; periodLabel?: string }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
   const router = useRouter();
@@ -958,7 +1042,9 @@ function FocusCard({ row }: { row: BrowseRow }) {
   return (
     <div>
       <p className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
-        {t('focus.inFocus', { value: t('period', { n: formatNumber(row.period, locale) }) })}
+        {t('focus.inFocus', {
+          value: periodLabel ?? t('period', { n: formatNumber(row.period, locale) }),
+        })}
       </p>
       <div className="rounded-[16px] border border-teal bg-surface p-[18px]">
         <p className="mb-[10px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">

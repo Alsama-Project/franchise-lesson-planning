@@ -1,14 +1,18 @@
 // Data layer for the day-column planning board. The board is a per-year set of
-// Mon–Fri columns: a plan appears on the board once it exists, placed by its own
-// `weekday` (which column) and `period` (its position in that day's stack). The
-// curriculum lessons for the selected (month · week) are the POOL the "+ Add
-// lesson" picker draws from — the board groups plans by curriculum week via each
-// plan's `curriculum_lesson_id`, then lays them out by weekday.
+// Mon–Fri columns for ONE active subject: a plan appears on the board once it
+// exists, placed by its own `weekday` (which column) and `period` (its position in
+// that day's stack). The curriculum lessons for the selected (month · week) are the
+// POOL the "+ Add lesson" picker draws from — the board groups plans by curriculum
+// week via each plan's `curriculum_lesson_id`, then lays them out by weekday.
+//
+// VISIBILITY IS SUBJECT-BASED. A plan is keyed to a curriculum slot (subject, year,
+// month/week/period); centre and class are provenance on the row, NOT a scoping
+// dimension. Every teacher/coordinator of a subject sees every plan for that
+// subject across all centres, each with its author label. RLS (`lp_select`,
+// migration 0057) enforces exactly this; this layer no longer filters by centre.
 //
 // Everything goes through the auth'd, cookie-bound Supabase client, so RLS scopes
-// the reads: the teacher's own `class_teachers` rows, and the `lesson_plans` they
-// may see (class/centre within their centre, org across centres). The service-role
-// key is never used on this path.
+// the reads. The service-role key is never used on this path.
 
 import { createClient } from '@/lib/supabase/server';
 import { resolveActiveMembership, type MembershipFull } from '@/lib/active-space';
@@ -94,33 +98,7 @@ interface MembershipRow {
   schools: { name: string } | null;
 }
 
-/**
- * One `(centre, subject)` space the user belongs to — the unit the user-wide board
- * unions over. Enumerated from the user's `subject_membership` rows (the visibility
- * boundary), so the board shows every subject the user is in, not just one.
- */
-interface Space {
-  /** `${centreId}:${subjectId}` — the space identity (also the coordinator-set key). */
-  key: string;
-  centreId: string;
-  subjectId: string;
-  centreName: string;
-  subjectCode: string;
-  subjectName: string;
-  isCoordinator: boolean;
-}
-
-/** English-first, then alphabetical — the order subjects surface across the app. */
-function sortSubjectNames(names: string[]): string[] {
-  return [...new Set(names)].sort((a, b) => {
-    const ae = a.toLowerCase() === 'english';
-    const be = b.toLowerCase() === 'english';
-    if (ae !== be) return ae ? -1 : 1;
-    return a.localeCompare(b);
-  });
-}
-
-/** The empty board shown when there's no session or no teaching assignment. */
+/** The empty board shown when there's no session or no subject to plan against. */
 function emptyBoard(teacherName: string): BoardData {
   return {
     teacherName,
@@ -143,23 +121,30 @@ function emptyBoard(teacherName: string): BoardData {
     planCount: 0,
     hasClasses: false,
     boardReadOnly: false,
+    coordinatorAuthor: false,
     myClassesByYear: {},
   };
 }
 
 /**
- * Load the planning board for the signed-in teacher at a curriculum coordinate.
+ * Load the planning board for the signed-in user at a curriculum coordinate, for
+ * their ONE active subject.
+ *
+ * The active subject is resolved the same way the header chip resolves the active
+ * space (primary / English-first / earliest) over the user's `subject_membership`;
+ * a PURE coordinator holds no membership (coordinator-ness lives school-agnostically
+ * in `coordinator_subject`, migration 0040) so the board falls back to their
+ * coordinated subjects, English-first — so a coordinator with no class still gets a
+ * board.
  *
  * `month`/`week` select the curriculum coordinate; when omitted (or out of range)
- * the first synced coordinate for the teacher's subject is used. The board's
- * subject space comes from the teacher's classes when they have any, else from a
- * (centre, subject) membership — so visibility never depends on class assignment.
- * It shows one band per year (the taught years, or every curriculum year of the
- * space for a member with no class); each band carries the plans placed this week
- * (laid out into Mon–Fri columns by their `weekday`/`period`) and the curriculum
- * lessons for the coordinate (the "+ Add lesson" pool). Plan visibility itself is
- * enforced by RLS on `lesson_plans` (subject-membership + scope), not re-filtered
- * here.
+ * the week containing today (or the first synced week) is used. The board shows one
+ * band per year — the years the viewer teaches in the subject, or every curriculum
+ * year of the subject for a coordinator / no-class member. Each band carries the
+ * plans placed this week for that (subject, year) across ALL centres (RLS decides
+ * visibility; there is no centre filter here) and the curriculum lessons for the
+ * coordinate (the "+ Add lesson" pool). Each plan card carries its author label and,
+ * when the board's plans span more than one centre, a provenance centre label.
  */
 export async function getBoardData(input: {
   month?: string;
@@ -172,52 +157,58 @@ export async function getBoardData(input: {
   } = await supabase.auth.getUser();
   if (!user) return emptyBoard('there');
 
-  // Identity, the teacher's own classes (taught years + subject), and their
-  // memberships (coordinator spaces) depend only on the user id — fetch together.
-  const [{ data: profile }, { data: ctRows }, { data: memRows }] = await Promise.all([
-    supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle(),
-    supabase
-      .from('class_teachers')
-      .select(
-        'classes ( id, year, archived_at, school_id, subject_id, schools ( name ), subjects ( code, name ) )',
-      )
-      .eq('teacher_id', user.id),
-    supabase
-      .from('subject_membership')
-      .select(
-        'id, school_id, subject_id, role, is_primary, created_at, subjects ( code, name ), schools ( name )',
-      )
-      .eq('profile_id', user.id),
-  ]);
+  // Identity, the user's own classes (taught years + subject), their teacher
+  // memberships, and the subjects they coordinate — all keyed on the user id.
+  const [{ data: profile }, { data: ctRows }, { data: memRows }, { data: coordRows }] =
+    await Promise.all([
+      supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle(),
+      supabase
+        .from('class_teachers')
+        .select(
+          'classes ( id, year, archived_at, school_id, subject_id, schools ( name ), subjects ( code, name ) )',
+        )
+        .eq('teacher_id', user.id),
+      supabase
+        .from('subject_membership')
+        .select(
+          'id, school_id, subject_id, role, is_primary, created_at, subjects ( code, name ), schools ( name )',
+        )
+        .eq('profile_id', user.id),
+      // coordinator_subject is the school-agnostic source of coordinator-ness (0040) —
+      // the SAME source `is_coordinator_of_subject`, the review queue, and the RLS
+      // policies read, so board routing can never disagree on who coordinates what.
+      supabase
+        .from('coordinator_subject')
+        .select('subject_id, subjects ( code, name )')
+        .eq('profile_id', user.id),
+    ]);
 
   const teacherName =
     (profile as { full_name?: string | null } | null)?.full_name ?? user.email ?? 'there';
   const isAdmin = (profile as { role?: string } | null)?.role === 'admin';
 
-  // All the teacher's (non-archived) classes across every space they teach in.
-  // Scoped to the active space just below — a class outside it must not draw a band.
+  // All the user's (non-archived) classes across every subject they teach.
   const taughtAll = ((ctRows ?? []) as unknown as Array<{ classes: TaughtClassRow | null }>)
     .map((r) => r.classes)
     .filter((c): c is TaughtClassRow => !!c && !c.archived_at);
 
   const memberships = (memRows ?? []) as unknown as MembershipRow[];
 
-  // The coordinator spaces the teacher belongs to — drives per-plan edit rights.
-  const coordinatorSpaces = new Set(
-    memberships
-      .filter((m) => m.role === 'coordinator')
-      .map((m) => `${m.school_id}:${m.subject_id}`),
-  );
+  // Coordinated subjects (school-agnostic): subjectId → { code, name }.
+  const coordinatedSubjects = new Map<string, { code: string; name: string }>();
+  for (const r of (coordRows ?? []) as unknown as Array<{
+    subject_id: string;
+    subjects: { code: string; name: string } | null;
+  }>) {
+    coordinatedSubjects.set(r.subject_id, {
+      code: r.subjects?.code ?? '',
+      name: r.subjects?.name ?? '',
+    });
+  }
 
-  // Resolve the ONE active subject space through the SAME resolver the header chip
-  // reads (`resolveActiveMembership`, src/lib/active-space.ts) over the SAME
-  // subject_membership rows — so the chip and the board share a single source of
-  // truth and can never disagree. Previously the board was USER-WIDE: it unioned
-  // EVERY membership AND every taught class and never read the active space, so a
-  // drifted membership/class link in another subject (e.g. Arabic) drew its own
-  // band while the chip still read English. `is_primary` wins; else English-first;
-  // else earliest-joined — identical to what `getActiveSpace()` returns.
-  const active = resolveActiveMembership(
+  // Resolve the active TEACHER membership (primary / English-first / earliest) — the
+  // same algorithm the header chip uses, so chip and board agree for teachers.
+  const activeMembership = resolveActiveMembership(
     memberships.map(
       (m): MembershipFull => ({
         id: m.id,
@@ -233,97 +224,68 @@ export async function getBoardData(input: {
     ),
   );
 
-  // No subject membership — nothing to plan against.
-  if (!active) return emptyBoard(teacherName);
+  // The board's active SUBJECT. A teacher's comes from their active membership; a
+  // pure coordinator's (no membership) from their coordinated subjects, English-first.
+  let subjectId: string;
+  let subjectCode: string;
+  let subjectName: string;
+  // The viewer's own centre for the subject — provenance for plans they author as a
+  // teacher. Empty for a pure coordinator (who authors class-less, centre-less plans).
+  let ownCentreName = '';
+  if (activeMembership) {
+    subjectId = activeMembership.subjectId;
+    subjectCode = activeMembership.subjectCode;
+    subjectName = activeMembership.subjectName;
+    ownCentreName = activeMembership.schoolName;
+  } else if (coordinatedSubjects.size > 0) {
+    const list = [...coordinatedSubjects.entries()].map(([id, cn]) => ({
+      id,
+      code: cn.code,
+      name: cn.name,
+    }));
+    const english = list.find(
+      (s) => s.code.toLowerCase() === 'english' || s.name.toLowerCase() === 'english',
+    );
+    const pick = english ?? [...list].sort((a, b) => a.name.localeCompare(b.name))[0];
+    subjectId = pick.id;
+    subjectCode = pick.code;
+    subjectName = pick.name;
+  } else {
+    // No membership and no coordinated subject — nothing to plan against.
+    return emptyBoard(teacherName);
+  }
 
-  // Scope taught classes to the active space. The board's per-year bands and the
-  // "my classes" list derive from these, so constraining them here is what stops a
-  // drifted class link in another subject/centre from rendering a stray band — the
-  // defensive fold that used to turn ANY taught class into its own board space.
-  const taught = taughtAll.filter(
-    (c) => c.school_id === active.schoolId && c.subject_id === active.subjectId,
-  );
+  // Whether the viewer COORDINATES the active subject — drives per-card review vs
+  // edit routing, born-approved authoring, and delete rights. Subject-wide.
+  const coordinatorAuthor =
+    coordinatedSubjects.has(subjectId) || activeMembership?.role === 'coordinator';
 
-  // The board is PER-SPACE: exactly the active (centre, subject). Switching the
-  // header space flips `is_primary`, which re-resolves `active` here on the next
-  // render, so the board content swaps — not just the chip label.
-  const spaces: Space[] = [
-    {
-      key: `${active.schoolId}:${active.subjectId}`,
-      centreId: active.schoolId,
-      subjectId: active.subjectId,
-      centreName: active.schoolName,
-      subjectCode: active.subjectCode,
-      subjectName: active.subjectName,
-      isCoordinator: active.role === 'coordinator',
-    },
-  ];
+  // The viewer's own non-archived classes for the active subject (any centre —
+  // centre is not a scope). Drives which years show and teacher authoring.
+  const taught = taughtAll.filter((c) => c.subject_id === subjectId);
 
-  // Whether the board describes one space or many — drives the header prefix (kept
-  // only for a single space) and the per-card centre label (shown only across >1
-  // centre). A single-subject, single-centre user's board is unchanged.
-  const distinctCentreIds = new Set(spaces.map((s) => s.centreId));
-  const distinctSubjectCodes = new Set(spaces.map((s) => s.subjectCode));
-  const spansMultipleCentres = distinctCentreIds.size > 1;
-  const spansMultipleSubjects = distinctSubjectCodes.size > 1;
-  const isSingleSpace = spaces.length === 1;
-
-  const subjectNames = sortSubjectNames(spaces.map((s) => s.subjectName).filter(Boolean));
-
-  // Per space, the years shown. A teacher with classes in the space sees the years
-  // they teach there; a no-class member sees every year the subject's curriculum
-  // covers. Same "years you teach" rule as before, just resolved per space.
+  // Years shown: the years the viewer teaches in the subject, else every curriculum
+  // year the subject covers (a coordinator / no-class member sees them all).
   const candidateYears = [0, 1, 2, 3, 4, 5, 6];
-  const spaceYears = new Map<string, number[]>();
-  await Promise.all(
-    spaces.map(async (s) => {
-      const classYears = [
-        ...new Set(
-          taught
-            .filter((c) => c.school_id === s.centreId && c.subject_id === s.subjectId)
-            .map((c) => c.year),
-        ),
-      ].sort((a, b) => a - b);
-      if (classYears.length > 0) {
-        spaceYears.set(s.key, classYears);
-        return;
-      }
-      const navProbe = await Promise.all(candidateYears.map((y) => getCurriculumNav(s.subjectCode, y)));
-      spaceYears.set(
-        s.key,
-        candidateYears.filter((_, i) => navProbe[i].length > 0),
-      );
-    }),
-  );
+  const classYears = [...new Set(taught.map((c) => c.year))].sort((a, b) => a - b);
+  let years: number[];
+  if (classYears.length > 0) {
+    years = classYears;
+  } else {
+    const navProbe = await Promise.all(candidateYears.map((y) => getCurriculumNav(subjectCode, y)));
+    years = candidateYears.filter((_, i) => navProbe[i].length > 0);
+  }
 
-  // The bands: one per (space, year). On a single-subject single-centre board this
-  // is exactly "one band per taught year" as before. Sorted subject → centre → year.
-  type Band = Space & { year: number; bandKey: string /* centreId|subjectCode|year */ };
-  const bands: Band[] = spaces
-    .flatMap((s) => (spaceYears.get(s.key) ?? []).map((year) => ({
-      ...s,
-      year,
-      bandKey: `${s.centreId}|${s.subjectCode}|${year}`,
-    })))
-    .sort(
-      (a, b) =>
-        a.subjectName.localeCompare(b.subjectName) ||
-        a.centreName.localeCompare(b.centreName) ||
-        a.year - b.year,
-    );
+  // canAuthor per year: a teacher who teaches a class that year, OR a coordinator of
+  // the subject (who authors born-approved plans for any year).
+  const canAuthorYear = (year: number): boolean =>
+    coordinatorAuthor || taught.some((c) => c.year === year);
 
-  // Whether the viewer may AUTHOR in a band — they teach an ACTIVE class for its
-  // (centre, subject, year). This is the board-render half of the same eligible-class
-  // rule `createTeacherPlan` binds on (match on school_id + subject_id + year over the
-  // viewer's non-archived classes). It gates the "+ Add lesson" / "Not started"
-  // affordances so a coordinator reviewing a subject they don't teach sees none — while
-  // `createTeacherPlan` stays the authoritative guard on the create path itself.
-  const teachesBand = (band: { centreId: string; subjectId: string; year: number }): boolean =>
-    taught.some(
-      (c) => c.school_id === band.centreId && c.subject_id === band.subjectId && c.year === band.year,
-    );
+  const subjectNames = subjectName ? [subjectName] : [];
+  const context = [ownCentreName, subjectName].filter(Boolean).join(' · ') || subjectName || null;
+  const downloadSubjects = subjectCode ? [{ subjectCode, subjectName, years }] : [];
 
-  // The teacher's own classes, grouped by year — legacy field, kept populated.
+  // The viewer's own classes grouped by year — legacy scope-chooser field.
   const myClassesByYear: Record<number, BoardClass[]> = {};
   for (const c of taught) {
     (myClassesByYear[c.year] ??= []).push({ id: c.id, label: `Year ${c.year}` });
@@ -332,52 +294,21 @@ export async function getBoardData(input: {
     list.sort((a, b) => a.label.localeCompare(b.label));
   }
 
-  // The board is a coordinator's read-only review surface only for a SINGLE space
-  // the viewer coordinates (unchanged behaviour). A user-wide board spanning several
-  // spaces is the teacher's own planning surface; per-plan `canEdit` still gates
-  // each card, and RLS still blocks writing another teacher's plan.
-  const boardReadOnly = isSingleSpace && spaces[0].isCoordinator;
+  // One year band shell (reused by the empty-coordinate return and the full return).
+  const bandShell = (year: number, plans: BoardPlan[], lessons: BoardLesson[]): BoardYear => ({
+    key: `${subjectCode}|${year}`,
+    year,
+    centreId: '', // centre is provenance on each plan now, not a band scope
+    centreName: ownCentreName,
+    subjectCode,
+    subjectName,
+    canAuthor: canAuthorYear(year),
+    plans,
+    lessons,
+  });
 
-  const context = isSingleSpace
-    ? [spaces[0].centreName, spaces[0].subjectName].filter(Boolean).join(' · ') || null
-    : null;
-
-  // Per-subject download targets: each subject's union of years across its centres.
-  const downloadYears = new Map<string, { subjectName: string; years: Set<number> }>();
-  for (const band of bands) {
-    const entry = downloadYears.get(band.subjectCode) ?? {
-      subjectName: band.subjectName,
-      years: new Set<number>(),
-    };
-    entry.years.add(band.year);
-    downloadYears.set(band.subjectCode, entry);
-  }
-  const downloadSubjects = [...downloadYears.entries()]
-    .map(([subjectCode, e]) => ({
-      subjectCode,
-      subjectName: e.subjectName,
-      years: [...e.years].sort((a, b) => a - b),
-    }))
-    .sort((a, b) => {
-      const ae = a.subjectName.toLowerCase() === 'english';
-      const be = b.subjectName.toLowerCase() === 'english';
-      if (ae !== be) return ae ? -1 : 1;
-      return a.subjectName.localeCompare(b.subjectName);
-    });
-
-  // Build the ordered list of curriculum coordinates across every band's
-  // (subject, year), so prev/next step through the union scheme of work. The
-  // curriculum is identical per (subject, year) regardless of centre, so probe each
-  // distinct (subject, year) once.
-  const distinctSubjectYear = new Map<string, { subjectCode: string; year: number }>();
-  for (const band of bands) {
-    distinctSubjectYear.set(`${band.subjectCode}|${band.year}`, {
-      subjectCode: band.subjectCode,
-      year: band.year,
-    });
-  }
-  const navList = [...distinctSubjectYear.values()];
-  const navs = await Promise.all(navList.map((sy) => getCurriculumNav(sy.subjectCode, sy.year)));
+  // Curriculum coordinates across the subject's years, in scheme-of-work order.
+  const navs = await Promise.all(years.map((y) => getCurriculumNav(subjectCode, y)));
   const weeksByMonth = new Map<string, Set<number>>();
   for (const nav of navs) {
     for (const { month, weeks } of nav) {
@@ -388,52 +319,32 @@ export async function getBoardData(input: {
   }
   const coords: BoardCoordinate[] = [...weeksByMonth.entries()]
     .sort((a, b) => monthIndex(a[0]) - monthIndex(b[0]))
-    .flatMap(([month, weeks]) =>
-      [...weeks].sort((a, b) => a - b).map((week) => ({ month, week })),
-    );
+    .flatMap(([month, weeks]) => [...weeks].sort((a, b) => a - b).map((week) => ({ month, week })));
 
-  // Nothing synced for ANY of the user's subjects/years yet → an empty-but-valid
-  // board (year shells per band). The empty state reads user-wide from `subjectNames`.
+  // Nothing synced for the subject's years yet → an empty-but-valid board (year shells).
   if (coords.length === 0) {
     return {
       ...emptyBoard(teacherName),
       context,
       subjectNames,
-      spansMultipleSubjects,
-      spansMultipleCentres,
       downloadSubjects,
       hasClasses: true,
-      boardReadOnly,
+      coordinatorAuthor,
       currentWeek: null,
-      years: bands.map((b) => ({
-        key: b.bandKey,
-        year: b.year,
-        centreId: b.centreId,
-        centreName: b.centreName,
-        subjectCode: b.subjectCode,
-        subjectName: b.subjectName,
-        canAuthor: teachesBand(b),
-        plans: [],
-        lessons: [],
-      })),
+      years: years.map((y) => bandShell(y, [], [])),
       myClassesByYear,
     };
   }
 
-  // The month → week picker's options: every coordinate in scheme-of-work order,
-  // each tagged with its flat teaching-week number (position + 1). This is the
-  // SAME ordering that derives `weekNo` below, so picker and arrows never disagree.
+  // The month → week picker's options, each tagged with its flat teaching-week number.
   const weeks: BoardWeekOption[] = coords.map((c, i) => ({
     month: c.month,
     week: c.week,
     weekNo: i + 1,
   }));
 
-  // Resolve the selected coordinate from the params (snap to a real one). With no
-  // (or an unrecognised) coordinate in the URL, land on the week containing today in
-  // Asia/Beirut — resolved via `term_week` — rather than always the first week. When
-  // today sits outside every seeded term (holidays, or an unseeded table), fall back
-  // to the first week as before.
+  // Resolve the selected coordinate from the params (snap to a real one), else land
+  // on the week containing today (Asia/Beirut) via `term_week`, else the first week.
   let index = coords.findIndex((c) => c.month === input.month && c.week === input.week);
   if (index === -1) {
     const currentWeekNo = await resolveCurrentTermWeekNo(supabase);
@@ -446,76 +357,47 @@ export async function getBoardData(input: {
   const prev = index > 0 ? coords[index - 1] : null;
   const next = index < coords.length - 1 ? coords[index + 1] : null;
 
-  // The 1-based teaching-week number = the coordinate's position in the ordered
-  // scheme of work (Month 1 Week 1 = 1, …). This needs no dates — it's the key
-  // into `term_week` for the real Monday + "current" flag (see resolveTermWeek,
-  // the single, temporary point of date resolution).
   const weekNo = index + 1;
   const { mondayDate, isCurrent } = await resolveTermWeek(supabase, weekNo);
 
-  // The "This week" button's jump target: the curriculum coordinate for today's term
-  // week, or the nearest seeded one when today is outside coverage. Null when nothing
-  // maps (empty `term_week`). This does NOT change on-load defaulting above — it only
-  // feeds the button, so a teacher can always return to "now" after browsing ahead.
+  // The "This week" button's jump target.
   const currentWeekNo = await resolveNearestTermWeekNo(supabase);
   const currentWeek =
     currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
       ? coords[currentWeekNo - 1]
       : null;
 
-  // The curriculum lessons (P1..P5) for the selected coordinate, per subject, across
-  // that subject's years — the "+ Add lesson" pool and the join target for the
-  // plans. Resolve once per subject (curriculum is per (subject, year), centre-
-  // independent) and merge into union lookups keyed by lesson key.
-  const yearsBySubject = new Map<string, number[]>();
-  for (const sy of navList) {
-    const list = yearsBySubject.get(sy.subjectCode) ?? [];
-    list.push(sy.year);
-    yearsBySubject.set(sy.subjectCode, list);
-  }
-  const slotKeys = new Set<string>();
-  const periodByKey = new Map<string, number>();
-  const outcomeByKey = new Map<string, string>();
-  const subjectByKey = new Map<string, { subjectCode: string; subjectName: string }>();
-  // lessons per (subjectCode|year), assigned to every centre's band for that pair.
-  const lessonsBySubjectYear = new Map<string, BoardLesson[]>();
-  const subjectCodes = [...yearsBySubject.keys()];
-  const subjectNameByCode = new Map(spaces.map((s) => [s.subjectCode, s.subjectName]));
-  await Promise.all(
-    subjectCodes.map(async (code) => {
-      const yearList = (yearsBySubject.get(code) ?? []).slice().sort((a, b) => a - b);
-      const resolved = await resolveWeekSlotKeys(code, yearList, coordinate.month, coordinate.week);
-      const subjectName = subjectNameByCode.get(code) ?? '';
-      for (const k of resolved.slotKeys) slotKeys.add(k);
-      for (const [k, v] of resolved.periodByKey) periodByKey.set(k, v);
-      for (const [k, v] of resolved.outcomeByKey) outcomeByKey.set(k, v);
-      resolved.cellsByYear.forEach((cells, i) => {
-        const year = yearList[i];
-        lessonsBySubjectYear.set(
-          `${code}|${year}`,
-          cells.map((cell) => ({
-            lessonKey: cell.lessonKey,
-            period: cell.period,
-            dailyOutcome: cell.dailyOutcome,
-            focusArea: cell.focusArea,
-          })),
-        );
-        for (const cell of cells) subjectByKey.set(cell.lessonKey, { subjectCode: code, subjectName });
-      });
-    }),
-  );
+  // The curriculum lessons (P1..P5) for the selected coordinate across the subject's
+  // years — the "+ Add lesson" pool and the join target for the plans.
+  const resolved = await resolveWeekSlotKeys(subjectCode, years, coordinate.month, coordinate.week);
+  const slotKeys = resolved.slotKeys;
+  const periodByKey = resolved.periodByKey;
+  const outcomeByKey = resolved.outcomeByKey;
+  const lessonsByYear = new Map<number, BoardLesson[]>();
+  resolved.cellsByYear.forEach((cells, i) => {
+    const year = years[i];
+    lessonsByYear.set(
+      year,
+      cells.map((cell) => ({
+        lessonKey: cell.lessonKey,
+        period: cell.period,
+        dailyOutcome: cell.dailyOutcome,
+        focusArea: cell.focusArea,
+      })),
+    );
+  });
 
-  // All plans (any scope) the teacher can see whose curriculum_lesson_id is one of
-  // the week's lesson keys — the union across every subject/year. RLS enforces
-  // visibility; there is intentionally no subject_id predicate here.
+  // All plans (any scope, any centre) the viewer can see whose curriculum_lesson_id
+  // is one of the week's lesson keys. RLS (`lp_select`) enforces subject-based
+  // visibility; there is intentionally no centre or created_by filter here.
   const planRows = await selectWeekPlanRows<PlanRow>(
     supabase,
     slotKeys,
     'id, curriculum_lesson_id, scope, class_id, school_id, subject_id, year, weekday, period, status, review_note, created_by',
   );
 
-  // Resolve plan owners (avatar). One read for the distinct creators; the co-member
-  // profiles policy (0013) lets a teammate's id + name be read within a shared space.
+  // Resolve plan owners (avatar). The co-member profiles policy (0013/0040) lets a
+  // teammate's id + name be read within a shared subject.
   const ownerById = new Map<string, PlanOwner>();
   const ownerIds = [...new Set(planRows.map((p) => p.created_by).filter(Boolean))];
   if (ownerIds.length > 0) {
@@ -529,55 +411,53 @@ export async function getBoardData(input: {
     }
   }
 
-  const canEdit = (p: PlanRow): boolean =>
-    p.created_by === user.id ||
-    isAdmin ||
-    (!!p.school_id && !!p.subject_id && coordinatorSpaces.has(`${p.school_id}:${p.subject_id}`));
-
-  // Delete (soft-delete) rule — mirrors the RPC gate in migration 0048: a
-  // coordinator/admin of the plan's space may trash any status; the author may
-  // trash only their own `in_progress` draft.
-  const canDelete = (p: PlanRow): boolean => {
-    const coordinatorOrAdmin =
-      isAdmin ||
-      (!!p.school_id && !!p.subject_id && coordinatorSpaces.has(`${p.school_id}:${p.subject_id}`));
-    return coordinatorOrAdmin || (p.created_by === user.id && p.status === 'in_progress');
-  };
-
-  // Index bands by (subjectCode|year) so a plan finds its band(s) by subject+year,
-  // then the matching centre (or, for an org plan, the first band that subject/year).
-  const bandsBySubjectYear = new Map<string, Band[]>();
-  for (const band of bands) {
-    const k = `${band.subjectCode}|${band.year}`;
-    (bandsBySubjectYear.get(k) ?? bandsBySubjectYear.set(k, []).get(k)!).push(band);
+  // Provenance centre names for the per-card label. The board now always spans all
+  // centres; show the centre label only when the visible plans actually come from
+  // more than one centre (provenance, not scope).
+  const schoolNameById = new Map<string, string>();
+  const schoolIds = [...new Set(planRows.map((p) => p.school_id).filter((s): s is string => !!s))];
+  if (schoolIds.length > 0) {
+    const { data: schoolRows } = await supabase
+      .from('schools')
+      .select('id, name')
+      .in('id', schoolIds);
+    for (const s of (schoolRows ?? []) as Array<{ id: string; name: string | null }>) {
+      schoolNameById.set(s.id, s.name ?? '');
+    }
   }
+  const spansMultipleCentres =
+    new Set(planRows.map((p) => p.school_id).filter(Boolean)).size > 1;
 
-  // Turn each visible plan into a placed board card, attributed to its band. A plan
-  // whose (subject, year) — or, when centre-scoped, whose centre — is outside the
-  // user's taught scope is dropped: the union of lesson keys can surface a same-
-  // subject plan for a year/centre the teacher doesn't teach, which stays off-board.
-  const plansByBand = new Map<string, BoardPlan[]>();
+  // Edit only your own (or admin). A coordinator does NOT edit others' plans — they
+  // review them on /view; `canEdit = false` routes their card there.
+  const canEdit = (p: PlanRow): boolean => p.created_by === user.id || isAdmin;
+
+  // Delete (soft-delete) — mirrors the RPC gate in migration 0048: a coordinator of
+  // the plan's subject (or admin) may trash any status; the author may trash only
+  // their own `in_progress` draft.
+  const canDelete = (p: PlanRow): boolean =>
+    coordinatorAuthor || isAdmin || (p.created_by === user.id && p.status === 'in_progress');
+
+  // Place each visible plan into its year band — by YEAR only (centre-agnostic). A
+  // plan whose year isn't shown on this board is dropped (out of the year scope).
+  const plansByYear = new Map<number, BoardPlan[]>();
   for (const p of planRows) {
-    if (p.year == null) continue;
-    const subjectInfo = subjectByKey.get(p.curriculum_lesson_id);
-    if (!subjectInfo) continue;
-    const candidates = bandsBySubjectYear.get(`${subjectInfo.subjectCode}|${p.year}`);
-    if (!candidates || candidates.length === 0) continue;
-    const isOrg = p.scope === 'org' || !p.school_id;
-    const band = isOrg ? candidates[0] : candidates.find((b) => b.centreId === p.school_id);
-    if (!band) continue; // centre-scoped plan for a centre the teacher doesn't teach here
-
+    if (p.year == null || !years.includes(p.year)) continue;
     const curriculumPeriod = periodByKey.get(p.curriculum_lesson_id) ?? 1;
+    const isOrg = p.scope === 'org' || !p.school_id;
     const plan: BoardPlan = {
       id: p.id,
       lessonKey: p.curriculum_lesson_id,
       year: p.year,
-      subjectCode: subjectInfo.subjectCode,
-      subjectName: subjectInfo.subjectName,
-      // Centre label only when the user spans centres AND the plan sits in one
-      // centre; an org ("all centres") plan carries no centre (its scope says so).
-      centreName: spansMultipleCentres && !isOrg ? band.centreName : null,
-      groupKey: band.bandKey,
+      subjectCode,
+      subjectName,
+      // Centre label only when the board's plans span >1 centre AND this plan sits in
+      // one centre; an org / class-less plan carries no centre label.
+      centreName:
+        spansMultipleCentres && !isOrg && p.school_id
+          ? schoolNameById.get(p.school_id) ?? null
+          : null,
+      groupKey: `${subjectCode}|${p.year}`,
       weekday: clampWeekday(p.weekday ?? curriculumPeriod),
       period: p.period ?? curriculumPeriod,
       status: p.status,
@@ -588,21 +468,13 @@ export async function getBoardData(input: {
       reviewNote: p.review_note,
       dailyOutcome: outcomeByKey.get(p.curriculum_lesson_id) ?? '',
     };
-    (plansByBand.get(band.bandKey) ?? plansByBand.set(band.bandKey, []).get(band.bandKey)!).push(plan);
+    (plansByYear.get(p.year) ?? plansByYear.set(p.year, []).get(p.year)!).push(plan);
   }
-  for (const list of plansByBand.values()) list.sort(byDayOrder);
+  for (const list of plansByYear.values()) list.sort(byDayOrder);
 
-  const yearBands: BoardYear[] = bands.map((band) => ({
-    key: band.bandKey,
-    year: band.year,
-    centreId: band.centreId,
-    centreName: band.centreName,
-    subjectCode: band.subjectCode,
-    subjectName: band.subjectName,
-    canAuthor: teachesBand(band),
-    plans: plansByBand.get(band.bandKey) ?? [],
-    lessons: lessonsBySubjectYear.get(`${band.subjectCode}|${band.year}`) ?? [],
-  }));
+  const yearBands: BoardYear[] = years.map((y) =>
+    bandShell(y, plansByYear.get(y) ?? [], lessonsByYear.get(y) ?? []),
+  );
 
   // Distinct owners across the board, for the people filter.
   const owners = [...ownerById.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -613,7 +485,7 @@ export async function getBoardData(input: {
     teacherName,
     context,
     subjectNames,
-    spansMultipleSubjects,
+    spansMultipleSubjects: false,
     spansMultipleCentres,
     downloadSubjects,
     coordinate,
@@ -629,7 +501,8 @@ export async function getBoardData(input: {
     owners,
     planCount,
     hasClasses: true,
-    boardReadOnly,
+    boardReadOnly: false,
+    coordinatorAuthor,
     myClassesByYear,
   };
 }

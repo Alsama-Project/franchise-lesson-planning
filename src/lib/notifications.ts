@@ -23,7 +23,7 @@ import 'server-only';
 // notification for a historical plan reads the same curriculum the plan renders.
 
 import { createClient } from '@/lib/supabase/server';
-import { getMyMemberships } from '@/lib/auth';
+import { getMyCoordinatedSubjectIds } from '@/lib/auth';
 import { getPlanCurriculumLabels, planCurriculumLabelKey } from '@/lib/curriculumUtils';
 import type { PlanStatus } from '@/types/lesson';
 
@@ -157,25 +157,24 @@ async function getOutcomeNotifications(supabase: Supa, userId: string): Promise<
 
 /**
  * The `submitted` plans awaiting the signed-in coordinator's review — one per plan
- * in a (centre, subject) space they COORDINATE, most-recently-submitted first.
- * Resolves each plan's space the class-optional way (class join, else the plan's
- * own scope columns) and keeps only those the viewer coordinates. The viewer's own
- * submissions are excluded (they are not a review task for their author). Returns
- * an empty list when the viewer coordinates no space.
+ * in a SUBJECT they COORDINATE, most-recently-submitted first. Coordinator-ness is
+ * subject-wide and school-agnostic (`coordinator_subject`, migration 0040) — the
+ * SAME source `is_coordinator_of_subject` and the RLS policies read, so the queue
+ * and the per-card review routing can never disagree on who coordinates what.
+ * Resolves each plan's subject the class-optional way (class join, else the plan's
+ * own `subject_id`) and keeps only those the viewer coordinates. The viewer's own
+ * submissions are excluded (a coordinator's own plan is never a review task, and a
+ * coordinator-authored plan is born `approved` and never `submitted` anyway).
+ * Returns an empty list when the viewer coordinates no subject.
  */
 async function getReviewNotifications(supabase: Supa, userId: string): Promise<ReviewNotification[]> {
-  const memberships = await getMyMemberships();
-  const subjectNameBySpace = new Map<string, string>();
-  for (const m of memberships) {
-    if (m.role === 'coordinator') {
-      subjectNameBySpace.set(`${m.schoolId}:${m.subjectId}`, m.subjectName ?? '');
-    }
-  }
-  if (subjectNameBySpace.size === 0) return [];
+  const coordinatedSubjectIds = await getMyCoordinatedSubjectIds();
+  if (coordinatedSubjectIds.size === 0) return [];
 
-  // RLS returns every submitted plan in spaces the viewer is a member of (any
-  // role); we then keep only those in a space they COORDINATE. Class-scoped plans
-  // resolve their space via the class join; centre-/org-scoped via own columns.
+  // RLS (`lp_select`) returns every submitted plan for subjects the viewer
+  // participates in; we then keep only those whose subject they COORDINATE. A
+  // class-scoped plan resolves its subject via the class join; a class-less
+  // (centre/coordinator-authored) plan via its own `subject_id` column.
   const { data } = await supabase
     .from('lesson_plans')
     .select('id, year, school_id, subject_id, submitted_at, created_by, classes ( school_id, subject_id )')
@@ -186,17 +185,27 @@ async function getReviewNotifications(supabase: Supa, userId: string): Promise<R
   const rows = (data ?? []) as unknown as SubmittedRow[];
 
   const coordinated = rows
-    .map((r) => {
-      const schoolId = r.classes?.school_id ?? r.school_id;
-      const subjectId = r.classes?.subject_id ?? r.subject_id;
-      return { row: r, spaceKey: schoolId && subjectId ? `${schoolId}:${subjectId}` : null };
-    })
-    .filter((x) => x.spaceKey !== null && subjectNameBySpace.has(x.spaceKey) && x.row.created_by !== userId);
+    .map((r) => ({ row: r, subjectId: r.classes?.subject_id ?? r.subject_id }))
+    .filter(
+      (x) =>
+        x.subjectId != null &&
+        coordinatedSubjectIds.has(x.subjectId) &&
+        x.row.created_by !== userId,
+    );
 
   if (coordinated.length === 0) return [];
 
-  // Resolve author display names. The co-member profiles policy (0013) lets a
-  // teammate's id + name be read within a shared space, RLS-scoped by the client.
+  // Subject display names for the context line — reference data, readable to any
+  // authenticated user (`subjects_select_authenticated`, 0006).
+  const subjectIds = [...new Set(coordinated.map((x) => x.subjectId as string))];
+  const subjectNameById = new Map<string, string>();
+  const { data: subjRows } = await supabase.from('subjects').select('id, name').in('id', subjectIds);
+  for (const s of (subjRows ?? []) as Array<{ id: string; name: string | null }>) {
+    subjectNameById.set(s.id, s.name ?? '');
+  }
+
+  // Resolve author display names. The co-member profiles policy (0013/0040) lets a
+  // teammate's id + name be read within a shared subject, RLS-scoped by the client.
   const authorIds = [...new Set(coordinated.map((x) => x.row.created_by))];
   const nameById = new Map<string, string>();
   if (authorIds.length > 0) {
@@ -209,14 +218,14 @@ async function getReviewNotifications(supabase: Supa, userId: string): Promise<R
     }
   }
 
-  return coordinated.map(({ row, spaceKey }) => ({
+  return coordinated.map(({ row, subjectId }) => ({
     kind: 'review' as const,
     key: `review:${row.id}`,
     planId: row.id,
     href: `/plan/${row.id}/view`,
     status: 'submitted' as const,
     author: nameById.get(row.created_by) ?? 'A teacher',
-    context: [yearLabel(row.year), subjectNameBySpace.get(spaceKey!)].filter(Boolean).join(' · '),
+    context: [yearLabel(row.year), subjectNameById.get(subjectId as string)].filter(Boolean).join(' · '),
     at: row.submitted_at,
   }));
 }

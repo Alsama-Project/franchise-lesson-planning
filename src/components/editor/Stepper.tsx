@@ -31,6 +31,8 @@ export function Stepper({
   onNext,
   nextLabel,
   submitSlot,
+  advanceBlocked = false,
+  gateHint = null,
 }: {
   step: number;
   onGo: (n: number) => void;
@@ -39,6 +41,14 @@ export function Stepper({
   nextLabel: string;
   /** Rendered in place of "Next" on the final step (the submit control). */
   submitSlot: ReactNode;
+  /** When true, forward advancement is gated (the objective has not passed its
+   *  SMARTT check): the Next control is disabled and every node AHEAD of the
+   *  current step is rendered inert/greyed. Back and same-or-earlier nodes stay
+   *  live. The actual navigation block lives in `goStep`; this only reflects it. */
+  advanceBlocked?: boolean;
+  /** A single teal gate-reason line rendered below the tracker row when the advance
+   *  control is disabled for gate reasons. Already localised by the caller. */
+  gateHint?: ReactNode;
 }) {
   const t = useTranslations('wizard');
   const isLast = step === STEP_COUNT;
@@ -56,12 +66,22 @@ export function Stepper({
           const isDone = step > no;
           const isCur = step === no;
           const showConn = i < STEP_COUNT - 1;
+          // A node ahead of the current step while advancement is gated: inert +
+          // greyed so it reads as "not yet reachable". `goStep` already no-ops the
+          // jump; this just makes the block visible. Same-or-earlier nodes (going
+          // back) stay live.
+          const isGatedAhead = advanceBlocked && no > step;
           return (
             <Fragment key={s.key}>
               <button
                 type="button"
                 onClick={() => onGo(no)}
-                className="flex shrink-0 items-center gap-[10px] text-start"
+                disabled={isGatedAhead}
+                aria-disabled={isGatedAhead || undefined}
+                className={
+                  'flex shrink-0 items-center gap-[10px] text-start' +
+                  (isGatedAhead ? ' cursor-not-allowed opacity-50' : '')
+                }
               >
                 <span
                   className={
@@ -124,13 +144,23 @@ export function Stepper({
             <button
               type="button"
               onClick={onNext}
-              className="min-w-[92px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-center text-[13px] font-semibold text-white hover:bg-[#1a6a5d]"
+              disabled={advanceBlocked}
+              aria-disabled={advanceBlocked || undefined}
+              className="min-w-[92px] rounded-[9px] border-none bg-teal px-4 py-[9px] text-center text-[13px] font-semibold text-white hover:bg-[#1a6a5d] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-teal"
             >
               {nextLabel} <span aria-hidden className="inline-block rtl:-scale-x-100">→</span>
             </button>
           )}
         </div>
       </div>
+
+      {/* Gate reason — one teal line under the tracker, right-aligned beneath the
+          advance control, shown only when Next is disabled for gate reasons. */}
+      {gateHint ? (
+        <div dir="auto" className="mt-1.5 flex justify-end text-[12px] font-medium text-teal">
+          <span>{gateHint}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

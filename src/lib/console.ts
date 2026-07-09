@@ -10,9 +10,9 @@ import 'server-only';
 // `admin_list_users()` SECURITY DEFINER RPC (0023, extended in 0036), NOT a direct
 // `profiles` read. Direct reads are RLS-bound to own-row + co-members, so a user
 // the admin shares no (centre, subject) space with — e.g. a zero-membership
-// newcomer or a test-bar candidate — would be invisible. The RPC is hard-gated on
+// newcomer — would be invisible. The RPC is hard-gated on
 // `is_admin()` and returns EVERY user (incl. those with no membership, as an empty
-// set), plus each user's global `role` and `can_impersonate` flag. Home-class
+// set), plus each user's global `role`. Home-class
 // ("Year N") is still derived from the auth'd `class_teachers` read, which stays
 // RLS-bound (own-mostly) exactly as before — the roster source changed, that
 // derivation did not.
@@ -332,10 +332,6 @@ export interface AdminUser {
   email: string | null;
   isAdmin: boolean;
   isDeactivated: boolean;
-  /** Whether this user may USE the test bar (`profiles.can_impersonate`). Real
-   *  admins are eligible regardless (eligibility is `can_impersonate` OR admin),
-   *  so the flag is moot for them — the modal renders admins implied-on. */
-  canImpersonate: boolean;
   spaces: UserSpace[];
 }
 
@@ -379,7 +375,6 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     email: string | null;
     is_admin: boolean;
     is_deactivated: boolean;
-    can_impersonate: boolean | null;
     spaces:
       | Array<{
           membership_id: string | null;
@@ -398,7 +393,6 @@ export async function getUsersAdmin(): Promise<AdminUser[]> {
     email: r.email,
     isAdmin: r.is_admin,
     isDeactivated: r.is_deactivated,
-    canImpersonate: r.can_impersonate === true,
     spaces: (r.spaces ?? []).map((s) => ({
       membershipId: s.membership_id,
       schoolId: s.school_id,

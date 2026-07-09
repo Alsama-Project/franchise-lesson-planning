@@ -19,6 +19,7 @@ import {
   getCurriculumNav,
   getCurriculumSubjectCodes,
   getCurriculumWeekRows,
+  isSinglePeriodSubject,
 } from '@/lib/curriculumUtils';
 import { skillKeyOf } from '@/components/curriculum/skill';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
@@ -195,6 +196,8 @@ const EMPTY: CurriculumBrowseData = {
   weekly: { skills: null, knowledge: null },
   monthly: { combined: null, knowledge: null, skills: null },
   rows: [],
+  singlePeriod: false,
+  monthWeekRows: [],
   monthGrid: [],
   prevMonth: null,
   nextMonth: null,
@@ -301,6 +304,26 @@ export async function getCurriculumBrowseData(input: {
       ? firstCoordOfMonth(nav[monthIdx + 1].month)
       : null;
 
+  // Single-period subjects (Yoga/Awareness) collapse the month into one row per week.
+  // Build that list from the month rows WITHOUT the daily-period filter, so Awareness's
+  // period-NULL weekly-grain rows survive (they'd be dropped by `monthGrid`'s isDailyRow
+  // gate). Exactly one row per week for these subjects; take that week's first row.
+  const singlePeriod = await isSinglePeriodSubject(subject.code);
+  const monthWeekRows: BrowseRow[] = singlePeriod
+    ? weeksInMonth
+        .map((week) => monthRows.find((r) => r.week === week))
+        .filter((r): r is CurriculumLessonRow => r != null)
+        .map(toBrowseRow)
+    : [];
+
+  // Where the Monthly Outcome resolves from. Multi-period subjects keep the original
+  // single-week source (`weekRows`). Single-period subjects resolve from the SAME
+  // unfiltered month-rows that feed the table (`monthRows`) — Awareness carries its
+  // monthly outcome on its `period = NULL` weekly-grain rows, which `weekRows` keeps but
+  // any isDailyRow-filtered set would drop, leaving the block blank though the DB holds
+  // it. Sourcing table + monthly from one set keeps them consistent.
+  const monthlyRows = singlePeriod ? monthRows : weekRows;
+
   return {
     subjects,
     years,
@@ -320,11 +343,13 @@ export async function getCurriculumBrowseData(input: {
       knowledge: firstOutcome(weekRows, (r) => r.weekly_knowledge_lo),
     },
     monthly: {
-      combined: firstOutcome(weekRows, (r) => r.monthly_lo),
-      knowledge: firstOutcome(weekRows, (r) => r.monthly_knowledge_lo),
-      skills: firstOutcome(weekRows, (r) => r.monthly_skills_lo),
+      combined: firstOutcome(monthlyRows, (r) => r.monthly_lo),
+      knowledge: firstOutcome(monthlyRows, (r) => r.monthly_knowledge_lo),
+      skills: firstOutcome(monthlyRows, (r) => r.monthly_skills_lo),
     },
     rows,
+    singlePeriod,
+    monthWeekRows,
     monthGrid,
     prevMonth,
     nextMonth,

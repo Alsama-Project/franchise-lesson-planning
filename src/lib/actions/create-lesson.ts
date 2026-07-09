@@ -11,7 +11,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { isAdmin, isMemberOf, getMyMemberships } from '@/lib/auth';
+import { isAdmin, isMemberOf, getMyMemberships, getMyCoordinatedSubjectIds } from '@/lib/auth';
 import { getCurriculumKeyCoords, getActiveCurriculumVersionId } from '@/lib/curriculumUtils';
 import { DEFAULT_BLOCKS } from '@/lib/blocks';
 import type { PlanScope } from '@/types/lesson';
@@ -232,8 +232,6 @@ export interface EligibleClass {
 export interface CreateTeacherPlanInput {
   /** The curriculum slot's `lesson_key`. */
   lessonKey: string;
-  /** The centre (school) band the teacher is planning in — scopes the class match. */
-  centreId: string;
   /** The Mon–Fri column (1..5) to place the plan on. */
   weekday?: number;
   /** The day-ordinal sort hint to write. */
@@ -289,8 +287,11 @@ export async function createTeacherPlan(
   const subject = subj as { id: string; name: string } | null;
   if (!subject) return { ok: false, reason: 'error', error: 'Subject not found for this lesson.' };
 
-  // The caller's own active classes for this slot's (centre, subject, year). RLS
-  // (`class_teachers_select_own`) scopes the read to the caller's assignments.
+  // The caller's own active classes for this slot's (subject, year), across ANY
+  // centre — centre is provenance now, not a scope, so a teacher's class at any of
+  // their centres is eligible. RLS (`class_teachers_select_own`) scopes the read to
+  // the caller's assignments. The chosen class's own school_id becomes the plan's
+  // provenance centre (via createScopedPlan's class branch).
   const { data: ctRows } = await supabase
     .from('class_teachers')
     .select('classes ( id, year, literacy, school_id, subject_id, archived_at )')
@@ -304,7 +305,6 @@ export async function createTeacherPlan(
       (c): c is RawEligibleClass =>
         !!c &&
         !c.archived_at &&
-        c.school_id === input.centreId &&
         c.subject_id === subject.id &&
         c.year === coords.year,
     )
@@ -326,6 +326,122 @@ export async function createTeacherPlan(
     return finishAsClassPlan(input, eligible[0].id);
   }
   return { ok: false, reason: 'pick', classes: eligible };
+}
+
+// ── Coordinator creation: born approved, subject-wide, no class binding ───────
+// A coordinator authoring in a subject they coordinate IS the approval authority,
+// so there is no review to do: the plan is created directly as `approved` (Save,
+// not Submit) and never passes through `submitted`, so it fires no review
+// notification and never enters anyone's review queue. Centre and class are
+// provenance only under the subject-based model, and a coordinator is
+// school-agnostic, so the plan is created class-less / centre-less (scope 'org',
+// class_id = null, school_id = null) — fully visible + editable under `lp_select`.
+// The born-approved status is permitted at INSERT by the guard trigger (0058) only
+// because the author coordinates the plan's subject.
+
+export interface CreateCoordinatorPlanInput {
+  /** The curriculum slot's `lesson_key`. */
+  lessonKey: string;
+  /** The Mon–Fri column (1..5) to place the plan on. */
+  weekday?: number;
+  /** The day-ordinal sort hint to write. */
+  period?: number;
+}
+
+export type CreateCoordinatorPlanResult =
+  | { ok: true; planId: string }
+  | { ok: false; error: string };
+
+/**
+ * Create a coordinator-authored plan for a curriculum slot, born `approved`. Guards
+ * that the caller actually coordinates the slot's subject (or is admin) — the same
+ * source of truth (`coordinator_subject`) the RLS policies read. Enforces
+ * "open, don't duplicate" against the caller's OWN org-scoped plan for the slot.
+ */
+export async function createCoordinatorPlan(
+  input: CreateCoordinatorPlanInput,
+): Promise<CreateCoordinatorPlanResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in.' };
+
+  const coords = await getCurriculumKeyCoords(input.lessonKey);
+  if (!coords) return { ok: false, error: 'That curriculum lesson no longer exists.' };
+
+  const subjectId = await resolveSubjectId(coords.subjectCode);
+  if (!subjectId) return { ok: false, error: 'Subject not found for this lesson.' };
+
+  // Only a coordinator of the subject (or an admin) may author a born-approved plan.
+  // This mirrors the DB guard trigger (0058); the pre-check gives a friendly error.
+  const coordinated = await getMyCoordinatedSubjectIds();
+  if (!coordinated.has(subjectId) && !(await isAdmin())) {
+    return { ok: false, error: 'You do not coordinate this subject.' };
+  }
+
+  const year = coords.year;
+  const weekday = Math.min(5, Math.max(1, Math.trunc(input.weekday ?? coords.period)));
+  const period = input.period ?? coords.period;
+
+  // Open, don't duplicate — the caller's OWN org-scoped plan for this slot (matches
+  // the per-teacher org unique index in 0028/0048).
+  const { data: existing } = await supabase
+    .from('lesson_plans')
+    .select('id')
+    .eq('created_by', user.id)
+    .eq('curriculum_lesson_id', input.lessonKey)
+    .eq('scope', 'org')
+    .is('deleted_at', null)
+    .limit(1);
+  const existingId = (existing as { id: string }[] | null)?.[0]?.id;
+  if (existingId) return { ok: true, planId: existingId };
+
+  const curriculumVersionId = await getActiveCurriculumVersionId(coords.subjectCode);
+
+  const { data: inserted, error } = await supabase
+    .from('lesson_plans')
+    .insert({
+      curriculum_lesson_id: input.lessonKey,
+      curriculum_version_id: curriculumVersionId,
+      scope: 'org',
+      class_id: null,
+      school_id: null,
+      subject_id: subjectId,
+      year,
+      weekday,
+      period,
+      lesson_date: null,
+      // Born approved — never `submitted`, so no review notification and no queue
+      // entry. The INSERT guard (0058) permits this only for a coordinator/admin.
+      status: 'approved',
+      blocks: DEFAULT_BLOCKS,
+      created_by: user.id,
+    })
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    // Lost a race on the org unique index — resolve the now-existing row and open it.
+    if (error.code === '23505') {
+      const { data: raced } = await supabase
+        .from('lesson_plans')
+        .select('id')
+        .eq('created_by', user.id)
+        .eq('curriculum_lesson_id', input.lessonKey)
+        .eq('scope', 'org')
+        .is('deleted_at', null)
+        .limit(1);
+      const racedId = (raced as { id: string }[] | null)?.[0]?.id;
+      if (racedId) return { ok: true, planId: racedId };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  if (!inserted) return { ok: false, error: 'Could not create the plan.' };
+
+  revalidatePath('/');
+  return { ok: true, planId: (inserted as { id: string }).id };
 }
 
 /** Delegate to the shared class-scope creation (dedup + insert + revalidate). */

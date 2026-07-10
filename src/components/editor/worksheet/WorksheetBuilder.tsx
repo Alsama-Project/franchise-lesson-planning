@@ -1,5 +1,12 @@
 'use client';
 
+// ⚠️ ARCHIVED — the v2 block-based builder. It is NO LONGER the live worksheet
+// surface: the continuous-document editor (./doc/DocumentWorksheet, gated by
+// @/lib/editor/doc-flag) is now the default. This file is retained ONLY as the
+// kill-switch fallback (NEXT_PUBLIC_WORKSHEET_DOC_EDITOR=false) and for reference /
+// rollback, and is mounted exclusively by WorksheetPane on that path. Do not build
+// new features here — add them to the document editor.
+//
 // The student-worksheet builder for Step 3 (Practise). It renders the A4 page
 // canvas inline — locked "Master" frame (cream, read-only) wrapping the editable
 // BODY — and owns the worksheet block list, persisting it as the versioned

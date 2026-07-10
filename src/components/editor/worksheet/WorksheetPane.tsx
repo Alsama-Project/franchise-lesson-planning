@@ -1,13 +1,17 @@
 'use client';
 
-// Decides which worksheet surface to mount, gated by the document-editor flag:
+// Decides which worksheet surface to mount. The v3 continuous DocumentWorksheet is
+// now the DEFAULT (live) editor; the v2 block builder is ARCHIVED and reached only
+// via the kill-switch (NEXT_PUBLIC_WORKSHEET_DOC_EDITOR=false):
 //
-//   • flag ON  → the v3 continuous DocumentWorksheet (edits autosave a v3 envelope).
-//   • flag OFF + the stored row is already v3 → a RENDER-ONLY v3 view. This is the
-//     kill-switch safety net: the old block builder would parseWorksheet a v3 row
-//     into a collapsed v2 and then autosave that back, clobbering the v3 doc — so we
-//     never mount an editable builder over a v3 row when the flag is off.
-//   • otherwise → the existing v2 WorksheetBuilder, unchanged.
+//   • default (flag not "false") → the v3 continuous DocumentWorksheet (edits
+//     autosave a v3 envelope). This is what every teacher gets.
+//   • kill-switch (flag = "false") + the stored row is already v3 → a RENDER-ONLY
+//     v3 view. Safety net: the archived block builder would parseWorksheet a v3 row
+//     into a collapsed v2 and autosave that back, clobbering the v3 doc — so we
+//     never mount an editable v2 builder over a v3 row.
+//   • kill-switch (flag = "false") + a legacy v1/v2 row → the archived v2
+//     WorksheetBuilder, unchanged.
 //
 // This lives INSIDE the worksheet editor pane; it does not touch the surrounding
 // resizable panel container.

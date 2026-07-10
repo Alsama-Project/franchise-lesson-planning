@@ -6,6 +6,7 @@
 // bullet/numbered/checklist | outdent/indent | link/image/table/resource-bank |
 // (pushed right) Generate + save-state indicator. No font or arbitrary size picker.
 
+import type { CSSProperties } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
   Undo2,
@@ -33,6 +34,23 @@ import { BRAND, type SaveState } from './theme';
 import { TBtn, TSep, BlockStylePicker, ColourPicker, toggleLink } from './toolbarControls';
 
 const ICON = 17;
+
+/** Shared teal call-to-action style for the Resource bank + Generate pair. */
+const tealButton: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 30,
+  padding: '0 13px',
+  borderRadius: 8,
+  border: 'none',
+  background: BRAND.teal,
+  color: '#fff',
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
 
 function SaveIndicator({ state }: { state: SaveState }) {
   const label =
@@ -153,32 +171,26 @@ export function Toolbar({
       <TBtn title="Insert table" onClick={() => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
         <TableIcon size={ICON} />
       </TBtn>
-      <TBtn title="Add from resource bank" onClick={onInsertResource}>
-        <Library size={ICON} />
-      </TBtn>
 
-      {/* pushed right */}
+      {/* pushed right — the Resource bank + Generate pair (both teal). */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
         <SaveIndicator state={saveState} />
         <button
           type="button"
           onMouseDown={(ev) => ev.preventDefault()}
+          onClick={onInsertResource}
+          title="Insert a shared resource from the bank"
+          style={tealButton}
+        >
+          <Library size={15} />
+          Resource bank
+        </button>
+        <button
+          type="button"
+          onMouseDown={(ev) => ev.preventDefault()}
           onClick={onGenerateAI}
           title="Generate a resource with AI"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 13px',
-            borderRadius: 8,
-            border: 'none',
-            background: BRAND.teal,
-            color: '#fff',
-            fontSize: 12.5,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
+          style={tealButton}
         >
           <Sparkles size={15} />
           Generate

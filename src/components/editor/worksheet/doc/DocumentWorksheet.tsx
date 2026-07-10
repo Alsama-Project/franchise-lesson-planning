@@ -22,6 +22,7 @@ import { worksheetDocExtensions } from './extensions';
 import { SlashCommands } from './SlashMenu';
 import { Toolbar } from './Toolbar';
 import { BubbleToolbar } from './BubbleToolbar';
+import { TableToolbar } from './TableToolbar';
 import { DocMasthead, DocFooter } from './DocMasthead';
 import { InlinePromptPopover, type Anchor } from './InlinePromptPopover';
 import { insertGeneratedResource, adjustSelectionWithAI } from './aiInsert';
@@ -207,6 +208,7 @@ export function DocumentWorksheet({
       </div>
 
       <BubbleToolbar editor={editor} onAdjustAI={openAdjust} />
+      <TableToolbar editor={editor} />
 
       <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFilePicked} />
 

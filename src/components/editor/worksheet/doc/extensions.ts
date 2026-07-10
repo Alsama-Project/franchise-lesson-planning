@@ -88,7 +88,11 @@ export function worksheetDocExtensions(): AnyExtension[] {
     }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Table.configure({ resizable: true }),
+    // Column resizing is off: the worksheet wants even, full-width columns, not
+    // per-column drag widths. Fresh tables insert with no colwidth attrs; the
+    // `.ws-doc colgroup col { width:auto !important }` rule in globals.css is the
+    // backstop that also neutralises any colwidths baked into older saved docs.
+    Table.configure({ resizable: false }),
     TableRow,
     TableHeader,
     TableCell,

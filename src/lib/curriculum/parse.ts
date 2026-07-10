@@ -100,6 +100,27 @@ export function composeWeeklyOutcome(skill: string | null, knowledge: string | n
   return knowledge ?? null;
 }
 
+// ── Non-lesson marker rows (collision classification only) ─────────────────────────
+//
+// A curriculum sheet carries a few non-instructional rows — a bare "Period N" label, a
+// blank period-null spacer, or a named marker (Orientation / Evaluation / Baseline /
+// Holiday). When two rows collapse onto one lesson_key, we must distinguish a benign
+// marker collision (leave the legacy last-wins behaviour — junk-heavy imports must not
+// break) from a GENUINE collision between two real lessons (which we refuse to resolve
+// silently). This predicate is used ONLY for that decision — never to drop a real
+// lesson, and the named patterns are START-anchored whole-word so a real outcome that
+// merely mentions "evaluate…" is never misread as a marker.
+const PERIOD_LABEL_RE = /^period\s*\d+$/i;
+const MARKER_OUTCOME_RE =
+  /^\s*(orientation|evaluation|baseline|holiday|revision|assessment|mid-?term|end[- ]of[- ]term)\b/i;
+
+export function isNonLessonMarker(dailyOutcome: string | null, period: number | null): boolean {
+  const d = (dailyOutcome ?? '').trim();
+  if (PERIOD_LABEL_RE.test(d)) return true;
+  if (period == null && (d === '' || MARKER_OUTCOME_RE.test(d))) return true;
+  return false;
+}
+
 // ── Inline monthly Knowledge/Skills split (maths, science, it, arabic) ────────────
 //
 // English populates a combined "Monthly Learning Outcome" cell and the browse UI splits
@@ -570,12 +591,6 @@ export function parseCurriculumWorkbook(
   let skippedLessonRows = 0;
   let nonInstructional = 0;
   let refSeen = false;
-  // Two source rows collapsing onto one lesson_key = silent data loss: the later row
-  // overwrites the earlier in `lessonRows` (e.g. a week whose period labels are missing,
-  // so every period row keys to the same `…|wk`). Count + sample it so the source error
-  // surfaces instead of quietly dropping lessons. Detection only — never auto-resolved.
-  let lessonKeyCollisions = 0;
-  const collisionSamples: string[] = [];
 
   const hasWeekCol = byField.has('week');
   const hasPeriodCol = byField.has('period');
@@ -592,6 +607,27 @@ export function parseCurriculumWorkbook(
     isEnglish ? cleanEnglishWeeklyKnowledgeLo(v) : v;
   const cleanWeeklySkills = (v: string | null): string | null =>
     isEnglish ? cleanEnglishWeeklySkillsLo(v) : v;
+
+  // Forward-fill the weekly Skill/Knowledge columns ONLY for daily-grain subjects, where
+  // they are merged across a week's period rows (value on Period 1, blank on 2–5). A
+  // weekly-shape subject (no Daily-LO column — Yoga, Awareness) has one row per week, so a
+  // blank weekly cell is genuinely empty and must NOT inherit the previous week's value
+  // (that invented Yoga's assessment-week knowledge). Read those per-row instead.
+  const fillWeeklyLo = hasDailyOutcomeCol;
+
+  // Week-reset (Part b) tracks the previous row's period so a period restart with a blank
+  // Week cell can refuse to inherit the prior block's week (see the loop body).
+  let prevPeriodNumber: number | null = null;
+  // Rows dropped because a period cycle had a blank Week cell (reported for re-labelling).
+  const droppedBlankWeekRows: number[] = [];
+  // GENUINE lesson_key collisions (real distinct lessons → one key): the key is dropped
+  // (never silently overwritten) and every colliding source row is reported.
+  const droppedCollisionKeys = new Set<string>();
+  const collisionKeyRows = new Map<string, number[]>();
+  let benignMarkerCollisions = 0;
+  // Exact-duplicate source rows (same key AND same content) — a harmless copy-paste, kept
+  // once (no data lost, so NOT dropped), counted for a hygiene note.
+  let duplicateRows = 0;
 
   for (let r = headerRow + 1; r < nRows; r++) {
     // Skip header-block meta rows (the "Description"/"الوصف" row sits just below the
@@ -626,6 +662,22 @@ export function parseCurriculumWorkbook(
           : rawWeeklySkill != null || rawWeeklyKnowledge != null || rawAt(r, 'topic') != null;
     if (!emit) continue;
 
+    // ── Week-reset (Part b) ──────────────────────────────────────────────────────
+    // At a period restart (a fresh Period 1, or a period ≤ the previous one) whose Week
+    // cell is BLANK, do NOT inherit the previous block's week. A sheet that labels the
+    // week on every row (Science) has genuinely-empty Year/Week blocks; letting them
+    // inherit the prior week silently overwrote real lessons. Clearing the fill drops such
+    // a block to a null week (reported below) instead. Scoped to `week` ONLY — Year/Month
+    // legitimately span multiple weeks (English labels the year once), so they keep
+    // forward-filling. No-op for the merged daily subjects: their week is always labelled
+    // on the Period-1 row (verified — zero blank-week Period-1 rows across all five).
+    const restartPeriod = grain === 'daily' ? parsePeriodNumber(rawPeriod) : null;
+    const isPeriodRestart =
+      restartPeriod != null &&
+      (restartPeriod === 1 || (prevPeriodNumber != null && restartPeriod <= prevPeriodNumber));
+    if (isPeriodRestart && rawWeek == null) filled.delete('week');
+    if (restartPeriod != null) prevPeriodNumber = restartPeriod;
+
     const yearLabel = value('year');
     const yearIndex = parseYearIndex(yearLabel);
     const month = value('month');
@@ -658,8 +710,8 @@ export function parseCurriculumWorkbook(
       monthlySkillLearningOutcome: value('monthlySkillLearningOutcome'),
       monthlyKnowledgeLearningOutcome: value('monthlyKnowledgeLearningOutcome'),
       week,
-      weeklySkillLearningOutcome: hasWeekCol ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
-      weeklyKnowledgeLearningOutcome: hasWeekCol
+      weeklySkillLearningOutcome: fillWeeklyLo ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
+      weeklyKnowledgeLearningOutcome: fillWeeklyLo
         ? value('weeklyKnowledgeLearningOutcome')
         : rawWeeklyKnowledge,
       period: periodLabel,
@@ -697,18 +749,12 @@ export function parseCurriculumWorkbook(
       // Resolve the weekly outcome columns once — reused verbatim for the weekly_* fields
       // and (for weekly-shape sheets with no Daily-LO column) as the per-lesson daily_outcome.
       const weeklySkillsResolved = cleanWeeklySkills(
-        hasWeekCol ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
+        fillWeeklyLo ? value('weeklySkillLearningOutcome') : rawWeeklySkill,
       );
       const weeklyKnowledgeResolved = cleanWeeklyKnowledge(
-        hasWeekCol ? value('weeklyKnowledgeLearningOutcome') : rawWeeklyKnowledge,
+        fillWeeklyLo ? value('weeklyKnowledgeLearningOutcome') : rawWeeklyKnowledge,
       );
-      if (lessonRows.has(lessonKey)) {
-        lessonKeyCollisions++;
-        if (collisionSamples.length < 5 && !collisionSamples.includes(lessonKey)) {
-          collisionSamples.push(lessonKey);
-        }
-      }
-      lessonRows.set(lessonKey, {
+      const newRow: ParsedCurriculumRow = {
         subject_code: subjectCode,
         year: yearIndex,
         month,
@@ -746,9 +792,60 @@ export function parseCurriculumWorkbook(
         // 1-based source sheet row (same value carried on the canonical record above),
         // persisted for the Curriculum Gaps reconcile page (migration 0054).
         source_row: r + 1,
-      });
+      };
+
+      // ── Collision handling (Part c) ──────────────────────────────────────────────
+      // Never silently overwrite a lesson. A benign marker collision keeps the legacy
+      // last-wins behaviour (a "Period N"/Orientation/blank spacer row must not break a
+      // junk-heavy import); a GENUINE collision between two real lessons drops the key
+      // entirely and reports every colliding source row — nothing is silently lost, and we
+      // never invent a synthetic distinct key. The dropped lessons return the moment the
+      // source adds the missing period labels.
+      if (droppedCollisionKeys.has(lessonKey)) {
+        collisionKeyRows.get(lessonKey)!.push(r + 1);
+      } else {
+        const existing = lessonRows.get(lessonKey);
+        if (!existing) {
+          lessonRows.set(lessonKey, newRow);
+        } else if (
+          isNonLessonMarker(newRow.daily_outcome, periodForKey) ||
+          isNonLessonMarker(existing.daily_outcome, existing.period)
+        ) {
+          benignMarkerCollisions++;
+          lessonRows.set(lessonKey, newRow); // legacy last-wins for structural markers
+        } else if (
+          existing.daily_outcome === newRow.daily_outcome &&
+          existing.weekly_skills_lo === newRow.weekly_skills_lo &&
+          existing.weekly_knowledge_lo === newRow.weekly_knowledge_lo
+        ) {
+          // Exact duplicate (same key, same content — a source copy-paste). Keep the one
+          // already held: identical, so nothing is lost and the choice isn't "arbitrary".
+          duplicateRows++;
+        } else {
+          // GENUINE collision — two DISTINCT lessons share a key. Drop the key entirely and
+          // report every colliding row; never keep an arbitrary one, never invent a key.
+          droppedCollisionKeys.add(lessonKey);
+          collisionKeyRows.set(lessonKey, [
+            ...(existing.source_row != null ? [existing.source_row] : []),
+            r + 1,
+          ]);
+          lessonRows.delete(lessonKey);
+        }
+      }
     } else {
       skippedLessonRows++;
+      // A daily row with year+month+period resolved but a null week is a blank-Week block
+      // cleared by the week-reset above — surface it for re-labelling (Part b).
+      if (
+        yearIndex != null &&
+        yearIndex >= 0 &&
+        yearIndex <= 6 &&
+        month != null &&
+        week == null &&
+        periodNumber != null
+      ) {
+        droppedBlankWeekRows.push(r + 1);
+      }
     }
   }
 
@@ -766,8 +863,10 @@ export function parseCurriculumWorkbook(
     nonInstructional,
     refSeen,
     skippedLessonRows,
-    lessonKeyCollisions,
-    collisionSamples,
+    droppedBlankWeekRows,
+    droppedCollisions: [...collisionKeyRows.entries()].map(([key, rows]) => ({ key, rows })),
+    benignMarkerCollisions,
+    duplicateRows,
   });
 
   return { records: recordList, report, lessonRows: [...lessonRows.values()], skippedLessonRows };
@@ -788,8 +887,10 @@ interface ReportArgs {
   nonInstructional: number;
   refSeen: boolean;
   skippedLessonRows: number;
-  lessonKeyCollisions: number;
-  collisionSamples: string[];
+  droppedBlankWeekRows: number[];
+  droppedCollisions: { key: string; rows: number[] }[];
+  benignMarkerCollisions: number;
+  duplicateRows: number;
 }
 
 /** Canonical fields we generally expect to find; absence is reported. */
@@ -851,12 +952,32 @@ function buildReport(a: ReportArgs): ImportReport {
       `${a.skippedLessonRows} records lack the year/month/week needed by curriculum_lesson (NOT NULL) and are not written.`,
     );
   }
-  if (a.lessonKeyCollisions > 0) {
+  if (a.droppedCollisions.length > 0) {
+    const rowTotal = a.droppedCollisions.reduce((n, c) => n + c.rows.length, 0);
     warnings.push(
-      `${a.lessonKeyCollisions} source row(s) collapsed onto an already-seen lesson_key and ` +
-        `OVERWROTE an earlier lesson (silent data loss — usually missing period labels in the ` +
-        `source, so a week's periods all key to "…|wk"). Fix the source and re-import. ` +
-        `e.g. ${a.collisionSamples.join(', ')}`,
+      `${a.droppedCollisions.length} lesson_key(s) had a GENUINE collision (${rowTotal} real lessons ` +
+        `share a key — usually missing period labels, so a week's periods all key to "…|wk"). Those ` +
+        `keys were DROPPED, not written: nothing silently overwritten, nothing invented. Add the ` +
+        `period labels and re-import to restore them. e.g. ` +
+        a.droppedCollisions
+          .slice(0, 3)
+          .map((c) => `${c.key} (source rows ${c.rows.join(', ')})`)
+          .join('; '),
+    );
+  }
+  if (a.droppedBlankWeekRows.length > 0) {
+    const sample = a.droppedBlankWeekRows.slice(0, 20).join(', ');
+    warnings.push(
+      `${a.droppedBlankWeekRows.length} lesson(s) DROPPED for a blank Week cell at a period restart ` +
+        `(the source did not label the week, so it was not inherited from the previous block — which ` +
+        `would have clobbered that week). Add the week label to these source rows and re-import: ` +
+        `${sample}${a.droppedBlankWeekRows.length > 20 ? ` …(+${a.droppedBlankWeekRows.length - 20} more)` : ''}`,
+    );
+  }
+  if (a.duplicateRows > 0) {
+    warnings.push(
+      `${a.duplicateRows} exact-duplicate source row(s) (same lesson_key AND identical content — ` +
+        `a copy-paste in the source) kept once; no data lost. Consider removing the duplicates.`,
     );
   }
   for (const cf of criticalFields) {
@@ -879,5 +1000,7 @@ function buildReport(a: ReportArgs): ImportReport {
     rowCount: a.records.length,
     warnings,
     sampleRecords: a.records.slice(0, 5),
+    droppedBlankWeekRows: a.droppedBlankWeekRows,
+    droppedCollisions: a.droppedCollisions,
   };
 }

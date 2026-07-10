@@ -213,6 +213,10 @@ export interface ImportReport {
   rowCount: number;
   warnings: string[];
   sampleRecords: CurriculumRecord[]; // first ~5
+  /** Source rows dropped for a blank Week cell at a period restart (need a week label). */
+  droppedBlankWeekRows: number[];
+  /** Genuine lesson_key collisions dropped (not written): the key + its colliding rows. */
+  droppedCollisions: { key: string; rows: number[] }[];
 }
 
 /**

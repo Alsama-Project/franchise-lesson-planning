@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { parseCurriculumWorkbook, splitInlineMonthly } from '../parse';
 import { makeWorkbook, headerBlock, type CellSpec } from './fixtures';
 
@@ -373,23 +375,114 @@ test('canonical pin throws (never silently falls back) when the pinned sheet is 
   assert.throws(() => parseCurriculumWorkbook(wb, 'arabic'), /Arabic Curriculum \(2\)/);
 });
 
-// ── Period-null key collision is counted + surfaced (silent data loss) ─────────────
+// ── Blank-cell fill / collision handling — never silently lose or invent a lesson ──
 
-test('two rows collapsing onto one lesson_key are counted and warned', () => {
+test('GENUINE collision (two DISTINCT lessons → one key): key dropped, not written, reported', () => {
   const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
   // A week whose Period labels are MISSING: two rows, same year/month/week, blank period →
-  // both key to "…|wk" → the second overwrites the first (arabic W15 in the real data).
+  // both key to "…|wk" with DIFFERENT content (arabic W15 in the real data).
   const r1: CellSpec[] = ['', 'Year 5', 'December', 15, '', 'Lesson one'];
   const r2: CellSpec[] = ['', '', '', '', '', 'Lesson two']; // merged year/month/week, blank period
   const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), r1, r2] });
 
   const { report, lessonRows } = parseCurriculumWorkbook(wb, 'science');
-  const collapsed = lessonRows.filter((r) => r.period == null && r.week === 15);
-  assert.equal(collapsed.length, 1); // both rows collapsed onto one key
-  assert.ok(
-    report.warnings.some((w) => /collapsed onto an already-seen lesson_key/.test(w)),
-    `expected a collision warning, got: ${report.warnings.join(' | ')}`,
+  // Neither arbitrary row is kept — the key is dropped (no silent overwrite, no invented key).
+  assert.equal(lessonRows.filter((r) => r.week === 15).length, 0);
+  assert.equal(report.droppedCollisions.length, 1);
+  assert.deepEqual(report.droppedCollisions[0].rows, [4, 5]); // 1-based source rows (data begins at row 4)
+  assert.ok(report.warnings.some((w) => /GENUINE collision/.test(w)));
+});
+
+test('EXACT duplicate (same key AND identical content) is kept once — no data loss, no drop', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  const real: CellSpec[] = ['', 'Year 5', 'January', 20, 'Period 1', 'Relate the ultrastructure'];
+  // Blank Year (inherits Year 5), same Week/Period/Daily — a source copy-paste (Science W20).
+  const dupRow: CellSpec[] = ['', '', 'January', 20, 'Period 1', 'Relate the ultrastructure'];
+  const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), real, dupRow] });
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'science');
+  const w20 = lessonRows.filter((r) => r.week === 20 && r.period === 1);
+  assert.equal(w20.length, 1); // kept once — real content preserved
+  assert.equal(w20[0].daily_outcome, 'Relate the ultrastructure');
+  assert.equal(report.droppedCollisions.length, 0); // NOT dropped
+  assert.ok(report.warnings.some((w) => /exact-duplicate/.test(w)));
+});
+
+test('benign MARKER collision does not drop or fail — junk-heavy import still lands', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  // Two non-instructional marker rows share a key (blank period → "…|wk"); a real lesson lands.
+  const m1: CellSpec[] = ['', 'Year 3', 'August', 1, '', 'Orientation & Activity'];
+  const m2: CellSpec[] = ['', '', '', '', '', 'Evaluation']; // same key as m1 (W1|wk)
+  const real: CellSpec[] = ['', '', '', 2, 'Period 1', 'Real lesson']; // labelled W2 P1
+  const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), m1, m2, real] });
+
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'professionalism');
+  assert.equal(report.droppedCollisions.length, 0); // markers never trigger a drop
+  assert.ok(lessonRows.some((r) => r.daily_outcome === 'Real lesson'));
+});
+
+test('week-reset: a blank-Year/Week block at a period restart is dropped (reported), the labelled week survives', () => {
+  const headers: CellSpec[] = ['', 'Year', 'Month', 'Week', 'Period #', 'Daily Learning Outcome'];
+  const rows: CellSpec[][] = [
+    ...headerBlock(headers),
+    ['', 'Year 5', 'May', 36, 'Period 1', 'Mitosis'], // labelled W36
+    ['', '', '', '', 'Period 2', 'Mitosis P2'], // merged blanks (P2 of W36)
+    ['', '', '', '', 'Period 1', 'Reproduction'], // blank-Year/Week block, restarts at P1
+    ['', '', '', '', 'Period 2', 'Reproduction P2'],
+    ['', 'Year 5', 'May', 37, 'Period 1', 'Chemicals'], // labelled W37 resumes
+  ];
+  const wb = makeWorkbook({ Sheet1: rows });
+  const { report, lessonRows } = parseCurriculumWorkbook(wb, 'science');
+
+  // W36 keeps its labelled content — the blank block did NOT clobber it.
+  assert.equal(lessonRows.find((r) => r.week === 36 && r.period === 1)?.daily_outcome, 'Mitosis');
+  // The blank block is not written under any week (dropped) and is reported.
+  assert.ok(!lessonRows.some((r) => r.daily_outcome === 'Reproduction'));
+  assert.ok(report.droppedBlankWeekRows.length >= 2);
+  assert.ok(report.warnings.some((w) => /blank Week cell at a period restart/.test(w)));
+  // W37 resumes normally.
+  assert.equal(lessonRows.find((r) => r.week === 37 && r.period === 1)?.daily_outcome, 'Chemicals');
+});
+
+test('weekly-shape subject (no Daily-LO col): a blank weekly-knowledge cell stays blank (not forward-filled)', () => {
+  // Mirror Yoga: Week + weekly Skill/Knowledge, NO Daily-LO column. One row per week.
+  const headers: CellSpec[] = [
+    '', 'Year', 'Month', 'Week', 'Weekly Skill Learning Outcome', 'Weekly Knowledge Learning Outcome',
+  ];
+  const w21: CellSpec[] = ['', 'Year 1', 'March', 21, 'skill 21', 'knowledge 21'];
+  const w22: CellSpec[] = ['', '', '', 22, 'skill 22', '']; // knowledge blank — must NOT inherit W21
+  const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), w21, w22] });
+
+  const { lessonRows } = parseCurriculumWorkbook(wb, 'yoga');
+  const r22 = lessonRows.find((r) => r.week === 22);
+  assert.equal(r22?.weekly_knowledge_lo, null); // stayed blank
+  assert.notEqual(r22?.weekly_knowledge_lo, 'knowledge 21'); // did not invent W21's knowledge
+  // Outcome composes from the (present) skill alone.
+  assert.equal(r22?.daily_outcome, 'skill 22');
+});
+
+test('daily merged subject: normal fill-down is unchanged (year/month/week + weekly S/K within a week)', () => {
+  const headers: CellSpec[] = [
+    '', 'Year', 'Month', 'Week', 'Weekly Skill Learning Outcome',
+    'Weekly Knowledge Learning Outcome', 'Period #', 'Daily Learning Outcome',
+  ];
+  // Merged: values on the Period-1 row, blank on P2 — the daily subject's normal shape.
+  const p1: CellSpec[] = ['', 'Year 4', 'June', 3, 'wk skill', 'wk knowledge', 'Period 1', 'Daily one'];
+  const p2: CellSpec[] = ['', '', '', '', '', '', 'Period 2', 'Daily two']; // all merged blanks
+  const wb = makeWorkbook({ Sheet1: [...headerBlock(headers), p1, p2] });
+
+  const { lessonRows, report } = parseCurriculumWorkbook(wb, 'maths');
+  assert.equal(lessonRows.length, 2);
+  const [a, b] = lessonRows.sort((x, y) => (x.period ?? 0) - (y.period ?? 0));
+  // P2 inherits year/month/week AND the merged weekly S/K (forward-fill within the week is intact).
+  assert.deepEqual(
+    [b.year, b.month, b.week, b.period, b.weekly_skills_lo, b.weekly_knowledge_lo],
+    [4, 'June', 3, 2, 'wk skill', 'wk knowledge'],
   );
+  assert.equal(a.daily_outcome, 'Daily one');
+  assert.equal(b.daily_outcome, 'Daily two');
+  assert.equal(report.droppedCollisions.length, 0);
+  assert.equal(report.droppedBlankWeekRows.length, 0);
 });
 
 // ── A brand-new column does not break the parse; it is surfaced ──────────────────
@@ -451,4 +544,40 @@ test('splitInlineMonthly: non-split subjects (english, professionalism) are unto
   assert.equal(splitInlineMonthly('english', blob), null);
   assert.equal(splitInlineMonthly('professionalism', blob), null);
   assert.equal(splitInlineMonthly('maths', null), null);
+});
+
+// ── Real-workbook regression gate (self-skips without the gitignored IP files) ─────
+//
+// Proves the blank-cell fix leaves the untouched subjects byte-identical: for a subject
+// with no genuine collision / blank-week block / duplicate, none of the new code paths
+// fire, so its output equals pre-fix (the fill scoping guarantees the rest). Verified
+// out-of-band that english/maths/professionalism are byte-identical and arabic differs
+// ONLY at the W15 collision; these assertions lock that in where the workbooks are present.
+
+const FIXTURES_DIR =
+  process.env.CURRICULUM_FIXTURES_DIR ?? resolve(import.meta.dirname, '../../../../test/fixtures/curriculum');
+const hasWorkbook = (subject: string): boolean => existsSync(resolve(FIXTURES_DIR, `${subject}.xlsx`));
+const parseFixture = (subject: string) =>
+  parseCurriculumWorkbook(readFileSync(resolve(FIXTURES_DIR, `${subject}.xlsx`)), subject, {});
+
+for (const subject of ['english', 'maths', 'professionalism']) {
+  test(`regression — ${subject} untouched by the blank-cell fix (no drop/reset/dup activity)`, {
+    skip: hasWorkbook(subject) ? false : 'real workbook absent (gitignored IP)',
+  }, () => {
+    const { report } = parseFixture(subject);
+    assert.equal(report.droppedCollisions.length, 0, `${subject}: unexpected genuine collision`);
+    assert.equal(report.droppedBlankWeekRows.length, 0, `${subject}: unexpected blank-week drop`);
+    assert.ok(
+      !report.warnings.some((w) => /exact-duplicate/.test(w)),
+      `${subject}: unexpected exact-duplicate`,
+    );
+  });
+}
+
+test('regression — arabic changes ONLY at the genuine W15 collision', {
+  skip: hasWorkbook('arabic') ? false : 'arabic workbook absent (gitignored IP)',
+}, () => {
+  const { report } = parseFixture('arabic');
+  assert.deepEqual(report.droppedCollisions.map((c) => c.key), ['arabic|Y5|December|W15|wk']);
+  assert.equal(report.droppedBlankWeekRows.length, 0);
 });

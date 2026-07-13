@@ -60,14 +60,13 @@ export default async function SettingsPage() {
       centres={data.centres}
       subjects={data.subjects}
       classes={data.classes}
-      teacherCounts={data.teacherCounts}
-      classCounts={data.classCounts}
       memberships={memberships.map((m) => ({
         id: m.id,
         schoolId: m.schoolId,
         subjectId: m.subjectId,
         schoolName: m.schoolName,
         subjectName: m.subjectName,
+        role: m.role,
       }))}
       myClasses={myClasses}
     />

@@ -147,15 +147,15 @@ export async function saveSettings(input: SaveSettingsInput): Promise<ActionResu
     if (error) return { ok: false, error: error.message };
   }
 
-  // Leave spaces (RLS scopes the delete to the caller's own rows).
-  if (input.removeSpaceIds.length > 0) {
-    const { error } = await supabase
-      .from('subject_membership')
-      .delete()
-      .in('id', input.removeSpaceIds)
-      .eq('profile_id', user.id);
-    if (error) return { ok: false, error: error.message };
-  }
+  // Order matters and is deliberate: JOIN → reconcile CLASSES → LEAVE. Both
+  // `set_my_classes` and `complete_onboarding` only touch classes in spaces the
+  // caller is CURRENTLY a member of (is_member_of_subject), so:
+  //   • joins must precede the class reconcile, or a newly-ticked class in a
+  //     just-joined column would be filtered out and never assigned;
+  //   • leaves must FOLLOW it, or unticking a space's last class and leaving it
+  //     in the same save would orphan that class_teachers row (the reconcile
+  //     can't remove a class in a space already left).
+  // This only reorders the three writes — each keeps its exact semantics/RLS.
 
   // Join spaces — through the same controlled RPC as onboarding (role hardcoded
   // to 'teacher', idempotent). addSpaces may span several centres, so call once
@@ -181,12 +181,24 @@ export async function saveSettings(input: SaveSettingsInput): Promise<ActionResu
   // policy (0006 is select-only); this definer RPC is the sole self-service
   // path, scoped to the caller's own subject spaces (mirrors onboarding). A
   // failure here is a real error — surfaced, not swallowed into a soft warning.
+  // Runs while the to-be-left memberships still exist, so their now-unticked
+  // classes are unassigned here before the leave below removes the space.
   if (input.classIds !== undefined) {
     const { error } = await supabase.rpc('set_my_classes', { p_class_ids: input.classIds });
     if (error) {
       const t = await getTranslations('settings');
       return { ok: false, error: t('profile.classesSaveError') };
     }
+  }
+
+  // Leave spaces (RLS scopes the delete to the caller's own rows).
+  if (input.removeSpaceIds.length > 0) {
+    const { error } = await supabase
+      .from('subject_membership')
+      .delete()
+      .in('id', input.removeSpaceIds)
+      .eq('profile_id', user.id);
+    if (error) return { ok: false, error: error.message };
   }
 
   revalidatePath('/settings');

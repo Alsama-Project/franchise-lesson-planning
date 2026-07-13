@@ -236,7 +236,7 @@ export function ObjectiveStep({
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onInput={(e) => onChange(e.currentTarget.textContent ?? '')}
-              className="whitespace-pre-wrap break-words font-sans text-[16px] text-ink caret-pink outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-neutral-400 data-[empty=true]:before:content-[attr(data-placeholder)]"
+              className="whitespace-pre-wrap break-words font-sans text-[16px] text-ink caret-ink outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-neutral-400 data-[empty=true]:before:content-[attr(data-placeholder)]"
             />
           </p>
         </div>

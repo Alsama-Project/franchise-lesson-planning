@@ -269,8 +269,13 @@ html:lang(ar) body {
  * field shows a faint placeholder through a non-editable pseudo-element, so the caret
  * target stays visible without the placeholder ever becoming real content
  * (textContent stays empty). Direction follows the field's own dir="auto".
+ *
+ * `:not(:focus)` so the placeholder clears the moment the field is focused: an empty
+ * focused field must show the blinking caret at offset 0, not the placeholder glyphs
+ * sitting on top of it. (This matches ObjectiveStep's own `showPlaceholder = empty &&
+ * !focused` intent, which the unguarded `:empty` rule was silently overriding.)
  */
-[contenteditable][data-placeholder]:empty::before {
+[contenteditable][data-placeholder]:empty:not(:focus)::before {
   content: attr(data-placeholder);
   color: #9aa5a0;
   pointer-events: none;

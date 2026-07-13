@@ -9,6 +9,7 @@
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/core';
 import { migrateWorksheetToV3 } from '@/lib/editor/worksheet-migrate';
+import { normalizeTableColwidths } from './normalizeTables';
 import type { WorksheetContext } from '../context';
 import { worksheetDocExtensions } from './extensions';
 import { DocMasthead, DocFooter } from './DocMasthead';
@@ -23,7 +24,7 @@ export function DocumentWorksheetReadOnly({
 }) {
   const editor = useEditor({
     extensions: worksheetDocExtensions(),
-    content: migrateWorksheetToV3(value).doc as JSONContent,
+    content: normalizeTableColwidths(migrateWorksheetToV3(value).doc) as JSONContent,
     editable: false,
     immediatelyRender: false,
     editorProps: { attributes: { class: 'ws-doc' } },

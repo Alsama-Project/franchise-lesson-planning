@@ -466,13 +466,13 @@ html:lang(ar) body {
 .ws-doc .ws-img-nv img {
   margin: 0;
 }
-/* Tables — a clean, even grid flush to the page margins.
+/* Tables — a clean grid flush to the page margins, with working column resize.
  * The wrapper (ProseMirror adds div.tableWrapper) carries the block spacing and a
  * horizontal scroll safety net. `table-layout: fixed` + `width: 100%` makes the
- * table span the full content column; forcing every colgroup <col> back to
- * `width: auto` neutralises the resize plugin's inline pixel widths, which are what
- * caused the left offset (table narrower than the column) and the staircased,
- * unequal columns. The resize handle is hidden since those widths no longer stick. */
+ * table span the full content column; the colgroup <col> widths written by the
+ * resize plugin are honoured (a fresh table has none → columns divide evenly, and
+ * invalid/inconsistent stored widths are reset to even on load by
+ * normalizeTableColwidths, so there is no staircase to sledgehammer away). */
 .ws-doc .tableWrapper {
   margin: 14px 0;
   overflow-x: auto;
@@ -483,10 +483,6 @@ html:lang(ar) body {
   width: 100%;
   margin: 0;
   overflow: hidden;
-}
-.ws-doc colgroup col {
-  /* Reset partial colgroup widths so columns always divide evenly. */
-  width: auto !important;
 }
 .ws-doc td,
 .ws-doc th {
@@ -515,8 +511,28 @@ html:lang(ar) body {
   background: rgba(182, 42, 92, 0.08);
   pointer-events: none;
 }
+/* Column resize handle: a thin bar on the right edge of a cell; the pointer shows
+ * col-resize and it tints on hover so the drag target is discoverable. */
 .ws-doc .column-resize-handle {
-  display: none;
+  position: absolute;
+  right: -1px;
+  top: 0;
+  bottom: -1px;
+  width: 4px;
+  background: #C9B89F;
+  opacity: 0;
+  cursor: col-resize;
+  z-index: 5;
+}
+.ws-doc .tableWrapper:hover .column-resize-handle,
+.ws-doc .column-resize-handle:hover,
+.ws-doc .resize-cursor .column-resize-handle {
+  opacity: 1;
+  background: #B62A5C;
+}
+.ws-doc.resize-cursor,
+.ws-doc .resize-cursor {
+  cursor: col-resize;
 }
 /* Figure caption (label-over-figure migration + slash "caption") */
 .ws-doc figcaption,

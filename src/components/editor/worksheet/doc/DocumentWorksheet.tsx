@@ -14,6 +14,7 @@ import type { Editor, JSONContent } from '@tiptap/core';
 import type { WorksheetV3 } from '@/types/lesson';
 import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import { migrateWorksheetToV3 } from '@/lib/editor/worksheet-migrate';
+import { normalizeTableColwidths } from './normalizeTables';
 import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
 import { uploadWorksheetImageAction } from '@/lib/actions/worksheet';
 import type { WorksheetContext } from '../context';
@@ -54,7 +55,7 @@ export function DocumentWorksheet({
   vocabulary: TagsByDimension;
   saveState?: SaveState;
 }) {
-  const initialDoc = useMemo(() => migrateWorksheetToV3(value).doc, [value]);
+  const initialDoc = useMemo(() => normalizeTableColwidths(migrateWorksheetToV3(value).doc), [value]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bankOpen, setBankOpen] = useState(false);

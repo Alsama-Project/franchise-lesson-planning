@@ -88,11 +88,12 @@ export function worksheetDocExtensions(): AnyExtension[] {
     }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    // Column resizing is off: the worksheet wants even, full-width columns, not
-    // per-column drag widths. Fresh tables insert with no colwidth attrs; the
-    // `.ws-doc colgroup col { width:auto !important }` rule in globals.css is the
-    // backstop that also neutralises any colwidths baked into older saved docs.
-    Table.configure({ resizable: false }),
+    // Column resizing is ON: teachers can drag a column border and the width
+    // sticks. Fresh tables insert with no colwidth attrs (even columns); invalid or
+    // inconsistent stored colwidths are reset to even on load by
+    // `normalizeTableColwidths` (so stale/migrated data can't staircase), and the
+    // resize handle + real colgroup widths are styled in globals.css.
+    Table.configure({ resizable: true, cellMinWidth: 40 }),
     TableRow,
     TableHeader,
     TableCell,

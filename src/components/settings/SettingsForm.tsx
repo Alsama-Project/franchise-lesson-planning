@@ -126,6 +126,21 @@ export function SettingsForm(props: SettingsFormProps) {
           .map(([, m]) => m.id)
       : [];
 
+    // Never force the teacher out of their LAST space. If clearing a subject's
+    // last class would drop them to zero memberships, keep one space joined with
+    // zero classes instead of tripping the "≥1 space" guard (and erroring the
+    // whole save). Retain the earliest membership so the choice is deterministic.
+    const remainingAfter = currentMemberSpaces.size - removeSpaceIds.length + addSpaces.length;
+    let finalRemoveIds = removeSpaceIds;
+    if (remainingAfter < 1 && removeSpaceIds.length > 0) {
+      const keep = new Set<string>();
+      for (const m of props.memberships) {
+        if (keep.size >= 1 - remainingAfter) break;
+        if (removeSpaceIds.includes(m.id)) keep.add(m.id);
+      }
+      finalRemoveIds = removeSpaceIds.filter((id) => !keep.has(id));
+    }
+
     // Optimistic snapshot for rollback on failure.
     const prevTicked = new Set(ticked);
     const prevName = name;
@@ -135,7 +150,7 @@ export function SettingsForm(props: SettingsFormProps) {
       const res = await saveSettings({
         fullName: name.trim() !== props.fullName.trim() ? name.trim() : undefined,
         addSpaces,
-        removeSpaceIds,
+        removeSpaceIds: finalRemoveIds,
         classIds,
       });
       if (!res.ok) {

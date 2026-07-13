@@ -20,16 +20,22 @@ import {
  *
  * Request body (fresh generate):
  *   {
- *     "subject": string,
- *     "year": number,
- *     "daily_outcome": string,
- *     "weekly_outcome": string,
+ *     "subject": string,                 // required
+ *     "teacher_prompt": string,          // required (the generation instruction)
+ *     "year"?: number,
+ *     "daily_outcome"?: string,
+ *     "weekly_outcome"?: string,
  *     "monthly_lo"?: string,
- *     "grammar_vocab": string,
- *     "theme": string,
- *     "lesson_stage": "new_content" | "independent_practice",
- *     "teacher_prompt": string
+ *     "grammar_vocab"?: string,
+ *     "theme"?: string,
+ *     "lesson_stage"?: "new_content" | "independent_practice"
  *   }
+ * Only `subject` and `teacher_prompt` are required. Every other field is a
+ * curriculum context ANCHOR: optional, validated when present, and simply omitted
+ * from the prompt when absent/empty. Anchors legitimately come back empty for
+ * non-English subject shapes — e.g. `grammar_vocab` is empty for Science/Maths,
+ * `daily_outcome` for weekly-shape subjects (Awareness/Yoga) — and an empty anchor
+ * must never block generation.
  *
  * Request body (stateless adjust): as above but with `teacher_prompt` optional, plus
  *   {
@@ -76,12 +82,10 @@ export async function POST(request: NextRequest) {
   // teacher's original prompt is no longer required (the doc is the base).
   const isAdjust = isNonEmptyString(body.current_content) && isNonEmptyString(body.refinement);
 
+  // Only `subject` (and `teacher_prompt`, for a fresh generate) is truly required.
+  // Everything else is a curriculum anchor and is loosened below.
   const requiredStrings: [keyof GenerateResourceBody, unknown][] = [
     ['subject', body.subject],
-    ['daily_outcome', body.daily_outcome],
-    ['weekly_outcome', body.weekly_outcome],
-    ['grammar_vocab', body.grammar_vocab],
-    ['theme', body.theme],
     ...(isAdjust ? [] : ([['teacher_prompt', body.teacher_prompt]] as [keyof GenerateResourceBody, unknown][])),
   ];
   for (const [field, value] of requiredStrings) {
@@ -93,14 +97,33 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (typeof body.year !== 'number' || !Number.isFinite(body.year)) {
+  // Curriculum context anchors: optional, but must be a string if provided. An
+  // absent/empty anchor is legitimate (varies by subject shape) and is dropped
+  // from the prompt rather than rejected.
+  const optionalStrings: (keyof GenerateResourceBody)[] = [
+    'daily_outcome',
+    'weekly_outcome',
+    'grammar_vocab',
+    'theme',
+    'monthly_lo',
+  ];
+  for (const field of optionalStrings) {
+    if (body[field] !== undefined && typeof body[field] !== 'string') {
+      return NextResponse.json(
+        { error: `Field "${field}" must be a string when provided.` },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (body.year !== undefined && (typeof body.year !== 'number' || !Number.isFinite(body.year))) {
     return NextResponse.json(
-      { error: 'Field "year" is required and must be a number.' },
+      { error: 'Field "year" must be a number when provided.' },
       { status: 400 },
     );
   }
 
-  if (!LESSON_STAGES.includes(body.lesson_stage as LessonStage)) {
+  if (body.lesson_stage !== undefined && !LESSON_STAGES.includes(body.lesson_stage as LessonStage)) {
     return NextResponse.json(
       { error: `Field "lesson_stage" must be one of: ${LESSON_STAGES.join(', ')}.` },
       { status: 400 },
@@ -121,23 +144,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (body.monthly_lo !== undefined && typeof body.monthly_lo !== 'string') {
-    return NextResponse.json(
-      { error: 'Field "monthly_lo" must be a string when provided.' },
-      { status: 400 },
-    );
-  }
-
+  // Fold each field in only when it carries a real value, so the generator sees a
+  // clean context and omits the corresponding prompt line for absent anchors.
   const context: GenerateResourceContext = {
     subject: body.subject as string,
-    year: body.year,
-    daily_outcome: body.daily_outcome as string,
-    weekly_outcome: body.weekly_outcome as string,
-    grammar_vocab: body.grammar_vocab as string,
-    theme: body.theme as string,
-    lesson_stage: body.lesson_stage as LessonStage,
+    ...(typeof body.year === 'number' && Number.isFinite(body.year) ? { year: body.year } : {}),
+    ...(isNonEmptyString(body.daily_outcome) ? { daily_outcome: body.daily_outcome } : {}),
+    ...(isNonEmptyString(body.weekly_outcome) ? { weekly_outcome: body.weekly_outcome } : {}),
+    ...(isNonEmptyString(body.grammar_vocab) ? { grammar_vocab: body.grammar_vocab } : {}),
+    ...(isNonEmptyString(body.theme) ? { theme: body.theme } : {}),
+    ...(LESSON_STAGES.includes(body.lesson_stage as LessonStage)
+      ? { lesson_stage: body.lesson_stage as LessonStage }
+      : {}),
     ...(isNonEmptyString(body.teacher_prompt) ? { teacher_prompt: body.teacher_prompt } : {}),
-    ...(typeof body.monthly_lo === 'string' ? { monthly_lo: body.monthly_lo } : {}),
+    ...(isNonEmptyString(body.monthly_lo) ? { monthly_lo: body.monthly_lo } : {}),
     ...(typeof body.refinement === 'string' ? { refinement: body.refinement } : {}),
     ...(typeof body.current_content === 'string' ? { current_content: body.current_content } : {}),
   };

@@ -47,25 +47,32 @@ export type LessonStage = 'new_content' | 'independent_practice';
  *    resource; `teacher_prompt` is not required.
  */
 export interface GenerateResourceContext {
-  /** Subject the lesson teaches (e.g. "English"). */
+  /** Subject the lesson teaches (e.g. "English"). The one always-present anchor. */
   subject: string;
+  /**
+   * The remaining curriculum anchors are all OPTIONAL. They vary by subject
+   * shape — `grammar_vocab` is empty for Science/Maths, `daily_outcome` for
+   * weekly-shape subjects (Awareness/Yoga), etc. — and each is included in the
+   * prompt only when present and non-empty. An absent anchor never blocks
+   * generation; it simply drops its line from the user prompt.
+   */
   /** Year group the lesson is aimed at. */
-  year: number;
+  year?: number;
   /** The day's intended learning outcome. */
-  daily_outcome: string;
+  daily_outcome?: string;
   /** The week's intended learning outcome (sent to the model, not echoed back). */
-  weekly_outcome: string;
+  weekly_outcome?: string;
   /**
    * The broader monthly learning outcome the lesson sits under
-   * (curriculum_lesson.monthly_lo). Optional; included in the prompt when present.
+   * (curriculum_lesson.monthly_lo). Included in the prompt when present.
    */
   monthly_lo?: string;
-  /** Grammar / vocabulary focus for the lesson. */
-  grammar_vocab: string;
+  /** Grammar / vocabulary focus for the lesson (English-shape subjects only). */
+  grammar_vocab?: string;
   /** Lesson or unit theme. */
-  theme: string;
+  theme?: string;
   /** Lesson stage the resource is for. */
-  lesson_stage: LessonStage;
+  lesson_stage?: LessonStage;
   /** The teacher's free-text request. Required for a fresh generate; ignored on adjust. */
   teacher_prompt?: string;
   /** The change to apply (typed instruction or preset chip). Set on an adjust call. */
@@ -196,18 +203,29 @@ function isAdjustCall(context: GenerateResourceContext): boolean {
 
 /** Build the user-turn prompt from the curriculum context and teacher request. */
 function buildUserPrompt(context: GenerateResourceContext): string {
+  // Subject is the one guaranteed anchor; every other line is emitted only when
+  // its value is present and non-empty, so non-English subject shapes (which
+  // legitimately lack grammar/vocab, a daily outcome, etc.) produce a clean
+  // prompt with no empty "- Field: " lines.
+  const hasText = (value?: string): value is string =>
+    typeof value === 'string' && value.trim().length > 0;
+
   const curriculumContext: string[] = [
     'Curriculum context (anchors to respect while fulfilling the task above):',
     `- Subject: ${context.subject}`,
-    `- Year group: ${context.year}`,
-    `- Daily outcome: ${context.daily_outcome}`,
-    `- Weekly outcome: ${context.weekly_outcome}`,
-    ...(context.monthly_lo && context.monthly_lo.trim().length > 0
+    ...(typeof context.year === 'number' && Number.isFinite(context.year)
+      ? [`- Year group: ${context.year}`]
+      : []),
+    ...(hasText(context.daily_outcome) ? [`- Daily outcome: ${context.daily_outcome.trim()}`] : []),
+    ...(hasText(context.weekly_outcome) ? [`- Weekly outcome: ${context.weekly_outcome.trim()}`] : []),
+    ...(hasText(context.monthly_lo)
       ? [`- Monthly learning outcome: ${context.monthly_lo.trim()}`]
       : []),
-    `- Grammar / vocabulary: ${context.grammar_vocab}`,
-    `- Theme: ${context.theme}`,
-    `- Lesson stage: ${context.lesson_stage}`,
+    ...(hasText(context.grammar_vocab)
+      ? [`- Grammar / vocabulary: ${context.grammar_vocab.trim()}`]
+      : []),
+    ...(hasText(context.theme) ? [`- Theme: ${context.theme.trim()}`] : []),
+    ...(context.lesson_stage ? [`- Lesson stage: ${context.lesson_stage}`] : []),
   ];
 
   const lines: string[] = [];

@@ -31,15 +31,20 @@ export async function requestGeneratedResource(
   const res = await fetch('/api/generate-resource', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // Send `subject` + `lesson_stage` (always known) plus each curriculum anchor
+    // ONLY when it carries a value. Anchors are legitimately empty for non-English
+    // subject shapes (e.g. grammar_vocab for Science, daily_outcome for weekly-shape
+    // subjects); the route treats them as optional, so omitting them is correct and
+    // avoids sending empty strings that used to trip validation.
     body: JSON.stringify({
       subject: ctx.subjectName,
-      year: ctx.year ?? 0,
-      daily_outcome: ctx.dailyOutcome,
-      weekly_outcome: ctx.weeklyOutcome,
-      monthly_lo: ctx.monthlyLo,
-      grammar_vocab: ctx.grammarVocab,
-      theme: ctx.theme,
       lesson_stage: 'independent_practice',
+      ...(typeof ctx.year === 'number' ? { year: ctx.year } : {}),
+      ...(ctx.dailyOutcome.trim() ? { daily_outcome: ctx.dailyOutcome } : {}),
+      ...(ctx.weeklyOutcome.trim() ? { weekly_outcome: ctx.weeklyOutcome } : {}),
+      ...(ctx.monthlyLo.trim() ? { monthly_lo: ctx.monthlyLo } : {}),
+      ...(ctx.grammarVocab.trim() ? { grammar_vocab: ctx.grammarVocab } : {}),
+      ...(ctx.theme.trim() ? { theme: ctx.theme } : {}),
       ...(teacherPrompt.trim() ? { teacher_prompt: teacherPrompt } : {}),
       ...(refinement ? { refinement } : {}),
       ...(currentContent ? { current_content: currentContent } : {}),

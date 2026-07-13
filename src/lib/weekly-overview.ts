@@ -252,6 +252,11 @@ export async function getBoardData(input: {
     subjectName = pick.name;
   } else {
     // No membership and no coordinated subject — nothing to plan against.
+    console.warn('getBoardData: empty board — user has no active subject', {
+      userId: user.id,
+      membershipCount: memberships.length,
+      coordinatedSubjectCount: coordinatedSubjects.size,
+    });
     return emptyBoard(teacherName);
   }
 
@@ -323,6 +328,21 @@ export async function getBoardData(input: {
 
   // Nothing synced for the subject's years yet → an empty-but-valid board (year shells).
   if (coords.length === 0) {
+    // A blank board is a SILENT empty-result path (no error thrown), so log the
+    // resolved filters that produced it. The board's weeks/lessons come entirely from
+    // `curriculum_lesson_active` scoped by `subjectCode`; zero coordinates means that
+    // subject has no active curriculum rows for any shown year. This is the usual cause
+    // of "space X renders blank" (e.g. a newly-added subject with no curriculum synced),
+    // and printing (subject, years, class count) makes it diagnosable without a repro.
+    console.warn('getBoardData: empty board — no curriculum coordinates for subject', {
+      userId: user.id,
+      subjectId,
+      subjectCode,
+      subjectName,
+      years,
+      taughtClassCount: taught.length,
+      viaActiveMembership: !!activeMembership,
+    });
     return {
       ...emptyBoard(teacherName),
       context,

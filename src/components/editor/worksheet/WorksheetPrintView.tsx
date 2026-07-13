@@ -21,6 +21,7 @@ import { generateHTML, type JSONContent } from '@tiptap/core';
 import type { FloatingElement, Worksheet, WorksheetBlock, WorksheetFreeBlock } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import type { PaginationResult } from '@/lib/editor/pagination';
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 import { MasterFrame } from './MasterFrame';
 import { ResourceBlock } from './ResourceBlock';
 import { ExerciseHeading } from './ExerciseHeading';
@@ -86,10 +87,18 @@ function StaticFloatingLayer({ elements }: { elements: FloatingElement[] }) {
 /** One Free block in print: heading + flowing doc + contained floating layer. The
  *  padded, relative container mirrors the editor's block content box so the
  *  block-relative element positions print exactly where placed. */
-function PrintFreeBlock({ block, index }: { block: WorksheetFreeBlock; index: number }) {
+function PrintFreeBlock({
+  block,
+  index,
+  language,
+}: {
+  block: WorksheetFreeBlock;
+  index: number;
+  language: WorksheetContentLanguage;
+}) {
   return (
     <div style={{ position: 'relative', padding: '24px 48px 38px' }}>
-      <ExerciseHeading index={index} />
+      <ExerciseHeading index={index} language={language} />
       <div className="worksheet-doc" dangerouslySetInnerHTML={{ __html: docHtml(block.doc) }} />
       <StaticFloatingLayer elements={block.elements} />
     </div>
@@ -102,17 +111,21 @@ export function PrintBlock({
   block,
   index,
   resolved,
+  language,
 }: {
   block: WorksheetBlock;
   index: number;
   resolved: Record<string, ResourceWithTags>;
+  /** The subject's content language — drives the "Exercise N" artifact heading. */
+  language: WorksheetContentLanguage;
 }) {
-  if (block.kind === 'free') return <PrintFreeBlock block={block} index={index} />;
+  if (block.kind === 'free') return <PrintFreeBlock block={block} index={index} language={language} />;
   return (
     <ResourceBlock
       resource={resolved[block.resourceId] ?? null}
       uploaderName={block.uploaderName}
       index={index}
+      language={language}
       onDelete={() => {}}
       chromeless
     />
@@ -147,7 +160,7 @@ export function WorksheetPrintView({
                 // ws-print-block carries break-inside: avoid so a single exercise
                 // isn't split across a sheet mid-line if a page is slightly over.
                 <div key={ws.blocks[i].id} className="ws-print-block">
-                  <PrintBlock block={ws.blocks[i]} index={i} resolved={resolved} />
+                  <PrintBlock block={ws.blocks[i]} index={i} resolved={resolved} language={ctx.contentLanguage} />
                 </div>
               ) : null,
             )}

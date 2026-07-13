@@ -1,0 +1,13 @@
+{
+  "studentWorksheet": "ورقة عمل الطالب",
+  "objectivePrefix": "بحلول نهاية هذه الحصة، سأتمكّن من",
+  "objectiveFallback": "تحقيق ناتج التعلّم لهذا اليوم",
+  "name": "الاسم",
+  "date": "التاريخ",
+  "class": "الصف",
+  "yearLabel": "السنة {year}",
+  "lessonLabel": "الدرس {code}",
+  "pageLabel": "صفحة {i} من {n}",
+  "masterBadge": "النموذج",
+  "exerciseHeading": "التمرين {n}"
+}

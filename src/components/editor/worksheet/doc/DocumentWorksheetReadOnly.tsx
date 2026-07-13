@@ -23,7 +23,7 @@ export function DocumentWorksheetReadOnly({
   context: WorksheetContext;
 }) {
   const editor = useEditor({
-    extensions: worksheetDocExtensions(),
+    extensions: worksheetDocExtensions(context.contentLanguage),
     content: normalizeTableColwidths(migrateWorksheetToV3(value).doc) as JSONContent,
     editable: false,
     immediatelyRender: false,

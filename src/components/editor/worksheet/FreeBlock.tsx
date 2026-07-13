@@ -491,7 +491,7 @@ export function FreeBlock({
       {/* CHOICE STATE (only while the block is truly empty) */}
       {view === 'blank' ? (
         <div style={{ background: '#fff', padding: '18px 36px 28px' }}>
-          <ExerciseHeading index={index} />
+          <ExerciseHeading index={index} language={ctx.contentLanguage} />
           <div style={{ minHeight: 160, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
             <span style={{ width: 38, height: 38, borderRadius: 10, background: '#F3ECE2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A79E94" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -531,7 +531,7 @@ export function FreeBlock({
       <div
         style={{ position: 'relative', background: '#fff', padding: '18px 36px 28px', minHeight: docMinHeight, display: view === 'doc' ? 'block' : 'none' }}
       >
-        <ExerciseHeading index={index} />
+        <ExerciseHeading index={index} language={ctx.contentLanguage} />
         {fromAI ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#186155', background: '#E4F0ED', border: '1px solid #CFE6E0', borderRadius: 6, padding: '4px 9px', marginBottom: 14 }}>
             <Sparkle /> {t('free.generatedWithAi')}

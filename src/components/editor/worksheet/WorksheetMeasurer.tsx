@@ -90,7 +90,7 @@ export function WorksheetMeasurer({
         <MasterFrame ctx={ctx} bodyRef={bodyRef}>
           {ws.blocks.map((b, i) => (
             <div key={b.id} ref={setBlockRef(b.id)} className="ws-print-block">
-              <PrintBlock block={b} index={i} resolved={resolved} />
+              <PrintBlock block={b} index={i} resolved={resolved} language={ctx.contentLanguage} />
             </div>
           ))}
         </MasterFrame>

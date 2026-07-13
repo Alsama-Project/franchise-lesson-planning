@@ -13,6 +13,7 @@
 
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { WorksheetContext } from './context';
+import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 
 // Auto-fit bounds for the header title. Short titles render at the max; long ones
 // shrink to fit one line, dropping to a balanced two-line wrap only at the floor.
@@ -99,7 +100,11 @@ const LockIcon = ({ stroke = '#A18A6E', size = 12 }: { stroke?: string; size?: n
 
 /** "English · Year 1 · Animals", skipping any missing part. */
 function titleLine(ctx: WorksheetContext): string {
-  return [ctx.subjectName, ctx.year != null ? `Year ${ctx.year}` : '', ctx.theme]
+  return [
+    ctx.subjectName,
+    ctx.year != null ? worksheetArtifactText(ctx.contentLanguage, 'yearLabel', { year: ctx.year }) : '',
+    ctx.theme,
+  ]
     .map((s) => s.trim())
     .filter(Boolean)
     .join(' · ');
@@ -131,7 +136,10 @@ export function MasterFrame({
    *  measurer to derive the per-page content height (chrome = page − body). */
   bodyRef?: React.Ref<HTMLDivElement>;
 }) {
-  const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
+  const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
+    worksheetArtifactText(ctx.contentLanguage, key, vars);
+  const dailyOutcome = ctx.dailyOutcome.trim() || t('objectiveFallback');
+  const lessonText = ctx.lessonCode ? t('lessonLabel', { code: ctx.lessonCode }) : t('lessonLabel', { code: '' }).trim();
 
   return (
     <div
@@ -177,7 +185,7 @@ export function MasterFrame({
             color: '#A18A6E',
           }}
         >
-          <LockIcon /> Master
+          <LockIcon /> {t('masterBadge')}
         </span>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
@@ -186,7 +194,7 @@ export function MasterFrame({
             </span>
             <span style={{ width: 1, height: 30, background: '#D8C9B4' }} />
             <span style={{ fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A18A6E', fontWeight: 700 }}>
-              Student worksheet
+              {t('studentWorksheet')}
             </span>
           </div>
           {/* Title is auto-fitted to this column (see FitTitle): the largest font
@@ -202,13 +210,13 @@ export function MasterFrame({
         </div>
         <div style={{ display: 'flex', gap: 30, marginTop: 20, fontSize: 15, color: '#6E6052' }}>
           <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>
-            Name <BlankLine width={150} />
+            {t('name')} <BlankLine width={150} />
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>
-            Date <BlankLine width={110} />
+            {t('date')} <BlankLine width={110} />
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>
-            Class <BlankLine width={100} />
+            {t('class')} <BlankLine width={100} />
           </span>
         </div>
       </div>
@@ -243,7 +251,7 @@ export function MasterFrame({
           </svg>
         </span>
         <span style={{ fontSize: 14.5, lineHeight: 1.45, color: '#4A4035' }}>
-          <b style={{ color: '#2A2422' }}>By the end of this session, I will be able to</b> {dailyOutcome}
+          <b style={{ color: '#2A2422' }}>{t('objectivePrefix')}</b> {dailyOutcome}
           {dailyOutcome.endsWith('.') ? '' : '.'}
         </span>
       </div>
@@ -277,13 +285,13 @@ export function MasterFrame({
         }}
       >
         <span style={{ fontSize: 12, color: '#93826B' }}>
-          {ctx.lessonCode ? `Lesson ${ctx.lessonCode}` : 'Lesson'}
+          {lessonText}
         </span>
         <span style={{ fontFamily: 'var(--font-sacramento), cursive', fontSize: 22, lineHeight: 0.7, color: '#C58FA4' }}>
           Alsama
         </span>
         <span style={{ fontSize: 12, color: '#93826B' }}>
-          Page {pageLabel?.index ?? 1} of {pageLabel?.total ?? 1}
+          {t('pageLabel', { i: pageLabel?.index ?? 1, n: pageLabel?.total ?? 1 })}
         </span>
       </div>
     </div>

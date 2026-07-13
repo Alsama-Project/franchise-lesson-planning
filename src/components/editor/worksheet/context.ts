@@ -6,10 +6,18 @@
 // for `POST /api/generate-resource`; the IDS half scopes persistence, the bank
 // modal, and usage tracking.
 
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
+
 export interface WorksheetContext {
   // ── Master frame (locked, read-only) ──────────────────────────────────────
   /** Subject name from the lesson's subject space (NOT profiles.subject_id). */
   subjectName: string;
+  /**
+   * The language the SUBJECT's content is taught/produced in, from
+   * `subjects.content_language`. Drives the worksheet artifact scaffold language
+   * (the A4 preview + print/PDF) — NOT the teacher's UI locale. Defaults to 'en'.
+   */
+  contentLanguage: WorksheetContentLanguage;
   /** Curriculum year from the class. */
   year: number | null;
   /** Theme from the curriculum lesson. */

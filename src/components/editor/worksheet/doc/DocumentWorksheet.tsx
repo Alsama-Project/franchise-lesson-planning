@@ -69,7 +69,7 @@ export function DocumentWorksheet({
 
   const editor = useEditor({
     extensions: [
-      ...worksheetDocExtensions(),
+      ...worksheetDocExtensions(context.contentLanguage),
       // These callbacks fire only from a slash-menu selection (a user event), never
       // during render, so reading the file-input ref inside pickImage is safe.
       // eslint-disable-next-line react-hooks/refs

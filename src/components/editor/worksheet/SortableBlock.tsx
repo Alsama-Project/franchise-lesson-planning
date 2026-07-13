@@ -85,6 +85,7 @@ export function SortableBlock({
           resource={resource}
           uploaderName={block.uploaderName}
           index={index}
+          language={ctx.contentLanguage}
           loading={resourceLoading}
           onDelete={() => onDelete(block.id)}
           dragHandleProps={dragHandleProps}

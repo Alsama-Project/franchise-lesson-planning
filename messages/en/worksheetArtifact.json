@@ -1,0 +1,13 @@
+{
+  "studentWorksheet": "Student worksheet",
+  "objectivePrefix": "By the end of this session, I will be able to",
+  "objectiveFallback": "meet today’s learning outcome",
+  "name": "Name",
+  "date": "Date",
+  "class": "Class",
+  "yearLabel": "Year {year}",
+  "lessonLabel": "Lesson {code}",
+  "pageLabel": "Page {i} of {n}",
+  "masterBadge": "Master",
+  "exerciseHeading": "Exercise {n}"
+}

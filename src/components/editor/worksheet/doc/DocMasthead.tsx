@@ -8,10 +8,15 @@
 // locked-header styling (cream = curriculum-provided, read-only).
 
 import type { WorksheetContext } from '../context';
+import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 import { BRAND } from './theme';
 
 function titleLine(ctx: WorksheetContext): string {
-  return [ctx.subjectName, ctx.year != null ? `Year ${ctx.year}` : '', ctx.theme]
+  return [
+    ctx.subjectName,
+    ctx.year != null ? worksheetArtifactText(ctx.contentLanguage, 'yearLabel', { year: ctx.year }) : '',
+    ctx.theme,
+  ]
     .map((s) => s.trim())
     .filter(Boolean)
     .join(' · ');
@@ -22,7 +27,9 @@ function BlankLine({ width }: { width: number }) {
 }
 
 export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
-  const dailyOutcome = ctx.dailyOutcome.trim() || 'meet today’s learning outcome';
+  const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
+    worksheetArtifactText(ctx.contentLanguage, key, vars);
+  const dailyOutcome = ctx.dailyOutcome.trim() || t('objectiveFallback');
   return (
     <div className="ws-doc-masthead" dir="auto" contentEditable={false}>
       {/* Header band */}
@@ -40,7 +47,7 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
             </span>
             <span style={{ width: 1, height: 28, background: '#D8C9B4' }} />
             <span style={{ fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: BRAND.faint, fontWeight: 700 }}>
-              Student worksheet
+              {t('studentWorksheet')}
             </span>
           </div>
           <div style={{ textAlign: 'right', maxWidth: 340, minWidth: 0 }}>
@@ -53,9 +60,9 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 30, marginTop: 18, fontSize: 15, color: BRAND.muted }}>
-          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>Name <BlankLine width={150} /></span>
-          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>Date <BlankLine width={110} /></span>
-          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>Class <BlankLine width={100} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>{t('name')} <BlankLine width={150} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>{t('date')} <BlankLine width={110} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 8 }}>{t('class')} <BlankLine width={100} /></span>
         </div>
       </div>
 
@@ -77,7 +84,7 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
           </svg>
         </span>
         <span style={{ fontSize: 14, lineHeight: 1.45, color: '#4A4035' }}>
-          <b style={{ color: BRAND.ink }}>By the end of this session, I will be able to</b> {dailyOutcome}
+          <b style={{ color: BRAND.ink }}>{t('objectivePrefix')}</b> {dailyOutcome}
           {dailyOutcome.endsWith('.') ? '' : '.'}
         </span>
       </div>
@@ -86,6 +93,9 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
 }
 
 export function DocFooter({ ctx, className }: { ctx: WorksheetContext; className?: string }) {
+  const lessonText = ctx.lessonCode
+    ? worksheetArtifactText(ctx.contentLanguage, 'lessonLabel', { code: ctx.lessonCode })
+    : worksheetArtifactText(ctx.contentLanguage, 'lessonLabel', { code: '' }).trim();
   return (
     // NOTE: display/flex layout is set via the className's CSS (ws-doc-footer-screen
     // / ws-print-footer), NOT inline — an inline `display` would override the
@@ -100,7 +110,7 @@ export function DocFooter({ ctx, className }: { ctx: WorksheetContext; className
         padding: '10px 52px',
       }}
     >
-      <span style={{ fontSize: 12, color: BRAND.faint }}>{ctx.lessonCode ? `Lesson ${ctx.lessonCode}` : 'Lesson'}</span>
+      <span style={{ fontSize: 12, color: BRAND.faint }}>{lessonText}</span>
       <span style={{ fontFamily: 'var(--font-sacramento), cursive', fontSize: 20, lineHeight: 0.7, color: '#C58FA4' }}>Alsama</span>
     </div>
   );

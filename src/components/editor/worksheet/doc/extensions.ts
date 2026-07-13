@@ -23,6 +23,10 @@ import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
 import { Extension, type AnyExtension, type Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import {
+  worksheetArtifactText,
+  type WorksheetContentLanguage,
+} from '@/lib/editor/worksheet-content-locale';
 import { ResizableImage } from '../resizableImage';
 import { Caption } from './nodes/Caption';
 import { PageBreak } from './nodes/PageBreak';
@@ -49,23 +53,32 @@ const LinkShortcut = Extension.create({
   },
 });
 
-/** Placeholder text per empty node: empty section headings read "Exercise N"
- *  (Phase 2 — the label disappears on first keystroke); other empties stay bare. */
-function placeholderFor({ node, editor, pos }: { node: PMNode; editor: Editor; pos: number }): string {
+/** Placeholder text per empty node: empty section headings read "Exercise N" in the
+ *  subject's content language (Phase 2 — the label disappears on first keystroke);
+ *  other empties stay bare. */
+function placeholderFor(
+  { node, editor, pos }: { node: PMNode; editor: Editor; pos: number },
+  language: WorksheetContentLanguage,
+): string {
   if (node.type.name !== 'heading') return '';
   let ordinal = 0;
   editor.state.doc.descendants((n, p) => {
     if (n.type.name === 'heading' && p <= pos) ordinal += 1;
   });
-  return `Exercise ${Math.max(1, ordinal)}`;
+  return worksheetArtifactText(language, 'exerciseHeading', { n: Math.max(1, ordinal) });
 }
 
 /**
  * Build the v3 extension list (a fresh array per editor instance). The slash-command
  * extension is NOT included here — it needs per-editor app callbacks and is added by
  * the editor component; the read-only/print paths use exactly this base schema.
+ *
+ * `contentLanguage` drives the "Exercise N" placeholder — worksheet content follows
+ * the subject's language, not the UI locale. Defaults to English.
  */
-export function worksheetDocExtensions(): AnyExtension[] {
+export function worksheetDocExtensions(
+  contentLanguage: WorksheetContentLanguage = 'en',
+): AnyExtension[] {
   return [
     StarterKit.configure({
       heading: { levels: [2, 3] },
@@ -84,7 +97,7 @@ export function worksheetDocExtensions(): AnyExtension[] {
     Placeholder.configure({
       includeChildren: true,
       showOnlyWhenEditable: true,
-      placeholder: placeholderFor,
+      placeholder: (props) => placeholderFor(props, contentLanguage),
     }),
     TaskList,
     TaskItem.configure({ nested: true }),

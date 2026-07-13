@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import type { HTMLAttributes } from 'react';
 import type { ResourceWithTags } from '@/types/resource';
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 import { BlockBar } from './BlockBar';
 import { ExerciseHeading } from './ExerciseHeading';
 import { resourceFormat, formatColors } from './resourceFormat';
@@ -18,6 +19,7 @@ export function ResourceBlock({
   resource,
   uploaderName,
   index,
+  language,
   loading,
   onDelete,
   dragHandleProps,
@@ -26,6 +28,8 @@ export function ResourceBlock({
   resource: ResourceWithTags | null;
   uploaderName: string | null;
   index: number;
+  /** The subject's content language — drives the "Exercise N" artifact heading. */
+  language: WorksheetContentLanguage;
   loading?: boolean;
   onDelete: () => void;
   dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
@@ -73,7 +77,7 @@ export function ResourceBlock({
         />
       )}
       <div style={{ padding: chromeless ? 0 : '16px 20px' }}>
-        <ExerciseHeading index={index} />
+        <ExerciseHeading index={index} language={language} />
         {!resource ? (
           <div style={{ fontSize: 14, color: '#8A8178' }}>
             {loading ? 'Loading resource…' : 'This resource is no longer available.'}

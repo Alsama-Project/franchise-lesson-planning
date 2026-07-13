@@ -101,6 +101,8 @@ export function ReadOnlyPlan({
   const exitBlock = plan.blocks.find((b) => b.type === 'exit_ticket');
   const worksheetContext: WorksheetContext = {
     subjectName: classContext.subjectName,
+    // Scaffold follows the subject's content language, not the UI locale.
+    contentLanguage: classContext.subjectContentLanguage,
     year: classContext.scope === 'class' ? classContext.year : plan.year,
     theme: curriculum?.theme ?? '',
     dailyOutcome: curriculum?.dailyLO ?? '',

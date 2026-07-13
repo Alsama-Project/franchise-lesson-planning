@@ -4,6 +4,13 @@ import { DEFAULT_BLOCKS } from '@/lib/blocks';
 import { getTagVocabulary, listFolders, getResourcesByIds } from '@/lib/resources';
 import type { Block, LessonBlockType, LessonPlan, PlanScope } from '@/types/lesson';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
+
+/** Narrow an arbitrary `subjects.content_language` value to a supported language,
+ *  defaulting to English (mirrors the DB default) for null/unknown. */
+function toContentLanguage(value: unknown): WorksheetContentLanguage {
+  return value === 'ar' ? 'ar' : 'en';
+}
 
 /** Block types that have a pre-approved activity bank today. */
 export const ACTIVITY_BLOCK_TYPES: LessonBlockType[] = ['cfu', 'exit_ticket'];
@@ -34,6 +41,11 @@ export interface EditorClassContext {
   subjectName: string;
   /** The subject id — scopes the embedded Resource Bank panel. */
   subjectId: string | null;
+  /**
+   * The subject's content language (`subjects.content_language`), driving the
+   * worksheet artifact scaffold language. Defaults to 'en' when the row is absent.
+   */
+  subjectContentLanguage: WorksheetContentLanguage;
   /** Plan scope, so the header/wizard can label centre/org plans. */
   scope: PlanScope;
 }
@@ -100,7 +112,10 @@ interface RawClassJoin {
   year: number;
   literacy: ClassLiteracy;
   school: { name: string } | { name: string }[] | null;
-  subject: { id: string; name: string } | { id: string; name: string }[] | null;
+  subject:
+    | { id: string; name: string; content_language: string | null }
+    | { id: string; name: string; content_language: string | null }[]
+    | null;
 }
 
 interface RawPlanRow {
@@ -163,7 +178,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
          class:classes (
            id, year, literacy,
            school:schools ( name ),
-           subject:subjects ( id, name )
+           subject:subjects ( id, name, content_language )
          )`
       )
       .eq('id', id)
@@ -207,6 +222,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
       schoolName: school?.name ?? '',
       subjectName: subject?.name ?? '',
       subjectId: subject?.id ?? null,
+      subjectContentLanguage: toContentLanguage(subject?.content_language),
       scope: row.scope,
     };
   } else {
@@ -214,13 +230,13 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
     // names from the plan's scope columns.
     const [{ data: subjectRow }, schoolRes] = await Promise.all([
       row.subject_id
-        ? supabase.from('subjects').select('id, name').eq('id', row.subject_id).maybeSingle()
+        ? supabase.from('subjects').select('id, name, content_language').eq('id', row.subject_id).maybeSingle()
         : Promise.resolve({ data: null }),
       row.school_id
         ? supabase.from('schools').select('name').eq('id', row.school_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
-    const subject = subjectRow as { id: string; name: string } | null;
+    const subject = subjectRow as { id: string; name: string; content_language: string | null } | null;
     const school = schoolRes.data as { name: string } | null;
     classContext = {
       id: '',
@@ -229,6 +245,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
       schoolName: school?.name ?? '',
       subjectName: subject?.name ?? '',
       subjectId: row.subject_id,
+      subjectContentLanguage: toContentLanguage(subject?.content_language),
       scope: row.scope,
     };
   }

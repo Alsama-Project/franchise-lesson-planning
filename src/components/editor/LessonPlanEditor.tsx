@@ -509,6 +509,9 @@ export function LessonPlanEditor({
   const worksheetContext = useMemo<WorksheetContext>(
     () => ({
       subjectName: classContext.subjectName,
+      // The worksheet artifact scaffold follows the SUBJECT's content language, not
+      // the teacher's UI locale (see worksheet-content-locale).
+      contentLanguage: classContext.subjectContentLanguage,
       // Class plans always carry a real class year (0–6). Centre/org plans have
       // no single class, so the loader coerces a missing year to 0; use the
       // plan's own nullable year there to avoid a spurious "Year 0".

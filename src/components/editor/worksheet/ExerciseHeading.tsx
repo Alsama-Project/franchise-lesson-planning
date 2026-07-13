@@ -4,9 +4,21 @@
 // Unlike the editor-only BlockBar chrome (drag handle / duplicate / delete), this
 // is real worksheet content the student sees — it renders on the page and prints.
 // The number is the block's 1-based position, so it renumbers automatically as
-// blocks are added, removed, or reordered.
+// blocks are added, removed, or reordered. As worksheet content it follows the
+// SUBJECT's content language, not the UI locale.
 
-export function ExerciseHeading({ index }: { index: number }) {
+import {
+  worksheetArtifactText,
+  type WorksheetContentLanguage,
+} from '@/lib/editor/worksheet-content-locale';
+
+export function ExerciseHeading({
+  index,
+  language,
+}: {
+  index: number;
+  language: WorksheetContentLanguage;
+}) {
   return (
     <div
       className="ws-exercise-heading"
@@ -18,7 +30,7 @@ export function ExerciseHeading({ index }: { index: number }) {
         marginBottom: 12,
       }}
     >
-      Exercise {index + 1}
+      {worksheetArtifactText(language, 'exerciseHeading', { n: index + 1 })}
     </div>
   );
 }

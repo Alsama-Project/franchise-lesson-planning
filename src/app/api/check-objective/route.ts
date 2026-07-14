@@ -37,7 +37,8 @@ import {
  *     }
  *   }
  *
- * Requires `ANTHROPIC_API_KEY` in the environment (locally and on Vercel).
+ * Requires `ANTHROPIC_API_KEY_SMARTT` in the environment (locally and on Vercel);
+ * this is the SMARTT-only Anthropic key, separate from resource generation.
  */
 
 /** Shape we accept on the wire (validated before use). */

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getResourcesClient } from '@/lib/anthropic';
 import { getActiveResourceGuide } from './resource-guide';
 
 /**
@@ -11,8 +12,10 @@ import { getActiveResourceGuide } from './resource-guide';
  * `POST /api/generate-resource` route handler) only ever see the typed result
  * or a thrown `GenerateResourceError`.
  *
- * Backend-only: this runs server-side and reads `ANTHROPIC_API_KEY` from the
- * environment. It is destination-agnostic — it returns generated content and
+ * Backend-only: this runs server-side and uses the resources-only Anthropic
+ * client ({@link getResourcesClient}, keyed by `ANTHROPIC_API_KEY_RESOURCES`) so
+ * its cost is tracked separately from SMARTT objective checking. It is
+ * destination-agnostic — it returns generated content and
  * does not decide where it lands, and deliberately does not touch Supabase, the
  * lesson schema, the resource bank, or any editor state.
  *
@@ -320,12 +323,18 @@ function isGenerateResourceResult(value: unknown): value is GenerateResourceResu
 export async function generateResource(
   context: GenerateResourceContext,
 ): Promise<GenerateResourceResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new GenerateResourceError('ANTHROPIC_API_KEY is not configured.', 503);
+  let client: Anthropic;
+  try {
+    // Resource generation has its OWN Anthropic key (ANTHROPIC_API_KEY_RESOURCES).
+    client = getResourcesClient();
+  } catch (err) {
+    // Surface a missing/misconfigured key as a 503 so the route maps it the same
+    // way it always has — fail loudly, never silently fall back.
+    throw new GenerateResourceError(
+      err instanceof Error ? err.message : 'ANTHROPIC_API_KEY_RESOURCES is not configured.',
+      503,
+    );
   }
-
-  const client = new Anthropic({ apiKey });
 
   // Compose [role] + [safety floor + JSON contract] + [base output contract] +
   // [language guard] + [admin guide as house style]. The guide read never throws

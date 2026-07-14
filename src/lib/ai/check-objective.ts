@@ -1,6 +1,7 @@
 import 'server-only';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getLocale } from 'next-intl/server';
+import { getSmarttClient } from '@/lib/anthropic';
 import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
 
 /**
@@ -13,8 +14,10 @@ import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
  * `POST /api/check-objective` route handler) only ever see the typed result or a
  * thrown `ObjectiveCheckError`.
  *
- * Backend-only: this runs server-side and reads `ANTHROPIC_API_KEY` from the
- * environment. The system prompt is COMPOSED (mirroring generate-resource):
+ * Backend-only: this runs server-side and uses the SMARTT-only Anthropic client
+ * ({@link getSmarttClient}, keyed by `ANTHROPIC_API_KEY_SMARTT`) so its cost is
+ * tracked separately from resource generation. The system prompt is COMPOSED
+ * (mirroring generate-resource):
  *   [hardcoded role + org framing] → [admin-uploaded guide] → [hardcoded FLOOR]
  * The active guide is read via {@link getActiveSmarttGuide} through the
  * security-definer RPC on the RLS-honouring server client — never the
@@ -338,12 +341,18 @@ export async function openObjectiveCheckStream(
     throw new ObjectiveCheckError('An objective string is required.', 400);
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new ObjectiveCheckError('ANTHROPIC_API_KEY is not configured.', 503);
+  let client: Anthropic;
+  try {
+    // SMARTT objective checking has its OWN Anthropic key (ANTHROPIC_API_KEY_SMARTT).
+    client = getSmarttClient();
+  } catch (err) {
+    // Surface a missing/misconfigured key as a 503 so the route maps it the same
+    // way it always has — fail loudly, never silently fall back.
+    throw new ObjectiveCheckError(
+      err instanceof Error ? err.message : 'ANTHROPIC_API_KEY_SMARTT is not configured.',
+      503,
+    );
   }
-
-  const client = new Anthropic({ apiKey });
 
   // Compose the system prompt from the active SMARTT guide (admin-uploaded
   // steering, or the hardcoded default when none exists). The FLOOR + schema keep

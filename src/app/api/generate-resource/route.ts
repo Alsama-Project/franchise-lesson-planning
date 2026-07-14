@@ -45,7 +45,8 @@ import {
  * When `current_content` + `refinement` are both present the route refines the
  * provided content instead of generating fresh, and returns the full updated resource.
  *
- * Requires `ANTHROPIC_API_KEY` in the environment (locally and on Vercel).
+ * Requires `ANTHROPIC_API_KEY_RESOURCES` in the environment (locally and on
+ * Vercel); this is the resources-only Anthropic key, separate from SMARTT checking.
  */
 
 /** Shape we accept on the wire (validated before use). */

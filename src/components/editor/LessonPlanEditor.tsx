@@ -522,6 +522,9 @@ export function LessonPlanEditor({
       year: classContext.scope === 'class' ? classContext.year : plan.year,
       theme: curriculum?.theme ?? '',
       dailyOutcome: curriculum?.dailyLO ?? '',
+      // The worksheet objective strip renders the live SMARTT objective remainder
+      // (Step 1's pink box), not the curriculum daily outcome.
+      smarttObjective: remainder.trim(),
       centreName: classContext.schoolName,
       lessonCode: curriculum?.lessonCode ?? plan.curriculum_lesson_id,
       // The worksheet's exit-ticket context now comes from the Link-it model: the
@@ -536,7 +539,7 @@ export function LessonPlanEditor({
       lessonPlanId: plan.id,
       subjectId: classContext.subjectId,
     }),
-    [classContext, curriculum, linkIt, techniqueLabels, plan.id, plan.curriculum_lesson_id, plan.year],
+    [classContext, curriculum, linkIt, techniqueLabels, remainder, plan.id, plan.curriculum_lesson_id, plan.year],
   );
 
   const errorBox = submitError ? (

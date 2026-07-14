@@ -78,3 +78,47 @@ export function composeObjective(remainder: string): string {
 export function hasObjectiveContent(full: string | null | undefined): boolean {
   return stripStem(full).length > 0;
 }
+
+/**
+ * The exemplar learner name baked into {@link OBJECTIVE_STEM}
+ * ("…, Aya will be able to"). Derived from the stem rather than repeated as a
+ * second hardcoded literal, so it tracks that single source of truth.
+ */
+export const OBJECTIVE_LEARNER =
+  /,\s*(\S+)\s+will be able to/i.exec(OBJECTIVE_STEM)?.[1]?.trim() ?? '';
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Rewrite an objective REMAINDER (see {@link stripStem}) from the third-person
+ * exemplar voice into the first-person voice a student reads on their worksheet:
+ *
+ *   "write three sentences … to describe what her friend looks like, so she can
+ *    tell her mum …"
+ *     → "write three sentences … to describe what my friend looks like, so I can
+ *        tell my mum …"
+ *
+ * The enforced stem is dropped separately — the worksheet supplies its own
+ * first-person prefix ("…I will be able to") — so this only fixes the
+ * pronouns/possessives left in the body. Deliberately minimal and
+ * word-boundary anchored: objectives are authored about a single female
+ * exemplar ({@link OBJECTIVE_LEARNER}), so `she → I` and `her → my` (possessive
+ * is the dominant use of "her" in an objective body). It is a no-op on text that
+ * contains none of these tokens (e.g. an Arabic-subject objective).
+ */
+export function objectiveToFirstPerson(remainder: string): string {
+  let out = remainder;
+  if (OBJECTIVE_LEARNER) {
+    const name = escapeRegExp(OBJECTIVE_LEARNER);
+    out = out
+      .replace(new RegExp(`\\b${name}['’]s\\b`, 'gi'), 'my')
+      .replace(new RegExp(`\\b${name}\\b`, 'gi'), 'I');
+  }
+  return out
+    .replace(/\bherself\b/gi, 'myself')
+    .replace(/\bhers\b/gi, 'mine')
+    .replace(/\bshe\b/gi, 'I')
+    .replace(/\bher\b/gi, 'my');
+}

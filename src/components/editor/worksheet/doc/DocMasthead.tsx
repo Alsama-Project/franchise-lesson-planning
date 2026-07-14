@@ -9,6 +9,7 @@
 
 import type { WorksheetContext } from '../context';
 import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
+import { objectiveToFirstPerson } from '@/lib/editor/objective';
 import { BRAND } from './theme';
 
 function titleLine(ctx: WorksheetContext): string {
@@ -29,7 +30,8 @@ function BlankLine({ width }: { width: number }) {
 export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
   const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
     worksheetArtifactText(ctx.contentLanguage, key, vars);
-  const dailyOutcome = ctx.dailyOutcome.trim() || t('objectiveFallback');
+  const objective = ctx.smarttObjective.trim();
+  const objectiveText = objective ? objectiveToFirstPerson(objective) : t('objectiveFallback');
   return (
     <div className="ws-doc-masthead" dir="auto" contentEditable={false}>
       {/* Header band */}
@@ -84,8 +86,8 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
           </svg>
         </span>
         <span style={{ fontSize: 14, lineHeight: 1.45, color: '#4A4035' }}>
-          <b style={{ color: BRAND.ink }}>{t('objectivePrefix')}</b> {dailyOutcome}
-          {dailyOutcome.endsWith('.') ? '' : '.'}
+          <b style={{ color: BRAND.ink }}>{t('objectivePrefix')}</b> {objectiveText}
+          {objectiveText.endsWith('.') ? '' : '.'}
         </span>
       </div>
     </div>

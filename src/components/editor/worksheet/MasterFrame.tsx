@@ -14,6 +14,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { WorksheetContext } from './context';
 import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
+import { objectiveToFirstPerson } from '@/lib/editor/objective';
 
 // Auto-fit bounds for the header title. Short titles render at the max; long ones
 // shrink to fit one line, dropping to a balanced two-line wrap only at the floor.
@@ -138,7 +139,8 @@ export function MasterFrame({
 }) {
   const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
     worksheetArtifactText(ctx.contentLanguage, key, vars);
-  const dailyOutcome = ctx.dailyOutcome.trim() || t('objectiveFallback');
+  const objective = ctx.smarttObjective.trim();
+  const objectiveText = objective ? objectiveToFirstPerson(objective) : t('objectiveFallback');
   const lessonText = ctx.lessonCode ? t('lessonLabel', { code: ctx.lessonCode }) : t('lessonLabel', { code: '' }).trim();
 
   return (
@@ -251,8 +253,8 @@ export function MasterFrame({
           </svg>
         </span>
         <span style={{ fontSize: 14.5, lineHeight: 1.45, color: '#4A4035' }}>
-          <b style={{ color: '#2A2422' }}>{t('objectivePrefix')}</b> {dailyOutcome}
-          {dailyOutcome.endsWith('.') ? '' : '.'}
+          <b style={{ color: '#2A2422' }}>{t('objectivePrefix')}</b> {objectiveText}
+          {objectiveText.endsWith('.') ? '' : '.'}
         </span>
       </div>
 

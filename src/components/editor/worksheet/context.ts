@@ -24,6 +24,13 @@ export interface WorksheetContext {
   theme: string;
   /** Daily learning outcome from the curriculum lesson (stem-cleaned). */
   dailyOutcome: string;
+  /**
+   * The teacher-authored SMARTT objective REMAINDER (the stored
+   * `lesson_plans.smartt_objective` with its enforced stem peeled off by
+   * `stripStem`). This — NOT `dailyOutcome` — is what the worksheet's objective
+   * strip renders, re-voiced to first person at the render boundary.
+   */
+  smarttObjective: string;
   /** Centre name, from the school. */
   centreName: string;
   /** Curriculum lesson code, shown on the footer. */

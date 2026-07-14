@@ -14,6 +14,7 @@ import { AnnotatedSection } from '@/components/review/annotation/AnnotatedSectio
 import { blockMinutes, inSessionMinutes, IN_SESSION_TARGET_MINUTES, ROUTINE_BLOCK_TYPES } from '@/lib/blocks';
 import { routinesMinutes } from '@/lib/editor/plan-blocks';
 import { normalizeLinkIt, resolveTechniques, techniqueLabelMap } from '@/lib/editor/link-it';
+import { stripStem } from '@/lib/editor/objective';
 import type { Block, TeachingPhase } from '@/types/lesson';
 import type { ResourceWithTags } from '@/types/resource';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
@@ -106,6 +107,7 @@ export function ReadOnlyPlan({
     year: classContext.scope === 'class' ? classContext.year : plan.year,
     theme: curriculum?.theme ?? '',
     dailyOutcome: curriculum?.dailyLO ?? '',
+    smarttObjective: stripStem(plan.smartt_objective),
     centreName: classContext.schoolName,
     lessonCode: curriculum?.lessonCode ?? plan.curriculum_lesson_id,
     exitTicket:

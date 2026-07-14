@@ -111,6 +111,15 @@ export function ObjectiveStep({
   const t = useTranslations('wizard.objective');
   const checkDisabled = checking || locked || remainder.trim().length === 0;
 
+  // Feedback bullets, minus any whose SMARTT letter already ticks strong. A pill
+  // shows ✓ exactly when `checkResult[letter].status === 'strong'` (see SmarttPill),
+  // so a suggestion tagged with that same letter would contradict its own tick —
+  // drop it. This is the exact negation of the pill's tick predicate. A suggestion
+  // with an unmapped/undefined dimension has no `strong` letter to match, so
+  // `checkResult[undefined]?.status !== 'strong'` is true and it is KEPT.
+  const visibleSuggestions =
+    checkResult?.suggestions.filter((s) => checkResult[s.dimension]?.status !== 'strong') ?? [];
+
   // The remainder is an inline, flowing editable region (so the teacher's text
   // continues on the same line as the fixed stem and wraps as one paragraph). It is
   // UNCONTROLLED after an initial seed: the DOM node owns the text and reports it up
@@ -281,9 +290,9 @@ export function ObjectiveStep({
 
             {feedbackOpen ? (
               <div dir="auto" className="mt-3 rounded-[12px] border border-dashed border-[#CFE6E0] bg-surface px-4 py-[15px]">
-                {checkResult.suggestions.length > 0 ? (
+                {visibleSuggestions.length > 0 ? (
                   <ul dir="auto" className="flex flex-col gap-[7px] text-[13px] leading-[1.55] text-neutral-900">
-                    {checkResult.suggestions.map((s, i) => (
+                    {visibleSuggestions.map((s, i) => (
                       <li key={i}>
                         <span className="font-bold text-ink">{smarttDimensionLabel(s.dimension)}</span>
                         {' — '}
@@ -291,7 +300,11 @@ export function ObjectiveStep({
                       </li>
                     ))}
                   </ul>
-                ) : null}
+                ) : (
+                  <p dir="auto" className="text-[13px] leading-[1.55] text-[#2E7D5B]">
+                    {t('allStrong')}
+                  </p>
+                )}
                 <div className="mt-[11px] rounded-[10px] border border-border bg-surface-subtle px-3 py-2.5">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600">
                     {t('suggestedRewrite')}

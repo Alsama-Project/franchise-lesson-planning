@@ -42,6 +42,7 @@
       "askTitle": "Ask Aya for help with your objective",
       "feedback": "Feedback",
       "feedbackHeading": "Quiet check — feedback, not a chat",
+      "allStrong": "All SMARTT criteria look strong — no changes needed.",
       "suggestedRewrite": "Suggested rewrite",
       "checkFailed": "The objective check failed."
     },

@@ -33,9 +33,9 @@
     },
     "objective": {
       "heading": "Write the SMARTT objective",
-      "stem": "By the end of this session, Aya will be able to",
+      "stem": "By the end of this session, I will be able to",
       "fieldAria": "SMARTT objective",
-      "placeholder": "read five short sentences about a family and identify the family words.",
+      "placeholder": "greet my teacher with ‘hello’ and ‘goodbye’, so I can begin to recognise the letters in my name.",
       "check": "Check my objective",
       "checking": "Checking…",
       "askAriaLabel": "Ask Aya about your objective",
@@ -48,7 +48,7 @@
     },
     "banner": {
       "label": "SMARTT objective",
-      "stem": "By the end of this session, Aya will be able to",
+      "stem": "By the end of this session, I will be able to",
       "notWritten": "not written yet"
     },
     "curriculum": {

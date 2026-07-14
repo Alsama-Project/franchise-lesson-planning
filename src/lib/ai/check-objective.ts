@@ -3,6 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { getLocale } from 'next-intl/server';
 import { getSmarttClient } from '@/lib/anthropic';
 import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
+import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 
 /**
  * AI objective-check service.
@@ -31,10 +32,12 @@ import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
 const MODEL = 'claude-sonnet-4-6';
 
 /**
- * The fixed opening every Alsama objective must keep. The suggested rewrite is
- * required to begin with this exact stem.
+ * The fixed opening every Alsama objective must keep — re-exported from the single
+ * source of truth (`@/lib/editor/objective`) so the checker, the Stage 1 editor,
+ * and the worksheet never drift. The suggested rewrite is required to begin with
+ * this exact stem.
  */
-export const OBJECTIVE_STEM = 'By the end of this session, Aya will be able to…';
+export { OBJECTIVE_STEM };
 
 /** Optional surrounding lesson context the teacher can supply to sharpen feedback. */
 export interface ObjectiveCheckContext {

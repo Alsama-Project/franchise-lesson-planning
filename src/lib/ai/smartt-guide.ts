@@ -40,7 +40,7 @@ export const DEFAULT_SMARTT_GUIDE = `SMARTT stands for:
 - M — Measurable: success is observable or assessable within the lesson.
 - A — Achievable: realistic for a 50-minute session and the learners.
 - R — Relevant: connected to the day's outcome and the wider curriculum.
-- T — Time-bound: scoped to this session (the objective opens with "By the end of this session, Aya will be able to…").
+- T — Time-bound: scoped to this session (the objective opens with "By the end of this session, I will be able to…").
 - T — Tangible: this is Alsama's distinctive final letter. It means the objective is RELATABLE TO STUDENTS' REAL LIVES — it connects the learning to something concrete and meaningful in the students' own world, not just an abstract academic skill.
 
 For each of the six letters, decide a status of "strong" or "needs work" and write a single, specific one-line note (no more than one sentence). Then give one or two overall suggestions to tighten the objective, and a suggested improved rewrite.

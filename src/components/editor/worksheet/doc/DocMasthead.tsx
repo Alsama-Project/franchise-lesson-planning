@@ -9,7 +9,6 @@
 
 import type { WorksheetContext } from '../context';
 import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
-import { objectiveToFirstPerson } from '@/lib/editor/objective';
 import { BRAND } from './theme';
 
 function titleLine(ctx: WorksheetContext): string {
@@ -30,8 +29,10 @@ function BlankLine({ width }: { width: number }) {
 export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
   const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
     worksheetArtifactText(ctx.contentLanguage, key, vars);
-  const objective = ctx.smarttObjective.trim();
-  const objectiveText = objective ? objectiveToFirstPerson(objective) : t('objectiveFallback');
+  // Render the teacher's stored objective remainder verbatim after the fixed
+  // first-person stem — no point-of-view rewriting. Empty → placeholder fallback,
+  // never the daily outcome.
+  const objectiveText = ctx.smarttObjective.trim() || t('objectiveFallback');
   return (
     <div className="ws-doc-masthead" dir="auto" contentEditable={false}>
       {/* Header band */}

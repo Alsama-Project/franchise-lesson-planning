@@ -70,7 +70,11 @@ export function stripStem(full: string | null | undefined): string {
  * "objective is empty" check is simply `composeObjective(r) === ''`.
  */
 export function composeObjective(remainder: string): string {
-  const r = remainder.trim();
+  // Strip any stem the remainder already carries before re-prepending, so a paste
+  // of Aya's full stem-prefixed rewrite into the (emptied) field can't produce a
+  // doubled stem in the composed value. `stripStem` trims and loops, so a doubled
+  // or tripled paste collapses to a single stem; empty input still yields ''.
+  const r = stripStem(remainder);
   return r ? `${OBJECTIVE_STEM} ${r}` : '';
 }
 

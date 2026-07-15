@@ -371,6 +371,12 @@ export async function openObjectiveCheckStream(
   return client.messages.stream({
     model: MODEL,
     max_tokens: 1024,
+    // Deterministic grading: sample at 0 so identical input yields an identical
+    // per-letter verdict across repeated checks. Unset defaults to 1.0, which lets
+    // a borderline letter flip strong↔needs work on a re-check — and with the
+    // advance-gate live, a bad re-roll strands the teacher on step 1. This is also
+    // what makes the guide's §6 "same verdict on an unedited re-check" achievable.
+    temperature: 0,
     // Single static system block with a cache breakpoint at its end — cloned
     // from generate-resource. The whole prefix is byte-identical across calls for
     // a given guide+locale, so it is a stable prompt-cache prefix; it self-busts

@@ -3,310 +3,244 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ConsoleClassesData, ConsoleClassRow } from '@/lib/console';
-import { archiveClass, createClass, restoreClass, updateClass } from '@/lib/actions/console';
-import {
-  ConsoleTable,
-  EmptyState,
-  ErrorText,
-  FieldLabel,
-  GhostButton,
-  Modal,
-  PrimaryButton,
-  SectionCard,
-  StatusBadge,
-  Td,
-  Th,
-} from './ui';
+import { saveClassMatrix, type ClassMatrixDiff } from '@/lib/actions/console';
+import { YEARS, cellKey } from '@/lib/matrix';
+import { SubjectYearMatrix } from '@/components/settings/SubjectYearMatrix';
+import { ErrorText, GhostButton, Modal, PrimaryButton, SectionCard } from './ui';
 
-const YEARS = [0, 1, 2, 3, 4, 5, 6];
+/** A `${schoolId}|${subjectId}|${year}` slot — one matrix cell across all centres. */
+const slotKey = (schoolId: string, subjectId: string, year: number) =>
+  `${schoolId}|${subjectId}|${year}`;
 
-const selectClass =
-  'w-full rounded-[9px] border border-[#DDD4C8] bg-white px-[11px] py-[8px] text-[13.5px] text-[#2A2422] outline-none focus:border-[#1F7A6C]';
-
-interface FormState {
-  id: string | null; // null = creating
-  schoolId: string;
-  subjectId: string;
-  year: number | '';
+/** One untick that would archive a class still carrying plans or teachers. */
+interface Affected {
+  centreName: string;
+  subjectName: string;
+  year: number;
+  planCount: number;
+  teacherCount: number;
 }
 
-const EMPTY_FORM: FormState = { id: null, schoolId: '', subjectId: '', year: '' };
-
+/**
+ * The admin Classes tab: one subject × year checkbox matrix per centre. A tick
+ * means "a class exists for (centre, subject, year)"; the whole surface is a
+ * batched diff of ticks, saved in one pass (mirroring Profile's set_my_classes).
+ * Ticking an empty cell creates a class (or restores an archived one); clearing a
+ * tick archives it. Archiving a class that still has plans or teachers attached is
+ * confirm-gated.
+ */
 export function ClassesTab({ data }: { data: ConsoleClassesData }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-
-  const [fCentre, setFCentre] = useState('');
-  const [fSubject, setFSubject] = useState('');
-  const [fYear, setFYear] = useState('');
-
-  const [form, setForm] = useState<FormState | null>(null);
-  const [archiveTarget, setArchiveTarget] = useState<ConsoleClassRow | null>(null);
+  const [confirm, setConfirm] = useState<{ diff: ClassMatrixDiff; affected: Affected[] } | null>(
+    null,
+  );
 
   const centreName = (id: string) => data.centres.find((c) => c.id === id)?.name ?? '';
   const subjectName = (id: string) => data.subjects.find((s) => s.id === id)?.name ?? '';
 
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>, onDone?: () => void) {
+  // Active/archived class lookups + per-class usage, all keyed by slot.
+  const { activeBySlot, archivedBySlot, baseline } = useMemo(() => {
+    const active = new Map<string, ConsoleClassRow>();
+    const archived = new Map<string, ConsoleClassRow>();
+    for (const c of data.classes) {
+      const k = slotKey(c.schoolId, c.subjectId, c.year);
+      if (c.archivedAt) {
+        if (!archived.has(k)) archived.set(k, c);
+      } else {
+        active.set(k, c);
+      }
+    }
+    return { activeBySlot: active, archivedBySlot: archived, baseline: new Set(active.keys()) };
+  }, [data.classes]);
+
+  // Ticked slots — seeded from the active baseline, edited locally until Save.
+  const [ticked, setTicked] = useState<Set<string>>(() => new Set(baseline));
+
+  function toggleCentreCell(schoolId: string, subjectId: string, year: number) {
+    const k = slotKey(schoolId, subjectId, year);
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
+
+  // Dirty when ticked diverges from baseline.
+  const dirty =
+    ticked.size !== baseline.size || [...ticked].some((k) => !baseline.has(k));
+
+  // Per-centre checked cell sets for each matrix.
+  const checkedByCentre = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const centre of data.centres) map.set(centre.id, new Set());
+    for (const k of ticked) {
+      const [schoolId, subjectId, year] = k.split('|');
+      map.get(schoolId)?.add(cellKey(subjectId, Number(year)));
+    }
+    return map;
+  }, [ticked, data.centres]);
+
+  const totalSelected = ticked.size;
+
+  // Resolve the ticked/baseline delta into create / restore / archive ops, and
+  // flag any archive that would touch a class with plans or teachers.
+  function buildDiff(): { diff: ClassMatrixDiff; affected: Affected[] } {
+    const create: ClassMatrixDiff['create'] = [];
+    const restore: string[] = [];
+    const archive: string[] = [];
+    const affected: Affected[] = [];
+
+    for (const k of ticked) {
+      if (baseline.has(k)) continue; // unchanged tick.
+      const archivedClass = archivedBySlot.get(k);
+      if (archivedClass) {
+        restore.push(archivedClass.id);
+      } else {
+        const [schoolId, subjectId, year] = k.split('|');
+        create.push({ schoolId, subjectId, year: Number(year) });
+      }
+    }
+
+    for (const k of baseline) {
+      if (ticked.has(k)) continue; // still ticked.
+      const activeClass = activeBySlot.get(k);
+      if (!activeClass) continue;
+      archive.push(activeClass.id);
+      if (activeClass.activePlanCount > 0 || activeClass.teacherCount > 0) {
+        affected.push({
+          centreName: centreName(activeClass.schoolId),
+          subjectName: subjectName(activeClass.subjectId),
+          year: activeClass.year,
+          planCount: activeClass.activePlanCount,
+          teacherCount: activeClass.teacherCount,
+        });
+      }
+    }
+
+    return { diff: { create, restore, archive }, affected };
+  }
+
+  function runSave(diff: ClassMatrixDiff) {
     setError(null);
     startTransition(async () => {
-      const res = await fn();
+      const res = await saveClassMatrix(diff);
       if (!res.ok) {
         setError(res.error ?? 'Something went wrong.');
         return;
       }
-      onDone?.();
+      setConfirm(null);
       router.refresh();
     });
   }
 
-  const filtered = useMemo(() => {
-    return data.classes.filter(
-      (c) =>
-        (!fCentre || c.schoolId === fCentre) &&
-        (!fSubject || c.subjectId === fSubject) &&
-        (!fYear || c.year === Number(fYear)),
-    );
-  }, [data.classes, fCentre, fSubject, fYear]);
+  function onSave() {
+    const { diff, affected } = buildDiff();
+    if (affected.length > 0) {
+      setConfirm({ diff, affected });
+      return;
+    }
+    runSave(diff);
+  }
 
-  const active = filtered.filter((c) => !c.archivedAt);
-  const archived = filtered.filter((c) => c.archivedAt);
-  const hasFilter = !!(fCentre || fSubject || fYear);
-
-  // Live tuple-uniqueness for the form.
-  const tupleClash = useMemo(() => {
-    if (!form || !form.schoolId || !form.subjectId || form.year === '') return null;
-    const hit = data.classes.find(
-      (c) =>
-        c.id !== form.id &&
-        c.schoolId === form.schoolId &&
-        c.subjectId === form.subjectId &&
-        c.year === Number(form.year),
-    );
-    if (!hit) return null;
-    return `${centreName(form.schoolId)} · ${subjectName(form.subjectId)} · Year ${form.year} already exists.`;
-  }, [form, data.classes]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const formValid =
-    !!form && !!form.schoolId && !!form.subjectId && form.year !== '' && !tupleClash;
-
-  function submitForm() {
-    if (!form) return;
-    const payload = {
-      schoolId: form.schoolId,
-      subjectId: form.subjectId,
-      year: Number(form.year),
-    };
-    run(
-      () => (form.id ? updateClass({ id: form.id, ...payload }) : createClass(payload)),
-      () => setForm(null),
-    );
+  function onCancel() {
+    setTicked(new Set(baseline));
+    setError(null);
+    setConfirm(null);
   }
 
   return (
-    <div className="space-y-[18px]">
-      <SectionCard
-        title="Classes"
-        action={<PrimaryButton onClick={() => setForm({ ...EMPTY_FORM })}>＋ New class</PrimaryButton>}
-      >
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#F0EAE1] px-[18px] py-[13px]">
-          <select className={`${selectClass} max-w-[200px]`} value={fCentre} onChange={(e) => setFCentre(e.target.value)} aria-label="Filter by centre">
-            <option value="">All centres</option>
-            {data.centres.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select className={`${selectClass} max-w-[180px]`} value={fSubject} onChange={(e) => setFSubject(e.target.value)} aria-label="Filter by subject">
-            <option value="">All subjects</option>
-            {data.subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          <select className={`${selectClass} max-w-[130px]`} value={fYear} onChange={(e) => setFYear(e.target.value)} aria-label="Filter by year">
-            <option value="">All years</option>
-            {data.years.map((y) => (
-              <option key={y} value={y}>Year {y}</option>
-            ))}
-          </select>
-          {hasFilter ? (
-            <GhostButton
-              tone="teal"
-              onClick={() => {
-                setFCentre('');
-                setFSubject('');
-                setFYear('');
-              }}
-            >
-              Clear
-            </GhostButton>
-          ) : null}
+    <>
+      <SectionCard title="Classes">
+        <div className="space-y-[26px] px-[18px] py-[20px]">
+          {data.centres.map((centre) => {
+            const checked = checkedByCentre.get(centre.id) ?? new Set<string>();
+            const n = checked.size;
+            return (
+              <section key={centre.id}>
+                <div className="mb-[10px] flex items-baseline gap-[12px]">
+                  <h3 className="text-[16px] font-semibold text-[#2A2422]" dir="auto">
+                    {centre.name}
+                  </h3>
+                  <span className="text-[13px] text-[#8A827A]">
+                    {n} {n === 1 ? 'class' : 'classes'}
+                  </span>
+                </div>
+                <SubjectYearMatrix
+                  subjects={data.subjects}
+                  years={YEARS}
+                  checked={checked}
+                  onToggle={(subjectId, year) => toggleCentreCell(centre.id, subjectId, year)}
+                />
+              </section>
+            );
+          })}
         </div>
 
-        {filtered.length === 0 ? (
-          <EmptyState>
-            {hasFilter ? 'No classes match these filters.' : 'No classes yet. Create the first one.'}
-          </EmptyState>
-        ) : (
-          <ConsoleTable
-            head={
-              <tr>
-                <Th>Centre</Th>
-                <Th>Subject</Th>
-                <Th>Year</Th>
-                <Th className="text-right">Members</Th>
-                <Th className="text-right">Actions</Th>
-              </tr>
-            }
-          >
-            {[...active, ...archived].map((c) => {
-              const isArchived = !!c.archivedAt;
-              return (
-                <tr key={c.id} className={isArchived ? 'opacity-55' : undefined}>
-                  <Td className="font-semibold text-[#2A2422]">
-                    {c.schoolName ?? '—'}
-                    {isArchived ? (
-                      <span className="ml-2 align-middle">
-                        <StatusBadge archived />
-                      </span>
-                    ) : null}
-                  </Td>
-                  <Td className="text-[#7A7068]">{c.subjectName ?? '—'}</Td>
-                  <Td className="text-[#7A7068]">Year {c.year}</Td>
-                  <Td className="text-right tabular-nums text-[#7A7068]">{c.memberCount}</Td>
-                  <Td className="text-right">
-                    {isArchived ? (
-                      <GhostButton
-                        tone="teal"
-                        disabled={pending}
-                        onClick={() => run(() => restoreClass({ id: c.id }))}
-                      >
-                        Restore
-                      </GhostButton>
-                    ) : (
-                      <div className="flex items-center justify-end gap-3">
-                        <GhostButton
-                          tone="teal"
-                          onClick={() =>
-                            setForm({
-                              id: c.id,
-                              schoolId: c.schoolId,
-                              subjectId: c.subjectId,
-                              year: c.year,
-                            })
-                          }
-                        >
-                          Edit
-                        </GhostButton>
-                        <GhostButton tone="amber" onClick={() => setArchiveTarget(c)}>
-                          Archive
-                        </GhostButton>
-                      </div>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </ConsoleTable>
-        )}
-        <div className="px-[18px]">
+        <div className="flex items-center gap-[14px] border-t border-[#F0EAE1] px-[18px] py-[14px]">
+          <PrimaryButton onClick={onSave} disabled={pending || !dirty}>
+            {pending ? 'Saving…' : 'Save changes'}
+          </PrimaryButton>
+          <GhostButton onClick={onCancel} disabled={pending || !dirty}>
+            Cancel
+          </GhostButton>
+          <span className="ms-auto text-[13px] text-[#8A827A]">
+            {totalSelected} {totalSelected === 1 ? 'class' : 'classes'}
+          </span>
+        </div>
+        <div className="px-[18px] pb-[4px]">
           <ErrorText>{error}</ErrorText>
         </div>
       </SectionCard>
 
-      {/* Create / Edit modal */}
-      <Modal open={!!form} onClose={() => setForm(null)} title={form?.id ? 'Edit class' : 'New class'}>
-        {form ? (
-          <div className="space-y-[14px]">
-            <div>
-              <FieldLabel>Centre</FieldLabel>
-              <select
-                className={selectClass}
-                value={form.schoolId}
-                onChange={(e) => setForm({ ...form, schoolId: e.target.value })}
-              >
-                <option value="">Choose a centre…</option>
-                {data.centres.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Subject</FieldLabel>
-              <select
-                className={selectClass}
-                value={form.subjectId}
-                onChange={(e) => setForm({ ...form, subjectId: e.target.value })}
-              >
-                <option value="">Choose a subject…</option>
-                {data.subjects.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="w-[130px]">
-              <FieldLabel>Year</FieldLabel>
-              <select
-                className={selectClass}
-                value={form.year}
-                onChange={(e) => setForm({ ...form, year: e.target.value === '' ? '' : Number(e.target.value) })}
-              >
-                <option value="">Year…</option>
-                {YEARS.map((y) => (
-                  <option key={y} value={y}>Year {y}</option>
-                ))}
-              </select>
-            </div>
-            {tupleClash ? (
-              <p className="text-[12.5px] font-medium text-[#B23A2E]">{tupleClash}</p>
-            ) : null}
-            <div className="mt-[6px] flex items-center justify-end gap-3">
-              <GhostButton onClick={() => setForm(null)}>Cancel</GhostButton>
-              <PrimaryButton disabled={pending || !formValid} onClick={submitForm}>
-                {form.id ? 'Save class' : 'Create class'}
-              </PrimaryButton>
-            </div>
-            <ErrorText>{error}</ErrorText>
-          </div>
-        ) : null}
-      </Modal>
-
-      {/* Soft-archive warning */}
+      {/* Destructive-untick confirm — archiving classes that still have plans/teachers. */}
       <Modal
-        open={!!archiveTarget}
-        onClose={() => setArchiveTarget(null)}
-        title={`Archive ${archiveTarget ? `Year ${archiveTarget.year}` : 'class'}?`}
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        title={confirm && confirm.affected.length === 1 ? 'Archive this class?' : 'Archive these classes?'}
       >
-        {archiveTarget ? (
+        {confirm ? (
           <>
-            {archiveTarget.activePlanCount > 0 ? (
-              <p className="text-[13.5px] leading-relaxed text-[#7A7068]">
-                {archiveTarget.activePlanCount}{' '}
-                {archiveTarget.activePlanCount === 1 ? 'active plan references' : 'active plans reference'}{' '}
-                this class. Archiving keeps the plans but removes the class from planning.
-              </p>
-            ) : (
-              <p className="text-[13.5px] leading-relaxed text-[#7A7068]">
-                This class will be removed from planning. You can restore it at any time.
-              </p>
-            )}
+            <p className="text-[13.5px] leading-relaxed text-[#7A7068]">
+              Clearing {confirm.affected.length === 1 ? 'this tick archives a class' : 'these ticks archives classes'} that
+              still {confirm.affected.length === 1 ? 'has' : 'have'} work attached. Archiving is
+              reversible and leaves lesson plans intact — re-ticking restores the class.
+            </p>
+            <ul className="mt-[14px] space-y-[8px]">
+              {confirm.affected.map((a, i) => (
+                <li
+                  key={i}
+                  className="rounded-[9px] border border-[#F2D6CE] bg-[#FBECE8] px-[12px] py-[9px] text-[13px] text-[#2A2422]"
+                  dir="auto"
+                >
+                  <span className="font-semibold">
+                    {a.centreName} · {a.subjectName} · Year {a.year}
+                  </span>
+                  <span className="text-[#8A827A]">
+                    {' — '}
+                    {a.planCount} {a.planCount === 1 ? 'plan' : 'plans'}, {a.teacherCount}{' '}
+                    {a.teacherCount === 1 ? 'teacher' : 'teachers'}
+                  </span>
+                </li>
+              ))}
+            </ul>
             <div className="mt-[18px] flex items-center justify-end gap-3">
-              <GhostButton onClick={() => setArchiveTarget(null)}>Cancel</GhostButton>
+              <GhostButton onClick={() => setConfirm(null)}>Cancel</GhostButton>
               <button
                 type="button"
                 disabled={pending}
-                onClick={() =>
-                  run(() => archiveClass({ id: archiveTarget!.id }), () => setArchiveTarget(null))
-                }
-                className="rounded-[9px] px-[15px] py-[8px] text-[13px] font-semibold text-white disabled:opacity-50"
-                style={{ background: '#B0651E' }}
+                onClick={() => runSave(confirm.diff)}
+                className="rounded-[9px] bg-danger px-[15px] py-[8px] text-[13px] font-semibold text-white transition-colors hover:brightness-105 disabled:opacity-50"
               >
-                Archive anyway
+                {pending ? 'Saving…' : 'Archive and save'}
               </button>
             </div>
+            <ErrorText>{error}</ErrorText>
           </>
         ) : null}
       </Modal>
-    </div>
+    </>
   );
 }

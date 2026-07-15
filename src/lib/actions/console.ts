@@ -11,6 +11,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/auth';
 import type { MembershipRole } from '@/lib/auth';
+import { MIN_YEAR, MAX_YEAR } from '@/lib/matrix';
 import { isValidISODate, mondayOf } from '@/lib/week';
 import type { TermRow } from '@/lib/console';
 
@@ -249,7 +250,9 @@ interface ClassInput {
 function validateClassInput(input: ClassInput): string | null {
   if (!input.schoolId) return 'Choose a centre.';
   if (!input.subjectId) return 'Choose a subject.';
-  if (!Number.isInteger(input.year) || input.year < 0 || input.year > 6) return 'Choose a year.';
+  if (!Number.isInteger(input.year) || input.year < MIN_YEAR || input.year > MAX_YEAR) {
+    return 'Choose a year.';
+  }
   return null;
 }
 
@@ -320,6 +323,69 @@ export async function restoreClass(input: { id: string }): Promise<ConsoleResult
   const supabase = await createClient();
   const { error } = await supabase.from('classes').update({ archived_at: null }).eq('id', input.id);
   if (error) return fail(error.message);
+  revalidateConsole();
+  return ok();
+}
+
+/**
+ * A batched diff of class ticks from the Classes-tab matrix, applied in one pass
+ * with a single revalidate — the same declarative shape as Profile's
+ * `set_my_classes` (the client computes the diff; the server applies it).
+ *
+ * The client resolves each changed cell to exactly one of three ops:
+ *   • `create`  — a ticked cell with no class → insert (school, subject, year).
+ *   • `restore` — a ticked cell whose only class is ARCHIVED → un-archive it, NOT
+ *                 create. The active-rows-only unique index means a create would
+ *                 duplicate the tuple and orphan the archived row's plans/teachers.
+ *   • `archive` — an unticked cell whose active class → soft-archive (reversible,
+ *                 non-cascading; plans and assignments are left intact).
+ * The three op sets touch disjoint (school, subject, year) slots, so their order
+ * is immaterial to the active-tuple unique index. Every write is admin-gated here
+ * and by RLS (classes_admin_insert / classes_admin_update); no service-role key.
+ */
+export interface ClassMatrixDiff {
+  create: Array<{ schoolId: string; subjectId: string; year: number }>;
+  restore: string[];
+  archive: string[];
+}
+
+export async function saveClassMatrix(input: ClassMatrixDiff): Promise<ConsoleResult> {
+  const guard = await requireAdmin();
+  if (isFail(guard)) return guard;
+
+  const supabase = await createClient();
+
+  // Archive first, then restore, then create — disjoint slots, so ordering is a
+  // belt-and-braces against the active-tuple unique index rather than a necessity.
+  if (input.archive.length > 0) {
+    const { error } = await supabase
+      .from('classes')
+      .update({ archived_at: new Date().toISOString() })
+      .in('id', input.archive);
+    if (error) return fail(error.message);
+  }
+
+  if (input.restore.length > 0) {
+    const { error } = await supabase
+      .from('classes')
+      .update({ archived_at: null })
+      .in('id', input.restore);
+    if (error) return fail(error.message);
+  }
+
+  for (const c of input.create) {
+    const validationError = validateClassInput(c);
+    if (validationError) return fail(validationError);
+    const taken = await classTupleTaken(supabase, c);
+    if (taken) continue; // an active class already fills this slot — nothing to do.
+    const { error } = await supabase.from('classes').insert({
+      school_id: c.schoolId,
+      subject_id: c.subjectId,
+      year: c.year,
+    });
+    if (error) return fail(error.message);
+  }
+
   revalidateConsole();
   return ok();
 }

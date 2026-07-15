@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import type {
@@ -53,7 +54,24 @@ export interface SettingsConsoleProps {
 export function SettingsConsole(props: SettingsConsoleProps) {
   const { access } = props;
   const t = useTranslations('settings');
-  const [tab, setTab] = useState<ConsoleTab>(access.defaultTab);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // The active tab lives in the URL (`?tab=`) so it survives re-render, refresh
+  // and back/forward. An absent, unknown, or not-permitted value falls back to the
+  // role-derived default — we never render a tab the user's access excludes.
+  const paramTab = searchParams.get('tab');
+  const tab: ConsoleTab =
+    paramTab && (access.tabs as string[]).includes(paramTab)
+      ? (paramTab as ConsoleTab)
+      : access.defaultTab;
+
+  function setTab(tabId: ConsoleTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tabId);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <div className="overflow-hidden rounded-[16px] border border-[#DCD2C4] bg-white">

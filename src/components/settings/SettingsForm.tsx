@@ -6,7 +6,8 @@ import { cn } from '@/lib/cn';
 import { saveSettings } from '@/lib/actions/onboarding';
 import type { Centre, ClassOption, MyClass, SubjectOption } from '@/lib/onboarding';
 import type { MembershipRole } from '@/lib/auth';
-import { ClassAssignmentGrid } from '@/components/settings/ClassAssignmentGrid';
+import { cellKey } from '@/lib/matrix';
+import { SubjectYearMatrix } from '@/components/settings/SubjectYearMatrix';
 
 interface MembershipView {
   id: string;
@@ -65,6 +66,33 @@ export function SettingsForm(props: SettingsFormProps) {
       else next.add(id);
       return next;
     });
+  }
+
+  // The active centre's classes, keyed by matrix cell. Only cells with a real
+  // class are available — a teacher can't create classes, so an empty cell is a
+  // non-interactive em-dash. Toggling a cell resolves to that cell's class id and
+  // feeds the existing per-class `ticked` set, so the save path is untouched.
+  const centreCells = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of props.classes) {
+      if (c.schoolId === activeCentreId) map.set(cellKey(c.subjectId, c.year), c.id);
+    }
+    return map;
+  }, [props.classes, activeCentreId]);
+
+  const availableCells = useMemo(() => new Set(centreCells.keys()), [centreCells]);
+
+  const checkedCells = useMemo(() => {
+    const set = new Set<string>();
+    for (const [key, classId] of centreCells) {
+      if (ticked.has(classId)) set.add(key);
+    }
+    return set;
+  }, [centreCells, ticked]);
+
+  function toggleCell(subjectId: string, year: number) {
+    const classId = centreCells.get(cellKey(subjectId, year));
+    if (classId) toggleClass(classId);
   }
 
   // Dirty when the ticked set diverges from the assigned baseline, or the name
@@ -236,12 +264,11 @@ export function SettingsForm(props: SettingsFormProps) {
         subject joins its space; clearing a subject’s last tick leaves it.
       </p>
       <div className="mb-[26px]">
-        <ClassAssignmentGrid
-          classes={props.classes}
+        <SubjectYearMatrix
           subjects={props.subjects}
-          activeCentreId={activeCentreId}
-          ticked={ticked}
-          onToggle={toggleClass}
+          checked={checkedCells}
+          onToggle={toggleCell}
+          availableCells={availableCells}
         />
       </div>
 

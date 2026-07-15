@@ -18,6 +18,7 @@ import 'server-only';
 // derivation did not.
 
 import { createClient } from '@/lib/supabase/server';
+import { YEARS } from '@/lib/matrix';
 import {
   getCurrentProfile,
   getMyMemberships,
@@ -237,10 +238,14 @@ export interface ConsoleClassRow {
   subjectName: string | null;
   year: number;
   archivedAt: string | null;
-  /** subject_membership count in this class's (centre, subject) space. */
+  /** subject_membership count in this class's (centre, subject) SPACE — shared by
+   *  every year in that (centre, subject). NOT a per-class signal; the Classes-tab
+   *  untick guard must not consume it (use `teacherCount`). Kept for parity. */
   memberCount: number;
-  /** lesson_plans referencing this class (the archive warning count). */
+  /** lesson_plans referencing THIS class (`deleted_at is null`). Per-class. */
   activePlanCount: number;
+  /** class_teachers rows assigned to THIS class. Per-class — the guard signal. */
+  teacherCount: number;
 }
 
 export interface ConsoleClassesData {
@@ -252,14 +257,21 @@ export interface ConsoleClassesData {
 
 export async function getConsoleClasses(): Promise<ConsoleClassesData> {
   const supabase = await createClient();
-  const [{ data: classes }, { data: members }, { data: plans }, { data: schools }, { data: subjects }] =
+  // Per-class counts (active plans + assigned teachers) come from the
+  // `class_usage_counts()` SECURITY DEFINER RPC (0062), aggregated in Postgres so
+  // the PostgREST 1000-row cap can never truncate them. It is the ONLY way to get
+  // an accurate teacher_count: class_teachers is SELECT-own-only under RLS, so a
+  // plain (or security_invoker) read would count only the admin's own assignment.
+  // The RPC is hard-gated on is_admin() (this data path is admin-only) and never
+  // touches a service-role key.
+  const [{ data: classes }, { data: members }, { data: usage }, { data: schools }, { data: subjects }] =
     await Promise.all([
       supabase
         .from('classes')
         .select('id, school_id, subject_id, year, archived_at, schools ( name ), subjects ( name )')
         .order('year'),
       supabase.from('subject_membership').select('school_id, subject_id'),
-      supabase.from('lesson_plans').select('class_id').is('deleted_at', null),
+      supabase.rpc('class_usage_counts'),
       supabase.from('schools').select('id, name').is('archived_at', null).order('name'),
       supabase.from('subjects').select('id, name, code').is('archived_at', null).order('name'),
     ]);
@@ -274,35 +286,41 @@ export async function getConsoleClasses(): Promise<ConsoleClassesData> {
     subjects: { name: string } | null;
   }>;
   const memberRows = (members ?? []) as Array<{ school_id: string; subject_id: string }>;
-  const planRows = (plans ?? []) as Array<{ class_id: string }>;
+  const usageRows = (usage ?? []) as Array<{
+    class_id: string;
+    active_plan_count: number;
+    teacher_count: number;
+  }>;
 
   const membersBySpace = new Map<string, number>();
   for (const m of memberRows) {
     const k = spaceKey(m.school_id, m.subject_id);
     membersBySpace.set(k, (membersBySpace.get(k) ?? 0) + 1);
   }
-  const plansByClass = new Map<string, number>();
-  for (const p of planRows) {
-    plansByClass.set(p.class_id, (plansByClass.get(p.class_id) ?? 0) + 1);
+  const usageByClass = new Map<string, { plans: number; teachers: number }>();
+  for (const u of usageRows) {
+    usageByClass.set(u.class_id, { plans: u.active_plan_count, teachers: u.teacher_count });
   }
 
-  const years = [...new Set(classRows.map((c) => c.year))].sort((a, b) => a - b);
-
   return {
-    classes: classRows.map((c) => ({
-      id: c.id,
-      schoolId: c.school_id,
-      subjectId: c.subject_id,
-      schoolName: c.schools?.name ?? null,
-      subjectName: c.subjects?.name ?? null,
-      year: c.year,
-      archivedAt: c.archived_at,
-      memberCount: membersBySpace.get(spaceKey(c.school_id, c.subject_id)) ?? 0,
-      activePlanCount: plansByClass.get(c.id) ?? 0,
-    })),
+    classes: classRows.map((c) => {
+      const usageForClass = usageByClass.get(c.id);
+      return {
+        id: c.id,
+        schoolId: c.school_id,
+        subjectId: c.subject_id,
+        schoolName: c.schools?.name ?? null,
+        subjectName: c.subjects?.name ?? null,
+        year: c.year,
+        archivedAt: c.archived_at,
+        memberCount: membersBySpace.get(spaceKey(c.school_id, c.subject_id)) ?? 0,
+        activePlanCount: usageForClass?.plans ?? 0,
+        teacherCount: usageForClass?.teachers ?? 0,
+      };
+    }),
     centres: (schools ?? []) as Array<{ id: string; name: string }>,
     subjects: (subjects ?? []) as Array<{ id: string; name: string; code: string }>,
-    years,
+    years: [...YEARS],
   };
 }
 

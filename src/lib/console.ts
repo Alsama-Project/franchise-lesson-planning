@@ -24,6 +24,7 @@ import {
   type Membership,
   type MembershipRole,
 } from '@/lib/auth';
+import { worksheetBodyHasContent } from '@/lib/editor/worksheet-template';
 
 // ── Role / access resolution ────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export type ConsoleTab =
   | 'calendar'
   | 'members'
   | 'curriculum'
+  | 'worksheet_templates'
   | 'ai_guide'
   | 'smartt_guide'
   | 'users';
@@ -77,10 +79,12 @@ export async function getConsoleAccess(): Promise<ConsoleAccess> {
   const tabs: ConsoleTab[] = ['profile'];
   let defaultTab: ConsoleTab = 'profile';
   if (isAdmin) {
-    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'ai_guide', 'smartt_guide', 'users');
+    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'worksheet_templates', 'ai_guide', 'smartt_guide', 'users');
     defaultTab = 'centres';
   } else if (isCoordinator) {
-    tabs.push('members', 'curriculum');
+    // Coordinators get Worksheet Templates too (scoped to their subjects), like
+    // Curriculum — it is the one admin-adjacent surface they co-own.
+    tabs.push('members', 'curriculum', 'worksheet_templates');
     defaultTab = 'members';
   }
 
@@ -225,6 +229,88 @@ export async function getSubjects(): Promise<SubjectRow[]> {
     archivedAt: s.archived_at,
     activeClassCount: activeBySubject.get(s.id) ?? 0,
   }));
+}
+
+// ── Worksheet Master Templates (admin + coordinator) ──────────────────────────
+// One master worksheet scaffold per subject (migration 0062). The tab lists every
+// subject the caller may configure — all subjects for an admin, the coordinator's
+// own subjects otherwise — with each subject's template status. The template body
+// itself is NOT shipped to the client here; the row's status and provenance are
+// enough for the list, and Template Mode loads the body from its own route.
+
+export interface WorksheetTemplateRow {
+  subjectId: string;
+  name: string;
+  code: string;
+  /** Subject content language (drives the mini-preview + Template Mode scaffold). */
+  contentLanguage: 'en' | 'ar';
+  /** True when a template row exists AND its body carries authored content. */
+  configured: boolean;
+  /** When the template was last saved (null when using the default). */
+  updatedAt: string | null;
+  /** Who last saved it, when resolvable through RLS (null → shows date only). */
+  updatedByName: string | null;
+}
+
+/**
+ * Per-subject worksheet-template status. `subjectIds` scopes the list (coordinator →
+ * their own subjects); omitted → all non-archived subjects (admin). Reads through the
+ * auth'd client: subjects are reference data (readable to all) and `worksheet_template`
+ * is SELECT-able by any authenticated user (0062).
+ */
+export async function getWorksheetTemplates(
+  subjectIds?: string[],
+): Promise<WorksheetTemplateRow[]> {
+  const supabase = await createClient();
+  const [{ data: subjects }, { data: templates }] = await Promise.all([
+    supabase.from('subjects').select('id, name, code, content_language').is('archived_at', null).order('name'),
+    // Embed the author's name via the updated_by FK; RLS on profiles may hide a
+    // co-coordinator/admin, in which case the name is null and the UI shows the date.
+    supabase.from('worksheet_template').select('subject_id, body, updated_at, profiles:updated_by ( full_name )'),
+  ]);
+
+  let subjectRows = (subjects ?? []) as Array<{
+    id: string;
+    name: string;
+    code: string;
+    content_language: string | null;
+  }>;
+  if (subjectIds) {
+    const allow = new Set(subjectIds);
+    subjectRows = subjectRows.filter((s) => allow.has(s.id));
+  }
+
+  const bySubject = new Map<
+    string,
+    { body: unknown; updatedAt: string; fullName: string | null }
+  >();
+  for (const tpl of (templates ?? []) as unknown as Array<{
+    subject_id: string;
+    body: unknown;
+    updated_at: string;
+    profiles: { full_name: string | null } | { full_name: string | null }[] | null;
+  }>) {
+    const author = Array.isArray(tpl.profiles) ? tpl.profiles[0] : tpl.profiles;
+    bySubject.set(tpl.subject_id, {
+      body: tpl.body,
+      updatedAt: tpl.updated_at,
+      fullName: author?.full_name ?? null,
+    });
+  }
+
+  return subjectRows.map((s) => {
+    const tpl = bySubject.get(s.id);
+    const configured = !!tpl && worksheetBodyHasContent(tpl.body);
+    return {
+      subjectId: s.id,
+      name: s.name,
+      code: s.code,
+      contentLanguage: s.content_language === 'ar' ? 'ar' : 'en',
+      configured,
+      updatedAt: configured ? tpl!.updatedAt : null,
+      updatedByName: configured ? tpl!.fullName : null,
+    };
+  });
 }
 
 // ── Classes ─────────────────────────────────────────────────────────────────

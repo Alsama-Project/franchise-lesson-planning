@@ -15,12 +15,40 @@
       "calendar": "Term calendar",
       "members": "Members & roles",
       "curriculum": "Curriculum",
+      "worksheet_templates": "Worksheet Templates",
       "ai_guide": "AI resource guide",
       "smartt_guide": "SMARTT objective guide",
       "users": "Users"
     },
     "language": {
       "label": "Language"
+    },
+    "worksheetTemplates": {
+      "title": "Worksheet Templates",
+      "noSubjects": "No subjects to configure yet.",
+      "columns": {
+        "subject": "Subject",
+        "template": "Template",
+        "status": "Status",
+        "lastEdited": "Last edited",
+        "actions": "Actions"
+      },
+      "status": {
+        "configured": "Configured",
+        "default": "Using default"
+      },
+      "editedByOn": "{date} · by {name}",
+      "emptyRow": "Using the default blank worksheet — set up a template.",
+      "editAction": "Edit template",
+      "setupAction": "Set up template",
+      "mode": {
+        "label": "Template Mode",
+        "editingMaster": "Editing the {subject} master — changes apply to every new {subject} worksheet, not to a lesson.",
+        "legendDashed": "dashed = editable here",
+        "exit": "Exit Template Mode",
+        "breadcrumbMaster": "{subject} master",
+        "publish": "Publish master"
+      }
     },
     "profile": {
       "classesSaveError": "Couldn’t save your class selection. Please try again."

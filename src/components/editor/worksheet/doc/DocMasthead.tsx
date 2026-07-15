@@ -26,12 +26,13 @@ function BlankLine({ width }: { width: number }) {
   return <span style={{ display: 'inline-block', width, borderBottom: '1.5px solid #C9B89F', height: 18 }} />;
 }
 
-export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
+export function DocMasthead({ ctx, templateMode = false }: { ctx: WorksheetContext; templateMode?: boolean }) {
   const t = (key: Parameters<typeof worksheetArtifactText>[1], vars?: Record<string, string | number>) =>
     worksheetArtifactText(ctx.contentLanguage, key, vars);
   // Render the teacher's stored objective remainder verbatim after the fixed
   // first-person stem — no point-of-view rewriting. Empty → placeholder fallback,
-  // never the daily outcome.
+  // never the daily outcome. In Template Mode there is no lesson, so the strip shows
+  // a muted "the objective appears here when a teacher plans a lesson" hint instead.
   const objectiveText = ctx.smarttObjective.trim() || t('objectiveFallback');
   return (
     <div className="ws-doc-masthead" dir="auto" contentEditable={false}>
@@ -86,10 +87,16 @@ export function DocMasthead({ ctx }: { ctx: WorksheetContext }) {
             <path d="M12 8v4l3 2" />
           </svg>
         </span>
-        <span style={{ fontSize: 14, lineHeight: 1.45, color: '#4A4035' }}>
-          <b style={{ color: BRAND.ink }}>{t('objectivePrefix')}</b> {objectiveText}
-          {objectiveText.endsWith('.') ? '' : '.'}
-        </span>
+        {templateMode ? (
+          <span style={{ fontSize: 14, lineHeight: 1.45, color: BRAND.faint, fontStyle: 'italic' }}>
+            {t('objectiveTemplateHint')}
+          </span>
+        ) : (
+          <span style={{ fontSize: 14, lineHeight: 1.45, color: '#4A4035' }}>
+            <b style={{ color: BRAND.ink }}>{t('objectivePrefix')}</b> {objectiveText}
+            {objectiveText.endsWith('.') ? '' : '.'}
+          </span>
+        )}
       </div>
     </div>
   );

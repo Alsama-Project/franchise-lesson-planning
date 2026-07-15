@@ -19,12 +19,18 @@ export interface SlashOptions {
   onInsertImage: (editor: Editor) => void;
   onGenerateAI: (editor: Editor) => void;
   onInsertResource: (editor: Editor) => void;
+  /** Template Mode enables authoring-only items (e.g. hint placeholders). */
+  templateMode: boolean;
+  /** Prompt copy for the hint-placeholder authoring flow (content-language). */
+  hintPromptLabel: string;
 }
 
 interface SlashItem {
   title: string;
   hint: string;
   keywords: string;
+  /** Only offered in Template Mode (e.g. hint placeholders a teacher can't author). */
+  templateOnly?: boolean;
   run: (editor: Editor, range: Range, opts: SlashOptions) => void;
 }
 
@@ -105,12 +111,29 @@ const ITEMS: SlashItem[] = [
     keywords: 'page break new page print',
     run: (e, r) => e.chain().focus().deleteRange(r).setPageBreak().run(),
   },
+  {
+    title: 'Hint placeholder',
+    hint: 'Guidance that never prints',
+    keywords: 'hint placeholder guidance note template wont print prompt',
+    templateOnly: true,
+    run: (e, r, opts) => {
+      // Read the current block's existing hint (edit/clear) before removing the "/".
+      const { $from } = e.state.selection;
+      const current = ($from.node($from.depth).attrs?.placeholder as string | null) ?? '';
+      e.chain().focus().deleteRange(r).run();
+      const text = window.prompt(opts.hintPromptLabel, current);
+      if (text === null) return;
+      if (text.trim()) e.chain().focus().setHintPlaceholder(text.trim()).run();
+      else e.chain().focus().unsetHintPlaceholder().run();
+    },
+  },
 ];
 
-function filterItems(query: string): SlashItem[] {
+function filterItems(query: string, templateMode: boolean): SlashItem[] {
+  const available = ITEMS.filter((it) => !it.templateOnly || templateMode);
   const q = query.trim().toLowerCase();
-  if (!q) return ITEMS;
-  return ITEMS.filter(
+  if (!q) return available;
+  return available.filter(
     (it) => it.title.toLowerCase().includes(q) || it.keywords.includes(q),
   );
 }
@@ -258,6 +281,8 @@ export const SlashCommands = Extension.create<SlashOptions>({
       onInsertImage: () => {},
       onGenerateAI: () => {},
       onInsertResource: () => {},
+      templateMode: false,
+      hintPromptLabel: 'Hint text (shown to teachers, never printed)',
     };
   },
 
@@ -269,7 +294,7 @@ export const SlashCommands = Extension.create<SlashOptions>({
         char: '/',
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }) => filterItems(query),
+        items: ({ query }) => filterItems(query, options.templateMode),
         command: () => {
           // Item execution is handled inside the popup (it needs the app callbacks),
           // so the default command is a no-op.

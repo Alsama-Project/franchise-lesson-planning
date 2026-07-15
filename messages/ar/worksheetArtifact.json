@@ -9,5 +9,8 @@
   "lessonLabel": "الدرس {code}",
   "pageLabel": "صفحة {i} من {n}",
   "masterBadge": "النموذج",
-  "exerciseHeading": "التمرين {n}"
+  "exerciseHeading": "التمرين {n}",
+  "hintBadge": "تلميح · لن يُطبع",
+  "hintPrompt": "نص التلميح (يظهر للمعلّمين، لا يُطبع أبداً)",
+  "objectiveTemplateHint": "يظهر الهدف هنا عندما يخطّط المعلّم للدرس."
 }

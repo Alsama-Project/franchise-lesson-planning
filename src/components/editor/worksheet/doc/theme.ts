@@ -52,3 +52,13 @@ export const BLOCK_STYLES: { style: BlockStyle; label: string; level?: 2 | 3 }[]
   { style: 'heading', label: 'Heading', level: 2 },
   { style: 'subheading', label: 'Subheading', level: 3 },
 ];
+
+/** CURATED font sizes for the toolbar dropdown — never an arbitrary field. `null` =
+ *  the document default (16px, from `.ws-doc`). The value is applied to the
+ *  TextStyle mark by the FontSize extension. */
+export const FONT_SIZES: { label: string; value: string | null }[] = [
+  { label: 'Small', value: '13px' },
+  { label: 'Normal', value: null },
+  { label: 'Large', value: '20px' },
+  { label: 'Extra large', value: '26px' },
+];

@@ -9,5 +9,8 @@
   "lessonLabel": "Lesson {code}",
   "pageLabel": "Page {i} of {n}",
   "masterBadge": "Master",
-  "exerciseHeading": "Exercise {n}"
+  "exerciseHeading": "Exercise {n}",
+  "hintBadge": "hint · won’t print",
+  "hintPrompt": "Hint text (shown to teachers, never printed)",
+  "objectiveTemplateHint": "The objective appears here when a teacher plans a lesson."
 }

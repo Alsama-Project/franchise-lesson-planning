@@ -27,7 +27,6 @@ import {
   ListChecks,
   IndentDecrease,
   IndentIncrease,
-  Link as LinkIcon,
   ImagePlus,
   Table as TableIcon,
   Library,
@@ -36,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useEditorTick } from './useEditorTick';
 import { BRAND, type SaveState } from './theme';
-import { TBtn, TSep, BlockStylePicker, ColourPicker, toggleLink } from './toolbarControls';
+import { TBtn, TSep, BlockStylePicker, FontSizePicker, ColourPicker } from './toolbarControls';
 
 const ICON = 17;
 const MORE_W = 40; // reserved width for the "⋯" button when the menu is shown
@@ -56,22 +55,25 @@ const GROUP_LABEL: Record<OptionalId, string> = {
   insert: 'Insert',
 };
 
-/** Shared teal call-to-action style for the Resource bank + Generate pair. */
-const tealButton: CSSProperties = {
+/** Teal-tinted pill for the insert group (Image · Table · Add resource · Generate
+ *  resource). One pill treatment for all four, per the Word-style bar. */
+const tealPill: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
   height: 30,
-  padding: '0 13px',
+  padding: '0 11px',
   borderRadius: 8,
-  border: 'none',
-  background: BRAND.teal,
-  color: '#fff',
+  border: '1px solid #CFE6E0',
+  background: '#E4F0ED',
+  color: '#186155',
   fontSize: 12.5,
   fontWeight: 600,
   cursor: 'pointer',
   whiteSpace: 'nowrap',
 };
+/** Compact icon-only variant (Image / Table). */
+const tealPillIcon: CSSProperties = { ...tealPill, padding: '0 9px', minWidth: 34, justifyContent: 'center' };
 
 function SaveIndicator({ state }: { state: SaveState }) {
   const label =
@@ -255,16 +257,16 @@ export function Toolbar({
       case 'align':
         return (
           <>
-            <TBtn title="Align left" active={e.isActive({ textAlign: 'left' })} onClick={() => e.chain().focus().setTextAlign('left').run()}>
+            <TBtn title="Align left" activeTone="teal" active={e.isActive({ textAlign: 'left' })} onClick={() => e.chain().focus().setTextAlign('left').run()}>
               <AlignLeft size={ICON} />
             </TBtn>
-            <TBtn title="Align centre" active={e.isActive({ textAlign: 'center' })} onClick={() => e.chain().focus().setTextAlign('center').run()}>
+            <TBtn title="Align centre" activeTone="teal" active={e.isActive({ textAlign: 'center' })} onClick={() => e.chain().focus().setTextAlign('center').run()}>
               <AlignCenter size={ICON} />
             </TBtn>
-            <TBtn title="Align right" active={e.isActive({ textAlign: 'right' })} onClick={() => e.chain().focus().setTextAlign('right').run()}>
+            <TBtn title="Align right" activeTone="teal" active={e.isActive({ textAlign: 'right' })} onClick={() => e.chain().focus().setTextAlign('right').run()}>
               <AlignRight size={ICON} />
             </TBtn>
-            <TBtn title="Justify" active={e.isActive({ textAlign: 'justify' })} onClick={() => e.chain().focus().setTextAlign('justify').run()}>
+            <TBtn title="Justify" activeTone="teal" active={e.isActive({ textAlign: 'justify' })} onClick={() => e.chain().focus().setTextAlign('justify').run()}>
               <AlignJustify size={ICON} />
             </TBtn>
           </>
@@ -295,17 +297,32 @@ export function Toolbar({
           </>
         );
       case 'insert':
+        // The Word-style insert group: teal-tinted pills. The two right-most pills
+        // reinstate the resource-bank + AI generate entry points here (they call the
+        // existing services — no new wiring). Link lives on Ctrl/Cmd-K + the selection
+        // bubble, so it is not duplicated on the bar.
         return (
           <>
-            <TBtn title="Insert link (Ctrl/Cmd-K)" active={e.isActive('link')} onClick={() => toggleLink(e)}>
-              <LinkIcon size={ICON} />
-            </TBtn>
-            <TBtn title="Insert image" onClick={onInsertImage}>
-              <ImagePlus size={ICON} />
-            </TBtn>
-            <TBtn title="Insert table" onClick={() => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
-              <TableIcon size={ICON} />
-            </TBtn>
+            <button type="button" title="Insert image" onMouseDown={(ev) => ev.preventDefault()} onClick={onInsertImage} style={tealPillIcon}>
+              <ImagePlus size={15} />
+            </button>
+            <button
+              type="button"
+              title="Insert table"
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={() => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+              style={tealPillIcon}
+            >
+              <TableIcon size={15} />
+            </button>
+            <button type="button" title="Insert a shared resource from the bank" onMouseDown={(ev) => ev.preventDefault()} onClick={onInsertResource} style={tealPill}>
+              <Library size={15} />
+              Add resource
+            </button>
+            <button type="button" title="Generate a resource with AI" onMouseDown={(ev) => ev.preventDefault()} onClick={onGenerateAI} style={tealPill}>
+              <Sparkles size={15} />
+              Generate resource
+            </button>
           </>
         );
     }
@@ -321,7 +338,7 @@ export function Toolbar({
         flexWrap: 'nowrap',
         gap: 8,
         padding: '6px 8px',
-        background: '#FBF8F3',
+        background: '#fff',
         border: '1px solid #EFE7DA',
         borderRadius: 12,
       }}
@@ -338,6 +355,7 @@ export function Toolbar({
           </TBtn>
           <TSep />
           <BlockStylePicker editor={e} />
+          <FontSizePicker editor={e} />
           <TSep />
           <TBtn title="Bold (Ctrl/Cmd-B)" active={e.isActive('bold')} onClick={() => e.chain().focus().toggleBold().run()}>
             <Bold size={ICON} />
@@ -378,17 +396,9 @@ export function Toolbar({
         ) : null}
       </div>
 
-      {/* RIGHT — save state + the teal pair (never shrink) */}
+      {/* RIGHT — save state only (the teal insert pills now live in the left flow) */}
       <div ref={rightRef} style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <SaveIndicator state={saveState} />
-        <button type="button" onMouseDown={(ev) => ev.preventDefault()} onClick={onInsertResource} title="Insert a shared resource from the bank" style={tealButton}>
-          <Library size={15} />
-          Resource bank
-        </button>
-        <button type="button" onMouseDown={(ev) => ev.preventDefault()} onClick={onGenerateAI} title="Generate a resource with AI" style={tealButton}>
-          <Sparkles size={15} />
-          Generate
-        </button>
       </div>
     </div>
   );

@@ -4,9 +4,10 @@
 // constraint) plus three small app nodes (caption, pageBreak, resourceRef).
 //
 // Unlike the v2 per-block editors, history is ON here (native TipTap undo/redo owns
-// the whole document — there is no bespoke combined stack). Font choice is the one
-// thing deliberately constrained: NO FontSize extension, curated Heading/Subheading/
-// Body styles only.
+// the whole document — there is no bespoke combined stack). Font choice stays
+// curated (Heading/Subheading/Body block styles); the toolbar's font-size dropdown
+// offers a CURATED set of sizes only (via the FontSize extension), never an
+// arbitrary field.
 
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -28,10 +29,12 @@ import {
   type WorksheetContentLanguage,
 } from '@/lib/editor/worksheet-content-locale';
 import { ResizableImage } from '../resizableImage';
+import { FontSize } from '../fontSize';
 import { Caption } from './nodes/Caption';
 import { PageBreak } from './nodes/PageBreak';
 import { ResourceRef } from './nodes/ResourceRef';
 import { Indent } from './nodes/Indent';
+import { HintPlaceholder } from './nodes/HintPlaceholder';
 
 /** Cmd/Ctrl-K → link (Docs/Word parity): prompt for a URL on the current selection.
  *  Bold/italic/underline (Mod-b/i/u), undo/redo (Mod-z / Mod-Shift-z), and Docs-style
@@ -53,13 +56,19 @@ const LinkShortcut = Extension.create({
   },
 });
 
-/** Placeholder text per empty node: empty section headings read "Exercise N" in the
- *  subject's content language (Phase 2 — the label disappears on first keystroke);
- *  other empties stay bare. */
+/** Placeholder text per empty node, in priority order:
+ *  1. A per-node HINT (`placeholder` attr, authored in Template Mode) — muted-italic
+ *     guidance that never prints (styled + badged in globals.css). This is the
+ *     Phase 3a hint mechanism; it works on any paragraph/heading.
+ *  2. Empty section headings read "Exercise N" in the subject's content language
+ *     (the label disappears on first keystroke).
+ *  3. Other empties stay bare. */
 function placeholderFor(
   { node, editor, pos }: { node: PMNode; editor: Editor; pos: number },
   language: WorksheetContentLanguage,
 ): string {
+  const hint = node.attrs?.placeholder;
+  if (typeof hint === 'string' && hint.trim()) return hint;
   if (node.type.name !== 'heading') return '';
   let ordinal = 0;
   editor.state.doc.descendants((n, p) => {
@@ -86,6 +95,10 @@ export function worksheetDocExtensions(
     Underline,
     TextStyle,
     Color,
+    FontSize,
+    // Per-node hint placeholders (Template Mode authoring). Declares the `placeholder`
+    // attr so it round-trips through save; the Placeholder resolver above surfaces it.
+    HintPlaceholder,
     TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right', 'justify'] }),
     Indent,
     Link.configure({

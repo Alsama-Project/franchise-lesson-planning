@@ -27,6 +27,7 @@ import { TableToolbar } from './TableToolbar';
 import { DocMasthead, DocFooter } from './DocMasthead';
 import { InlinePromptPopover, type Anchor } from './InlinePromptPopover';
 import { insertGeneratedResource, adjustSelectionWithAI } from './aiInsert';
+import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 import { BRAND, PAGE_WIDTH, PAGE_PAD_X, PAGE_PAD_TOP, PAGE_PAD_BOTTOM, type SaveState } from './theme';
 
 export type { SaveState } from './theme';
@@ -46,6 +47,7 @@ export function DocumentWorksheet({
   context,
   vocabulary,
   saveState = 'idle',
+  templateMode = false,
 }: {
   /** The stored worksheet column (any legacy or v2/v3 shape). */
   value: unknown;
@@ -54,8 +56,22 @@ export function DocumentWorksheet({
   context: WorksheetContext;
   vocabulary: TagsByDimension;
   saveState?: SaveState;
+  /**
+   * Template Mode: the SAME editor authoring a subject's master template. Enables
+   * the hint-placeholder slash command, marks the surface with `ws-template-mode`
+   * (dashed editable regions, centred/enlarged canvas — see globals.css), and
+   * autosaves to `worksheet_template.body` via the parent's onChange. There is no
+   * resource rail here (this component never renders one).
+   */
+  templateMode?: boolean;
 }) {
   const initialDoc = useMemo(() => normalizeTableColwidths(migrateWorksheetToV3(value).doc), [value]);
+  // Content-language strings for hint placeholders. The badge is exposed to CSS as a
+  // quoted string; the prompt label seeds the slash-menu authoring flow. Memoised so
+  // they stay referentially stable across renders (they only change with the subject
+  // language), keeping the editor's callbacks stable.
+  const hintBadge = useMemo(() => worksheetArtifactText(context.contentLanguage, 'hintBadge'), [context.contentLanguage]);
+  const hintPromptLabel = useMemo(() => worksheetArtifactText(context.contentLanguage, 'hintPrompt'), [context.contentLanguage]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bankOpen, setBankOpen] = useState(false);
@@ -82,6 +98,8 @@ export function DocumentWorksheet({
           setPrompt({ mode: 'generate', anchor: anchorAt(ed, ed.state.selection.head) });
         },
         onInsertResource: () => setBankOpen(true),
+        templateMode,
+        hintPromptLabel,
       }),
     ],
     content: initialDoc as JSONContent,
@@ -194,11 +212,18 @@ export function DocumentWorksheet({
         <div className="ws-no-print" style={{ margin: '0 12px 8px', fontSize: 12.5, color: BRAND.pink }}>{uploadError}</div>
       ) : null}
 
-      {/* Canvas — soft grey, scrollable; the white page floats on it */}
-      <div className="ws-doc-canvas" style={{ flex: 1, minHeight: 0, overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}>
+      {/* Canvas — soft grey, scrollable; the white page floats on it. Template Mode
+          centres + enlarges it and marks editable regions with dashes (globals.css). */}
+      <div
+        className={`ws-doc-canvas${templateMode ? ' ws-template-mode' : ''}`}
+        style={{ flex: 1, minHeight: 0, overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}
+      >
         <div className="ws-doc-page ws-print-area" style={{ width: PAGE_WIDTH, maxWidth: '100%', margin: '0 auto', background: '#fff', boxShadow: BRAND.pageShadow, borderRadius: 2 }}>
-          <DocMasthead ctx={context} />
-          <div className="ws-doc-body" style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520 }}>
+          <DocMasthead ctx={context} templateMode={templateMode} />
+          <div
+            className="ws-doc-body"
+            style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520, ['--ws-hint-badge' as string]: `"${hintBadge.replace(/"/g, '\\"')}"` }}
+          >
             <EditorContent editor={editor} />
           </div>
           <DocFooter ctx={context} className="ws-doc-footer-screen ws-no-print" />

@@ -15,12 +15,40 @@
       "calendar": "تقويم الفصول",
       "members": "الأعضاء والأدوار",
       "curriculum": "المنهاج",
+      "worksheet_templates": "قوالب أوراق العمل",
       "ai_guide": "دليل موارد الذكاء الاصطناعي",
       "smartt_guide": "دليل أهداف SMARTT",
       "users": "المستخدمون"
     },
     "language": {
       "label": "اللغة"
+    },
+    "worksheetTemplates": {
+      "title": "قوالب أوراق العمل",
+      "noSubjects": "لا توجد مواد لإعدادها بعد.",
+      "columns": {
+        "subject": "المادة",
+        "template": "القالب",
+        "status": "الحالة",
+        "lastEdited": "آخر تعديل",
+        "actions": "إجراءات"
+      },
+      "status": {
+        "configured": "مُعدّ",
+        "default": "يستخدم الافتراضي"
+      },
+      "editedByOn": "{date} · بواسطة {name}",
+      "emptyRow": "يستخدم ورقة العمل الفارغة الافتراضية — قم بإعداد قالب.",
+      "editAction": "تحرير القالب",
+      "setupAction": "إعداد القالب",
+      "mode": {
+        "label": "وضع القالب",
+        "editingMaster": "تحرير نموذج {subject} — تنطبق التغييرات على كل ورقة عمل جديدة لمادة {subject}، وليس على درس معيّن.",
+        "legendDashed": "المتقطّع = قابل للتحرير هنا",
+        "exit": "الخروج من وضع القالب",
+        "breadcrumbMaster": "نموذج {subject}",
+        "publish": "نشر النموذج"
+      }
     },
     "profile": {
       "classesSaveError": "تعذّر حفظ اختيار صفوفك. يرجى المحاولة مرة أخرى."

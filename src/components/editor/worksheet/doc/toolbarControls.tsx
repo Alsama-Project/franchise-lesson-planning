@@ -8,21 +8,27 @@
 import { useState, type ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Baseline } from 'lucide-react';
-import { BRAND, BLOCK_STYLES, TEXT_COLOURS, type BlockStyle } from './theme';
+import { BRAND, BLOCK_STYLES, FONT_SIZES, TEXT_COLOURS, type BlockStyle } from './theme';
 
 export function TBtn({
   onClick,
   active,
   disabled,
   title,
+  activeTone = 'brand',
   children,
 }: {
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
   title: string;
+  /** Active-state palette: 'brand' (cream + pink) or 'teal' (teal tint), e.g. the
+   *  Word-style alignment group whose active button reads teal. */
+  activeTone?: 'brand' | 'teal';
   children: ReactNode;
 }) {
+  const activeBg = activeTone === 'teal' ? '#E4F0ED' : BRAND.creamSoft;
+  const activeColor = activeTone === 'teal' ? '#186155' : BRAND.pink;
   return (
     <button
       type="button"
@@ -41,8 +47,8 @@ export function TBtn({
         padding: '0 6px',
         borderRadius: 7,
         border: 'none',
-        background: active ? BRAND.creamSoft : 'transparent',
-        color: disabled ? '#C4BCB1' : active ? BRAND.pink : BRAND.ink,
+        background: active ? activeBg : 'transparent',
+        color: disabled ? '#C4BCB1' : active ? activeColor : BRAND.ink,
         cursor: disabled ? 'default' : 'pointer',
         fontSize: 13.5,
         fontWeight: 600,
@@ -135,6 +141,88 @@ export function BlockStylePicker({ editor }: { editor: Editor }) {
                   cursor: 'pointer',
                   fontSize: s.style === 'heading' ? 17 : s.style === 'subheading' ? 15 : 13.5,
                   fontWeight: s.style === 'body' ? 500 : 700,
+                  color: BRAND.ink,
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Curated font-size dropdown (Small / Normal / Large / Extra large). Applies a
+ *  size to the TextStyle mark via the FontSize extension; "Normal" clears it back to
+ *  the document default. Curated by design — never an arbitrary size field. */
+export function FontSizePicker({ editor }: { editor: Editor }) {
+  const current = (editor.getAttributes('textStyle').fontSize as string | undefined) ?? null;
+  const label = FONT_SIZES.find((s) => s.value === current)?.label ?? FONT_SIZES[1].label;
+  const [open, setOpen] = useState(false);
+  const apply = (value: string | null) => {
+    if (value) editor.chain().focus().setFontSize(value).run();
+    else editor.chain().focus().unsetFontSize().run();
+    setOpen(false);
+  };
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((o) => !o)}
+        title="Font size"
+        style={{
+          height: 30,
+          padding: '0 10px',
+          borderRadius: 7,
+          border: '1px solid #E7DECF',
+          background: '#fff',
+          color: BRAND.ink,
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: 'pointer',
+          minWidth: 92,
+          textAlign: 'left',
+        }}
+      >
+        {label} ▾
+      </button>
+      {open ? (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
+          <div
+            style={{
+              position: 'absolute',
+              top: 34,
+              left: 0,
+              zIndex: 41,
+              background: '#fff',
+              border: '1px solid #E7DECF',
+              borderRadius: 10,
+              boxShadow: '0 12px 32px -12px rgba(40,30,20,0.35)',
+              padding: 5,
+              minWidth: 130,
+            }}
+          >
+            {FONT_SIZES.map((s) => (
+              <button
+                key={s.label}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => apply(s.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '7px 10px',
+                  borderRadius: 7,
+                  border: 'none',
+                  background: current === s.value ? BRAND.creamSoft : 'transparent',
+                  cursor: 'pointer',
+                  fontSize: 13.5,
+                  fontWeight: 600,
                   color: BRAND.ink,
                 }}
               >

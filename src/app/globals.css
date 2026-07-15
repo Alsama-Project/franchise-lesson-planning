@@ -587,6 +587,59 @@ html:lang(ar) body {
 }
 
 /*
+ * Hint placeholders (Template Mode authoring; also shown in the teacher's editor).
+ * A hint is a `placeholder` ATTR on an empty node, surfaced via the Placeholder
+ * decoration — never real content. The Placeholder extension only adds `is-empty`
+ * while the editor is EDITABLE, so the muted-italic text and the "hint · won't print"
+ * badge below appear only in an editable editor and NEVER in the read-only view,
+ * print, or the react-pdf export (the node itself stays empty everywhere).
+ */
+.ws-doc [data-hint] {
+  position: relative;
+}
+.ws-doc [data-hint].is-empty::before {
+  font-style: italic;
+}
+.ws-doc [data-hint].is-empty::after {
+  content: var(--ws-hint-badge, '');
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #186155;
+  background: #E4F0ED;
+  border-radius: 999px;
+  padding: 1px 7px;
+  pointer-events: none;
+}
+/* In Template Mode, each hint slot is dashed to read as "editable here". */
+.ws-template-mode .ws-doc [data-hint].is-empty {
+  outline: 1px dashed #A9CFC8;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/*
+ * Template Mode surface: the SAME editor authoring a subject's master template. The
+ * body is framed with a dashed outline (the mode's "dashed = editable here"
+ * affordance, per the banner legend), and there is no resource rail (the editor
+ * never renders one). Belt-and-braces: hide any hint chrome under print.
+ */
+.ws-template-mode .ws-doc-body {
+  outline: 1.5px dashed #CFE6E0;
+  outline-offset: -10px;
+  border-radius: 4px;
+}
+@media print {
+  .ws-doc [data-hint]::before,
+  .ws-doc [data-hint]::after {
+    content: none !important;
+  }
+}
+
+/*
  * Worksheet editor: full-screen + print.
  *
  * `.ws-no-print` hides editor chrome (toolbar, zoom, rail, block bars, the

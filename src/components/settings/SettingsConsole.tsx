@@ -17,6 +17,7 @@ import type {
   SubjectRow,
   SubjectSpaceAxes,
   TermRow,
+  WorksheetTemplateRow,
 } from '@/lib/console';
 import { CentresTab } from './console/CentresTab';
 import { SubjectsTab } from './console/SubjectsTab';
@@ -24,6 +25,7 @@ import { ClassesTab } from './console/ClassesTab';
 import { TermCalendarTab } from './console/TermCalendarTab';
 import { CoordinatorMembersTab } from './console/MembersTab';
 import { CurriculumTab } from './console/CurriculumTab';
+import { WorksheetTemplatesTab } from './console/WorksheetTemplatesTab';
 import { AiGuideTab } from './console/AiGuideTab';
 import { SmarttGuideTab } from './console/SmarttGuideTab';
 import { UsersTab } from './console/UsersTab';
@@ -48,6 +50,8 @@ export interface SettingsConsoleProps {
   userAxes?: SubjectSpaceAxes;
   /** Pending coordinator-access requests for the Users-tab triage (admin only). */
   pendingCoordinatorRequests?: PendingCoordinatorRequest[];
+  /** Per-subject worksheet-template status (admin: all; coordinator: own subjects). */
+  worksheetTemplates?: WorksheetTemplateRow[];
 }
 
 export function SettingsConsole(props: SettingsConsoleProps) {
@@ -110,6 +114,9 @@ export function SettingsConsole(props: SettingsConsoleProps) {
         ) : null}
         {tab === 'curriculum' && props.curriculum ? (
           <CurriculumTab statuses={props.curriculum} isAdmin={access.isAdmin} />
+        ) : null}
+        {tab === 'worksheet_templates' && (access.isAdmin || access.isCoordinator) ? (
+          <WorksheetTemplatesTab templates={props.worksheetTemplates ?? []} />
         ) : null}
         {tab === 'ai_guide' && access.isAdmin ? (
           <AiGuideTab active={props.resourceGuide ?? null} />

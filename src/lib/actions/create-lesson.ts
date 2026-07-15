@@ -14,7 +14,36 @@ import { createClient } from '@/lib/supabase/server';
 import { isAdmin, isMemberOf, getMyMemberships, getMyCoordinatedSubjectIds } from '@/lib/auth';
 import { getCurriculumKeyCoords, getActiveCurriculumVersionId } from '@/lib/curriculumUtils';
 import { DEFAULT_BLOCKS } from '@/lib/blocks';
+import { worksheetBodyHasContent } from '@/lib/editor/worksheet-template';
 import type { PlanScope } from '@/types/lesson';
+
+/**
+ * The per-subject Worksheet Master Template body to SEED into a brand-new plan's
+ * `worksheet`, or `undefined` when the subject has no configured template (→ the
+ * plan keeps today's behaviour: a null worksheet, the default blank sheet).
+ *
+ * The seed is a FORK — a deep clone of `worksheet_template.body` — so later edits
+ * to the template never touch worksheets already created, and the plan stores no
+ * template id / reference. Only ever called on the true-INSERT path of a new plan
+ * (never the "open, don't duplicate" branch), so a teacher's existing work is never
+ * touched. `worksheet_template` is SELECT-able by any authenticated user (0062), so
+ * this read runs through the same auth'd client as the insert.
+ */
+async function seedWorksheetForSubject(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  subjectId: string | null,
+): Promise<unknown | undefined> {
+  if (!subjectId) return undefined;
+  const { data } = await supabase
+    .from('worksheet_template')
+    .select('body')
+    .eq('subject_id', subjectId)
+    .maybeSingle();
+  const body = (data as { body: unknown } | null)?.body;
+  if (!worksheetBodyHasContent(body)) return undefined;
+  // Deep clone so the new plan's worksheet is a self-contained fork.
+  return structuredClone(body);
+}
 
 export interface CreateScopedPlanInput {
   /** The curriculum slot's `lesson_key` (written into `curriculum_lesson_id`). */
@@ -161,6 +190,11 @@ export async function createScopedPlan(
   // back to the active version at read time).
   const curriculumVersionId = await getActiveCurriculumVersionId(coords.subjectCode);
 
+  // Seed the new worksheet from the subject's master template (a fork), if any.
+  // Only here, on the true-insert path — never on the dedup "return existing" branch
+  // above — so an existing plan's worksheet is never overwritten.
+  const seededWorksheet = await seedWorksheetForSubject(supabase, subjectId);
+
   const { data: inserted, error } = await supabase
     .from('lesson_plans')
     .insert({
@@ -177,6 +211,7 @@ export async function createScopedPlan(
       status: 'in_progress',
       blocks: DEFAULT_BLOCKS,
       created_by: user.id,
+      ...(seededWorksheet !== undefined ? { worksheet: seededWorksheet } : {}),
     })
     .select('id')
     .maybeSingle();
@@ -399,6 +434,10 @@ export async function createCoordinatorPlan(
 
   const curriculumVersionId = await getActiveCurriculumVersionId(coords.subjectCode);
 
+  // Seed the new worksheet from the subject's master template (a fork), if any —
+  // true-insert path only, mirroring createScopedPlan.
+  const seededWorksheet = await seedWorksheetForSubject(supabase, subjectId);
+
   const { data: inserted, error } = await supabase
     .from('lesson_plans')
     .insert({
@@ -417,6 +456,7 @@ export async function createCoordinatorPlan(
       status: 'approved',
       blocks: DEFAULT_BLOCKS,
       created_by: user.id,
+      ...(seededWorksheet !== undefined ? { worksheet: seededWorksheet } : {}),
     })
     .select('id')
     .maybeSingle();

@@ -316,6 +316,46 @@
         "error": "Couldn’t update the request. Please try again."
       }
     },
+    "termCalendar": {
+      "title": "Term calendar",
+      "termsCount": "{count, plural, one {# term} other {# terms}}",
+      "academicYear": "{start} / {end} academic year",
+      "addTerm": "Add term",
+      "newTermName": "New term",
+      "close": "Close",
+      "remove": "Remove",
+      "resizeAria": "Resize term — drag to change the number of weeks",
+      "saveError": "Couldn’t save. Please try again.",
+      "addError": "Couldn’t add the term. Please try again.",
+      "range": "w/c {start} → w/c {end}",
+      "centres": {
+        "label": "Centres",
+        "empty": "No centres set up yet — add one under the Centres tab."
+      },
+      "years": {
+        "label": "Years",
+        "y16": "Y1–6"
+      },
+      "quick": {
+        "all": "All",
+        "none": "None"
+      },
+      "scope": {
+        "noCentres": "No centres",
+        "allCentres": "All centres",
+        "centrePlus": "{first} +{count}",
+        "noYears": "No years"
+      },
+      "validity": {
+        "valid": "{weeks} weeks · {schools} · {years}",
+        "noCentres": "No centres — produces no teaching weeks",
+        "noYears": "No years — produces no teaching weeks",
+        "overlap": "Overlaps {term} on {scope}"
+      },
+      "empty": {
+        "hint": "No terms yet. Add a term to define the academic year — without terms the Weekly Overview has no dates and no jump-to-today."
+      }
+    },
     "aiGuide": {
       "title": "AI resource guide",
       "successMessage": "New guide version saved. It is now active for all resource generation.",

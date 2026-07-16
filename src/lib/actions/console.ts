@@ -508,6 +508,48 @@ function clampWeeks(n: number): number {
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, Math.trunc(n)));
 }
 
+/** Keep only valid, de-duplicated curriculum years (0–6). */
+function cleanYears(years: number[]): number[] {
+  return [...new Set(years)].filter((y) => Number.isInteger(y) && y >= 0 && y <= 6).sort((a, b) => a - b);
+}
+
+/** De-duplicate the centre id set (RLS + FK reject any id the admin may not touch). */
+function cleanSchoolIds(ids: string[]): string[] {
+  return [...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0))];
+}
+
+/**
+ * Replace a term's centre scope (`term_school`) with exactly `schoolIds` —
+ * delete-then-insert inside the caller's admin-gated, RLS-scoped transaction-lite
+ * sequence. A cascade on term delete means deleteTerm needs no equivalent.
+ */
+async function writeTermSchools(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  termId: string,
+  schoolIds: string[],
+): Promise<string | null> {
+  const { error: delErr } = await supabase.from('term_school').delete().eq('term_id', termId);
+  if (delErr) return delErr.message;
+  if (schoolIds.length === 0) return null;
+  const rows = schoolIds.map((school_id) => ({ term_id: termId, school_id }));
+  const { error } = await supabase.from('term_school').insert(rows);
+  return error ? error.message : null;
+}
+
+/** Replace a term's year scope (`term_year`) with exactly `years`. */
+async function writeTermYears(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  termId: string,
+  years: number[],
+): Promise<string | null> {
+  const { error: delErr } = await supabase.from('term_year').delete().eq('term_id', termId);
+  if (delErr) return delErr.message;
+  if (years.length === 0) return null;
+  const rows = years.map((year) => ({ term_id: termId, year }));
+  const { error } = await supabase.from('term_year').insert(rows);
+  return error ? error.message : null;
+}
+
 export interface TermMutationResult extends ConsoleResult {
   term?: TermRow;
 }
@@ -516,6 +558,10 @@ export async function createTerm(input: {
   name: string;
   startsOn: string;
   numWeeks: number;
+  /** Centre scope for the new term; defaults to empty (produces no teaching weeks). */
+  schoolIds?: string[];
+  /** Year scope for the new term; defaults to empty (produces no teaching weeks). */
+  years?: number[];
 }): Promise<TermMutationResult> {
   const guard = await requireAdmin();
   if (isFail(guard)) return guard;
@@ -524,6 +570,8 @@ export async function createTerm(input: {
   const starts_on = mondayOf(input.startsOn);
   const name = input.name.trim() || 'New term';
   const num_weeks = clampWeeks(input.numWeeks);
+  const schoolIds = cleanSchoolIds(input.schoolIds ?? []);
+  const years = cleanYears(input.years ?? []);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -534,10 +582,25 @@ export async function createTerm(input: {
   if (error) return fail(error.message);
 
   const row = data as { id: string; name: string; starts_on: string; num_weeks: number };
+
+  // Write the scope sets (no-op inserts when empty). A failure here leaves the term
+  // with empty scope — the UI's amber "produces no teaching weeks" warning surfaces it.
+  const schoolErr = await writeTermSchools(supabase, row.id, schoolIds);
+  if (schoolErr) return fail(schoolErr);
+  const yearErr = await writeTermYears(supabase, row.id, years);
+  if (yearErr) return fail(yearErr);
+
   revalidateConsole();
   return {
     ok: true,
-    term: { id: row.id, name: row.name, startsOn: row.starts_on, numWeeks: row.num_weeks },
+    term: {
+      id: row.id,
+      name: row.name,
+      startsOn: row.starts_on,
+      numWeeks: row.num_weeks,
+      schoolIds,
+      years,
+    },
   };
 }
 
@@ -546,6 +609,10 @@ export async function updateTerm(input: {
   name?: string;
   startsOn?: string;
   numWeeks?: number;
+  /** When provided, replaces the term's centre scope exactly (delete-then-insert). */
+  schoolIds?: string[];
+  /** When provided, replaces the term's year scope exactly (delete-then-insert). */
+  years?: number[];
 }): Promise<ConsoleResult> {
   const guard = await requireAdmin();
   if (isFail(guard)) return guard;
@@ -563,11 +630,23 @@ export async function updateTerm(input: {
   if (input.numWeeks !== undefined) {
     patch.num_weeks = clampWeeks(input.numWeeks);
   }
-  if (Object.keys(patch).length === 0) return ok();
 
   const supabase = await createClient();
-  const { error } = await supabase.from('term').update(patch).eq('id', input.id);
-  if (error) return fail(error.message);
+
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase.from('term').update(patch).eq('id', input.id);
+    if (error) return fail(error.message);
+  }
+
+  if (input.schoolIds !== undefined) {
+    const schoolErr = await writeTermSchools(supabase, input.id, cleanSchoolIds(input.schoolIds));
+    if (schoolErr) return fail(schoolErr);
+  }
+  if (input.years !== undefined) {
+    const yearErr = await writeTermYears(supabase, input.id, cleanYears(input.years));
+    if (yearErr) return fail(yearErr);
+  }
+
   revalidateConsole();
   return ok();
 }

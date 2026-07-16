@@ -123,7 +123,9 @@ export function SettingsConsole(props: SettingsConsoleProps) {
         {tab === 'centres' && props.centres ? <CentresTab centres={props.centres} /> : null}
         {tab === 'subjects' && props.subjects ? <SubjectsTab subjects={props.subjects} /> : null}
         {tab === 'classes' && props.classesData ? <ClassesTab data={props.classesData} /> : null}
-        {tab === 'calendar' && access.isAdmin ? <TermCalendarTab terms={props.terms ?? []} /> : null}
+        {tab === 'calendar' && access.isAdmin ? (
+          <TermCalendarTab terms={props.terms ?? []} centres={props.centres ?? []} />
+        ) : null}
         {tab === 'members' && access.isCoordinator ? (
           <CoordinatorMembersTab
             members={props.subjectMembers ?? null}

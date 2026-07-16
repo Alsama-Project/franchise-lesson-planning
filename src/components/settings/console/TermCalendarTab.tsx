@@ -1,35 +1,32 @@
 'use client';
 
-// The admin "Term calendar" — a strict port of the approved Option B timeline.
-// An editable academic-year band timeline (Sep → Aug), a popover for the selected
-// term, and a read-only mirror table. Direct manipulation lives here (client);
-// persistence is autosave-on-SETTLE via the term server actions — we mutate local
-// state live for the mockup's feel but write to Supabase only when an interaction
-// finishes (pointer-up after a move/resize, a stepper click, a debounced date edit),
-// never on every pointermove. Writes are optimistic with revert + a small toast.
+// The admin "Term calendar" — school + year scoping (Claude Design "Option B" port).
+// A single-screen Sept→Aug band timeline: each term carries a SET OF CENTRES and a
+// SET OF CURRICULUM YEARS. Drag a band to move it (snaps to Monday), drag its right
+// edge to resize 1–40 weeks, click it to open the scope popover (centres + years).
+// A term with zero centres OR zero years produces no teaching weeks — surfaced with
+// the app's non-destructive amber (status-progress) caution, never delete-red.
 //
-// Design system: teal #1F7A6C = tools/actions, cream/parchment surfaces = derived.
-// Nothing here is teacher-curriculum content, so NO pink is used.
+// Direct manipulation is client-side + optimistic; persistence is autosave-on-settle
+// via the term server actions — drag/resize write once on pointer-up (never per
+// pointermove), scope toggles write immediately. Writes revert with a toast on
+// failure. The anchor academic year is DERIVED from the earliest term (never a
+// hardcoded calendar year). No dnd-kit — hand-rolled pointer events, as before.
 
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
-  type RefObject,
 } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
-import type { TermRow } from '@/lib/console';
-import {
-  createTerm,
-  deleteTerm,
-  updateTerm,
-  type ConsoleResult,
-} from '@/lib/actions/console';
+import { formatNumber } from '@/lib/format';
+import type { CentreRow, TermRow } from '@/lib/console';
+import { createTerm, deleteTerm, updateTerm, type ConsoleResult } from '@/lib/actions/console';
 import {
   academicYearOf,
   addDays,
@@ -41,163 +38,222 @@ import {
 
 const MIN_WEEKS = 1;
 const MAX_WEEKS = 40;
-const ROW_STEP = 52; // px between stacked bands
-const BAND_TOP = 6; // px before the first band
-const BAND_H = 40; // px band height
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-type TermStatus = 'past' | 'current' | 'upcoming';
+const ROW_STEP = 54; // px between stacked lanes
+const BAND_TOP = 4; // px before the first lane
+const BAND_H = 46; // px band height
+// Month columns in academic (Sept-first) order, as short labels.
+const MONTH_COLS = ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+const YEAR_CHIPS = [0, 1, 2, 3, 4, 5, 6];
+const Y1_6 = [1, 2, 3, 4, 5, 6];
 
 function clampWeeks(n: number): number {
   if (!Number.isFinite(n)) return MIN_WEEKS;
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, Math.round(n)));
 }
 
-/** First-of-month ISO for the k-th month of the axis (k = 0 → anchor September). */
-function monthStartISO(anchorYear: number, k: number): string {
-  const m0 = 8 + k; // 0-based month index counted from January of anchorYear
-  const y = anchorYear + Math.floor(m0 / 12);
-  const m = m0 % 12;
-  return `${y}-${String(m + 1).padStart(2, '0')}-01`;
+// ── Sept-anchored fractional geometry (0 = 1 Sep … 1 = 31 Aug) ─────────────────
+// Month-proportional: each month is 1/12 of the track, matching the equal 12-column
+// month header/gridlines. `dateToFrac` is anchor-independent (any Sept→Aug maps to
+// 0→1); `fracToDate` needs the anchor year to place Jan–Aug in the following year.
+
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
 }
 
-/** Status of a term relative to today, from its [start, last-Friday] span. */
-function statusOf(term: TermRow): TermStatus {
-  const today = todayISO();
-  const lastDay = addDays(term.startsOn, (term.numWeeks - 1) * 7 + 4); // Friday of last week
-  if (today < term.startsOn) return 'upcoming';
-  if (today > lastDay) return 'past';
-  return 'current';
+/** ISO `YYYY-MM-DD` → its position in the Sept-anchored academic year, 0..1. */
+function dateToFrac(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  const monthIndex = m - 1;
+  const monthsFromSep = (monthIndex - 8 + 12) % 12;
+  const dim = daysInMonth(y, monthIndex);
+  return (monthsFromSep + (d - 1) / dim) / 12;
 }
 
-const STATUS_LABEL: Record<TermStatus, string> = {
-  past: 'Past',
-  current: 'Current term',
-  upcoming: 'Upcoming',
-};
+/** Fractional position 0..1 → ISO date in the anchor academic year. */
+function fracToDate(frac: number, anchorYear: number): string {
+  const f = Math.max(0, Math.min(0.9999, frac));
+  const f12 = f * 12;
+  const mi = Math.floor(f12);
+  const rem = f12 - mi;
+  const monthIndex = (8 + mi) % 12;
+  const year = anchorYear + (mi >= 4 ? 1 : 0); // Jan (monthsFromSep=4) onward is next year
+  const dim = daysInMonth(year, monthIndex);
+  const day = Math.min(dim, Math.floor(rem * dim) + 1);
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** [start, endExclusive) Monday range of a term, as ISO strings. */
+function termRange(term: TermRow): { start: string; end: string } {
+  const start = mondayOf(term.startsOn);
+  return { start, end: addDays(start, term.numWeeks * 7) };
+}
+
+/** True when two terms' Monday ranges overlap in date. */
+function datesOverlap(a: TermRow, b: TermRow): boolean {
+  const ra = termRange(a);
+  const rb = termRange(b);
+  return ra.start < rb.end && rb.start < ra.end; // ISO strings order lexically
+}
+
+/**
+ * Lane-pack terms so overlapping bands stack instead of colliding. Greedy by start
+ * date: place each term in the first lane whose last band has already ended.
+ */
+function packLanes(terms: TermRow[]): { laneOf: Map<string, number>; laneCount: number } {
+  const spans = terms
+    .map((t) => ({ id: t.id, ...termRange(t) }))
+    .sort((a, b) => a.start.localeCompare(b.start));
+  const laneEnds: string[] = [];
+  const laneOf = new Map<string, number>();
+  for (const s of spans) {
+    let lane = laneEnds.findIndex((end) => end <= s.start);
+    if (lane < 0) {
+      lane = laneEnds.length;
+      laneEnds.push(s.end);
+    } else {
+      laneEnds[lane] = s.end;
+    }
+    laneOf.set(s.id, lane);
+  }
+  return { laneOf, laneCount: Math.max(1, laneEnds.length) };
+}
 
 interface DragState {
   mode: 'move' | 'resize';
   id: string;
-  startX: number;
+  grab: number; // pointer-frac minus band-start-frac at grab time
   origStart: string;
   origWeeks: number;
-  trackWidth: number;
-  totalDays: number;
   moved: boolean;
 }
 
-export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
-  // Local state is the live source for optimistic edits. Vertical stacking uses the
-  // array index (stable) so a horizontal drag never reshuffles rows; the mirror
-  // table sorts a copy by date for display.
+export function TermCalendarTab({
+  terms: initialTerms,
+  centres,
+}: {
+  terms: TermRow[];
+  centres: CentreRow[];
+}) {
+  const t = useTranslations('settings');
+  const locale = useLocale();
+
   const [terms, setTerms] = useState<TermRow[]>(initialTerms);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [, startTransition] = useTransition();
 
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const [trackWidth, setTrackWidth] = useState(0);
   const dragRef = useRef<DragState | null>(null);
-  const dateDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep local state in sync if the server props change (e.g. after a refresh)
-  // while we're not mid-interaction.
+  // Only non-archived centres are assignable scope; ordered by the console's order.
+  const activeCentres = useMemo(() => centres.filter((c) => !c.archivedAt), [centres]);
+
+  // Sync from the server props when they change and we're not mid-drag.
   useEffect(() => {
     if (!dragRef.current) setTerms(initialTerms);
   }, [initialTerms]);
 
-  // Measure the track so px ⇄ fraction math (drag) and popover placement work.
-  useEffect(() => {
-    const el = trackRef.current;
-    if (!el) return;
-    const measure = () => setTrackWidth(el.clientWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Auto-dismiss the error toast.
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
+    const id = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(id);
   }, [toast]);
 
-  // The Sep-anchored 12-month axis year, derived from the earliest term.
+  // Anchor academic year: the earliest term's, else the current one. Never hardcoded.
   const anchorYear = useMemo(
     () =>
       terms.length
-        ? Math.min(...terms.map((t) => academicYearOf(t.startsOn)))
+        ? Math.min(...terms.map((term) => academicYearOf(term.startsOn)))
         : academicYearOf(todayISO()),
     [terms],
   );
-  const anchorISO = `${anchorYear}-09-01`;
-  const axisEndISO = `${anchorYear + 1}-09-01`;
-  const totalDays = useMemo(() => daysBetween(anchorISO, axisEndISO), [anchorISO, axisEndISO]);
 
-  const pos = useCallback(
-    (iso: string) => (totalDays > 0 ? daysBetween(anchorISO, iso) / totalDays : 0),
-    [anchorISO, totalDays],
-  );
+  const { laneOf, laneCount } = useMemo(() => packLanes(terms), [terms]);
+  const trackHeight = Math.max(BAND_H + BAND_TOP * 2, BAND_TOP * 2 + laneCount * ROW_STEP);
 
-  // Band geometry clamped to the timeline window [0, 1]. A term that runs past
-  // either edge of the displayed academic year is kept inside the track bounds
-  // and flagged so the band can show a "continues beyond range" cue instead of
-  // spilling out and hard-clipping at the panel edge. This is purely visual —
-  // the underlying start date / week count are untouched.
-  const bandGeom = useCallback(
-    (term: TermRow) => {
-      const startFrac = pos(term.startsOn);
-      const endFrac = pos(addDays(term.startsOn, term.numWeeks * 7));
-      const leftFrac = Math.min(Math.max(startFrac, 0), 1);
-      const rightFrac = Math.min(Math.max(endFrac, 0), 1);
-      return {
-        leftFrac,
-        widthFrac: Math.max(rightFrac - leftFrac, 0),
-        overflowLeft: startFrac < 0,
-        overflowRight: endFrac > 1,
-      };
+  const num = useCallback((n: number) => formatNumber(n, locale), [locale]);
+
+  // ── scope labels ─────────────────────────────────────────────────────────────
+  const schoolsLabel = useCallback(
+    (ids: string[]): string => {
+      if (ids.length === 0) return t('termCalendar.scope.noCentres');
+      if (activeCentres.length > 0 && ids.length >= activeCentres.length)
+        return t('termCalendar.scope.allCentres');
+      const ordered = activeCentres.filter((c) => ids.includes(c.id));
+      const first = ordered[0]?.name ?? '';
+      return ids.length > 1 ? t('termCalendar.scope.centrePlus', { first, count: ids.length - 1 }) : first;
     },
-    [pos],
+    [activeCentres, t],
   );
 
-  const selected = terms.find((t) => t.id === selectedId) ?? null;
-  const trackHeight = Math.max(168, BAND_TOP * 2 + terms.length * ROW_STEP);
+  const yearsLabel = useCallback(
+    (years: number[]): string => {
+      const sorted = [...new Set(years)].sort((a, b) => a - b);
+      if (sorted.length === 0) return t('termCalendar.scope.noYears');
+      const parts: string[] = [];
+      let i = 0;
+      while (i < sorted.length) {
+        let j = i;
+        while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+        parts.push(i === j ? `Y${num(sorted[i])}` : `Y${num(sorted[i])}–Y${num(sorted[j])}`);
+        i = j + 1;
+      }
+      return parts.join(', ');
+    },
+    [num, t],
+  );
 
-  // ── persistence helper: optimistic, revert + toast on failure ───────────────
-  const persist = useCallback(
-    (action: () => Promise<ConsoleResult>, revert: () => void) => {
-      startTransition(async () => {
-        const res = await action();
-        if (!res.ok) {
-          revert();
-          setToast(res.error ?? 'Could not save. Please try again.');
+  // A term whose (school, year) scope overlaps this term on overlapping dates. The
+  // DB has no constraint against it (it silently corrupts week_no), so the UI warns.
+  const conflictFor = useCallback(
+    (term: TermRow): { name: string; scope: string } | null => {
+      if (term.schoolIds.length === 0 || term.years.length === 0) return null;
+      for (const other of terms) {
+        if (other.id === term.id) continue;
+        if (!datesOverlap(term, other)) continue;
+        const sharedSchools = other.schoolIds.filter((s) => term.schoolIds.includes(s));
+        const sharedYears = other.years.filter((y) => term.years.includes(y));
+        if (sharedSchools.length > 0 && sharedYears.length > 0) {
+          return { name: other.name, scope: `${schoolsLabel(sharedSchools)} · ${yearsLabel(sharedYears)}` };
         }
-      });
+      }
+      return null;
     },
-    [],
+    [terms, schoolsLabel, yearsLabel],
   );
+
+  // ── persistence: optimistic, revert + toast on failure ───────────────────────
+  const persist = useCallback((action: () => Promise<ConsoleResult>, revert: () => void) => {
+    startTransition(async () => {
+      const res = await action();
+      if (!res.ok) {
+        revert();
+        setToast(res.error ?? t('termCalendar.saveError'));
+      }
+    });
+  }, [t]);
 
   const patchLocal = useCallback((id: string, patch: Partial<TermRow>) => {
-    setTerms((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    setTerms((prev) => prev.map((term) => (term.id === id ? { ...term, ...patch } : term)));
   }, []);
 
-  // ── drag: move start / resize weeks ─────────────────────────────────────────
+  // ── drag: move start / resize weeks ──────────────────────────────────────────
+  const pointerFrac = useCallback((clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return 0;
+    return Math.max(0, Math.min(0.9999, (clientX - rect.left) / rect.width));
+  }, []);
+
   function onBandPointerDown(e: ReactPointerEvent, term: TermRow, mode: 'move' | 'resize') {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const width = trackRef.current?.clientWidth ?? trackWidth;
+    const startFrac = dateToFrac(mondayOf(term.startsOn));
     dragRef.current = {
       mode,
       id: term.id,
-      startX: e.clientX,
+      grab: pointerFrac(e.clientX) - startFrac,
       origStart: term.startsOn,
       origWeeks: term.numWeeks,
-      trackWidth: width,
-      totalDays,
       moved: false,
     };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -205,17 +261,17 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
 
   function onBandPointerMove(e: ReactPointerEvent) {
     const d = dragRef.current;
-    if (!d || d.trackWidth <= 0) return;
-    const dx = e.clientX - d.startX;
-    if (Math.abs(dx) > 3) d.moved = true;
-    if (!d.moved) return;
-    const dayDelta = Math.round((dx / d.trackWidth) * d.totalDays);
+    if (!d) return;
+    const pf = pointerFrac(e.clientX);
+    if (!d.moved && Math.abs(pf - (d.grab + dateToFrac(mondayOf(d.origStart)))) < 0.004) return;
+    d.moved = true;
     if (d.mode === 'move') {
-      const newStart = mondayOf(addDays(d.origStart, dayDelta));
-      patchLocal(d.id, { startsOn: newStart });
+      const nextStart = mondayOf(fracToDate(pf - d.grab, anchorYear));
+      patchLocal(d.id, { startsOn: nextStart });
     } else {
-      const newWeeks = clampWeeks((d.origWeeks * 7 + dayDelta) / 7);
-      patchLocal(d.id, { numWeeks: newWeeks });
+      const startMon = mondayOf(d.origStart);
+      const weeks = clampWeeks(daysBetween(startMon, fracToDate(pf, anchorYear)) / 7);
+      patchLocal(d.id, { numWeeks: weeks });
     }
   }
 
@@ -229,11 +285,9 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
     }
     if (!d) return;
     if (!d.moved) {
-      // A click, not a drag → select.
-      setSelectedId(term.id);
+      setSelectedId((cur) => (cur === term.id ? null : term.id));
       return;
     }
-    // Commit the settled value; revert to the pre-drag value on failure.
     if (d.mode === 'move') {
       const committed = mondayOf(term.startsOn);
       persist(
@@ -249,38 +303,41 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
     }
   }
 
-  // ── popover edits ───────────────────────────────────────────────────────────
-  function changeWeeks(term: TermRow, delta: number) {
-    const next = clampWeeks(term.numWeeks + delta);
-    if (next === term.numWeeks) return;
-    const prev = term.numWeeks;
-    patchLocal(term.id, { numWeeks: next });
+  // ── scope edits (persist immediately) ────────────────────────────────────────
+  function setSchools(term: TermRow, schoolIds: string[]) {
+    const prev = term.schoolIds;
+    patchLocal(term.id, { schoolIds });
     persist(
-      () => updateTerm({ id: term.id, numWeeks: next }),
-      () => patchLocal(term.id, { numWeeks: prev }),
+      () => updateTerm({ id: term.id, schoolIds }),
+      () => patchLocal(term.id, { schoolIds: prev }),
     );
   }
-
-  function changeStart(term: TermRow, value: string) {
-    if (!value) return;
-    const snapped = mondayOf(value);
-    const prev = term.startsOn;
-    patchLocal(term.id, { startsOn: snapped });
-    if (dateDebounce.current) clearTimeout(dateDebounce.current);
-    dateDebounce.current = setTimeout(() => {
-      persist(
-        () => updateTerm({ id: term.id, startsOn: snapped }),
-        () => patchLocal(term.id, { startsOn: prev }),
-      );
-    }, 400);
+  function toggleSchool(term: TermRow, schoolId: string) {
+    const next = term.schoolIds.includes(schoolId)
+      ? term.schoolIds.filter((s) => s !== schoolId)
+      : [...term.schoolIds, schoolId];
+    setSchools(term, next);
   }
-
-  function changeName(term: TermRow, value: string) {
+  function setYears(term: TermRow, years: number[]) {
+    const prev = term.years;
+    const next = [...new Set(years)].sort((a, b) => a - b);
+    patchLocal(term.id, { years: next });
+    persist(
+      () => updateTerm({ id: term.id, years: next }),
+      () => patchLocal(term.id, { years: prev }),
+    );
+  }
+  function toggleYear(term: TermRow, year: number) {
+    const next = term.years.includes(year)
+      ? term.years.filter((y) => y !== year)
+      : [...term.years, year];
+    setYears(term, next);
+  }
+  function renameTerm(term: TermRow, value: string) {
     patchLocal(term.id, { name: value });
   }
-
   function commitName(term: TermRow, prevName: string) {
-    const name = term.name.trim() || 'New term';
+    const name = term.name.trim() || t('termCalendar.newTermName');
     if (name === prevName) {
       if (name !== term.name) patchLocal(term.id, { name });
       return;
@@ -292,41 +349,59 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
     );
   }
 
-  // ── add / remove ────────────────────────────────────────────────────────────
+  // ── add / remove ─────────────────────────────────────────────────────────────
+  function firstMondayOfSeptember(year: number): string {
+    const sep1 = `${year}-09-01`;
+    const m = mondayOf(sep1);
+    return m < sep1 ? addDays(m, 7) : m;
+  }
+
   function addTerm() {
-    // Default to the Monday after the latest term's end, else the next Monday.
+    // Default start: the Monday after the latest term's end, else the first Monday
+    // of September in the anchor year. New terms are born with EMPTY scope so the
+    // amber warning forces an explicit centre/year choice (no silent over-grant).
     let startsOn: string;
     if (terms.length) {
       const latest = terms.reduce((a, b) => (a.startsOn >= b.startsOn ? a : b));
       startsOn = mondayOf(addDays(latest.startsOn, latest.numWeeks * 7));
     } else {
-      const thisMonday = mondayOf(todayISO());
-      startsOn = thisMonday === todayISO() ? thisMonday : addDays(thisMonday, 7);
+      startsOn = firstMondayOfSeptember(anchorYear);
     }
     const tempId = `temp-${crypto.randomUUID()}`;
-    const optimistic: TermRow = { id: tempId, name: 'New term', startsOn, numWeeks: 12 };
+    const optimistic: TermRow = {
+      id: tempId,
+      name: t('termCalendar.newTermName'),
+      startsOn,
+      numWeeks: 12,
+      schoolIds: [],
+      years: [],
+    };
     setTerms((prev) => [...prev, optimistic]);
     setSelectedId(tempId);
     startTransition(async () => {
-      const res = await createTerm({ name: 'New term', startsOn, numWeeks: 12 });
+      const res = await createTerm({
+        name: t('termCalendar.newTermName'),
+        startsOn,
+        numWeeks: 12,
+        schoolIds: [],
+        years: [],
+      });
       if (!res.ok || !res.term) {
-        setTerms((prev) => prev.filter((t) => t.id !== tempId));
+        setTerms((prev) => prev.filter((term) => term.id !== tempId));
         setSelectedId((cur) => (cur === tempId ? null : cur));
-        setToast(res.error ?? 'Could not add the term.');
+        setToast(res.error ?? t('termCalendar.addError'));
         return;
       }
       const real = res.term;
-      setTerms((prev) => prev.map((t) => (t.id === tempId ? real : t)));
+      setTerms((prev) => prev.map((term) => (term.id === tempId ? real : term)));
       setSelectedId((cur) => (cur === tempId ? real.id : cur));
     });
   }
 
   function removeTerm(term: TermRow) {
-    setConfirmingDelete(false);
     const snapshot = terms;
-    setTerms((prev) => prev.filter((t) => t.id !== term.id));
+    setTerms((prev) => prev.filter((x) => x.id !== term.id));
     setSelectedId((cur) => (cur === term.id ? null : cur));
-    // A still-optimistic term (never persisted) just vanishes locally.
     if (term.id.startsWith('temp-')) return;
     persist(
       () => deleteTerm({ id: term.id }),
@@ -334,256 +409,160 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
     );
   }
 
-  // ── render ──────────────────────────────────────────────────────────────────
-  const sortedForTable = [...terms].sort((a, b) => a.startsOn.localeCompare(b.startsOn));
+  const academicLabel = t('termCalendar.academicYear', {
+    start: num(anchorYear),
+    end: String((anchorYear + 1) % 100).padStart(2, '0'),
+  });
 
   return (
     <div className="space-y-[18px]">
-      {/* Header */}
+      {/* Heading row */}
       <div className="flex flex-wrap items-center gap-[12px]">
-        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-[#2A2422]">Term calendar</h2>
-        <span className="rounded-full bg-[#EFE7DC] px-[10px] py-[3px] text-[12px] font-semibold text-[#7A7068]">
-          {terms.length} {terms.length === 1 ? 'term' : 'terms'}
-        </span>
-        <span className="text-[12.5px] text-[#A79E94]">
-          {anchorYear} / {String((anchorYear + 1) % 100).padStart(2, '0')} academic year
+        <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[#2A2422]">
+          {t('termCalendar.title')}
+        </h2>
+        <span className="rounded-full bg-[#F3ECE2] px-[10px] py-[3px] text-[12px] font-semibold text-[#A79E94]">
+          {t('termCalendar.termsCount', { count: terms.length })}
         </span>
         <button
           type="button"
           onClick={addTerm}
-          className="ml-auto rounded-[9px] bg-[#1F7A6C] px-[14px] py-[8px] text-[13px] font-semibold text-white transition-colors hover:bg-[#1a6a5d]"
+          className="ml-auto inline-flex items-center gap-[6px] rounded-[9px] bg-teal px-[15px] py-[9px] text-[13px] font-semibold text-white transition-colors hover:bg-[#1a6a5d]"
         >
-          ＋ Add term
+          <span className="text-[15px] leading-none">＋</span> {t('termCalendar.addTerm')}
         </button>
       </div>
+      <div className="text-[12.5px] text-[#9A9087]">{academicLabel}</div>
 
-      {/* Timeline panel */}
-      <div className="rounded-[14px] border border-[#ECE4D7] bg-[#FCFAF6] p-[16px]">
-        {/* Month axis */}
-        <div className="relative mb-[6px] h-[18px] select-none">
-          {Array.from({ length: 12 }, (_, k) => {
-            const left = pos(monthStartISO(anchorYear, k)) * 100;
-            const m0 = (8 + k) % 12;
-            const y = anchorYear + Math.floor((8 + k) / 12);
-            const emphasised = k === 0 || m0 === 0; // September or January
-            return (
-              <div
-                key={k}
-                className={cn(
-                  'absolute top-0 whitespace-nowrap text-[10.5px]',
-                  emphasised ? 'font-semibold text-[#7A7068]' : 'text-[#B3A99C]',
-                )}
-                style={{ left: `${left}%` }}
-              >
-                {MONTHS_SHORT[m0]}
-                {emphasised ? <span className="ml-[3px] text-[#B3A99C]">’{String(y % 100).padStart(2, '0')}</span> : null}
-              </div>
-            );
-          })}
+      {/* Timeline card */}
+      <div className="rounded-[14px] border border-[#ECE4D7] bg-[#FCFAF6] px-[20px] pb-[22px] pt-[18px]">
+        {/* Month header — equal 12-column Sept→Aug axis, kept LTR even in RTL */}
+        <div dir="ltr" className="mb-[4px] grid grid-cols-12 border-b border-[#E7DECF] pb-[9px]">
+          {MONTH_COLS.map((m, i) => (
+            <div
+              key={m}
+              className={cn(
+                'text-[11px] font-semibold',
+                i === 0 || i === 4 ? 'text-[#2A2520]' : 'text-[#8A8178]',
+              )}
+            >
+              {m}
+              {i === 0 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String(anchorYear % 100).padStart(2, '0')}</span> : null}
+              {i === 4 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String((anchorYear + 1) % 100).padStart(2, '0')}</span> : null}
+            </div>
+          ))}
         </div>
 
-        {/* Track with gridlines + bands */}
-        <div
-          ref={trackRef}
-          className="relative"
-          style={{ height: trackHeight }}
-          onPointerDown={() => setSelectedId(null)}
-        >
+        {/* Track */}
+        <div dir="ltr" ref={trackRef} className="relative" style={{ height: trackHeight }} onPointerDown={() => setSelectedId(null)}>
           {/* Gridlines */}
-          {Array.from({ length: 12 }, (_, k) => {
-            const left = pos(monthStartISO(anchorYear, k)) * 100;
-            const m0 = (8 + k) % 12;
-            const decJanBoundary = m0 === 0; // darker line at the Dec/Jan boundary
-            return (
-              <div
-                key={k}
-                className="absolute top-0 bottom-0 w-px"
-                style={{
-                  left: `${left}%`,
-                  background: decJanBoundary ? '#DACFBE' : '#ECE4D7',
-                }}
-              />
-            );
-          })}
+          <div className="pointer-events-none absolute inset-0 grid grid-cols-12">
+            {MONTH_COLS.map((m, i) => (
+              <div key={m} style={{ borderLeft: `1px solid ${i === 4 ? '#ECE0CE' : '#F0E9DE'}` }} />
+            ))}
+          </div>
 
-          {/* Bands */}
-          {terms.map((term, i) => {
-            const geom = bandGeom(term);
-            const left = geom.leftFrac * 100;
-            const width = Math.max(geom.widthFrac * 100, 2);
-            const isSel = term.id === selectedId;
-            const bandBg = isSel ? '#D9EEE8' : '#E4F0ED';
-            const top = BAND_TOP + i * ROW_STEP;
-            return (
-              <div
-                key={term.id}
-                onPointerDown={(e) => onBandPointerDown(e, term, 'move')}
-                onPointerMove={onBandPointerMove}
-                onPointerUp={(e) => onBandPointerUp(e, term)}
-                className={cn(
-                  'group absolute flex items-center gap-[8px] overflow-hidden rounded-[9px] border px-[10px] text-[12px] touch-none',
-                  isSel
-                    ? 'z-20 border-[#1F7A6C] bg-[#D9EEE8] shadow-[0_4px_14px_rgba(31,122,108,0.18)]'
-                    : 'z-10 border-[#BFDDD5] bg-[#E4F0ED]',
-                )}
-                style={{ left: `${left}%`, width: `${width}%`, top, height: BAND_H, cursor: 'grab' }}
-              >
-                <span className="rounded-[5px] bg-[#FCFAF6]/70 px-[5px] py-px text-[10px] font-bold text-[#15564B]">
-                  W1
-                </span>
-                <span className="truncate font-semibold text-[#15564B]">{term.name}</span>
-                <span className="ml-auto whitespace-nowrap text-[11px] text-[#5E8C84]">
-                  {term.numWeeks} weeks
-                </span>
-                {/* Continues-beyond-range cue: the term runs past the start of the
-                    displayed academic year. Fade + chevron, no hard clip. */}
-                {geom.overflowLeft ? (
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-y-0 left-0 flex w-[24px] items-center justify-start pl-[3px]"
-                    style={{ background: `linear-gradient(to left, transparent, ${bandBg})` }}
-                  >
-                    <span className="text-[12px] font-bold text-[#15564B]/70">‹</span>
+          {terms.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center px-[24px] text-center">
+              <p className="max-w-[520px] text-[12.5px] leading-[1.6] text-[#9A9087]">
+                {t('termCalendar.empty.hint')}
+              </p>
+            </div>
+          ) : (
+            terms.map((term) => {
+              const startMon = mondayOf(term.startsOn);
+              const lastMon = addDays(startMon, (term.numWeeks - 1) * 7);
+              const end = addDays(startMon, term.numWeeks * 7);
+              const leftFrac = Math.max(0, Math.min(1, dateToFrac(startMon)));
+              const rightFrac = Math.max(0, Math.min(1, dateToFrac(end)));
+              const left = leftFrac * 100;
+              const width = Math.max(6, (rightFrac - leftFrac) * 100);
+              const isSel = term.id === selectedId;
+              const conflict = conflictFor(term);
+              const scopeLine = `${schoolsLabel(term.schoolIds)} · ${yearsLabel(term.years)}`;
+              const range = t('termCalendar.range', {
+                start: formatShortWeekdayDate(startMon),
+                end: formatShortWeekdayDate(lastMon),
+              });
+              const noCentres = term.schoolIds.length === 0;
+              const noYears = term.years.length === 0;
+              const valid = !noCentres && !noYears && !conflict;
+
+              return (
+                <div
+                  key={term.id}
+                  onPointerDown={(e) => onBandPointerDown(e, term, 'move')}
+                  onPointerMove={onBandPointerMove}
+                  onPointerUp={(e) => onBandPointerUp(e, term)}
+                  className={cn(
+                    'group absolute flex touch-none items-center gap-[8px] rounded-[10px] px-[8px] pl-[11px]',
+                    isSel
+                      ? 'z-40 border-[1.5px] border-teal bg-[#D2E9E2] shadow-[0_6px_18px_-8px_rgba(31,122,108,0.5)]'
+                      : 'z-10 border-[1.5px] border-[#BFDDD5] bg-[#E4F0ED]',
+                  )}
+                  style={{ left: `${left.toFixed(2)}%`, width: `${width.toFixed(2)}%`, top: (laneOf.get(term.id) ?? 0) * ROW_STEP + BAND_TOP, height: BAND_H, cursor: 'grab' }}
+                >
+                  <span className="flex-none text-[9.5px] font-bold text-[#4E9085]">W1</span>
+                  <div className="min-w-0 flex-1" dir="auto">
+                    <div className="truncate text-[12.5px] font-semibold text-[#15564B]">{term.name}</div>
+                    <div className="truncate text-[10.5px] font-medium text-[#5E8C84]">{scopeLine}</div>
                   </div>
-                ) : null}
-                {/* Continues-beyond-range cue: the term extends past the end of the
-                    displayed academic-year window. */}
-                {geom.overflowRight ? (
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-y-0 right-0 flex w-[24px] items-center justify-end pr-[3px]"
-                    style={{ background: `linear-gradient(to right, transparent, ${bandBg})` }}
-                  >
-                    <span className="text-[12px] font-bold text-[#15564B]/70">›</span>
-                  </div>
-                ) : null}
-                {/* Resize handle — hidden when the band is clamped at the right
-                    edge, since its end isn't on screen to grab. */}
-                {geom.overflowRight ? null : (
-                  <div
+                  {/* Resize handle */}
+                  <span
                     onPointerDown={(e) => onBandPointerDown(e, term, 'resize')}
                     onPointerMove={onBandPointerMove}
                     onPointerUp={(e) => onBandPointerUp(e, term)}
-                    className="absolute right-0 top-0 flex h-full w-[12px] items-center justify-center touch-none"
+                    className="flex h-[30px] w-[14px] flex-none items-center justify-center rounded-[6px] border-[1.5px] border-[#BFDDD5] bg-white"
                     style={{ cursor: 'ew-resize' }}
-                    aria-label="Resize term"
+                    aria-label={t('termCalendar.resizeAria')}
                   >
-                    <span className="h-[16px] w-[2px] rounded-full bg-[#5E8C84]/60" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                    <span className="h-[14px] w-[2px] rounded-[2px] bg-[#9ACABE]" />
+                  </span>
+                  <span className="flex-none text-[9.5px] font-bold text-[#4E9085]">W{num(term.numWeeks)}</span>
 
-          {/* Selected-band popover */}
-          {selected ? (
-            <SelectedPopover
-              term={selected}
-              index={terms.findIndex((t) => t.id === selected.id)}
-              leftFrac={bandGeom(selected).leftFrac}
-              widthFrac={bandGeom(selected).widthFrac}
-              trackRef={trackRef}
-              onChangeName={changeName}
-              onCommitName={commitName}
-              onChangeStart={changeStart}
-              onChangeWeeks={changeWeeks}
-              onRemove={() => setConfirmingDelete(true)}
-            />
-          ) : null}
+                  {isSel ? (
+                    <ScopePopover
+                      term={term}
+                      left={left}
+                      range={range}
+                      centres={activeCentres}
+                      valid={valid}
+                      summary={
+                        valid
+                          ? t('termCalendar.validity.valid', {
+                              weeks: num(term.numWeeks),
+                              schools: schoolsLabel(term.schoolIds),
+                              years: yearsLabel(term.years),
+                            })
+                          : noCentres
+                            ? t('termCalendar.validity.noCentres')
+                            : noYears
+                              ? t('termCalendar.validity.noYears')
+                              : t('termCalendar.validity.overlap', {
+                                  term: conflict?.name ?? '',
+                                  scope: conflict?.scope ?? '',
+                                })
+                      }
+                      onClose={() => setSelectedId(null)}
+                      onRename={(v) => renameTerm(term, v)}
+                      onCommitName={(prevName) => commitName(term, prevName)}
+                      onSetSchools={(ids) => setSchools(term, ids)}
+                      onToggleSchool={(id) => toggleSchool(term, id)}
+                      onSetYears={(ys) => setYears(term, ys)}
+                      onToggleYear={(y) => toggleYear(term, y)}
+                      onRemove={() => removeTerm(term)}
+                    />
+                  ) : null}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
-
-      {/* Mirror table */}
-      <div className="overflow-hidden rounded-[14px] border border-[#ECE4D7]">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr className="bg-[#FBF8F3] text-left text-[11px] font-bold uppercase tracking-[0.05em] text-[#A79E94]">
-              <th className="px-[16px] py-[11px]">Term</th>
-              <th className="px-[16px] py-[11px]">Week 1</th>
-              <th className="px-[16px] py-[11px]">Last week</th>
-              <th className="px-[16px] py-[11px]">Weeks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedForTable.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-[16px] py-[28px] text-center text-[13px] text-[#A79E94]">
-                  No terms yet. Use “＋ Add term” to define the academic year.
-                </td>
-              </tr>
-            ) : (
-              sortedForTable.map((term) => {
-                const status = statusOf(term);
-                const lastWeek = addDays(term.startsOn, (term.numWeeks - 1) * 7);
-                const isSel = term.id === selectedId;
-                return (
-                  <tr
-                    key={term.id}
-                    onClick={() => setSelectedId(term.id)}
-                    className={cn(
-                      'cursor-pointer border-t border-[#F0EAE1] transition-colors',
-                      isSel ? 'bg-[#FCFAF6]' : 'hover:bg-[#FBF8F3]',
-                    )}
-                  >
-                    <td className="px-[16px] py-[11px]">
-                      <span className="font-semibold text-[#2A2422]">{term.name}</span>
-                      <StatusChip status={status} />
-                    </td>
-                    <td className="px-[16px] py-[11px] text-[#5E5249]">
-                      {formatShortWeekdayDate(term.startsOn)}
-                    </td>
-                    <td className="px-[16px] py-[11px] text-[#5E5249]">
-                      {formatShortWeekdayDate(lastWeek)}
-                    </td>
-                    <td className="px-[16px] py-[11px] text-[#5E5249]">{term.numWeeks}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Remove confirm */}
-      {confirmingDelete && selected ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#423B35]/45 p-4"
-          onMouseDown={() => setConfirmingDelete(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-[400px] rounded-[15px] border border-[#DCD2C4] bg-white p-[22px] shadow-card"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-[10px] text-[16px] font-semibold text-[#2A2422]">Remove term</h3>
-            <p className="mb-[18px] text-[13px] text-[#5E5249]">
-              Remove <b className="font-semibold">{selected.name}</b> from the calendar? Weeks after it
-              will shift back. This can’t be undone.
-            </p>
-            <div className="flex justify-end gap-[10px]">
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(false)}
-                className="rounded-[9px] px-[14px] py-[8px] text-[13px] font-semibold text-[#7A7068] hover:opacity-70"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => removeTerm(selected)}
-                className="rounded-[9px] bg-[#B23A2E] px-[14px] py-[8px] text-[13px] font-semibold text-white hover:bg-[#9c3227]"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* Error toast */}
       {toast ? (
-        <div className="fixed bottom-[20px] left-1/2 z-[120] -translate-x-1/2 rounded-[10px] bg-[#B23A2E] px-[16px] py-[10px] text-[13px] font-medium text-white shadow-card">
+        <div className="fixed bottom-[20px] left-1/2 z-[120] -translate-x-1/2 rounded-[10px] bg-danger px-[16px] py-[10px] text-[13px] font-medium text-white shadow-card">
           {toast}
         </div>
       ) : null}
@@ -591,168 +570,191 @@ export function TermCalendarTab({ terms: initialTerms }: { terms: TermRow[] }) {
   );
 }
 
-function StatusChip({ status }: { status: TermStatus }) {
-  const styles: Record<TermStatus, string> = {
-    past: 'bg-[#EFE9E1] text-[#9A8F82]',
-    current: 'bg-[#D9EEE8] text-[#186155]',
-    upcoming: 'bg-[#E7EEF7] text-[#3D6196]',
-  };
-  return (
-    <span
-      className={cn(
-        'ml-[8px] inline-block rounded-full px-[8px] py-[2px] text-[10.5px] font-semibold',
-        styles[status],
-      )}
-    >
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
-const POPOVER_WIDTH = 286;
-const POPOVER_MARGIN = 8;
-
-function SelectedPopover({
+function ScopePopover({
   term,
-  index,
-  leftFrac,
-  widthFrac,
-  trackRef,
-  onChangeName,
+  left,
+  range,
+  centres,
+  valid,
+  summary,
+  onClose,
+  onRename,
   onCommitName,
-  onChangeStart,
-  onChangeWeeks,
+  onSetSchools,
+  onToggleSchool,
+  onSetYears,
+  onToggleYear,
   onRemove,
 }: {
   term: TermRow;
-  index: number;
-  leftFrac: number;
-  widthFrac: number;
-  trackRef: RefObject<HTMLDivElement | null>;
-  onChangeName: (term: TermRow, value: string) => void;
-  onCommitName: (term: TermRow, prevName: string) => void;
-  onChangeStart: (term: TermRow, value: string) => void;
-  onChangeWeeks: (term: TermRow, delta: number) => void;
+  left: number;
+  range: string;
+  centres: CentreRow[];
+  valid: boolean;
+  summary: string;
+  onClose: () => void;
+  onRename: (value: string) => void;
+  onCommitName: (prevName: string) => void;
+  onSetSchools: (ids: string[]) => void;
+  onToggleSchool: (id: string) => void;
+  onSetYears: (years: number[]) => void;
+  onToggleYear: (year: number) => void;
   onRemove: () => void;
 }) {
+  const t = useTranslations('settings');
+  const locale = useLocale();
   const nameAtFocus = useRef(term.name);
-  const popRef = useRef<HTMLDivElement | null>(null);
-  // Fixed viewport coordinates, computed from the live position of the band this
-  // popover edits. Anchored to the band, flipped above it when there's no room
-  // below, and shifted to stay fully inside the viewport. Null until measured so
-  // the first paint doesn't flash at the origin.
-  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const flip = left > 52; // anchor to the band's right edge when it sits past centre
 
-  useLayoutEffect(() => {
-    const track = trackRef.current;
-    const pop = popRef.current;
-    if (!track || !pop) return;
-
-    const reposition = () => {
-      const tr = track.getBoundingClientRect();
-      const popH = pop.offsetHeight;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      const bandLeft = tr.left + leftFrac * tr.width;
-      const bandTop = tr.top + BAND_TOP + index * ROW_STEP;
-      const bandBottom = bandTop + BAND_H;
-
-      // Horizontal: anchor to the band's left edge, then shift to stay on screen.
-      let left = bandLeft;
-      left = Math.min(left, vw - POPOVER_WIDTH - POPOVER_MARGIN);
-      left = Math.max(left, POPOVER_MARGIN);
-
-      // Vertical: below the band by default; flip above if it would overflow the
-      // bottom of the viewport and there's room above.
-      let top = bandBottom + POPOVER_MARGIN;
-      if (top + popH > vh - POPOVER_MARGIN) {
-        const above = bandTop - POPOVER_MARGIN - popH;
-        top = above >= POPOVER_MARGIN ? above : Math.max(POPOVER_MARGIN, vh - POPOVER_MARGIN - popH);
-      }
-
-      setPlace({ left, top });
-    };
-
-    reposition();
-    window.addEventListener('resize', reposition);
-    window.addEventListener('scroll', reposition, true);
-    return () => {
-      window.removeEventListener('resize', reposition);
-      window.removeEventListener('scroll', reposition, true);
-    };
-  }, [index, leftFrac, widthFrac, trackRef, term.numWeeks, term.startsOn]);
+  const quick = (active: boolean) =>
+    cn(
+      'cursor-pointer rounded-[6px] border px-[8px] py-[3px] text-[10.5px] font-semibold',
+      active
+        ? 'border-teal-tint-border bg-teal-tint text-teal'
+        : 'border-[#E7DBC9] bg-[#F3ECE2] text-[#6E6358]',
+    );
 
   return (
     <div
-      ref={popRef}
-      className="fixed z-30 rounded-[12px] border border-[#E2D9CC] bg-white p-[14px] shadow-[0_8px_24px_rgba(48,40,32,0.14)]"
-      style={{
-        top: place?.top ?? 0,
-        left: place?.left ?? 0,
-        width: POPOVER_WIDTH,
-        visibility: place ? 'visible' : 'hidden',
-      }}
       onPointerDown={(e) => e.stopPropagation()}
+      className="absolute z-[60] w-[316px] rounded-[14px] border border-[#E2D9CC] bg-white p-[16px] shadow-[0_16px_38px_-12px_rgba(60,40,30,0.4)]"
+      style={{ top: 'calc(100% + 10px)', left: flip ? 'auto' : 0, right: flip ? 0 : 'auto', cursor: 'default' }}
     >
-      <input
-        value={term.name}
-        onChange={(e) => onChangeName(term, e.target.value)}
-        onFocus={() => {
-          nameAtFocus.current = term.name;
-        }}
-        onBlur={() => onCommitName(term, nameAtFocus.current)}
-        className="mb-[12px] w-full rounded-[8px] border border-[#E2D9CC] px-[10px] py-[7px] text-[13px] font-semibold text-[#2A2422] outline-none focus:border-[#1F7A6C]"
-        placeholder="Term name"
-      />
-
-      <label className="mb-[5px] block text-[11px] font-bold uppercase tracking-[0.05em] text-[#A79E94]">
-        Start (Monday)
-      </label>
-      <input
-        type="date"
-        value={term.startsOn}
-        onChange={(e) => onChangeStart(term, e.target.value)}
-        className="mb-[12px] w-full rounded-[8px] border border-[#E2D9CC] px-[10px] py-[7px] text-[13px] text-[#2A2422] outline-none focus:border-[#1F7A6C]"
-      />
-
-      <label className="mb-[5px] block text-[11px] font-bold uppercase tracking-[0.05em] text-[#A79E94]">
-        Weeks
-      </label>
-      <div className="mb-[12px] flex items-center gap-[10px]">
+      {/* Header */}
+      <div className="mb-[15px] flex items-center gap-[9px]">
+        <span className="h-[9px] w-[9px] flex-none rounded-[3px] bg-teal" />
+        <div className="min-w-0 flex-1">
+          <input
+            value={term.name}
+            onChange={(e) => onRename(e.target.value)}
+            onFocus={() => {
+              nameAtFocus.current = term.name;
+            }}
+            onBlur={() => onCommitName(nameAtFocus.current)}
+            dir="auto"
+            className="w-full truncate border-none bg-transparent p-0 text-[13.5px] font-semibold text-[#2A2520] outline-none"
+            placeholder={t('termCalendar.newTermName')}
+          />
+          <div className="text-[11px] text-[#9A9087]">{range}</div>
+        </div>
         <button
           type="button"
-          onClick={() => onChangeWeeks(term, -1)}
-          disabled={term.numWeeks <= MIN_WEEKS}
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-[#E2D9CC] text-[16px] text-[#5E5249] hover:bg-[#FBF8F3] disabled:opacity-40"
-          aria-label="One fewer week"
+          onClick={onClose}
+          aria-label={t('termCalendar.close')}
+          className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] border border-[#E7DECF] bg-white hover:bg-[#FBF8F3]"
         >
-          −
-        </button>
-        <span className="min-w-[28px] text-center text-[15px] font-semibold text-[#2A2422]">
-          {term.numWeeks}
-        </span>
-        <button
-          type="button"
-          onClick={() => onChangeWeeks(term, 1)}
-          disabled={term.numWeeks >= MAX_WEEKS}
-          className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-[#E2D9CC] text-[16px] text-[#5E5249] hover:bg-[#FBF8F3] disabled:opacity-40"
-          aria-label="One more week"
-        >
-          ＋
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8178" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6L6 18M6 6l12 12" /></svg>
         </button>
       </div>
 
-      <div className="flex items-center justify-between border-t border-[#F0EAE1] pt-[10px]">
-        <span className="text-[11.5px] text-[#7A7068]">
-          Week 1 · w/c <b className="font-semibold text-[#2A2422]">{formatShortWeekdayDate(term.startsOn)}</b>
+      {/* Centres */}
+      <div className="mb-[8px] flex items-center gap-[8px]">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+          {t('termCalendar.centres.label')}
+        </span>
+        <div className="ml-auto flex gap-[5px]">
+          <button type="button" onClick={() => onSetSchools(centres.map((c) => c.id))} className={quick(false)}>
+            {t('termCalendar.quick.all')}
+          </button>
+          <button type="button" onClick={() => onSetSchools([])} className={quick(false)}>
+            {t('termCalendar.quick.none')}
+          </button>
+        </div>
+      </div>
+      <div className="mb-[15px] flex flex-col gap-[5px]">
+        {centres.length === 0 ? (
+          <div className="rounded-[8px] border border-[#E7DECF] bg-white px-[10px] py-[8px] text-[12px] text-[#9A9087]">
+            {t('termCalendar.centres.empty')}
+          </div>
+        ) : (
+          centres.map((c) => {
+            const checked = term.schoolIds.includes(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onToggleSchool(c.id)}
+                className={cn(
+                  'flex items-center gap-[10px] rounded-[8px] border px-[10px] py-[8px] text-left',
+                  checked ? 'border-teal-tint-border bg-teal-tint' : 'border-[#E7DECF] bg-white',
+                )}
+              >
+                <span
+                  className={cn(
+                    'flex h-[17px] w-[17px] flex-none items-center justify-center rounded-[5px] border-[1.5px]',
+                    checked ? 'border-teal bg-teal' : 'border-[#CFC6B9] bg-white',
+                  )}
+                >
+                  {checked ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
+                  ) : null}
+                </span>
+                <span className="flex-1 text-[12.5px] font-semibold text-[#3A332E]" dir="auto">{c.name}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Years */}
+      <div className="mb-[8px] flex items-center gap-[8px]">
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+          {t('termCalendar.years.label')}
+        </span>
+        <div className="ml-auto flex gap-[5px]">
+          <button type="button" onClick={() => onSetYears(Y1_6)} className={quick(true)}>
+            {t('termCalendar.years.y16')}
+          </button>
+          <button type="button" onClick={() => onSetYears(YEAR_CHIPS)} className={quick(false)}>
+            {t('termCalendar.quick.all')}
+          </button>
+          <button type="button" onClick={() => onSetYears([])} className={quick(false)}>
+            {t('termCalendar.quick.none')}
+          </button>
+        </div>
+      </div>
+      <div className="mb-[14px] flex flex-wrap gap-[6px]">
+        {YEAR_CHIPS.map((n) => {
+          const checked = term.years.includes(n);
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onToggleYear(n)}
+              className={cn(
+                'rounded-[8px] border-[1.5px] px-[11px] py-[6px] text-[12px] font-semibold',
+                checked ? 'border-teal bg-teal text-white' : 'border-[#E0D6C7] bg-white text-[#6E6358]',
+              )}
+            >
+              Y{formatNumber(n, locale)}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Validity strip — teal when valid, amber (status-progress) otherwise. Never red. */}
+      <div
+        className={cn(
+          'flex items-center gap-[8px] rounded-[9px] border px-[11px] py-[9px]',
+          valid
+            ? 'border-teal-tint-border bg-teal-tint'
+            : 'border-status-progress-border bg-status-progress-bg',
+        )}
+      >
+        {valid ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-teal" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-status-progress" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+        )}
+        <span className={cn('flex-1 text-[11.5px] font-semibold', valid ? 'text-teal-deep' : 'text-status-progress')} dir="auto">
+          {summary}
         </span>
         <button
           type="button"
           onClick={onRemove}
-          className="text-[11.5px] font-semibold text-[#B23A2E] hover:opacity-70"
+          className="flex-none text-[11.5px] font-semibold text-danger hover:opacity-70"
         >
-          Remove
+          {t('termCalendar.remove')}
         </button>
       </div>
     </div>

@@ -821,31 +821,50 @@ export interface TermRow {
   startsOn: string;
   /** Whole weeks the term spans (1–40). */
   numWeeks: number;
+  /** The centres (`schools.id`) this term applies to — its `term_school` scope set. */
+  schoolIds: string[];
+  /** The curriculum years (0–6) this term applies to — its `term_year` scope set. */
+  years: number[];
 }
 
 /**
- * All terms for the (org-wide v1) calendar, in start-date order — the bands of the
- * admin timeline and the source the board's `term_week` view derives from. Reads
- * via the auth'd client; `term_read` lets every authenticated user see the shared
- * calendar, while only admins may write it.
+ * All terms for the calendar, in start-date order — the bands of the admin timeline
+ * and the source the board's `term_week` view derives from. Each term now carries a
+ * SET OF CENTRES (`term_school`) and a SET OF CURRICULUM YEARS (`term_year`); a term
+ * with zero of either produces zero teaching weeks. Reads via the auth'd client;
+ * `term_read` (+ the junctions' read policies) let every authenticated user see the
+ * shared calendar, while only admins may write it.
  */
 export async function getTerms(): Promise<TermRow[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('term')
-    .select('id, name, starts_on, num_weeks')
-    .order('starts_on', { ascending: true });
+  const [{ data: termData }, { data: schoolData }, { data: yearData }] = await Promise.all([
+    supabase.from('term').select('id, name, starts_on, num_weeks').order('starts_on', { ascending: true }),
+    supabase.from('term_school').select('term_id, school_id'),
+    supabase.from('term_year').select('term_id, year'),
+  ]);
 
-  const rows = (data ?? []) as Array<{
+  const rows = (termData ?? []) as Array<{
     id: string;
     name: string;
     starts_on: string;
     num_weeks: number;
   }>;
+
+  const schoolsByTerm = new Map<string, string[]>();
+  for (const r of (schoolData ?? []) as Array<{ term_id: string; school_id: string }>) {
+    (schoolsByTerm.get(r.term_id) ?? schoolsByTerm.set(r.term_id, []).get(r.term_id)!).push(r.school_id);
+  }
+  const yearsByTerm = new Map<string, number[]>();
+  for (const r of (yearData ?? []) as Array<{ term_id: string; year: number }>) {
+    (yearsByTerm.get(r.term_id) ?? yearsByTerm.set(r.term_id, []).get(r.term_id)!).push(r.year);
+  }
+
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     startsOn: r.starts_on,
     numWeeks: r.num_weeks,
+    schoolIds: schoolsByTerm.get(r.id) ?? [],
+    years: (yearsByTerm.get(r.id) ?? []).sort((a, b) => a - b),
   }));
 }

@@ -141,8 +141,12 @@ export function isNonLessonMarker(dailyOutcome: string | null, period: number | 
 // section, and freeform rows therefore fall through to the one-column view rather than
 // getting mis-attributed text. monthly_lo is always preserved regardless.
 
-/** Subjects whose combined monthly cell carries inline Knowledge/Skills labels. */
-const MONTHLY_SPLIT_SUBJECTS = new Set(['maths', 'science', 'it', 'arabic']);
+/** Subjects whose combined monthly cell carries inline Knowledge/Skills labels.
+ *  Professionalism (V4) ships the same inline-labelled shape — labels alone on their
+ *  own line, prose on the following line — so it is split here too; English is absent
+ *  because its combined cell uses bare `Skills`/`Knowledge` heading lines that the
+ *  browse renderer splits at read time instead. */
+const MONTHLY_SPLIT_SUBJECTS = new Set(['maths', 'science', 'it', 'arabic', 'professionalism']);
 
 const KNOWLEDGE_LABEL = /^\s*(?:monthly\s+)?knowledge(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;
 const SKILLS_LABEL = /^\s*(?:monthly\s+)?skills?(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;

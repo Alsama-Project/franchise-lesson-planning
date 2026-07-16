@@ -539,11 +539,40 @@ test('splitInlineMonthly: both-labels-required guard — one section only → nu
   );
 });
 
-test('splitInlineMonthly: non-split subjects (english, professionalism) are untouched → null', () => {
+test('splitInlineMonthly: non-split subject english is untouched → null', () => {
+  // English's combined cell uses bare Skills/Knowledge heading lines that the browse
+  // renderer splits at read time, so english stays OUT of MONTHLY_SPLIT_SUBJECTS and
+  // splitInlineMonthly leaves its cell combined.
   const blob = 'Skills\n. a\nKnowledge\n. b';
   assert.equal(splitInlineMonthly('english', blob), null);
-  assert.equal(splitInlineMonthly('professionalism', blob), null);
   assert.equal(splitInlineMonthly('maths', null), null);
+});
+
+test('splitInlineMonthly: professionalism labels alone on their own line, prose on the next', () => {
+  // The real V4 professionalism shape (confirmed on curriculum_version 70b294f0): the
+  // Skill/Knowledge labels sit alone on a line with the prose on the FOLLOWING line, so
+  // the label line's `rest` is empty and the following non-label line must accumulate
+  // into the current section.
+  const blob =
+    'Skill Learning Outcome:\n' +
+    'Build professional relationships, manage well-being, and justify the importance of consistent professional behaviour.\n' +
+    'Knowledge Learning Outcome:\n' +
+    'Compare professional and personal relationships and describe what reliable professional conduct looks like.';
+  const r = splitInlineMonthly('professionalism', blob);
+  assert.deepEqual(r, {
+    skills:
+      'Build professional relationships, manage well-being, and justify the importance of consistent professional behaviour.',
+    knowledge:
+      'Compare professional and personal relationships and describe what reliable professional conduct looks like.',
+  });
+});
+
+test('splitInlineMonthly: professionalism single-section cell → null (both-labels guard)', () => {
+  // Only one section present: leave monthly_lo combined rather than writing a half-split.
+  assert.equal(
+    splitInlineMonthly('professionalism', 'Skill Learning Outcome:\nonly skills here.'),
+    null,
+  );
 });
 
 // ── Real-workbook regression gate (self-skips without the gitignored IP files) ─────

@@ -15,6 +15,7 @@ import { WorksheetBuilder } from '@/components/editor/worksheet/WorksheetBuilder
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 
 export function PractiseStep({
+  title,
   block,
   onPatch,
   worksheet,
@@ -24,6 +25,8 @@ export function PractiseStep({
   showWorksheet = true,
   locked = false,
 }: {
+  /** Numbered step heading (registry-driven), e.g. "6 · Independent practice". */
+  title: string;
   block: Block;
   onPatch: (patch: Partial<Block>) => void;
   worksheet?: unknown;
@@ -43,7 +46,7 @@ export function PractiseStep({
     <fieldset disabled={locked} className="mt-[16px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
       {/* Block header */}
       <div className="flex flex-wrap items-center gap-[14px] border-b border-[#EFE8DD] px-6 py-[10px]">
-        <span className="text-[18px] font-bold">{t('practise.title')}</span>
+        <span className="text-[18px] font-bold">{title}</span>
         <PhaseSelect
           value={block.phase}
           onChange={(phase) => onPatch({ phase: phase as TeachingPhase | null })}

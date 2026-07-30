@@ -2,10 +2,14 @@
   "wizard": {
     "steps": {
       "objective": "SMARTT objective",
-      "teachIt": "Teach it",
-      "practise": "Practise",
-      "linkIt": "Link it",
-      "review": "Review"
+      "homeworkCheck": "Homework check",
+      "recap": "Recap",
+      "newContent": "New content",
+      "cfu": "Check for understanding",
+      "practice": "Independent practice",
+      "exitTicket": "Exit ticket",
+      "review": "Review",
+      "optional": "Optional"
     },
     "nav": {
       "back": "Back",
@@ -62,7 +66,6 @@
       "dailyAndObjectives": "Daily outcome & objectives"
     },
     "teach": {
-      "newContentTitle": "Teach the new content",
       "teacherDoes": "What the teacher does",
       "studentsDo": "What students do",
       "teacherPlaceholder": "Model the task, narrate your thinking, set the success criteria…",
@@ -70,9 +73,6 @@
       "worksheetTitle": "Student worksheet",
       "worksheetHint": "build the sheet students work from",
       "addFromBank": "Add from bank"
-    },
-    "practise": {
-      "title": "Practise"
     },
     "phase": {
       "aria": "Teaching phase",
@@ -114,7 +114,11 @@
         "exitTicket": "Exit ticket"
       },
       "homework": "Homework",
-      "homeworkNote": "— at home, excluded from 50"
+      "homeworkNote": "— at home, excluded from 50",
+      "rightPane": {
+        "worksheet": "Worksheet",
+        "comments": "Comments ({count})"
+      }
     },
     "submit": {
       "approved": "Approved",

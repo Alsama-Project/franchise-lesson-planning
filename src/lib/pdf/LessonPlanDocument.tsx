@@ -150,6 +150,17 @@ function BlockRow({
         block.students_do.trim() !== '' ||
         block.resources.trim() !== '';
 
+  // The homework check is optional. When it carries no teacher/student content it is
+  // omitted from the printed plan entirely — its Review-table time row still feeds the
+  // 50-minute total, but an empty stub here would read as a forgotten section.
+  if (
+    block.type === 'check_homework' &&
+    block.teacher_does.trim() === '' &&
+    block.students_do.trim() === ''
+  ) {
+    return null;
+  }
+
   return (
     <View style={styles.block} wrap={false}>
       <View style={styles.blockHead}>

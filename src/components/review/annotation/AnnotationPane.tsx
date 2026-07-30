@@ -47,7 +47,18 @@ interface CardGroup {
   cards: Annotation[];
 }
 
-export function AnnotationPane() {
+export function AnnotationPane({
+  stacked = false,
+  sectionOrder,
+}: {
+  /** Force a plain stacked list instead of the section-anchored floating layout.
+   *  Used by the editor's Review right pane (the anchoring is retired there); the
+   *  coordinator `/view` leaves this off and keeps the floating stack. */
+  stacked?: boolean;
+  /** Section keys in lesson order; when `stacked`, section groups render in this
+   *  order (whole-plan cards still lead, in the top block). */
+  sectionOrder?: string[];
+} = {}) {
   const t = useTranslations('review');
   const ctx = useAnnotations();
   const {
@@ -101,8 +112,17 @@ export function AnnotationPane() {
     if (composingKey !== null && composingKey !== '__general__' && !bySection.has(composingKey)) {
       list.push({ key: composingKey, cards: [] });
     }
+    // Stacked mode: order the section groups the way the lesson reads (floating mode
+    // instead sorts by measured offset, which is unavailable here).
+    if (stacked && sectionOrder) {
+      const rank = (key: string) => {
+        const i = sectionOrder.indexOf(key);
+        return i === -1 ? sectionOrder.length : i;
+      };
+      list.sort((a, b) => rank(a.key) - rank(b.key));
+    }
     return list;
-  }, [annotations, composingKey]);
+  }, [annotations, composingKey, stacked, sectionOrder]);
 
   // Whether any card exists at all — drives the empty-state note.
   const total = annotations.length;
@@ -122,6 +142,11 @@ export function AnnotationPane() {
   const recompute = useCallback(() => {
     const layer = layerRef.current;
     if (!layer) return;
+    // Stacked mode never floats: the anchoring/measurement path is retired here. It's
+    // a no-op — `positions`/`layerHeight` start null and `stacked` is fixed per mount,
+    // so the pane stays in flow (groups already ordered by lesson order above) without
+    // this ever writing state.
+    if (stacked) return;
     const isLg = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
     // Flow mode — clear absolute positioning; groups stack naturally. Used below `lg`,
     // when there are no groups, and on first paint until the sections register their
@@ -157,7 +182,7 @@ export function AnnotationPane() {
     }
     setPositions(next);
     setLayerHeight(cursor);
-  }, [groups, sectionsRef]);
+  }, [groups, sectionsRef, stacked]);
 
   const schedule = useCallback(() => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);

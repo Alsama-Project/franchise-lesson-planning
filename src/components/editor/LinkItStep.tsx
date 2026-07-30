@@ -21,30 +21,6 @@ function PlusIcon() {
 }
 
 /**
- * One labelled section inside the single Link-it card. The first section sits
- * flush at the top; the rest are separated from the previous section by a hairline
- * divider + spacing, so the three read as distinct parts of one coherent card.
- */
-function Section({
-  title,
-  divider,
-  children,
-}: {
-  title: string;
-  divider?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={divider ? 'mt-[16px] border-t border-border pt-[16px]' : ''}>
-      <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-neutral-500">
-        {title}
-      </div>
-      <div className="mt-[11px]">{children}</div>
-    </div>
-  );
-}
-
-/**
  * Read-only panel showing the previous lesson's daily outcome, above the recap
  * field — so the teacher can see what was taught last lesson while writing the
  * recap. Reuses the cream curriculum-panel tokens (cream = curriculum/locked,
@@ -223,15 +199,23 @@ function TechniqueGroup({
   );
 }
 
+/** Which strip of the former "Link it together" card a step renders. Recap, Check
+ *  for understanding and Exit ticket each became their own step in the sequential
+ *  flow; all three still read from and write to the SAME `blocks`-derived `LinkIt`
+ *  model, so navigating between them cannot drop an edit. */
+export type LinkItPart = 'recap' | 'cfu' | 'exitTicket';
+
 /**
- * Step 4 — "Link it together": ONE card holding three labelled sections. Recap is
- * a single free-text field (with the previous lesson's outcome shown read-only
- * above it); Check-for-understanding and Exit ticket each let the teacher add any
- * number of pre-approved techniques (from the real activity bank), each as a teal
- * chip with a pink note. Colour semantics: cream = curriculum/locked (the previous
- * outcome), pink = teacher-editable, teal = the technique selections/actions.
+ * One strip of the lesson-linking flow, rendered as its own step. `part` selects
+ * which strip shows; the markup, technique pickers, note fields, collision-aware
+ * Add menu and the yesterday's-LO cream panel are the SAME as when the three
+ * shared one card. The heading is the numbered step title (e.g. "3 · Recap").
+ * Colour semantics: cream = curriculum/locked (the previous outcome), pink =
+ * teacher-editable, teal = the technique selections/actions.
  */
 export function LinkItStep({
+  part,
+  title,
   linkIt,
   cfuActivities,
   exitActivities,
@@ -239,6 +223,9 @@ export function LinkItStep({
   onChange,
   locked = false,
 }: {
+  part: LinkItPart;
+  /** Numbered step heading (registry-driven), e.g. "3 · Recap". */
+  title: string;
   linkIt: LinkIt;
   cfuActivities: ActivityBankItem[];
   exitActivities: ActivityBankItem[];
@@ -251,37 +238,37 @@ export function LinkItStep({
 }) {
   const t = useTranslations('wizard.linkIt');
   return (
-    <>
-      <div className="mt-[16px] text-[18px] font-bold">{t('heading')}</div>
-      <fieldset disabled={locked} className="mt-[12px] min-w-0 rounded-[14px] border border-border bg-surface px-[18px] py-[14px] disabled:opacity-75">
-        <Section title={t('recap')}>
-        {previousDailyLO ? <PreviousOutcomePanel outcome={previousDailyLO} /> : null}
-        <textarea
-          dir="auto"
-          rows={3}
-          value={linkIt.recap}
-          onChange={(e) => onChange({ ...linkIt, recap: e.target.value })}
-          placeholder={t('recapPlaceholder')}
-          className={`resize-y ${NOTE_FIELD}`}
-        />
-      </Section>
-
-      <Section title={t('checkForUnderstanding')} divider>
-        <TechniqueGroup
-          activities={cfuActivities}
-          selected={linkIt.checkForUnderstanding}
-          onChange={(next) => onChange({ ...linkIt, checkForUnderstanding: next })}
-        />
-      </Section>
-
-      <Section title={t('exitTicket')} divider>
-        <TechniqueGroup
-          activities={exitActivities}
-          selected={linkIt.exitTicket}
-          onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
-        />
-      </Section>
-      </fieldset>
-    </>
+    <fieldset disabled={locked} className="mt-[16px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
+      <div className="flex flex-wrap items-center gap-[10px] border-b border-[#EFE8DD] px-6 py-[10px]">
+        <span className="text-[18px] font-bold">{title}</span>
+      </div>
+      <div className="px-6 py-[14px]">
+        {part === 'recap' ? (
+          <>
+            {previousDailyLO ? <PreviousOutcomePanel outcome={previousDailyLO} /> : null}
+            <textarea
+              dir="auto"
+              rows={3}
+              value={linkIt.recap}
+              onChange={(e) => onChange({ ...linkIt, recap: e.target.value })}
+              placeholder={t('recapPlaceholder')}
+              className={`resize-y ${NOTE_FIELD}`}
+            />
+          </>
+        ) : part === 'cfu' ? (
+          <TechniqueGroup
+            activities={cfuActivities}
+            selected={linkIt.checkForUnderstanding}
+            onChange={(next) => onChange({ ...linkIt, checkForUnderstanding: next })}
+          />
+        ) : (
+          <TechniqueGroup
+            activities={exitActivities}
+            selected={linkIt.exitTicket}
+            onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
+          />
+        )}
+      </div>
+    </fieldset>
   );
 }

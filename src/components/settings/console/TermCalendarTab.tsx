@@ -22,6 +22,7 @@ import {
   useTransition,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
@@ -33,7 +34,7 @@ import {
   daysBetween,
   formatShortWeekdayDate,
   mondayOf,
-  todayISO,
+  todayInBeirut,
 } from '@/lib/week';
 
 const MIN_WEEKS = 1;
@@ -49,6 +50,29 @@ const Y1_6 = [1, 2, 3, 4, 5, 6];
 function clampWeeks(n: number): number {
   if (!Number.isFinite(n)) return MIN_WEEKS;
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, Math.round(n)));
+}
+
+/** The first Monday on or after 1 September of academic year `ay`. */
+function firstMondayOfSeptember(ay: number): string {
+  const sep1 = `${ay}-09-01`;
+  const m = mondayOf(sep1);
+  return m < sep1 ? addDays(m, 7) : m;
+}
+
+/**
+ * Clamp a term's start (a Monday) into the selected academic-year window so a drag
+ * can never push `starts_on` out of the AY the axis is showing — otherwise the band
+ * would silently vanish from view (and persist into another AY). The window is
+ * 1 Sep (`ay`) → 31 Aug (`ay`+1); both bounds are Mondays inside the AY, so the
+ * result always satisfies the DB's `isodow = 1` check and stays in `ay`. A term may
+ * still END past August — the right-edge "continues beyond range" cue covers that.
+ */
+function clampStartToAY(start: string, ay: number): string {
+  const min = firstMondayOfSeptember(ay); // first Monday of the AY (Sep)
+  const max = mondayOf(`${ay + 1}-08-31`); // Monday of the week containing 31 Aug
+  if (start < min) return min;
+  if (start > max) return max;
+  return start;
 }
 
 // ── Sept-anchored fractional geometry (0 = 1 Sep … 1 = 31 Aug) ─────────────────
@@ -136,11 +160,38 @@ export function TermCalendarTab({
 }) {
   const t = useTranslations('settings');
   const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [terms, setTerms] = useState<TermRow[]>(initialTerms);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  // Selected academic year, driven by `?ay=<startYear>` (mirrors the `?tab=`
+  // convention). Absent/malformed → the AY containing today in Beirut (the app's
+  // wall-clock), never today's UTC date: 31 Aug ↔ 1 Sep is the AY boundary. If that
+  // AY has no terms we still land here and show the empty state — we never jump to
+  // where the data is. The AY is a pure UI grouping of `term.starts_on`; nothing
+  // is persisted and `term_week` stays date-driven.
+  const paramAY = searchParams.get('ay');
+  const selectedAY =
+    paramAY && /^\d{4}$/.test(paramAY) ? Number(paramAY) : academicYearOf(todayInBeirut());
+
+  const goToAY = useCallback(
+    (ay: number) => {
+      // Drop any selection first: the scope popover must not orphan onto a band that
+      // the new AY won't render. (Bands map over `visibleTerms`, so a stale id from
+      // another AY can't render a popover either — a term id belongs to exactly one
+      // AY — but clearing here keeps the state honest across the navigation.)
+      setSelectedId(null);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('ay', String(ay));
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -159,16 +210,17 @@ export function TermCalendarTab({
     return () => clearTimeout(id);
   }, [toast]);
 
-  // Anchor academic year: the earliest term's, else the current one. Never hardcoded.
-  const anchorYear = useMemo(
-    () =>
-      terms.length
-        ? Math.min(...terms.map((term) => academicYearOf(term.startsOn)))
-        : academicYearOf(todayISO()),
-    [terms],
+  // Terms in the selected academic year — the only ones the axis, the bands and the
+  // count pill show. `conflictFor` deliberately still scans the FULL `terms` set
+  // (terms in different AYs occupy disjoint Sep→Aug windows, so this is moot by
+  // construction, but it keeps the overlap guard correct regardless).
+  const visibleTerms = useMemo(
+    () => terms.filter((term) => academicYearOf(term.startsOn) === selectedAY),
+    [terms, selectedAY],
   );
 
-  const { laneOf, laneCount } = useMemo(() => packLanes(terms), [terms]);
+  // Lane-pack over the VISIBLE terms so a filtered-out term leaves no vertical gap.
+  const { laneOf, laneCount } = useMemo(() => packLanes(visibleTerms), [visibleTerms]);
   const trackHeight = Math.max(BAND_H + BAND_TOP * 2, BAND_TOP * 2 + laneCount * ROW_STEP);
 
   const num = useCallback((n: number) => formatNumber(n, locale), [locale]);
@@ -266,11 +318,13 @@ export function TermCalendarTab({
     if (!d.moved && Math.abs(pf - (d.grab + dateToFrac(mondayOf(d.origStart)))) < 0.004) return;
     d.moved = true;
     if (d.mode === 'move') {
-      const nextStart = mondayOf(fracToDate(pf - d.grab, anchorYear));
+      // Clamp in DATE space to the selected-AY window so a drag can't push the term
+      // out of the AY the axis is rendering (which would silently vanish it).
+      const nextStart = clampStartToAY(mondayOf(fracToDate(pf - d.grab, selectedAY)), selectedAY);
       patchLocal(d.id, { startsOn: nextStart });
     } else {
       const startMon = mondayOf(d.origStart);
-      const weeks = clampWeeks(daysBetween(startMon, fracToDate(pf, anchorYear)) / 7);
+      const weeks = clampWeeks(daysBetween(startMon, fracToDate(pf, selectedAY)) / 7);
       patchLocal(d.id, { numWeeks: weeks });
     }
   }
@@ -350,22 +404,19 @@ export function TermCalendarTab({
   }
 
   // ── add / remove ─────────────────────────────────────────────────────────────
-  function firstMondayOfSeptember(year: number): string {
-    const sep1 = `${year}-09-01`;
-    const m = mondayOf(sep1);
-    return m < sep1 ? addDays(m, 7) : m;
-  }
-
   function addTerm() {
-    // Default start: the Monday after the latest term's end, else the first Monday
-    // of September in the anchor year. New terms are born with EMPTY scope so the
-    // amber warning forces an explicit centre/year choice (no silent over-grant).
+    // Default start: the Monday after the latest term's end WITHIN the selected AY,
+    // else the first Monday of September of the selected AY. Clamp into the AY window
+    // so the new term always lands in the AY on screen (the Monday-after-latest could
+    // otherwise spill into September of the next AY and vanish from view). New terms
+    // are born with EMPTY scope so the amber warning forces an explicit centre/year
+    // choice (no silent over-grant).
     let startsOn: string;
-    if (terms.length) {
-      const latest = terms.reduce((a, b) => (a.startsOn >= b.startsOn ? a : b));
-      startsOn = mondayOf(addDays(latest.startsOn, latest.numWeeks * 7));
+    if (visibleTerms.length) {
+      const latest = visibleTerms.reduce((a, b) => (a.startsOn >= b.startsOn ? a : b));
+      startsOn = clampStartToAY(mondayOf(addDays(latest.startsOn, latest.numWeeks * 7)), selectedAY);
     } else {
-      startsOn = firstMondayOfSeptember(anchorYear);
+      startsOn = firstMondayOfSeptember(selectedAY);
     }
     const tempId = `temp-${crypto.randomUUID()}`;
     const optimistic: TermRow = {
@@ -409,10 +460,13 @@ export function TermCalendarTab({
     );
   }
 
+  // Reused for the navigator label AND (short form) the empty-state copy.
+  const ayEndShort = String((selectedAY + 1) % 100).padStart(2, '0');
   const academicLabel = t('termCalendar.academicYear', {
-    start: num(anchorYear),
-    end: String((anchorYear + 1) % 100).padStart(2, '0'),
+    start: num(selectedAY),
+    end: ayEndShort,
   });
+  const ayShort = `${num(selectedAY)} / ${ayEndShort}`;
 
   return (
     <div className="space-y-[18px]">
@@ -422,7 +476,7 @@ export function TermCalendarTab({
           {t('termCalendar.title')}
         </h2>
         <span className="rounded-full bg-[#F3ECE2] px-[10px] py-[3px] text-[12px] font-semibold text-[#A79E94]">
-          {t('termCalendar.termsCount', { count: terms.length })}
+          {t('termCalendar.termsCount', { count: visibleTerms.length })}
         </span>
         <button
           type="button"
@@ -432,7 +486,28 @@ export function TermCalendarTab({
           <span className="text-[15px] leading-none">＋</span> {t('termCalendar.addTerm')}
         </button>
       </div>
-      <div className="text-[12.5px] text-[#9A9087]">{academicLabel}</div>
+
+      {/* Academic-year navigator — the subtitle turned into ‹ label › with two teal
+          icon buttons. Unbounded in both directions; each step rewrites `?ay=`. */}
+      <div className="flex items-center gap-[8px]">
+        <button
+          type="button"
+          onClick={() => goToAY(selectedAY - 1)}
+          aria-label={t('termCalendar.prevYear')}
+          className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] border border-teal-tint-border bg-teal-tint text-teal transition-opacity hover:opacity-70"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <div className="min-w-[168px] text-center text-[12.5px] font-semibold text-[#6E6358]">{academicLabel}</div>
+        <button
+          type="button"
+          onClick={() => goToAY(selectedAY + 1)}
+          aria-label={t('termCalendar.nextYear')}
+          className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] border border-teal-tint-border bg-teal-tint text-teal transition-opacity hover:opacity-70"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg>
+        </button>
+      </div>
 
       {/* Timeline card */}
       <div className="rounded-[14px] border border-[#ECE4D7] bg-[#FCFAF6] px-[20px] pb-[22px] pt-[18px]">
@@ -447,8 +522,8 @@ export function TermCalendarTab({
               )}
             >
               {m}
-              {i === 0 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String(anchorYear % 100).padStart(2, '0')}</span> : null}
-              {i === 4 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String((anchorYear + 1) % 100).padStart(2, '0')}</span> : null}
+              {i === 0 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String(selectedAY % 100).padStart(2, '0')}</span> : null}
+              {i === 4 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{ayEndShort}</span> : null}
             </div>
           ))}
         </div>
@@ -462,14 +537,14 @@ export function TermCalendarTab({
             ))}
           </div>
 
-          {terms.length === 0 ? (
+          {visibleTerms.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center px-[24px] text-center">
               <p className="max-w-[520px] text-[12.5px] leading-[1.6] text-[#9A9087]">
-                {t('termCalendar.empty.hint')}
+                {t('termCalendar.empty.hintForYear', { year: ayShort })}
               </p>
             </div>
           ) : (
-            terms.map((term) => {
+            visibleTerms.map((term) => {
               const startMon = mondayOf(term.startsOn);
               const lastMon = addDays(startMon, (term.numWeeks - 1) * 7);
               const end = addDays(startMon, term.numWeeks * 7);

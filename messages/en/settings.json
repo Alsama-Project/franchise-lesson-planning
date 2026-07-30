@@ -328,6 +328,8 @@
       "saveError": "Couldn’t save. Please try again.",
       "addError": "Couldn’t add the term. Please try again.",
       "range": "w/c {start} → w/c {end}",
+      "prevYear": "Previous academic year",
+      "nextYear": "Next academic year",
       "centres": {
         "label": "Centres",
         "empty": "No centres set up yet — add one under the Centres tab."
@@ -353,7 +355,8 @@
         "overlap": "Overlaps {term} on {scope}"
       },
       "empty": {
-        "hint": "No terms yet. Add a term to define the academic year — without terms the Weekly Overview has no dates and no jump-to-today."
+        "hint": "No terms yet. Add a term to define the academic year — without terms the Weekly Overview has no dates and no jump-to-today.",
+        "hintForYear": "No terms configured for {year}. Add a term to define this academic year."
       }
     },
     "aiGuide": {

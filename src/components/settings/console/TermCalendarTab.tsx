@@ -460,13 +460,17 @@ export function TermCalendarTab({
     );
   }
 
-  // Reused for the navigator label AND (short form) the empty-state copy.
+  // Reused for the navigator label AND (short form) the empty-state copy. The year
+  // reaches ICU as a String, never num()/formatNumber — a calendar year must never
+  // pick up the locale's grouping separator ("2,026" / "2٬026"). String() keeps it
+  // Latin and ungrouped in both en and ar; the format stays "2026 / 27". `end` is
+  // already a 2-digit String.
   const ayEndShort = String((selectedAY + 1) % 100).padStart(2, '0');
   const academicLabel = t('termCalendar.academicYear', {
-    start: num(selectedAY),
+    start: String(selectedAY),
     end: ayEndShort,
   });
-  const ayShort = `${num(selectedAY)} / ${ayEndShort}`;
+  const ayShort = `${String(selectedAY)} / ${ayEndShort}`;
 
   return (
     <div className="space-y-[18px]">

@@ -12,7 +12,7 @@ import { parseUploadedDoc } from '@/lib/context-docs/parse-upload';
  * `name`. The (layer, subject_id, tool) combination is validated against the DB
  * `ai_context_doc_scope` CHECK before insert so a bad combination returns a clear
  * 400. The insert runs through the RLS client via the `create_ai_context_doc`
- * RPC (0065); the service-role key is never used.
+ * RPC (0066); the service-role key is never used.
  */
 export const runtime = 'nodejs';
 

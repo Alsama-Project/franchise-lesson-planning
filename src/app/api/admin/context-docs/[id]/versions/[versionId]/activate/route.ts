@@ -6,7 +6,7 @@ import { requireAdmin } from '@/lib/context-docs/guard';
  * POST /api/admin/context-docs/[id]/versions/[versionId]/activate
  *
  * Admin-only. Restore an existing version: flip `is_active` to it via the
- * `activate_ai_context_doc_version` RPC (0065). No new row is created, so version
+ * `activate_ai_context_doc_version` RPC (0066). No new row is created, so version
  * numbers stay stable ("v2" always means the same text). The RPC deactivates the
  * current active version before activating the target — same one-active-per-doc
  * transaction constraint as replace. RLS client; the service-role key is never

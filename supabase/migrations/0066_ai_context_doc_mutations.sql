@@ -1,4 +1,4 @@
--- 0065_ai_context_doc_mutations.sql
+-- 0066_ai_context_doc_mutations.sql
 --
 -- Atomic write RPCs behind the admin "AI instructions" surface. The two-table
 -- shape from 0063 (a `ai_context_doc` identity + its immutable

@@ -8,7 +8,7 @@ import { parseUploadedDoc } from '@/lib/context-docs/parse-upload';
  *
  * Admin-only. Replace a document: insert a new version at max(version)+1 and
  * deactivate the current one, in one transaction, via the `replace_ai_context_doc`
- * RPC (0065). The partial unique index `(doc_id) where is_active` forbids two
+ * RPC (0066). The partial unique index `(doc_id) where is_active` forbids two
  * active versions, so the RPC deactivates before it inserts. Multipart/form-data
  * with a `file` field (.md / .txt verbatim, .docx converted). RLS client
  * throughout; the service-role key is never used.

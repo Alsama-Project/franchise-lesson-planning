@@ -68,18 +68,18 @@ SMARTT is the fixed anchor — judge the objective against all six letters: Spec
 
 The objective — and your suggested rewrite — must use the exact stem "${OBJECTIVE_STEM}" followed by an observable, student-facing action.
 
-Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; then an array of overall suggestions, each an object with a "note" (the one-line advice) and a "dimension" naming the single SMARTT dimension it addresses, exactly one of "specific", "measurable", "achievable", "relevant", "time_bound", "tangible"; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
+Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
 
 /**
  * Language directive appended to the SMARTT floor ONLY when the teacher's UI
  * locale is Arabic. The objective check is UI-facing feedback, so its language
  * follows the UI locale (unlike the resource generator, whose content language
  * follows the subject). This switches only the human-readable feedback text; the
- * JSON keys, the status enum, the dimension keys, and the English stem are
- * untouched, so the `ObjectiveCheckResult` shape is identical in either locale.
+ * JSON keys, the status enum, and the English stem are untouched, so the
+ * `ObjectiveCheckResult` shape is identical in either locale.
  */
-const SMARTT_ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" (the per-letter notes and each suggestion's "note") — in Modern Standard Arabic (الفصحى).
-Do NOT translate or alter the JSON contract: keep all JSON keys in English, keep each "status" value as the exact English literal "strong" or "needs work", and keep each suggestion's "dimension" value as the exact English literal key ("specific", "measurable", "achievable", "relevant", "time_bound" or "tangible"). The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
+const SMARTT_ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" (the per-letter notes) — in Modern Standard Arabic (الفصحى).
+Do NOT translate or alter the JSON contract: keep all JSON keys in English, keep each "status" value as the exact English literal "strong" or "needs work". The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
 
 /**
  * The SMARTT checker floor, with the Arabic directive appended when `locale`

@@ -95,18 +95,6 @@ const SMARTT_DIMENSION_KEYS: readonly SmarttDimensionKey[] = [
 ];
 
 /**
- * One overall suggestion to tighten the objective, tagged with the single SMARTT
- * dimension it addresses so the editor can lead each feedback bullet with that
- * dimension in bold.
- */
-export interface SmarttSuggestion {
-  /** Which SMARTT dimension this note relates to. */
-  dimension: SmarttDimensionKey;
-  /** The teacher-facing suggestion text. */
-  note: string;
-}
-
-/**
  * Structured result of checking an objective. The six SMARTT letters each get a
  * status + note; ALSAMA's final "T" is **Tangible** — relatable to students'
  * real lives — not the more common "Trackable".
@@ -124,8 +112,6 @@ export interface ObjectiveCheckResult {
   time_bound: SmarttLetterAssessment;
   /** T — Tangible: relatable to students' real lives. */
   tangible: SmarttLetterAssessment;
-  /** One or two overall suggestions, each tagged with the SMARTT dimension it addresses. */
-  suggestions: SmarttSuggestion[];
   /** A rewrite that keeps the fixed {@link OBJECTIVE_STEM}. */
   improved_objective: string;
 }
@@ -164,21 +150,6 @@ const RESPONSE_SCHEMA = {
     relevant: LETTER_SCHEMA,
     time_bound: LETTER_SCHEMA,
     tangible: LETTER_SCHEMA,
-    suggestions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          dimension: {
-            type: 'string',
-            enum: ['specific', 'measurable', 'achievable', 'relevant', 'time_bound', 'tangible'],
-          },
-          note: { type: 'string' },
-        },
-        required: ['dimension', 'note'],
-      },
-    },
     improved_objective: { type: 'string' },
   },
   required: [
@@ -188,7 +159,6 @@ const RESPONSE_SCHEMA = {
     'relevant',
     'time_bound',
     'tangible',
-    'suggestions',
     'improved_objective',
   ],
 } as const;
@@ -258,23 +228,12 @@ function isLetter(value: unknown): value is SmarttLetterAssessment {
   return (v.status === 'strong' || v.status === 'needs work') && typeof v.note === 'string';
 }
 
-/** Narrow an unknown value to a {@link SmarttSuggestion} (dimension-tagged note). */
-function isSuggestion(value: unknown): value is SmarttSuggestion {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.note === 'string' &&
-    SMARTT_DIMENSION_KEYS.includes(v.dimension as SmarttDimensionKey)
-  );
-}
-
 /** Runtime guard mirroring {@link ObjectiveCheckResult}. */
 function isObjectiveCheckResult(value: unknown): value is ObjectiveCheckResult {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   const letters = ['specific', 'measurable', 'achievable', 'relevant', 'time_bound', 'tangible'];
   if (!letters.every((key) => isLetter(v[key]))) return false;
-  if (!Array.isArray(v.suggestions) || !v.suggestions.every(isSuggestion)) return false;
   if (typeof v.improved_objective !== 'string') return false;
   return true;
 }

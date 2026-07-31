@@ -519,7 +519,6 @@ export function LessonPlanEditor({
     />
   );
 
-  const checkHomeworkBlock = getBlock(blocks, 'check_homework');
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
 
@@ -679,19 +678,6 @@ export function LessonPlanEditor({
                   <div className="mt-[10px]">
                     <ObjectiveBanner remainder={remainder} />
                   </div>
-
-                  {stepId === 'homeworkCheck' && checkHomeworkBlock ? (
-                    // Optional step — reuses the practice step shell (phase + the
-                    // teacher/student pair). Its content is stored on the existing
-                    // `check_homework` block; it never blocks Next and never gates.
-                    <PractiseStep
-                      title={stepHeading('homeworkCheck')}
-                      block={checkHomeworkBlock}
-                      onPatch={(patch) => patchType('check_homework', patch)}
-                      showWorksheet={false}
-                      locked={locked}
-                    />
-                  ) : null}
 
                   {stepId === 'recap' ? (
                     <LinkItStep

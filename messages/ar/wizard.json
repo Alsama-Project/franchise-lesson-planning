@@ -2,7 +2,6 @@
   "wizard": {
     "steps": {
       "objective": "هدف SMARTT",
-      "homeworkCheck": "التحقق من الواجب",
       "recap": "الاستذكار",
       "newContent": "المحتوى الجديد",
       "cfu": "التحقق من الفهم",
@@ -106,7 +105,6 @@
       "parts": {
         "routines": "الروتين المعتاد",
         "routinesDetail": "النشيد · الإحماء · التهدئة",
-        "homeworkCheck": "التحقق من الواجب",
         "recap": "الاستذكار",
         "newContent": "المحتوى الجديد",
         "cfu": "التحقق من الفهم",

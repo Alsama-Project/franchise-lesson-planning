@@ -8,11 +8,12 @@ import { useTranslations } from 'next-intl';
  * The lesson editor walks these in the order the lesson is actually taught. Display
  * numbers derive from a step's position here; NO step number is hardcoded anywhere.
  * `optional: true` marks a step that never blocks `Next` and never enters any
- * completeness check (only Homework check, step 2).
+ * completeness check. No step is optional today (Homework check, the former
+ * optional step, was folded into Recap); the flag + its render branch are kept for
+ * any future optional step.
  */
 export const STEPS = [
   { id: 'objective', optional: false },
-  { id: 'homeworkCheck', optional: true },
   { id: 'recap', optional: false },
   { id: 'newContent', optional: false },
   { id: 'cfu', optional: false },

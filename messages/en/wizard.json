@@ -2,7 +2,6 @@
   "wizard": {
     "steps": {
       "objective": "SMARTT objective",
-      "homeworkCheck": "Homework check",
       "recap": "Recap",
       "newContent": "New content",
       "cfu": "Check for understanding",
@@ -106,7 +105,6 @@
       "parts": {
         "routines": "Standard routines",
         "routinesDetail": "Anthem · Warm-up · Cool down",
-        "homeworkCheck": "Homework check",
         "recap": "Recap",
         "newContent": "New content",
         "cfu": "Check for Understanding",

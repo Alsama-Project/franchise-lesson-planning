@@ -2,10 +2,14 @@
   "wizard": {
     "steps": {
       "objective": "هدف SMARTT",
-      "teachIt": "التدريس",
-      "practise": "التطبيق",
-      "linkIt": "الربط",
-      "review": "المراجعة"
+      "homeworkCheck": "التحقق من الواجب",
+      "recap": "الاستذكار",
+      "newContent": "المحتوى الجديد",
+      "cfu": "التحقق من الفهم",
+      "practice": "التطبيق المستقل",
+      "exitTicket": "بطاقة الخروج",
+      "review": "المراجعة",
+      "optional": "اختياري"
     },
     "nav": {
       "back": "رجوع",
@@ -62,7 +66,6 @@
       "dailyAndObjectives": "الناتج اليومي والأهداف"
     },
     "teach": {
-      "newContentTitle": "تدريس المحتوى الجديد",
       "teacherDoes": "ما يفعله المعلّم",
       "studentsDo": "ما يفعله الطلاب",
       "teacherPlaceholder": "اعرض المهمة بالنموذج، اشرح تفكيرك بصوت مسموع، حدّد معايير النجاح…",
@@ -70,9 +73,6 @@
       "worksheetTitle": "ورقة عمل الطالب",
       "worksheetHint": "ابنِ الورقة التي يعمل منها الطلاب",
       "addFromBank": "أضف من المكتبة"
-    },
-    "practise": {
-      "title": "التطبيق"
     },
     "phase": {
       "aria": "مرحلة التدريس",
@@ -114,7 +114,11 @@
         "exitTicket": "بطاقة الخروج"
       },
       "homework": "الواجب المنزلي",
-      "homeworkNote": "— في المنزل، مستثنى من الـ 50"
+      "homeworkNote": "— في المنزل، مستثنى من الـ 50",
+      "rightPane": {
+        "worksheet": "ورقة العمل",
+        "comments": "التعليقات ({count})"
+      }
     },
     "submit": {
       "approved": "مُعتمَد",

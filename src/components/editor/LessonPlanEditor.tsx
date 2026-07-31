@@ -32,7 +32,15 @@ import {
 } from '@/lib/actions/lesson-plan';
 import { recordUsageAction } from '@/lib/actions/resources';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
-import { Stepper, STEP_COUNT } from '@/components/editor/Stepper';
+import {
+  Stepper,
+  STEP_IDS,
+  stepIndex,
+  FIRST_STEP,
+  LAST_STEP,
+  PENULTIMATE_STEP,
+  type StepId,
+} from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
 import { Spinner } from '@/components/ui/Spinner';
 import { LockedBanner } from '@/components/editor/LockedBanner';
@@ -45,11 +53,11 @@ import { WorksheetPane } from '@/components/editor/worksheet/WorksheetPane';
 import type { WorksheetContext } from '@/components/editor/worksheet/context';
 import { LinkItStep } from '@/components/editor/LinkItStep';
 import { ReviewStep } from '@/components/editor/ReviewStep';
+import { ReviewRightPane } from '@/components/editor/ReviewRightPane';
 import { ReadOnlyPlan } from '@/components/editor/ReadOnlyPlan';
 import { WorksheetPipelineSplit } from '@/components/editor/WorksheetPipelineSplit';
 import { AnnotationProvider } from '@/components/review/annotation/context';
 import type { AppliedSuggestion } from '@/lib/actions/annotations';
-import { AnnotationPane } from '@/components/review/annotation/AnnotationPane';
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -92,10 +100,10 @@ export function LessonPlanEditor({
   coordinatorAuthor = false,
 }: {
   data: EditorPlanData;
-  /** Coordinator feedback on this plan. When present, the Review step (step 5) renders
-   *  the SAME comments pane in place of the worksheet on the right, so the teacher
-   *  replies / accepts / rejects / resolves without leaving the editor. Empty → the
-   *  Review step keeps the worksheet, unchanged. */
+  /** Coordinator feedback on this plan. When present, the Review step's right pane
+   *  gains a Worksheet / Comments toggle, so the teacher replies / accepts / rejects /
+   *  resolves without leaving the editor. Empty → the Review step keeps the worksheet
+   *  on the right with no toggle, unchanged. */
   annotations: Annotation[];
   /** The viewer's display name (the plan's author), for the annotation provider. */
   viewerName: string;
@@ -119,11 +127,12 @@ export function LessonPlanEditor({
   const hasFeedback = annotations.length > 0;
 
   // A returned plan carrying feedback opens straight on the Review step, where the
-  // reworked coordinator surface (comments in the right margin) lives — the teacher
-  // came here from the board card / bell to work those comments, with no /view stop.
-  // Any other entry (a fresh draft, an approved plan) starts at step 1.
-  const [step, setStep] = useState(() =>
-    plan.status === 'needs_review' && hasFeedback ? STEP_COUNT : 1,
+  // comments live (now in the right pane's toggle) — the teacher came here from the
+  // board card / bell to work those comments, with no /view stop. Any other entry (a
+  // fresh draft, an approved plan) starts at the objective step. Step identity is a
+  // registry id, never a number — no step position is hardcoded.
+  const [stepId, setStepId] = useState<StepId>(() =>
+    plan.status === 'needs_review' && hasFeedback ? LAST_STEP : FIRST_STEP,
   );
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
   const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
@@ -314,16 +323,25 @@ export function LessonPlanEditor({
       : t('objectiveGate.mustPass');
 
   const goStep = useCallback(
-    (n: number) => {
+    (id: StepId) => {
       // Gate: a gated, unapproved objective blocks every jump PAST the objective
-      // step (step 1). Both the Next button and the step-header nodes route through
-      // here, so this one check governs both. Returning to the objective step or
-      // earlier is always free.
-      if (advanceBlocked && n > 1) return;
-      setStep(Math.max(1, Math.min(STEP_COUNT, n)));
+      // step (registry position 0). Both the Next button and the step nodes route
+      // through here, so this one check governs both. Returning to the objective
+      // step is always free.
+      if (advanceBlocked && stepIndex(id) > 0) return;
+      setStepId(id);
     },
     [advanceBlocked],
   );
+
+  // Step ↔ step navigation for the Back / Next controls, derived from registry order.
+  const curIndex = stepIndex(stepId);
+  const goPrev = useCallback(() => {
+    if (curIndex > 0) goStep(STEP_IDS[curIndex - 1]);
+  }, [curIndex, goStep]);
+  const goNext = useCallback(() => {
+    if (curIndex < STEP_IDS.length - 1) goStep(STEP_IDS[curIndex + 1]);
+  }, [curIndex, goStep]);
 
   const patchType = useCallback((type: LessonBlockType, patch: Partial<Block>) => {
     setBlocks((bs) => patchBlock(bs, type, patch));
@@ -497,8 +515,22 @@ export function LessonPlanEditor({
     />
   );
 
+  const checkHomeworkBlock = getBlock(blocks, 'check_homework');
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
+
+  // Section keys in lesson order (objective, then blocks) so the Review comments list
+  // orders its section groups the way the lesson reads.
+  const sectionOrder = useMemo(
+    () => ['objective', ...blocks.map((b) => b.type)],
+    [blocks],
+  );
+
+  // Each step's left-pane heading is its registry number + name (e.g. "3 · Recap").
+  const stepHeading = useCallback(
+    (id: StepId) => `${stepIndex(id) + 1} · ${t(`steps.${id}`)}`,
+    [t],
+  );
 
   // "Link it together" reads through the read-time normalizer (new or legacy
   // plans → one shape) and writes back into the blocks JSONB on change. The label
@@ -576,8 +608,8 @@ export function LessonPlanEditor({
   return (
     // Full-bleed, viewport-tall shell (past `lg`): the context strip + pipeline
     // tracker pin to the top and the working area fills the rest with full height.
-    // On Step 1 the working area is one full-width column; on Steps 2–5 it splits
-    // into plan (left) · persistent worksheet (right), each scrolling on its own.
+    // Steps 1–7 are one full-width column; the Review step splits into plan (left) ·
+    // worksheet-or-comments (right), each scrolling on its own.
     // Below `lg` it falls back to normal document flow (panes stack, page scrolls).
     <div className="-mx-6 -my-8 flex h-[calc(100dvh_-_var(--app-chrome-height,64px))] flex-col lg:-mx-10">
       <div className="shrink-0">
@@ -590,132 +622,192 @@ export function LessonPlanEditor({
         />
       </div>
 
-      {/* Pipeline tracker: the 5-step wizard as clickable nodes; Back / Next on
-          steps 1–4, the SubmitControl on step 5 (states/colours unchanged). */}
+      {/* Pipeline tracker: the 8-step sequence as clickable nodes; Back / Next on
+          steps 1–7 (Next reads "Review →" on the penultimate step), the SubmitControl
+          on the Review step (states/colours unchanged). */}
       <div className="shrink-0">
         <Stepper
-          step={step}
+          currentId={stepId}
           onGo={goStep}
-          onBack={() => goStep(step - 1)}
-          onNext={() => goStep(step + 1)}
-          nextLabel={step === 4 ? t('nav.toReview') : t('nav.next')}
+          onBack={goPrev}
+          onNext={goNext}
+          nextLabel={stepId === PENULTIMATE_STEP ? t('nav.toReview') : t('nav.next')}
           submitSlot={submitControl}
           advanceBlocked={advanceBlocked}
           gateHint={gateHint}
         />
       </div>
 
-      {/* Working area */}
+      {/* Working area. The layout rule is binary: the Review step is the ONLY split
+          (plan/ReadOnlyPlan left · worksheet-or-comments right); every other step
+          renders FULL WIDTH in one scrolling column, the same layout mode the
+          objective step has always used. */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {step === 1 ? (
-          // STEP 1 — Objective: single FULL-WIDTH column, edge to edge (page
-          // padding only). No reserved right column, no split max-width — the
-          // worksheet pane belongs to steps 2–5 only.
+        {stepId !== LAST_STEP ? (
+          // STEPS 1–7 — one FULL-WIDTH column, edge to edge (page padding only). No
+          // reserved right column, no worksheet: the split belongs to Review only.
           <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:px-[30px]">
             <div>
               {locked ? (
-                <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
+                <LockedBanner status={status} onGoToReview={() => goStep(LAST_STEP)} />
               ) : null}
-              <CurriculumCard curriculum={curriculum} defaultExpanded />
-              <div className="mt-[14px]">
-                <ObjectiveStep
-                  remainder={remainder}
-                  onChange={setRemainder}
-                  checkResult={checkResult}
-                  checkApplies={checkAppliesToCurrent}
-                  checking={checking}
-                  partial={partialPills}
-                  checkError={checkError}
-                  onCheck={handleCheck}
-                  locked={locked}
-                />
-              </div>
+
+              {stepId === 'objective' ? (
+                <>
+                  <CurriculumCard curriculum={curriculum} defaultExpanded />
+                  <div className="mt-[14px]">
+                    <ObjectiveStep
+                      remainder={remainder}
+                      onChange={setRemainder}
+                      checkResult={checkResult}
+                      checkApplies={checkAppliesToCurrent}
+                      checking={checking}
+                      partial={partialPills}
+                      checkError={checkError}
+                      onCheck={handleCheck}
+                      locked={locked}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <CurriculumCard curriculum={curriculum} />
+                  <div className="mt-[10px]">
+                    <ObjectiveBanner remainder={remainder} />
+                  </div>
+
+                  {stepId === 'homeworkCheck' && checkHomeworkBlock ? (
+                    // Optional step — reuses the practice step shell (phase + the
+                    // teacher/student pair). Its content is stored on the existing
+                    // `check_homework` block; it never blocks Next and never gates.
+                    <PractiseStep
+                      title={stepHeading('homeworkCheck')}
+                      block={checkHomeworkBlock}
+                      onPatch={(patch) => patchType('check_homework', patch)}
+                      showWorksheet={false}
+                      locked={locked}
+                    />
+                  ) : null}
+
+                  {stepId === 'recap' ? (
+                    <LinkItStep
+                      part="recap"
+                      title={stepHeading('recap')}
+                      linkIt={linkIt}
+                      cfuActivities={activitiesByBlock.cfu ?? []}
+                      exitActivities={activitiesByBlock.exit_ticket ?? []}
+                      previousDailyLO={curriculum?.previousDailyLO ?? ''}
+                      onChange={onLinkItChange}
+                      locked={locked}
+                    />
+                  ) : null}
+
+                  {stepId === 'newContent' && newContentBlock ? (
+                    <WritingStep
+                      title={stepHeading('newContent')}
+                      block={newContentBlock}
+                      onPatch={(patch) => patchType('new_content', patch)}
+                      worksheetContext={worksheetContext}
+                      vocabulary={resourceBank.vocabulary}
+                      attachedResources={attachedFor(newContentBlock)}
+                      onAttach={(resource) => attachResource('new_content', resource)}
+                      onRemove={(resourceId) => detachResource('new_content', resourceId)}
+                      locked={locked}
+                    />
+                  ) : null}
+
+                  {stepId === 'cfu' ? (
+                    <LinkItStep
+                      part="cfu"
+                      title={stepHeading('cfu')}
+                      linkIt={linkIt}
+                      cfuActivities={activitiesByBlock.cfu ?? []}
+                      exitActivities={activitiesByBlock.exit_ticket ?? []}
+                      previousDailyLO={curriculum?.previousDailyLO ?? ''}
+                      onChange={onLinkItChange}
+                      locked={locked}
+                    />
+                  ) : null}
+
+                  {stepId === 'practice' && practiceBlock ? (
+                    <PractiseStep
+                      title={stepHeading('practice')}
+                      block={practiceBlock}
+                      onPatch={(patch) => patchType('independent_practice', patch)}
+                      showWorksheet={false}
+                      locked={locked}
+                    />
+                  ) : null}
+
+                  {stepId === 'exitTicket' ? (
+                    <LinkItStep
+                      part="exitTicket"
+                      title={stepHeading('exitTicket')}
+                      linkIt={linkIt}
+                      cfuActivities={activitiesByBlock.cfu ?? []}
+                      exitActivities={activitiesByBlock.exit_ticket ?? []}
+                      previousDailyLO={curriculum?.previousDailyLO ?? ''}
+                      onChange={onLinkItChange}
+                      locked={locked}
+                    />
+                  ) : null}
+                </>
+              )}
+
               {errorBox}
             </div>
           </section>
-        ) : step === STEP_COUNT && hasFeedback ? (
-          // REVIEW STEP WITH FEEDBACK — render the EXACT surface the coordinator's
-          // /view uses: ReadOnlyPlan (teal section left-borders, the ＋ in the right
-          // gutter, section-anchored cards, hover coupling) beside the reused
-          // AnnotationPane, wrapped in the shared AnnotationProvider (role 'teacher',
-          // so the pane shows author actions — accept/reject/resolve/reply — not the
-          // coordinator footer). One full-width scroll column, no worksheet, no
-          // forked pane; the teacher works feedback in place without bouncing to /view.
-          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[16px] lg:px-[30px]">
-            <div className="mx-auto max-w-[1340px]">{errorBox}</div>
-            <AnnotationProvider
-              planId={plan.id}
-              status={status}
-              scope={plan.scope}
-              role="teacher"
-              viewerName={viewerName}
-              annotations={annotations}
-              phaseTitles={phaseTitles}
-              onApplyAccepted={applyAcceptedSuggestion}
-            >
-              <ReadOnlyPlan
-                data={reviewData}
-                decisionBar={null}
-                rightRail={<AnnotationPane />}
-                embedded
-              />
-            </AnnotationProvider>
-          </section>
+        ) : hasFeedback ? (
+          // REVIEW STEP WITH FEEDBACK — the SAME split container as the no-feedback
+          // Review, but the left pane is the coordinator /view surface (ReadOnlyPlan)
+          // and the right pane is the toggle. The whole split is wrapped in the shared
+          // AnnotationProvider (role 'teacher', so cards show author actions —
+          // accept/reject/resolve/reply). ReadOnlyPlan drops its right rail here; the
+          // comments live in the right pane's toggle as a plain stacked list.
+          <AnnotationProvider
+            planId={plan.id}
+            status={status}
+            scope={plan.scope}
+            role="teacher"
+            viewerName={viewerName}
+            annotations={annotations}
+            phaseTitles={phaseTitles}
+            onApplyAccepted={applyAcceptedSuggestion}
+          >
+            <WorksheetPipelineSplit
+              pipeline={
+                <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[16px] lg:px-[30px]">
+                  <div className="mx-auto max-w-[1340px]">{errorBox}</div>
+                  <ReadOnlyPlan data={reviewData} decisionBar={null} rightRail={null} embedded />
+                </section>
+              }
+              worksheet={
+                <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
+                  <ReviewRightPane
+                    worksheet={worksheet}
+                    onWorksheetChange={setWorksheet}
+                    context={worksheetContext}
+                    vocabulary={resourceBank.vocabulary}
+                    saveState={saveState}
+                    sectionOrder={sectionOrder}
+                  />
+                </section>
+              }
+            />
+          </AnnotationProvider>
         ) : (
-          // STEPS 2–5 (and the Review step with NO feedback) — split: plan (left) ·
-          // persistent worksheet (right). Past `lg` the divider between them is a
-          // draggable handle (WorksheetPipelineSplit); below `lg` the two panes
-          // stack, unchanged. The divider is owned by the split's handle now, so
-          // the left pane no longer draws its own `lg:border-e`.
+          // REVIEW STEP with NO feedback — the split, unchanged from `main`: the
+          // ReviewStep on the left, the worksheet on the right with NO toggle and no
+          // extra chrome. Past `lg` the divider is a draggable handle; below `lg` the
+          // panes stack.
           <WorksheetPipelineSplit
             pipeline={
-            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:px-[30px]">
-              <div className="mx-auto max-w-[820px]">
-                {locked && step < STEP_COUNT ? (
-                  <LockedBanner status={status} onGoToReview={() => goStep(STEP_COUNT)} />
-                ) : null}
-
-                <CurriculumCard curriculum={curriculum} />
-
-                <div className="mt-[10px]">
-                  <ObjectiveBanner remainder={remainder} />
-                </div>
-
-                {step === 2 && newContentBlock ? (
-                  <WritingStep
-                    title={t('teach.newContentTitle')}
-                    block={newContentBlock}
-                    onPatch={(patch) => patchType('new_content', patch)}
-                    worksheetContext={worksheetContext}
-                    vocabulary={resourceBank.vocabulary}
-                    attachedResources={attachedFor(newContentBlock)}
-                    onAttach={(resource) => attachResource('new_content', resource)}
-                    onRemove={(resourceId) => detachResource('new_content', resourceId)}
-                    locked={locked}
-                  />
-                ) : null}
-
-                {step === 3 && practiceBlock ? (
-                  <PractiseStep
-                    block={practiceBlock}
-                    onPatch={(patch) => patchType('independent_practice', patch)}
-                    showWorksheet={false}
-                    locked={locked}
-                  />
-                ) : null}
-
-                {step === 4 ? (
-                  <LinkItStep
-                    linkIt={linkIt}
-                    cfuActivities={activitiesByBlock.cfu ?? []}
-                    exitActivities={activitiesByBlock.exit_ticket ?? []}
-                    previousDailyLO={curriculum?.previousDailyLO ?? ''}
-                    onChange={onLinkItChange}
-                    locked={locked}
-                  />
-                ) : null}
-
-                {step === 5 ? (
+              <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[22px] py-[12px] lg:px-[30px]">
+                <div className="mx-auto max-w-[820px]">
+                  <CurriculumCard curriculum={curriculum} />
+                  <div className="mt-[10px]">
+                    <ObjectiveBanner remainder={remainder} />
+                  </div>
                   <ReviewStep
                     planId={plan.id}
                     status={status}
@@ -731,34 +823,25 @@ export function LessonPlanEditor({
                     onRoutinesMinutes={setRoutinesMin}
                     locked={locked}
                   />
-                ) : null}
-
-                {errorBox}
-              </div>
-            </section>
+                  {errorBox}
+                </div>
+              </section>
             }
             worksheet={
-            /* RIGHT — the persistent student worksheet for Steps 2–5. One
-                WorksheetBuilder instance, editable at every step and every plan
-                status (never wrapped in the plan-lock fieldset); edits autosave
-                through `saveWorksheet`. Scrolls independently past `lg`.
-
-                The Review step (step 5) WITH coordinator feedback is handled ABOVE
-                as its own full-width branch — it renders the coordinator /view
-                surface (ReadOnlyPlan + AnnotationPane) so the teacher works feedback
-                in place — so this split (and its worksheet) is only reached by Steps
-                2–4 and the Review step with NO feedback. */
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
-              <div className="flex min-h-0 w-full flex-1 flex-col">
-                <WorksheetPane
-                  value={worksheet}
-                  onChange={setWorksheet}
-                  context={worksheetContext}
-                  vocabulary={resourceBank.vocabulary}
-                  saveState={saveState}
-                />
-              </div>
-            </section>
+              // RIGHT — the student worksheet, editable at every plan status (never
+              // wrapped in the plan-lock fieldset); edits autosave through
+              // `saveWorksheet`. Scrolls independently past `lg`.
+              <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-subtle lg:flex-[1.5]">
+                <div className="flex min-h-0 w-full flex-1 flex-col">
+                  <WorksheetPane
+                    value={worksheet}
+                    onChange={setWorksheet}
+                    context={worksheetContext}
+                    vocabulary={resourceBank.vocabulary}
+                    saveState={saveState}
+                  />
+                </div>
+              </section>
             }
           />
         )}

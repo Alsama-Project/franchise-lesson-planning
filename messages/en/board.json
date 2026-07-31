@@ -20,7 +20,7 @@
     },
     "bandEmpty": {
       "yearNotCovered": "Not in the curriculum yet — ask your coordinator to add this year group.",
-      "weekNotCovered": "No lesson this week."
+      "nothingScheduled": "Nothing scheduled this week."
     },
     "yearFilter": {
       "label": "Year group",

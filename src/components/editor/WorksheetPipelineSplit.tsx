@@ -25,7 +25,13 @@ const alwaysFalse = () => false;
 // Persist the drag ratio across reloads with the LIBRARY'S OWN mechanism
 // (`useDefaultLayout` → localStorage). No custom storage logic. The Panel ids
 // below are the keys this layout is stored under.
-const SPLIT_ID = 'worksheet-pipeline-split';
+//
+// The storage key is versioned (`-v2`): the split now lives only on the Review step,
+// where both panes are primary, so its default is an even 50/50. The old key held a
+// 40/60 ratio tuned for the retired steps-2–5 authoring split; bumping the key means
+// every teacher who never deliberately dragged the divider gets the new 50/50 default,
+// while a fresh drag still persists (under the new key).
+const SPLIT_ID = 'worksheet-pipeline-split-v2';
 const PANEL_IDS = ['pipeline', 'worksheet'];
 
 /**
@@ -86,7 +92,7 @@ export function WorksheetPipelineSplit({
       <Panel
         id="pipeline"
         minSize="20%"
-        defaultSize="40%"
+        defaultSize="50%"
         className="flex min-h-0 min-w-0 flex-col"
         style={{ overflow: 'hidden' }}
       >
@@ -101,8 +107,8 @@ export function WorksheetPipelineSplit({
 
       <Panel
         id="worksheet"
-        minSize="45%"
-        defaultSize="60%"
+        minSize="30%"
+        defaultSize="50%"
         className="flex min-h-0 min-w-0 flex-col"
         style={{ overflow: 'hidden' }}
       >

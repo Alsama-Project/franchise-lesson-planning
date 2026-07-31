@@ -1,4 +1,8 @@
--- 0069_worksheet_image.sql
+-- 0072_worksheet_image.sql
+--
+-- SUPERSEDES the merged-but-unapplied 0069_worksheet_image.sql (renamed alongside
+-- 0070/0071, and now adds worksheet_image_use.worksheet_exercise_id). Do NOT apply
+-- the old file.
 --
 -- Backend data layer for worksheet image generation. Two APPEND-ONLY tables:
 --
@@ -49,23 +53,23 @@ comment on table public.worksheet_image is
 
 -- ── worksheet_image_use: one row per (plan, slot) binding ───────────────────
 create table if not exists public.worksheet_image_use (
-  id                 uuid primary key default gen_random_uuid(),
-  lesson_plan_id     uuid not null references public.lesson_plans (id) on delete cascade,
-  worksheet_image_id uuid not null references public.worksheet_image (id),
-  slot_id            text not null,
-  created_at         timestamptz not null default now()
+  id                    uuid primary key default gen_random_uuid(),
+  lesson_plan_id        uuid not null references public.lesson_plans (id) on delete cascade,
+  worksheet_exercise_id uuid not null references public.worksheet_exercise (id) on delete cascade,
+  worksheet_image_id    uuid not null references public.worksheet_image (id),
+  slot_id               text not null,
+  created_at            timestamptz not null default now()
 );
 
--- Original prompt asked for a plain (lesson_plan_id) index; the composite below also
--- serves lesson_plan_id-prefixed reads (the distinct-slot cap count).
+-- Lesson-plan-scoped reads (kept from the original spec).
 create index if not exists worksheet_image_use_lesson_plan_idx
   on public.worksheet_image_use (lesson_plan_id);
--- Newest-binding lookup: (lesson_plan_id, slot_id, created_at desc).
-create index if not exists worksheet_image_use_slot_idx
-  on public.worksheet_image_use (lesson_plan_id, slot_id, created_at desc);
+-- Newest-binding lookup by (exercise, slot): (worksheet_exercise_id, slot_id, created_at desc).
+create index if not exists worksheet_image_use_exercise_slot_idx
+  on public.worksheet_image_use (worksheet_exercise_id, slot_id, created_at desc);
 
 comment on table public.worksheet_image_use is
-  'Append-only bindings of a worksheet_image into a lesson-plan slot. NOT unique on (lesson_plan_id, slot_id): the CURRENT binding for a (lesson_plan_id, slot_id) is the row with the greatest created_at. Nothing in this slice READS the binding yet — workstream 1b consumes it. INSERT-only — no UPDATE/DELETE policy.';
+  'Append-only bindings of a worksheet_image into a worksheet_exercise slot. NOT unique on (worksheet_exercise_id, slot_id): the CURRENT binding for a (worksheet_exercise_id, slot_id) is the row with the greatest created_at. Nothing in this slice READS the binding yet — workstream 1b consumes it. INSERT-only — no UPDATE/DELETE policy.';
 
 -- ── RLS ─────────────────────────────────────────────────────────────────────
 alter table public.worksheet_image     enable row level security;

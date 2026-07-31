@@ -1,12 +1,15 @@
--- 0067_ai_context_tool_worksheet_image.sql
+-- 0070_ai_context_tool_worksheet_image.sql
 --
 -- Add 'worksheet_image' to the ai_context_tool enum (introduced in 0063), so the
 -- worksheet-image generator is a first-class layer-4 tool in the AI context stack —
 -- the same vocabulary the resource generator and SMARTT checker already use.
 --
+-- SUPERSEDES the merged-but-unapplied 0067_ai_context_tool_worksheet_image.sql
+-- (renamed to dodge the applied 0067_worksheet_exercise). Do NOT apply the old file.
+--
 -- ALTER TYPE ... ADD VALUE ONLY. Nothing else may live in this file. Postgres
 -- commits a new enum value but forbids USING it until the adding transaction has
--- ended, so any INSERT/SELECT that references 'worksheet_image' (see 0068) MUST run
+-- ended, so any INSERT/SELECT that references 'worksheet_image' (see 0071) MUST run
 -- in a separate, later transaction. A combined script fails in the Supabase SQL
 -- editor with: unsafe use of new value "worksheet_image".
 --

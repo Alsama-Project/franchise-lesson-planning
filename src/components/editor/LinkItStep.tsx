@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { LinkItTechnique } from '@/types/lesson';
 import type { ActivityBankItem } from '@/lib/editor/load-plan';
@@ -56,6 +56,17 @@ function AddTechnique({
   const triggerRef = useRef<HTMLButtonElement>(null);
   // An already-added technique drops out of the list.
   const available = activities.filter((a) => !selected.some((s) => s.technique === a.id));
+
+  // Close on Escape while open — the click-away backdrop handles pointer dismissal;
+  // this covers keyboard users. Listener is attached only while the menu is open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
 
   // Decide the open direction at the moment of opening (not in an effect) so the
   // panel's first paint is already on the correct side — no downward-then-flip
@@ -237,8 +248,12 @@ export function LinkItStep({
   locked?: boolean;
 }) {
   const t = useTranslations('wizard.linkIt');
+  // No `overflow-hidden` on the card: the technique picker's Add menu is an absolutely
+  // positioned popover anchored to its button, and it must be free to extend past the
+  // card's edges (a short split step gives it little room inside). The header's border
+  // sits well below the rounded top corners, so dropping the clip leaves no visual seam.
   return (
-    <fieldset disabled={locked} className="mt-[16px] min-w-0 overflow-hidden rounded-[16px] border border-border bg-surface disabled:opacity-75">
+    <fieldset disabled={locked} className="mt-[16px] min-w-0 rounded-[16px] border border-border bg-surface disabled:opacity-75">
       <div className="flex flex-wrap items-center gap-[10px] border-b border-[#EFE8DD] px-6 py-[10px]">
         <span className="text-[18px] font-bold">{title}</span>
       </div>

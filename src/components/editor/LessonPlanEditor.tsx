@@ -38,7 +38,6 @@ import {
   stepIndex,
   FIRST_STEP,
   LAST_STEP,
-  PENULTIMATE_STEP,
   type StepId,
 } from '@/components/editor/Stepper';
 import { SubmitControl } from '@/components/editor/SubmitControl';
@@ -635,7 +634,7 @@ export function LessonPlanEditor({
           onGo={goStep}
           onBack={goPrev}
           onNext={goNext}
-          nextLabel={stepId === PENULTIMATE_STEP ? t('nav.toReview') : t('nav.next')}
+          nextLabel={t('nav.next')}
           submitSlot={submitControl}
           advanceBlocked={advanceBlocked}
           gateHint={gateHint}

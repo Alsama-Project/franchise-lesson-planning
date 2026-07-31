@@ -16,12 +16,15 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
@@ -195,6 +198,10 @@ export function TermCalendarTab({
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // The selected term's band element — the anchor the portalled scope popover
+  // measures against. React points this at whichever band currently has `isSel`
+  // (and back to null on deselect), so it always tracks the open popover's chip.
+  const anchorRef = useRef<HTMLDivElement | null>(null);
 
   // Only non-archived centres are assignable scope; ordered by the console's order.
   const activeCentres = useMemo(() => centres.filter((c) => !c.archivedAt), [centres]);
@@ -558,23 +565,32 @@ export function TermCalendarTab({
               const width = Math.max(6, (rightFrac - leftFrac) * 100);
               const isSel = term.id === selectedId;
               const conflict = conflictFor(term);
-              const scopeLine = `${schoolsLabel(term.schoolIds)} · ${yearsLabel(term.years)}`;
+              const noCentres = term.schoolIds.length === 0;
+              const noYears = term.years.length === 0;
+              // A term with zero centres OR zero years produces zero `term_week`
+              // rows — it is inert. Say THAT, not the neutral "No centres · No
+              // years" count, which reads like harmless metadata. Scoped terms keep
+              // showing their counts.
+              const inert = noCentres || noYears;
+              const scopeLine = inert
+                ? t('termCalendar.scopeInert')
+                : `${schoolsLabel(term.schoolIds)} · ${yearsLabel(term.years)}`;
               const range = t('termCalendar.range', {
                 start: formatShortWeekdayDate(startMon),
                 end: formatShortWeekdayDate(lastMon),
               });
-              const noCentres = term.schoolIds.length === 0;
-              const noYears = term.years.length === 0;
               const valid = !noCentres && !noYears && !conflict;
 
               return (
                 <div
                   key={term.id}
+                  ref={isSel ? anchorRef : undefined}
+                  tabIndex={-1}
                   onPointerDown={(e) => onBandPointerDown(e, term, 'move')}
                   onPointerMove={onBandPointerMove}
                   onPointerUp={(e) => onBandPointerUp(e, term)}
                   className={cn(
-                    'group absolute flex touch-none items-center gap-[8px] rounded-[10px] px-[8px] pl-[11px]',
+                    'group absolute flex touch-none items-center gap-[8px] rounded-[10px] px-[8px] pl-[11px] outline-none',
                     isSel
                       ? 'z-40 border-[1.5px] border-teal bg-[#D2E9E2] shadow-[0_6px_18px_-8px_rgba(31,122,108,0.5)]'
                       : 'z-10 border-[1.5px] border-[#BFDDD5] bg-[#E4F0ED]',
@@ -584,7 +600,14 @@ export function TermCalendarTab({
                   <span className="flex-none text-[9.5px] font-bold text-[#4E9085]">W1</span>
                   <div className="min-w-0 flex-1" dir="auto">
                     <div className="truncate text-[12.5px] font-semibold text-[#15564B]">{term.name}</div>
-                    <div className="truncate text-[10.5px] font-medium text-[#5E8C84]">{scopeLine}</div>
+                    <div
+                      className={cn(
+                        'truncate text-[10.5px] font-semibold',
+                        inert ? 'text-status-progress' : 'font-medium text-[#5E8C84]',
+                      )}
+                    >
+                      {scopeLine}
+                    </div>
                   </div>
                   {/* Resize handle */}
                   <span
@@ -602,7 +625,7 @@ export function TermCalendarTab({
                   {isSel ? (
                     <ScopePopover
                       term={term}
-                      left={left}
+                      anchorRef={anchorRef}
                       range={range}
                       centres={activeCentres}
                       valid={valid}
@@ -651,7 +674,7 @@ export function TermCalendarTab({
 
 function ScopePopover({
   term,
-  left,
+  anchorRef,
   range,
   centres,
   valid,
@@ -666,7 +689,8 @@ function ScopePopover({
   onRemove,
 }: {
   term: TermRow;
-  left: number;
+  /** The band element the popover anchors to (measured from the viewport). */
+  anchorRef: RefObject<HTMLDivElement | null>;
   range: string;
   centres: CentreRow[];
   valid: boolean;
@@ -683,7 +707,80 @@ function ScopePopover({
   const t = useTranslations('settings');
   const locale = useLocale();
   const nameAtFocus = useRef(term.name);
-  const flip = left > 52; // anchor to the band's right edge when it sits past centre
+  const popRef = useRef<HTMLDivElement>(null);
+  // Fixed viewport coordinates; null until first measured (rendered hidden so it
+  // never flashes at 0,0). The timeline card sits inside an `overflow-hidden`
+  // console wrapper (SettingsConsole), which clips an in-flow absolute popover
+  // regardless of z-index — so we portal to <body> and position against the chip's
+  // viewport rect, mirroring InlinePromptPopover / the worksheet Toolbar dropdown.
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Place below the chip; flip above when there isn't room; clamp into the viewport
+  // horizontally (chips near either timeline edge, LTR or RTL — the rect is physical).
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = popRef.current;
+      const a = anchorRef.current?.getBoundingClientRect();
+      if (!el || !a) return;
+      const r = el.getBoundingClientRect();
+      const margin = 8;
+      const gap = 10;
+      let top = a.bottom + gap;
+      if (top + r.height + margin > window.innerHeight) {
+        const above = a.top - gap - r.height;
+        top = above >= margin ? above : Math.max(margin, window.innerHeight - r.height - margin);
+      }
+      if (top < margin) top = margin;
+      let left = a.left;
+      if (left + r.width + margin > window.innerWidth) left = window.innerWidth - r.width - margin;
+      if (left < margin) left = margin;
+      setPos({ top, left });
+    };
+    place();
+    // Reposition on scroll (capture: catch any scrolling ancestor), viewport
+    // resize, and the popover's own height changes (toggling centres/years).
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null;
+    if (ro && popRef.current) ro.observe(popRef.current);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+      ro?.disconnect();
+    };
+  }, [anchorRef]);
+
+  // Close on outside pointerdown and on Escape. A pointerdown on the anchor chip is
+  // left alone so the chip's own toggle handles it (no close-then-reopen fight).
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (popRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [anchorRef, onClose]);
+
+  // Return focus to the chip when the popover closes (captured at open, so a term
+  // deleted from the popover — its band gone — is a harmless no-op).
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    return () => anchor?.focus();
+  }, [anchorRef]);
+
+  if (typeof document === 'undefined') return null;
 
   const quick = (active: boolean) =>
     cn(
@@ -693,11 +790,14 @@ function ScopePopover({
         : 'border-[#E7DBC9] bg-[#F3ECE2] text-[#6E6358]',
     );
 
-  return (
+  return createPortal(
     <div
+      ref={popRef}
+      role="dialog"
+      aria-label={term.name || t('termCalendar.newTermName')}
       onPointerDown={(e) => e.stopPropagation()}
-      className="absolute z-[60] w-[316px] rounded-[14px] border border-[#E2D9CC] bg-white p-[16px] shadow-[0_16px_38px_-12px_rgba(60,40,30,0.4)]"
-      style={{ top: 'calc(100% + 10px)', left: flip ? 'auto' : 0, right: flip ? 0 : 'auto', cursor: 'default' }}
+      className="fixed z-[120] w-[316px] rounded-[14px] border border-[#E2D9CC] bg-white p-[16px] shadow-[0_16px_38px_-12px_rgba(60,40,30,0.4)]"
+      style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? 'visible' : 'hidden', cursor: 'default' }}
     >
       {/* Header */}
       <div className="mb-[15px] flex items-center gap-[9px]">
@@ -754,7 +854,7 @@ function ScopePopover({
                 type="button"
                 onClick={() => onToggleSchool(c.id)}
                 className={cn(
-                  'flex items-center gap-[10px] rounded-[8px] border px-[10px] py-[8px] text-left',
+                  'flex items-center gap-[10px] rounded-[8px] border px-[10px] py-[8px] text-start',
                   checked ? 'border-teal-tint-border bg-teal-tint' : 'border-[#E7DECF] bg-white',
                 )}
               >
@@ -836,6 +936,7 @@ function ScopePopover({
           {t('termCalendar.remove')}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -47,22 +47,17 @@ export type SkillKey = 'reading' | 'writing' | 'listening' | 'speaking' | 'other
 
 /** One curriculum period (a table row + the focus card's source). */
 export interface BrowseRow {
-  /** Curriculum period (1–5). 1 = Mon … 5 = Fri. */
-  period: number;
-  /** Mon–Fri column index derived from the period (1–5). */
-  weekday: number;
+  /**
+   * Curriculum period (1–5), or `null` for a weekly-grain / non-instructional row that
+   * carries no period (Awareness rows are all period-NULL; a daily subject's
+   * Baseline/Orientation markers are too). The Period cell and the In-Focus label render
+   * the em-dash / drop the suffix for a NULL period.
+   */
+  period: number | null;
+  /** Mon–Fri column index derived from the period (1–5); `null` when the period is. */
+  weekday: number | null;
   /** Daily learning outcome (stem-cleaned). May be empty. */
   dailyOutcome: string;
-  /**
-   * This row's own Weekly Knowledge / Skills learning outcome (stem-cleaned; empty when
-   * absent). Carried PER ROW so the collapsed single-period table can show each week's
-   * own weekly outcomes — every collapsed row is a distinct week, so these must not come
-   * from `CurriculumBrowseData.weekly` (which holds only the single resolved-coordinate
-   * week). Present on every row but rendered only by the collapsed view; the normal
-   * daily-shape view reads its weekly outcomes from `CurriculumBrowseData.weekly`.
-   */
-  weeklyKnowledge: string;
-  weeklySkills: string;
   /** Raw linguistic-skill label as stored (drives the pill text). */
   linguisticSkill: string;
   /** Normalised macro-skill key — picks the pill colour. */
@@ -118,24 +113,13 @@ export interface CurriculumBrowseData {
   topicChip: string | null;
   weekly: WeeklyOutcome;
   monthly: MonthlyOutcome;
-  /** The week's rows, one per period, ascending. Empty when the week has none. */
+  /**
+   * The selected week's rows for the period table. Normally one row per period (1–5);
+   * for a weekly-grain subject (Awareness — all period-NULL) the week's single NULL row
+   * is surfaced instead, so the table is never empty. See the per-week fallback in
+   * `getCurriculumBrowseData`.
+   */
   rows: BrowseRow[];
-  /**
-   * True when the subject has at most one period per week (Yoga / Awareness — see
-   * `isSinglePeriodSubject`). Drives the collapsed single-period view: no Weekly/Monthly
-   * toggle, a full-width Monthly Outcome block, no Weekly Outcome block, a month-stepping
-   * navigator, and one table row per week of the month (from `monthWeekRows`). Always
-   * false for normal multi-period subjects, which render exactly as before.
-   */
-  singlePeriod: boolean;
-  /**
-   * One row per week of the resolved month, ascending by week — the single-period view's
-   * table body. Unlike `monthGrid` (period-indexed, which drops weekly-grain rows whose
-   * `period` is NULL), this keeps each week's single row regardless of period so both
-   * Yoga (period 1) and Awareness (period NULL) render. Empty for multi-period subjects
-   * (and when the month has no rows); the row label is the week's ordinal, not its period.
-   */
-  monthWeekRows: BrowseRow[];
   /** The selected month's calendar grid — one entry per week, each with its five
    *  period cells (Task 6 monthly view). Empty when the month has no lessons. */
   monthGrid: BrowseMonthWeek[];

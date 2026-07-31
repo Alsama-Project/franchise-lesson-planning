@@ -349,6 +349,7 @@
         "centrePlus": "{first} +{count}",
         "noYears": "No years"
       },
+      "scopeInert": "No teaching weeks — add centres & years",
       "validity": {
         "valid": "{weeks} weeks · {schools} · {years}",
         "noCentres": "No centres — produces no teaching weeks",

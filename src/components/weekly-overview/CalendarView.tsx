@@ -40,6 +40,10 @@ export function CalendarView({
   spansMultipleCentres?: boolean;
 }) {
   const columns = buildPeriodColumns(years, spansMultipleCentres, { readOnly, ownerId });
+  // Bands that carry no curriculum this week vanish from the period columns entirely.
+  // Surface each ONCE as a cream note so the teacher learns WHY the year is blank
+  // instead of seeing nothing at all.
+  const emptyBands = years.filter((band) => band.emptyReason !== null);
 
   return (
     <section className="overflow-x-auto">
@@ -56,7 +60,42 @@ export function CalendarView({
           />
         ))}
       </div>
+
+      {/* One cream note per year that has no curriculum this week — never one per
+          period column. Non-interactive: a statement about curriculum-provided
+          content, so it carries the same cream/read-only treatment as the worksheet
+          "given" surface, not the ghost card's interactive create affordance. */}
+      {emptyBands.length > 0 ? (
+        <div className="mt-[16px] flex min-w-[900px] flex-col gap-[10px]">
+          {emptyBands.map((band) => (
+            <BandEmptyNote key={band.key} band={band} />
+          ))}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * A blank year band, explained. Cream (#F5EDE5) and non-interactive — it states why
+ * the curriculum gives nothing this week, it is not a create slot. `year_not_covered`
+ * (the subject never covers this year — Professionalism runs Y3–Y6, so a Y2 class has
+ * no curriculum) reads as a coverage fact; `week_not_covered` (the year is covered but
+ * this week is blank) reads as normal, the settled model's correct blank.
+ */
+function BandEmptyNote({ band }: { band: BoardYear }) {
+  const t = useTranslations('board');
+  const locale = useLocale();
+  const key = band.emptyReason === 'year_not_covered' ? 'yearNotCovered' : 'weekNotCovered';
+  return (
+    <div className="rounded-[12px] border border-given-border bg-cream px-[14px] py-[12px]">
+      <div dir="auto" className="text-[11.5px] font-medium text-given-label">
+        {band.subjectName} · {t('card.year', { n: formatNumber(band.year, locale) })}
+      </div>
+      <p dir="auto" className="mt-[2px] text-[12.5px] leading-[1.45] text-text-muted">
+        {t(`bandEmpty.${key}`)}
+      </p>
+    </div>
   );
 }
 

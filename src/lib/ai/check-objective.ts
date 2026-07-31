@@ -2,7 +2,7 @@ import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import { getLocale } from 'next-intl/server';
 import { getSmarttClient } from '@/lib/anthropic';
-import { getActiveSmarttGuide } from '@/lib/ai/smartt-guide';
+import { composeContextStack } from '@/lib/ai/context-stack';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 
 /**
@@ -17,15 +17,15 @@ import { OBJECTIVE_STEM } from '@/lib/editor/objective';
  *
  * Backend-only: this runs server-side and uses the SMARTT-only Anthropic client
  * ({@link getSmarttClient}, keyed by `ANTHROPIC_API_KEY_SMARTT`) so its cost is
- * tracked separately from resource generation. The system prompt is COMPOSED
- * (mirroring generate-resource):
- *   [hardcoded role + org framing] → [admin-uploaded guide] → [hardcoded FLOOR]
- * The active guide is read via {@link getActiveSmarttGuide} through the
+ * tracked separately from resource generation. The system prompt is COMPOSED by
+ * the layered-context composer ({@link composeContextStack}):
+ *   role → precedence statement → layers 1-4 (org/academic/subject/tool) → FLOOR
+ * The layer documents are read via `get_active_context_stack` through the
  * security-definer RPC on the RLS-honouring server client — never the
  * service-role key. The canonical SMARTT anchor, the fixed stem, and the JSON
- * output contract stay hardcoded in the FLOOR (plus the unchanged
- * `RESPONSE_SCHEMA` + `isObjectiveCheckResult` guard) so an uploaded guide can
- * never change the `ObjectiveCheckResult` shape the editor + pills depend on.
+ * output contract live in the code FLOOR (`@/lib/ai/floor`, plus the unchanged
+ * `RESPONSE_SCHEMA` + `isObjectiveCheckResult` guard) so no uploaded layer can
+ * change the `ObjectiveCheckResult` shape the editor + pills depend on.
  */
 
 /** Model used for the check. Pinned deliberately — see CLAUDE.md model notes. */
@@ -179,59 +179,12 @@ const RESPONSE_SCHEMA = {
   ],
 } as const;
 
-/**
- * Hardcoded role / org framing — part 1 of the composed system prompt. Says who
- * is reviewing, what they review (one Alsama lesson objective), and the feedback
- * stance. Stays in code.
- */
-const ROLE_FRAMING = `You are an instructional-design coach for Alsama, a school network that teaches refugee and displaced students. Teachers write a single lesson objective using Alsama's SMARTT framework, and you give concise, supportive, actionable feedback.`;
-
-/**
- * Hardcoded FLOOR + output contract — part 3 of the composed system prompt, after
- * the active guide. Non-negotiable; stays in code. It pins the canonical SMARTT
- * anchor (the six letters, including Alsama's Tangible), the fixed stem, and the
- * JSON-only output contract, so an uploaded guide can steer judgement but can
- * never change the `ObjectiveCheckResult` shape (the `RESPONSE_SCHEMA` +
- * `isObjectiveCheckResult` guard are the hard enforcement; this is the in-prompt
- * statement of the same contract). Intentionally a compact subset — it does not
- * restate the whole guide.
- */
-const SMARTT_FLOOR = `SMARTT is the fixed anchor — judge the objective against all six letters: Specific, Measurable, Achievable, Relevant, Time-bound, and Tangible (Alsama's distinctive final letter: relatable to students' real lives — concrete and meaningful in the students' own world, not just an abstract academic skill).
-
-The objective — and your suggested rewrite — must use the exact stem "${OBJECTIVE_STEM}" followed by an observable, student-facing action.
-
-Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; then one or two overall suggestions to tighten the objective — each suggestion is an object with a "note" (the one-line advice) and a "dimension" naming the single SMARTT dimension it addresses, exactly one of "specific", "measurable", "achievable", "relevant", "time_bound", "tangible"; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
-
-/**
- * Language directive appended ONLY when the teacher's UI locale is Arabic.
- *
- * Aya's objective check is UI-facing feedback, so its language follows the UI
- * locale (unlike generate-resource, whose content language follows the
- * subject/curriculum — never the UI). This directive switches only the
- * human-readable feedback text to Modern Standard Arabic; it must NOT touch the
- * JSON contract: the keys, the structure, and the status enum values stay
- * exactly as the FLOOR specifies, and the rewrite keeps the fixed English stem.
- */
-const ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" (the per-letter notes and each suggestion's "note") — in Modern Standard Arabic (الفصحى).
-Do NOT translate or alter the JSON contract: keep all JSON keys in English, keep each "status" value as the exact English literal "strong" or "needs work", and keep each suggestion's "dimension" value as the exact English literal key ("specific", "measurable", "achievable", "relevant", "time_bound" or "tangible"). The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
-
-/**
- * Compose the system prompt: hardcoded role framing → the active (or default)
- * guide → hardcoded FLOOR + contract → (Arabic only) a language directive.
- * Mirrors generate-resource's `composeSystemPrompt`. With no guide uploaded, the
- * guide argument is `DEFAULT_SMARTT_GUIDE` (the per-letter steering split out of
- * the original hardcoded prompt), so the checker receives the same role +
- * steering + letters + stem + contract as before — behaviour is unchanged.
- *
- * `locale` is the active UI locale (read server-side via next-intl). When it is
- * `'ar'` the {@link ARABIC_DIRECTIVE} is appended so the feedback text comes back
- * in Arabic; the FLOOR, the stem, and the JSON contract are untouched, so the
- * `ObjectiveCheckResult` shape is identical regardless of locale.
- */
-function composeSystemPrompt(guide: string, locale: string): string {
-  const base = `${ROLE_FRAMING}\n\n${guide.trim()}\n\n${SMARTT_FLOOR}`;
-  return locale === 'ar' ? `${base}\n\n${ARABIC_DIRECTIVE}` : base;
-}
+// The role framing, the SMARTT anchor + stem + JSON contract (the "floor"), and
+// the Arabic directive have moved out of this file: the role now lives in the
+// composer (`@/lib/ai/context-stack`), and the floor + Arabic directive live in
+// `@/lib/ai/floor` (`smarttCheckerFloor`). The per-letter judging steering and
+// the "one or two suggestions" guidance moved into the layer-4 stack documents.
+// This file keeps only the model call, the schema, and the streaming/parse code.
 
 /** Build the user-turn prompt from the objective and optional context. */
 function buildUserPrompt(objective: string, context?: ObjectiveCheckContext): string {
@@ -357,16 +310,23 @@ export async function openObjectiveCheckStream(
     );
   }
 
-  // Compose the system prompt from the active SMARTT guide (admin-uploaded
-  // steering, or the hardcoded default when none exists). The FLOOR + schema keep
-  // the output shape fixed regardless of what the guide says.
+  // Compose the system prompt from the layered context stack (role → precedence
+  // → layers 1-4 → floor). The floor pins the SMARTT anchor, the stem, and the
+  // JSON contract, so no uploaded layer can change the output shape. The checker
+  // is subject-agnostic today, so `subjectId` is null (org/academic/tool layers
+  // still apply; a per-subject layer would simply be absent).
   //
   // This is UI-facing feedback, so its language follows the active UI locale,
-  // resolved server-side from the NEXT_LOCALE cookie via next-intl. Only the
-  // feedback text changes (FLOOR/stem/JSON contract are locale-invariant).
-  const guide = await getActiveSmarttGuide();
+  // resolved server-side from the NEXT_LOCALE cookie via next-intl; only the
+  // floor's Arabic directive (locale 'ar') changes the feedback text.
   const locale = await getLocale();
-  const systemPrompt = composeSystemPrompt(guide, locale);
+  const { system: systemPrompt, docsUsed } = await composeContextStack({
+    tool: 'smartt_checker',
+    subjectId: null,
+    locale,
+  });
+  // Observability: which documents produced this prompt (see PR/floor notes).
+  console.info('[ai] check-objective compose', { tool: 'smartt_checker', subjectId: null, docsUsed });
 
   return client.messages.stream({
     model: MODEL,

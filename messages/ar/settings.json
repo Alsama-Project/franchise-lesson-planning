@@ -349,6 +349,7 @@
         "centrePlus": "{first} +{count}",
         "noYears": "لا سنوات"
       },
+      "scopeInert": "لا أسابيع تدريس — أضف المراكز والسنوات",
       "validity": {
         "valid": "{weeks} أسابيع · {schools} · {years}",
         "noCentres": "لا مراكز — لا ينتج أسابيع تدريس",

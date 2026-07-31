@@ -39,6 +39,8 @@ import type {
   BrowseMonthWeek,
   BrowseRow,
   CurriculumBrowseData,
+  MonthlyOutcome,
+  WeeklyOutcome,
 } from '@/types/curriculum-browse';
 
 /** Which structure the screen shows; carried in the URL as `?view=`. */
@@ -63,14 +65,7 @@ export function CurriculumBrowse({
     <>
       <Header data={data} view={view} />
       <div className="border-t border-border p-[22px]">
-        {data.singlePeriod ? (
-          // Single-period subjects (Yoga/Awareness): one collapsed view, keyed on the
-          // month so the selected-week state re-initialises on month navigation.
-          <SinglePeriodBody
-            key={`${data.selected.subjectCode}-${data.selected.year}-${data.selected.month}`}
-            data={data}
-          />
-        ) : view === 'monthly' ? (
+        {view === 'monthly' ? (
           // Key on the resolved coordinate so the grid selection re-initialises when
           // the month changes (month nav / subject / year) — the component otherwise
           // stays mounted across navigation and would hold stale cell indices.
@@ -134,11 +129,6 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
 
   const coordHref = (c: BrowseCoordinate) => buildHref({ month: c.month, week: c.week });
 
-  // Single-period subjects (Yoga/Awareness) collapse to one month-stepping view: no
-  // Weekly/Monthly toggle, no week picker, no per-week topic chip. The navigator reuses
-  // the month stepper (prevMonth/nextMonth), matching the month-of-weeks table below.
-  const singlePeriod = data.singlePeriod;
-
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] px-[22px] py-[15px]">
       <div className="flex flex-wrap items-center gap-[12px]">
@@ -157,7 +147,7 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
             label: t('year', { n: formatNumber(y, locale) }),
           }))}
         />
-        {singlePeriod || view === 'monthly' ? (
+        {view === 'monthly' ? (
           <MonthNav
             label={month || t('empty')}
             prevHref={data.prevMonth ? coordHref(data.prevMonth) : null}
@@ -191,7 +181,7 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
             }}
           />
         )}
-        {!singlePeriod && view === 'weekly' && data.topicChip ? (
+        {view === 'weekly' && data.topicChip ? (
           <span
             dir="auto"
             className="inline-flex items-center rounded-full border border-[#ece4d7] bg-surface-cream px-[11px] py-[4px] text-[12.5px] font-medium text-[#8a6a3a]"
@@ -200,11 +190,9 @@ function Header({ data, view }: { data: CurriculumBrowseData; view: CurriculumVi
           </span>
         ) : null}
       </div>
-      {singlePeriod ? null : (
-        <div className="flex items-center gap-[14px]">
-          <ViewToggle weeklyHref={buildHref({ view: 'weekly' })} monthlyHref={buildHref({ view: 'monthly' })} view={view} />
-        </div>
-      )}
+      <div className="flex items-center gap-[14px]">
+        <ViewToggle weeklyHref={buildHref({ view: 'weekly' })} monthlyHref={buildHref({ view: 'monthly' })} view={view} />
+      </div>
     </div>
   );
 }
@@ -360,86 +348,34 @@ function Selector({
 
 function WeeklyBody({ data }: { data: CurriculumBrowseData }) {
   const t = useTranslations('curriculum');
+  // Locked curriculum content is never faked with an empty box: each outcome panel shows
+  // ONLY when it has content (Yoga has no monthly data, so no Monthly panel). Same
+  // predicate shape for both — see `hasMonthlyContent` / `hasWeeklyContent`. When only one
+  // panel shows it spans full width; both → the side-by-side two-column layout.
+  const showMonthly = hasMonthlyContent(data.monthly);
+  const showWeekly = hasWeeklyContent(data.weekly);
+  const panelCount = (showMonthly ? 1 : 0) + (showWeekly ? 1 : 0);
   return (
     <>
-      <div className="grid gap-[16px] md:grid-cols-2">
-        <MonthlyPanel data={data} />
-        <WeeklyPanel data={data} />
-      </div>
+      {panelCount > 0 ? (
+        <div className={cn('grid gap-[16px]', panelCount === 2 && 'md:grid-cols-2')}>
+          {showMonthly ? <MonthlyPanel data={data} /> : null}
+          {showWeekly ? <WeeklyPanel data={data} /> : null}
+        </div>
+      ) : null}
       {data.rows.length === 0 ? (
-        <p className="mt-[20px] rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted">
-          {t('noLessons')}
-        </p>
-      ) : (
-        <WeekGrid data={data} />
-      )}
-    </>
-  );
-}
-
-// ── Single-period body: full-width monthly outcome + month-of-weeks table ────────
-//
-// Yoga / Awareness have one period per week (see `isSinglePeriodSubject`), so the
-// weekly/monthly split doesn't apply: we render ONE collapsed view. The Monthly
-// Outcome block spans full width (the Weekly Outcome block is gone) and shows ONLY
-// when it has content — locked curriculum content is never faked with an empty box.
-// The table shows one row per week of the selected month (from `monthWeekRows`),
-// reusing the existing week table; the row label is the week's ordinal within the
-// month, not the DB period (1 for every Yoga row, NULL for Awareness).
-function SinglePeriodBody({ data }: { data: CurriculumBrowseData }) {
-  const t = useTranslations('curriculum');
-  const rows = data.monthWeekRows;
-
-  const monthlyLOs = useMemo(() => parseMonthlyOutcome(data.monthly), [data.monthly]);
-  const hasMonthly =
-    monthlyLOs.skills.length > 0 ||
-    monthlyLOs.knowledge.length > 0 ||
-    Boolean(data.monthly.combined);
-
-  return (
-    <>
-      {hasMonthly ? <MonthlyPanel data={data} /> : null}
-      {rows.length === 0 ? (
         <p
           className={cn(
             'rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted',
-            hasMonthly && 'mt-[20px]',
+            panelCount > 0 && 'mt-[20px]',
           )}
         >
-          {t('monthGrid.noLessons')}
+          {t('noLessons')}
         </p>
       ) : (
-        <SinglePeriodGrid rows={rows} spaced={hasMonthly} />
+        <WeekGrid data={data} spaced={panelCount > 0} />
       )}
     </>
-  );
-}
-
-/** The month-of-weeks table + sticky focus card for a single-period subject. */
-function SinglePeriodGrid({ rows, spaced }: { rows: BrowseRow[]; spaced: boolean }) {
-  const t = useTranslations('curriculum');
-  const locale = useLocale();
-  // Default-select the first week; clicking a row re-points the focus card.
-  const [selected, setSelected] = useState(0);
-  const safeIndex = Math.min(selected, rows.length - 1);
-  const focusRow = rows[safeIndex];
-
-  // Row label = the week's ordinal within the displayed month (1..N — 5 in a 5-week
-  // month), reusing the existing `period` key. Deliberately NOT the DB `period`.
-  const rowLabel = (i: number) => t('period', { n: formatNumber(i + 1, locale) });
-
-  return (
-    <div
-      className={cn(
-        'grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]',
-        spaced && 'mt-[20px]',
-      )}
-    >
-      <WeekTable rows={rows} selected={safeIndex} onSelect={setSelected} rowLabel={rowLabel} collapsed />
-      <div className="lg:sticky lg:top-[80px]">
-        <FocusCard row={focusRow} periodLabel={rowLabel(safeIndex)} />
-      </div>
-    </div>
   );
 }
 
@@ -470,16 +406,21 @@ function MonthlyBody({ data }: { data: CurriculumBrowseData }) {
 
   const isEmpty = grid.length === 0 || grid.every((w) => w.cells.every((c) => !c));
   const focusRow = sel ? grid[sel.weekIdx]?.cells[sel.periodIdx] ?? null : null;
+  // Same empty-gate as the weekly view: no empty Monthly panel (Yoga has no monthly data).
+  const showMonthly = hasMonthlyContent(data.monthly);
 
   return (
     <>
-      <MonthlyPanel data={data} />
+      {showMonthly ? <MonthlyPanel data={data} /> : null}
       {isEmpty ? (
-        <p className="mt-[20px] rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted">
+        <p className={cn(
+          'rounded-[14px] border border-border bg-surface-subtle px-[16px] py-[24px] text-center text-[13.5px] text-text-muted',
+          showMonthly && 'mt-[20px]',
+        )}>
           {t('monthGrid.noLessons')}
         </p>
       ) : (
-        <div className="mt-[20px] grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className={cn('grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_320px]', showMonthly && 'mt-[20px]')}>
           <MonthCalendar
             grid={grid}
             selected={sel}
@@ -726,6 +667,58 @@ function parseMonthlyOutcome(monthly: {
   return { skills: [], knowledge: [] };
 }
 
+// ── Empty-panel gates + daily-outcome de-duplication ─────────────────────────────
+//
+// Locked curriculum content is never faked with an empty box, so each outcome panel is
+// gated on having content. Both gates share one predicate SHAPE: "does parsing/reading
+// this outcome yield any Knowledge or Skills text?".
+
+/** True when the Monthly outcome has any renderable content. */
+function hasMonthlyContent(monthly: MonthlyOutcome): boolean {
+  const los = parseMonthlyOutcome(monthly);
+  return los.skills.length > 0 || los.knowledge.length > 0 || Boolean(monthly.combined);
+}
+
+/** True when the Weekly outcome has any renderable content. */
+function hasWeeklyContent(weekly: WeeklyOutcome): boolean {
+  return Boolean(weekly.knowledge?.trim()) || Boolean(weekly.skills?.trim());
+}
+
+/**
+ * Whether a row's daily outcome merely REPEATS the week's Weekly Knowledge + Skills —
+ * true for the weekly-grain subjects whose `daily_outcome` is composed from those two
+ * columns (`composeWeeklyOutcome`), so the `WeeklyPanel` above already shows every word.
+ * When true the outcome cell / FocusCard block render the em-dash instead of duplicating
+ * the panel.
+ *
+ * Order- and whitespace-AGNOSTIC by construction: we strip each weekly part (Knowledge
+ * and Skills, in either order) out of the daily text and test whether only whitespace and
+ * punctuation remain. It deliberately does NOT assume `composeWeeklyOutcome`'s current
+ * `${skills}\n${knowledge}` shape, so a future change to the composer can't break it. Pure
+ * value test — no subject name or code. Returns false when there is nothing to compare
+ * against (both weekly parts empty) so genuinely-independent daily text (IT/English) shows.
+ */
+function normalizeForCompare(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function isDailyRedundant(
+  daily: string,
+  weekly: { knowledge: string | null; skills: string | null },
+): boolean {
+  const d = normalizeForCompare(daily);
+  if (!d) return false;
+  const parts = [weekly.knowledge, weekly.skills]
+    .map((p) => normalizeForCompare(p ?? ''))
+    .filter((p) => p !== '');
+  if (parts.length === 0) return false;
+  let remainder = d;
+  for (const part of parts) remainder = remainder.split(part).join(' ');
+  // Only whitespace + Unicode punctuation left ⇒ the daily text was nothing but the
+  // weekly parts (plus separators). `\p{P}` covers ASCII and Arabic punctuation.
+  return remainder.replace(/[\s\p{P}]+/gu, '') === '';
+}
+
 function Panel({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="rounded-[14px] border border-[#ece4d7] bg-surface-cream p-[18px]">
@@ -841,97 +834,28 @@ function DailyOutcome({ text }: { text: string }) {
   );
 }
 
-// ── Collapsed single-period outcome cell ─────────────────────────────────────────
-//
-// For a single-period subject (Yoga / Awareness) the collapsed table has no Weekly
-// Outcome panel, so each week's Weekly Knowledge / Skills surface HERE, inside the
-// week's "Learning Outcome" cell, as a labelled stack. Heading colours mirror
-// `OutcomeColumns` (teal Knowledge, rose Skills) so the collapsed and normal views
-// read consistently.
-//
-// These subjects ingest via `composeWeekly`, which synthesises `daily_outcome` FROM the
-// weekly Skills column — so the daily outcome is usually the SAME text as weekly Skills.
-// De-dup on VALUE (never on subject): when the daily outcome equals weekly Skills after
-// whitespace normalisation it is already shown as Skills and is not repeated; only when
-// it genuinely differs is it added as a third "Daily outcome" line. Each of the three is
-// omitted (label included) when empty; if all three are empty the cell renders nothing.
-
-/** Trim + collapse internal whitespace, for the daily-vs-skills value comparison. */
-function normalizeOutcome(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function OutcomeLine({
-  label,
-  labelClassName,
-  children,
-}: {
-  label: string;
-  labelClassName: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <p className={cn('text-[12px] font-semibold', labelClassName)}>{label}</p>
-      <div className="mt-[4px] text-[13.5px] leading-[1.45] text-ink [overflow-wrap:anywhere]">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function WeeklyOutcomeCell({
-  knowledge,
-  skills,
-  daily,
-}: {
-  knowledge: string;
-  skills: string;
-  daily: string;
-}) {
-  const t = useTranslations('curriculum');
-  const hasKnowledge = knowledge.trim() !== '';
-  const hasSkills = skills.trim() !== '';
-  const showDaily = daily.trim() !== '' && normalizeOutcome(daily) !== normalizeOutcome(skills);
-  if (!hasKnowledge && !hasSkills && !showDaily) return null;
-  return (
-    <div className="space-y-[12px]">
-      {hasKnowledge ? (
-        // teal accent = "Knowledge" — matches OutcomeColumns
-        <OutcomeLine label={t('knowledge')} labelClassName="text-teal">
-          <span dir="auto">{knowledge}</span>
-        </OutcomeLine>
-      ) : null}
-      {hasSkills ? (
-        // rose accent = "Skills" — matches OutcomeColumns (NOT the editable-pink #b62a5c)
-        <OutcomeLine label={t('skills')} labelClassName="text-[#b8366b]">
-          <span dir="auto">{skills}</span>
-        </OutcomeLine>
-      ) : null}
-      {showDaily ? (
-        <OutcomeLine label={t('focus.dailyOutcome')} labelClassName="text-neutral-500">
-          <DailyOutcome text={daily} />
-        </OutcomeLine>
-      ) : null}
-    </div>
-  );
-}
-
 // ── Week grid: table + focus card ───────────────────────────────────────────────
 
-function WeekGrid({ data }: { data: CurriculumBrowseData }) {
+function WeekGrid({ data, spaced }: { data: CurriculumBrowseData; spaced: boolean }) {
   // Default-select the first period; clicking a row re-points the focus card.
   const [selected, setSelected] = useState(0);
   const safeIndex = Math.min(selected, data.rows.length - 1);
   const focusRow = data.rows[safeIndex];
 
   return (
-    <div className="mt-[20px] grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]">
-      <WeekTable rows={data.rows} selected={safeIndex} onSelect={setSelected} />
+    <div
+      className={cn(
+        'grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]',
+        spaced && 'mt-[20px]',
+      )}
+    >
+      {/* The week's rows share one Weekly outcome, so the daily-vs-weekly de-dup reads
+          `data.weekly` for every row rather than a per-row copy. */}
+      <WeekTable rows={data.rows} selected={safeIndex} onSelect={setSelected} weekly={data.weekly} />
       {/* Sticky so the IN FOCUS card stays in view while the day table scrolls.
           top offset clears the 64px (h-16) sticky shell header + a small gap. */}
       <div className="lg:sticky lg:top-[80px]">
-        <FocusCard row={focusRow} />
+        <FocusCard row={focusRow} weekly={data.weekly} />
       </div>
     </div>
   );
@@ -947,18 +871,13 @@ function WeekTable({
   rows,
   selected,
   onSelect,
-  rowLabel,
-  collapsed = false,
+  weekly,
 }: {
   rows: BrowseRow[];
   selected: number;
   onSelect: (i: number) => void;
-  /** Overrides the PERIOD cell label (single-period view uses the week ordinal). When
-   *  omitted, the cell reads the row's own DB period — multi-period behaviour, unchanged. */
-  rowLabel?: (index: number) => string;
-  /** Collapsed single-period view: the Learning Outcome cell renders each week's own
-   *  Weekly Knowledge / Skills (a labelled stack) instead of just the daily outcome. */
-  collapsed?: boolean;
+  /** The week's Weekly outcome — used to drop a daily-outcome cell that merely repeats it. */
+  weekly: WeeklyOutcome;
 }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
@@ -987,7 +906,11 @@ function WeekTable({
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-border">
-      <table className="w-full border-collapse text-left">
+      {/* `table-fixed` so the column-width hints below actually BIND — under the default
+          auto layout an unbreakable resource URL widened its column and starved the
+          outcome column (and forced Arabic to one word per line). The outcome column is
+          `w-auto`, so it takes all width the fixed columns don't. */}
+      <table className="w-full table-fixed border-collapse text-left">
         <thead>
           <tr className="bg-surface-cream">
             {/* LEARNING OUTCOME holds the long, most-read text — let it take all the
@@ -1005,6 +928,9 @@ function WeekTable({
             const isSelected = i === selected;
             const topic = topicCells[i];
             const tint = isSelected ? 'bg-[#edf5f2]' : '';
+            // Drop a daily outcome that merely repeats the Weekly panel above (composed
+            // weekly-grain subjects); IT/English keep their genuine daily outcome.
+            const dailyRedundant = isDailyRedundant(row.dailyOutcome, weekly);
             return (
               <tr
                 key={row.lessonKey}
@@ -1020,28 +946,25 @@ function WeekTable({
                 className="cursor-pointer border-t border-border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal/40"
               >
                 <td
+                  dir="auto"
                   className={cn(
                     'border-s-[3px] px-[16px] py-[14px] align-top text-[13.5px] font-semibold text-ink',
                     isSelected ? 'border-s-teal' : 'border-s-transparent',
                     tint,
                   )}
                 >
-                  {rowLabel ? rowLabel(i) : t('period', { n: formatNumber(row.period, locale) })}
+                  {row.period != null
+                    ? t('period', { n: formatNumber(row.period, locale) })
+                    : t('empty')}
                 </td>
-                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
-                  {collapsed ? (
-                    <WeeklyOutcomeCell
-                      knowledge={row.weeklyKnowledge}
-                      skills={row.weeklySkills}
-                      daily={row.dailyOutcome}
-                    />
-                  ) : row.dailyOutcome ? (
+                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
+                  {!dailyRedundant && row.dailyOutcome ? (
                     <DailyOutcome text={row.dailyOutcome} />
                   ) : (
                     <span>{t('empty')}</span>
                   )}
                 </td>
-                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] font-medium', tint)}>
+                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] font-medium', tint)}>
                   {row.linguisticSkill ? (
                     <span dir="auto" className={SKILL_TEXT[row.skillKey]}>
                       {row.linguisticSkill}
@@ -1058,6 +981,7 @@ function WeekTable({
                   // stays de-emphasised (same weight/colour as other cells — no teal,
                   // no highlight); only borders carry the structure.
                   <td
+                    dir="auto"
                     rowSpan={topic.rowSpan}
                     className="border-s border-border px-[16px] py-[14px] align-top"
                   >
@@ -1068,9 +992,13 @@ function WeekTable({
                     ) : null}
                   </td>
                 ) : null}
-                <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] text-neutral-700', tint)}>
+                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] text-neutral-700', tint)}>
                   {row.resources.length > 0 ? (
-                    <span dir="auto">{row.resources.map((r) => r.label).join(' · ')}</span>
+                    // `break-all` (same treatment as FocusCard) so a long raw URL wraps
+                    // inside its capped column instead of forcing the table wide.
+                    <span dir="auto" className="block break-all [overflow-wrap:anywhere]">
+                      {row.resources.map((r) => r.label).join(' · ')}
+                    </span>
                   ) : (
                     <span className="text-text-faint">{t('empty')}</span>
                   )}
@@ -1099,7 +1027,17 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 
 // ── Focus card (teal-accented) ──────────────────────────────────────────────────
 
-function FocusCard({ row, periodLabel }: { row: BrowseRow; periodLabel?: string }) {
+function FocusCard({
+  row,
+  periodLabel,
+  weekly,
+}: {
+  row: BrowseRow;
+  periodLabel?: string;
+  /** The week's Weekly outcome — when present, a daily outcome that merely repeats it is
+   *  suppressed (the WeeklyPanel already shows it). Absent in the monthly-grid focus card. */
+  weekly?: WeeklyOutcome;
+}) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
   const router = useRouter();
@@ -1111,11 +1049,13 @@ function FocusCard({ row, periodLabel }: { row: BrowseRow; periodLabel?: string 
     setError(null);
     // Membership is enforced server-side by createScopedPlan; we always render the
     // CTA and map a membership refusal to friendly copy rather than a raw error.
+    // A period-NULL row (weekly-grain subject) passes no day hints; the action falls
+    // back to the curriculum key's own period server-side.
     const res = await createScopedPlan({
       lessonKey: row.lessonKey,
       scope: 'centre',
-      weekday: row.weekday,
-      period: row.period,
+      weekday: row.weekday ?? undefined,
+      period: row.period ?? undefined,
     });
     if (res.ok) {
       router.push(`/plan/${res.planId}`);
@@ -1125,12 +1065,16 @@ function FocusCard({ row, periodLabel }: { row: BrowseRow; periodLabel?: string 
     setBusy(false);
   };
 
+  // Header label: an explicit override wins; else "· Period N" for a numbered row; else
+  // (period NULL) drop the suffix entirely — "IN FOCUS" with no trailing "· —".
+  const focusValue =
+    periodLabel ?? (row.period != null ? t('period', { n: formatNumber(row.period, locale) }) : null);
+  const dailyRedundant = weekly ? isDailyRedundant(row.dailyOutcome, weekly) : false;
+
   return (
     <div>
       <p className="mb-[10px] text-[11px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
-        {t('focus.inFocus', {
-          value: periodLabel ?? t('period', { n: formatNumber(row.period, locale) }),
-        })}
+        {focusValue != null ? t('focus.inFocus', { value: focusValue }) : t('focus.inFocusPlain')}
       </p>
       <div className="rounded-[16px] border border-teal bg-surface p-[18px]">
         <p className="mb-[10px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
@@ -1158,12 +1102,16 @@ function FocusCard({ row, periodLabel }: { row: BrowseRow; periodLabel?: string 
           ) : null}
         </div>
 
-        <p className="mt-[14px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
-          {t('focus.dailyOutcome')}
-        </p>
-        <div className="mt-[6px] text-[16px] font-semibold leading-[1.35] text-ink break-words [overflow-wrap:anywhere]">
-          {row.dailyOutcome ? <DailyOutcome text={row.dailyOutcome} /> : t('empty')}
-        </div>
+        {dailyRedundant ? null : (
+          <>
+            <p className="mt-[14px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
+              {t('focus.dailyOutcome')}
+            </p>
+            <div className="mt-[6px] text-[16px] font-semibold leading-[1.35] text-ink break-words [overflow-wrap:anywhere]">
+              {row.dailyOutcome ? <DailyOutcome text={row.dailyOutcome} /> : t('empty')}
+            </div>
+          </>
+        )}
 
         {row.resources.length > 0 ? (
           <>

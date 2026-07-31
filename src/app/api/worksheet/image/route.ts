@@ -1,19 +1,24 @@
 // POST /api/worksheet/image — generate (or reuse) one worksheet image for a slot.
 //
-// Backend-only endpoint. It composes the image prompt from the layered AI context
-// stack (role → layers → IMAGE FLOOR), generates with OpenAI, uploads the returned
-// BYTES to the private 'resources' bucket under the 'worksheet-images/' prefix, and
-// records the image + its binding to the lesson-plan slot. It NEVER persists an
-// OpenAI-hosted URL (those expire) — only the object path.
+// Backend-only endpoint. It validates the slot against the plan's
+// worksheet_exercise.image_slots, composes the image prompt from the layered AI
+// context stack (role → layers → IMAGE FLOOR), generates with OpenAI, uploads the
+// returned BYTES to the private 'resources' bucket under the 'worksheet-images/'
+// prefix, and records the image + its binding to the (exercise, slot). It NEVER
+// persists an OpenAI-hosted URL (those expire) — only the object path. It only READS
+// worksheet_exercise; it never writes it, image_slots, slot status, or storage_path
+// on the slot (the UI workstream wires the response back).
 //
 // Everything runs through the auth'd, RLS-scoped server client — never the
 // service-role key. Both backing tables (worksheet_image, worksheet_image_use) are
 // APPEND-ONLY: "replace" (regenerate / rebind) is a fresh INSERT, and the newest
 // non-blocked row wins on read.
 //
-// Response contract (success): { slot_id, storage_path }. A refusal (over the
-// per-plan image cap) returns { slot_id, storage_path: null, refusal: 'cap_reached' }
-// with 200 — a refusal, not an error. The kill-switch returns a clean 503.
+// Response contract (success): { slot_id, storage_path }. An unknown slot 404s (no
+// generation, no ledger row). A slot whose whole-worksheet index is at/beyond the
+// cap returns { slot_id, storage_path: null, refusal: 'cap_reached' } with 200 — a
+// refusal for THAT slot only, not an error, never the whole worksheet. The
+// kill-switch returns a clean 503.
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { createHash, randomUUID } from 'node:crypto';
@@ -42,6 +47,42 @@ interface WorksheetImageBody {
 /** Returns true for a present, non-empty string. */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// Minimal LOCAL reader shapes for worksheet_exercise. The canonical image-slot
+// contract (slot_id, subject, brief, status, storage_path) is owned by the exercise
+// workstream, not this slice — we deliberately do NOT export a type or add one to
+// src/types/, to avoid two workstreams racing to own it. All we read is `slot_id`.
+interface SlotEntry {
+  slot_id?: unknown;
+}
+interface ExerciseRow {
+  id: string;
+  position: number;
+  image_slots: unknown;
+}
+
+/** One flattened slot in whole-worksheet order (exercises by position, each row's
+ *  image_slots in array order). `index` is the slot's global position. */
+interface FlatSlot {
+  slotId: string;
+  exerciseId: string;
+}
+
+/** Flatten a plan's exercises into the ordered slot list. Rows must already be
+ *  ordered by position; each row's image_slots is walked in array order. */
+function flattenSlots(rows: ExerciseRow[]): FlatSlot[] {
+  const flat: FlatSlot[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row.image_slots)) continue;
+    for (const entry of row.image_slots as SlotEntry[]) {
+      const slotId = entry?.slot_id;
+      if (typeof slotId === 'string' && slotId.length > 0) {
+        flat.push({ slotId, exerciseId: row.id });
+      }
+    }
+  }
+  return flat;
 }
 
 /**
@@ -115,21 +156,33 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
 
-  // (b) Cap check — count DISTINCT slot_id for this plan (each slot is one image;
-  // append-only regenerations of the same slot do not count again). PostgREST has
-  // no COUNT(DISTINCT), so we read the slot_ids under RLS and fold in JS. A request
-  // for a slot that already has an image is a re-touch, never a new slot, so it is
-  // not blocked even at the cap.
-  const cap = Number(process.env.WORKSHEET_IMAGE_CAP ?? 8);
-  const { data: slotRows, error: slotErr } = await supabase
-    .from('worksheet_image_use')
-    .select('slot_id')
-    .eq('lesson_plan_id', lessonPlanId);
-  if (slotErr) {
-    return NextResponse.json({ error: 'Could not check the image cap.' }, { status: 502 });
+  // Slot resolution — fetch the plan's exercises (id, position, image_slots) under
+  // RLS and flatten to the ordered slot list in TS. A plan has single-digit
+  // exercises, so no pagination/Postgres-function concern. We only READ
+  // worksheet_exercise here; this slice never writes it or its image_slots.
+  const { data: exerciseRows, error: exerciseErr } = await supabase
+    .from('worksheet_exercise')
+    .select('id, position, image_slots')
+    .eq('lesson_plan_id', lessonPlanId)
+    .order('position', { ascending: true });
+  if (exerciseErr) {
+    return NextResponse.json({ error: 'Could not load the worksheet.' }, { status: 502 });
   }
-  const distinctSlots = new Set((slotRows ?? []).map((r) => (r as { slot_id: string }).slot_id));
-  if (!distinctSlots.has(slotId) && distinctSlots.size >= cap) {
+  const slots = flattenSlots((exerciseRows ?? []) as ExerciseRow[]);
+  const slotIndex = slots.findIndex((s) => s.slotId === slotId);
+
+  // (a') Validate the slot. An unknown slot_id for this plan → 404, no generation,
+  // no ledger row.
+  if (slotIndex === -1) {
+    return NextResponse.json({ error: 'Slot not found for this lesson plan.' }, { status: 404 });
+  }
+  const worksheetExerciseId = slots[slotIndex].exerciseId;
+
+  // (b) Per-slot cap — a slot whose position in the whole-worksheet order is at or
+  // beyond the cap is refused (it keeps its [Picture: …] marker). Only THIS slot is
+  // refused; the rest of the worksheet is unaffected. A refusal, not an error.
+  const cap = Number(process.env.WORKSHEET_IMAGE_CAP ?? 8);
+  if (slotIndex >= cap) {
     return NextResponse.json(
       { slot_id: slotId, storage_path: null, refusal: 'cap_reached' },
       { status: 200 },
@@ -154,6 +207,7 @@ export async function POST(request: NextRequest) {
     if (hit) {
       const { error: bindErr } = await supabase.from('worksheet_image_use').insert({
         lesson_plan_id: lessonPlanId,
+        worksheet_exercise_id: worksheetExerciseId,
         worksheet_image_id: hit.id,
         slot_id: slotId,
       });
@@ -241,6 +295,7 @@ export async function POST(request: NextRequest) {
 
   const { error: bindError } = await supabase.from('worksheet_image_use').insert({
     lesson_plan_id: lessonPlanId,
+    worksheet_exercise_id: worksheetExerciseId,
     worksheet_image_id: image.id,
     slot_id: slotId,
   });

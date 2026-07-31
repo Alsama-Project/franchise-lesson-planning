@@ -19,7 +19,6 @@ import {
   getCurriculumNav,
   getCurriculumSubjectCodes,
   getCurriculumWeekRows,
-  isSinglePeriodSubject,
 } from '@/lib/curriculumUtils';
 import { skillKeyOf } from '@/components/curriculum/skill';
 import type { CurriculumLessonRow } from '@/lib/curriculum/types';
@@ -49,9 +48,6 @@ function toBrowseRow(r: CurriculumLessonRow): BrowseRow {
     period: r.period,
     weekday: r.period,
     dailyOutcome: cleanLO(r.daily_outcome ?? ''),
-    // Per-row weekly outcomes for the collapsed single-period table (one row = one week).
-    weeklyKnowledge: cleanLO(r.weekly_knowledge_lo ?? ''),
-    weeklySkills: cleanLO(r.weekly_skills_lo ?? ''),
     linguisticSkill: r.linguistic_skill ?? '',
     skillKey: skillKeyOf(r.linguistic_skill ?? ''),
     theme: (r.theme ?? '').trim(),
@@ -199,8 +195,6 @@ const EMPTY: CurriculumBrowseData = {
   weekly: { skills: null, knowledge: null },
   monthly: { combined: null, knowledge: null, skills: null },
   rows: [],
-  singlePeriod: false,
-  monthWeekRows: [],
   monthGrid: [],
   prevMonth: null,
   nextMonth: null,
@@ -277,7 +271,16 @@ export async function getCurriculumBrowseData(input: {
   // weekly-grain rows (null or out-of-range period) have no slot.
   const isDailyRow = (r: CurriculumLessonRow) =>
     r.period != null && r.period >= 1 && r.period <= 5;
-  const rows: BrowseRow[] = weekRows.filter(isDailyRow).map(toBrowseRow);
+
+  // Period-table rows for the selected week. PER-WEEK RULE (not a global widen): prefer
+  // the week's period-numbered rows; fall back to whatever remains only when the week has
+  // none. A period-numbered subject (English/Science/Arabic carry a handful of NULL-period
+  // Baseline/Orientation marker rows) therefore never shows those phantom rows — its weeks
+  // always have period rows — while a purely weekly-grain subject (Awareness, every row
+  // period-NULL) still surfaces its single weekly row instead of an empty "no lessons"
+  // table. Value-based and per-week; no subject name or code involved.
+  const dailyRows = weekRows.filter(isDailyRow);
+  const rows: BrowseRow[] = (dailyRows.length > 0 ? dailyRows : weekRows).map(toBrowseRow);
 
   // Monthly calendar grid: every week of the selected month × periods 1–5. Each
   // cell is a full BrowseRow (null where a period has no lesson) so the shared
@@ -307,26 +310,6 @@ export async function getCurriculumBrowseData(input: {
       ? firstCoordOfMonth(nav[monthIdx + 1].month)
       : null;
 
-  // Single-period subjects (Yoga/Awareness) collapse the month into one row per week.
-  // Build that list from the month rows WITHOUT the daily-period filter, so Awareness's
-  // period-NULL weekly-grain rows survive (they'd be dropped by `monthGrid`'s isDailyRow
-  // gate). Exactly one row per week for these subjects; take that week's first row.
-  const singlePeriod = await isSinglePeriodSubject(subject.code);
-  const monthWeekRows: BrowseRow[] = singlePeriod
-    ? weeksInMonth
-        .map((week) => monthRows.find((r) => r.week === week))
-        .filter((r): r is CurriculumLessonRow => r != null)
-        .map(toBrowseRow)
-    : [];
-
-  // Where the Monthly Outcome resolves from. Multi-period subjects keep the original
-  // single-week source (`weekRows`). Single-period subjects resolve from the SAME
-  // unfiltered month-rows that feed the table (`monthRows`) — Awareness carries its
-  // monthly outcome on its `period = NULL` weekly-grain rows, which `weekRows` keeps but
-  // any isDailyRow-filtered set would drop, leaving the block blank though the DB holds
-  // it. Sourcing table + monthly from one set keeps them consistent.
-  const monthlyRows = singlePeriod ? monthRows : weekRows;
-
   return {
     subjects,
     years,
@@ -345,14 +328,15 @@ export async function getCurriculumBrowseData(input: {
       skills: firstOutcome(weekRows, (r) => r.weekly_skills_lo),
       knowledge: firstOutcome(weekRows, (r) => r.weekly_knowledge_lo),
     },
+    // Monthly Outcome resolves from the selected week's rows. The monthly LO is
+    // denormalised across every row of its (subject, year, month), so any of the week's
+    // rows carries it — including a weekly-grain subject's period-NULL row (Awareness).
     monthly: {
-      combined: firstOutcome(monthlyRows, (r) => r.monthly_lo),
-      knowledge: firstOutcome(monthlyRows, (r) => r.monthly_knowledge_lo),
-      skills: firstOutcome(monthlyRows, (r) => r.monthly_skills_lo),
+      combined: firstOutcome(weekRows, (r) => r.monthly_lo),
+      knowledge: firstOutcome(weekRows, (r) => r.monthly_knowledge_lo),
+      skills: firstOutcome(weekRows, (r) => r.monthly_skills_lo),
     },
     rows,
-    singlePeriod,
-    monthWeekRows,
     monthGrid,
     prevMonth,
     nextMonth,

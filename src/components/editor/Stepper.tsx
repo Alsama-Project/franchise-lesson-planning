@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
 /**
@@ -75,14 +75,14 @@ export function Stepper({
 
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-[9px] lg:px-[30px]">
-      <div className="flex items-start gap-4">
-        {/* Eight equal columns on a grid → the node row can't reflow between steps
-            regardless of label length; connectors are drawn per-cell between circle
-            centres. */}
-        <div
-          className="grid min-w-0 flex-1"
-          style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}
-        >
+      <div className="flex w-full items-start gap-4">
+        {/* Node track. Nodes are fixed-width and `shrink-0`; the connectors between
+            them are `flex-1`, so ALL horizontal slack goes into the connectors —
+            never the nodes. That keeps the nodes evenly distributed edge-to-edge with
+            the last node hugging the action cluster (no growing dead space on wide
+            screens), while every node's width and the row height stay identical on
+            all eight steps. */}
+        <div className="flex min-w-0 flex-1 items-start">
           {STEPS.map((s, i) => {
             const no = i + 1;
             const isDone = curIdx > i;
@@ -93,69 +93,71 @@ export function Stepper({
             const isGatedAhead = advanceBlocked && i > curIdx;
             const showConn = i < STEPS.length - 1;
             return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => onGo(s.id)}
-                disabled={isGatedAhead}
-                aria-disabled={isGatedAhead || undefined}
-                aria-current={isCur ? 'step' : undefined}
-                className={
-                  'relative flex min-w-0 flex-col items-center pt-[1px] text-center' +
-                  (isGatedAhead ? ' cursor-not-allowed opacity-50' : '')
-                }
-              >
-                {/* Connector to the next node: a hairline at the circle's vertical
-                    centre, running from this circle's centre one full column toward
-                    the next node. Uses the logical inline-start offset so it points
-                    the correct way under RTL too. Sits behind the circles. */}
+              <Fragment key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => onGo(s.id)}
+                  disabled={isGatedAhead}
+                  aria-disabled={isGatedAhead || undefined}
+                  aria-current={isCur ? 'step' : undefined}
+                  className={
+                    'flex shrink-0 flex-col items-center pt-[1px] text-center' +
+                    (isGatedAhead ? ' cursor-not-allowed opacity-50' : '')
+                  }
+                >
+                  <span
+                    className={
+                      'flex size-[22px] shrink-0 items-center justify-center rounded-full text-[13px] font-bold ' +
+                      (isDone
+                        ? 'bg-teal text-white'
+                        : isCur
+                          ? 'bg-pink text-white'
+                          : 'border border-[#E4DACB] bg-[#F3ECE2] text-[#A79E94]')
+                    }
+                  >
+                    {isDone ? '✓' : no}
+                  </span>
+                  {/* Fixed-WIDTH, fixed-height label box, identical on every node — so
+                      no node ever changes width and the row height never changes
+                      between steps. 96px fits the longest label, "Check for
+                      understanding", on two lines ("understanding" is the widest single
+                      word, ~92px). The optional micro-affordance sits inside the same
+                      box. Hidden below `xl`, where eight 96px nodes plus the action
+                      cluster no longer fit — a narrower viewport then shows circle-only
+                      nodes, still uniform, never overflowing. */}
+                  <span className="mt-[5px] hidden h-[36px] w-[96px] flex-col items-center justify-start leading-[1.12] xl:flex">
+                    <span
+                      dir="auto"
+                      className={
+                        'line-clamp-2 px-[2px] text-[11.5px] ' +
+                        (isCur
+                          ? 'font-semibold text-[#2A2422]'
+                          : isDone
+                            ? 'font-medium text-[#5C544E]'
+                            : 'font-medium text-[#A79E94]')
+                      }
+                    >
+                      {t(`steps.${s.id}`)}
+                    </span>
+                    {s.optional ? (
+                      <span className="mt-[1px] text-[9.5px] font-medium uppercase tracking-[0.04em] text-[#B4A99B]">
+                        {t('steps.optional')}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
                 {showConn ? (
+                  // Slack sink: flex-1 so the connector — not the node — absorbs the
+                  // leftover width. Aligned to the circle's vertical centre.
                   <span
                     aria-hidden
                     className={
-                      'pointer-events-none absolute start-[50%] top-[11px] h-0.5 w-full ' +
+                      'mt-[11px] h-0.5 min-w-[14px] flex-1 rounded-full ' +
                       (isDone ? 'bg-teal' : 'bg-[#E0D6C7]')
                     }
                   />
                 ) : null}
-                <span
-                  className={
-                    'relative z-10 flex size-[22px] shrink-0 items-center justify-center rounded-full text-[13px] font-bold ' +
-                    (isDone
-                      ? 'bg-teal text-white'
-                      : isCur
-                        ? 'bg-pink text-white'
-                        : 'border border-[#E4DACB] bg-[#F3ECE2] text-[#A79E94]')
-                  }
-                >
-                  {isDone ? '✓' : no}
-                </span>
-                {/* Fixed-height, two-line label box: labels may wrap to two lines but
-                    the box height is constant, so node height never changes between
-                    steps (at a given viewport). Hidden below `sm` — as before — so a
-                    narrow viewport shows circle-only nodes, still uniform. The optional
-                    micro-affordance sits inside the same box. */}
-                <span className="mt-[5px] hidden h-[30px] w-full flex-col items-center justify-start leading-[1.12] sm:flex">
-                  <span
-                    dir="auto"
-                    className={
-                      'line-clamp-2 px-[2px] text-[11.5px] ' +
-                      (isCur
-                        ? 'font-semibold text-[#2A2422]'
-                        : isDone
-                          ? 'font-medium text-[#5C544E]'
-                          : 'font-medium text-[#A79E94]')
-                    }
-                  >
-                    {t(`steps.${s.id}`)}
-                  </span>
-                  {s.optional ? (
-                    <span className="mt-[1px] text-[9.5px] font-medium uppercase tracking-[0.04em] text-[#B4A99B]">
-                      {t('steps.optional')}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
+              </Fragment>
             );
           })}
         </div>

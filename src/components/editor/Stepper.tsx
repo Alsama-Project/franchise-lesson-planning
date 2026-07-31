@@ -76,13 +76,17 @@ export function Stepper({
   return (
     <div className="border-b border-[#EFE8DD] px-[22px] py-[9px] lg:px-[30px]">
       <div className="flex w-full items-start gap-4">
-        {/* Node track. Nodes are fixed-width and `shrink-0`; the connectors between
-            them are `flex-1`, so ALL horizontal slack goes into the connectors —
-            never the nodes. That keeps the nodes evenly distributed edge-to-edge with
-            the last node hugging the action cluster (no growing dead space on wide
-            screens), while every node's width and the row height stay identical on
-            all eight steps. */}
-        <div className="flex min-w-0 flex-1 items-start">
+        {/* Node track — an explicit grid of 15 columns: eight `auto` node columns
+            (each sized to the fixed 96px label box) alternating with seven `1fr`
+            connector columns. The `1fr` columns absorb ALL slack, so the connectors —
+            never the nodes — grow with the viewport, the nodes stay pixel-stable
+            across steps, and node 8 sits at the track's right edge against the action
+            cluster. The 15 direct children (node, conn, node, conn, … node) map 1:1
+            to the columns via grid auto-placement. */}
+        <div
+          className="grid w-full min-w-0 flex-1 items-start"
+          style={{ gridTemplateColumns: 'repeat(7, auto 1fr) auto' }}
+        >
           {STEPS.map((s, i) => {
             const no = i + 1;
             const isDone = curIdx > i;
@@ -147,12 +151,13 @@ export function Stepper({
                   </span>
                 </button>
                 {showConn ? (
-                  // Slack sink: flex-1 so the connector — not the node — absorbs the
-                  // leftover width. Aligned to the circle's vertical centre.
+                  // Connector: it carries NO width or flex property — its `1fr` grid
+                  // column governs its width (so it grows with the viewport). `w-full`
+                  // fills that column; `self-start` + `mt` align it to the circle centre.
                   <span
                     aria-hidden
                     className={
-                      'mt-[11px] h-0.5 min-w-[14px] flex-1 rounded-full ' +
+                      'mt-[10px] h-0.5 w-full self-start ' +
                       (isDone ? 'bg-teal' : 'bg-[#E0D6C7]')
                     }
                   />

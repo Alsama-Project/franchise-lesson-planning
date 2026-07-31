@@ -57,6 +57,35 @@ LANGUAGE OF THE RESOURCE:
 - The teacher's app/interface language is irrelevant here and is not provided — never infer the resource language from it. When the subject's language is genuinely unclear from the context, default to English.`;
 
 /**
+ * Worksheet-builder floor. The output contract + the body markers the worksheet
+ * renderer and downstream image generation parse + the safeguarding red lines +
+ * the content-language guard. The per-route response schema (declared in that
+ * route's `output_config`) is deliberately NOT restated here.
+ */
+export const WORKSHEET_BUILDER_FLOOR = `${OVERRIDE_LINE}
+
+OUTPUT CONTRACT:
+- Return ONLY the JSON object the request schema defines. No preamble, no explanation, no markdown fence around it.
+- Never add fields. Never omit a required field — if you cannot produce a value return an empty string or an empty array, never null and never a placeholder such as "TODO" or "N/A".
+
+BODY MARKERS (the renderer parses these literally):
+- A blank for a student to fill is a run of underscores: ______ . Never a dotted line, never [blank], never a box character.
+- An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.
+- Permitted markdown: headings, ordered lists, unordered lists, bold, italic.
+- Forbidden: tables, horizontal rules (---), code fences, HTML, emoji.
+
+SAFEGUARDING (absolute) — these students are displaced adolescents aged 12-18, most of whom have lived through war and displacement:
+- Never write content depicting war, weapons, violence, injury, death, bombing, fleeing, camps or displacement — including as incidental background detail in an example sentence.
+- Never ask a student to write or speak about their own family, home, journey, nationality, legal status, or reason for leaving.
+- Never include religious, sectarian or political content.
+- Never include romantic or sexual content.
+- Never assume a student has money, a device, internet access, the ability to travel, a bedroom of their own, or an intact family.
+
+LANGUAGE OF THE WORKSHEET:
+- Write the worksheet in the language of the SUBJECT being taught, as indicated by the curriculum context (subject, outcomes, grammar/vocabulary, theme) in the user message. For example, an English-subject worksheet must be written in English even though the students' first language is Arabic.
+- The teacher's app/interface language is irrelevant here and is not provided — never infer the worksheet language from it. When the subject's language is genuinely unclear from the context, default to English.`;
+
+/**
  * SMARTT objective-checker floor (base, locale-independent). The canonical
  * six-letter anchor, the fixed stem, and the JSON output contract — the shape the
  * editor + pills depend on, enforced hard by `RESPONSE_SCHEMA` and pinned here in
@@ -95,10 +124,6 @@ export function smarttCheckerFloor(locale: string): string {
  * The floor for a given tool. `locale` is only consulted for `smartt_checker`
  * (its feedback language follows the UI locale); it is ignored otherwise.
  *
- * `worksheet_builder` is a valid enum value but not a live tool in this branch —
- * it has no floor yet, so composing for it throws rather than silently shipping
- * a tool with no safeguarding/output floor.
- *
  * `worksheet_image` returns the image floor (single-sourced from
  * `@/lib/ai/image-floor`), so `composeContextStack` appends it last as the
  * highest-authority section. `locale` is not consulted for it.
@@ -112,6 +137,6 @@ export function floorForTool(tool: AiContextTool, locale: string): string {
     case 'worksheet_image':
       return IMAGE_FLOOR;
     case 'worksheet_builder':
-      throw new Error('No floor is defined for the worksheet_builder tool yet.');
+      return WORKSHEET_BUILDER_FLOOR;
   }
 }

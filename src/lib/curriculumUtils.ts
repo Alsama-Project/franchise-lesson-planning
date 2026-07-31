@@ -379,29 +379,36 @@ export async function getCurriculumWeekCells(
  * active curriculum rows (`COUNT(DISTINCT period) ≤ 1`). The two such subjects have
  * DIFFERENT shapes: Yoga is daily-grain with `period = 1` on every row; Awareness is
  * weekly-grain with `period = NULL`. Both collapse to a single period-per-week, and
- * this predicate captures both (Yoga → {1}; Awareness → {}) without hardcoding subject
- * names/ids or a schema flag.
+ * this predicate captures both (Yoga → 1; Awareness → 0, since COUNT(DISTINCT) ignores
+ * NULLs) without hardcoding subject names/ids or a schema flag. The `≤ 1` (not `= 1`)
+ * test is what admits the all-NULL Awareness case.
  *
  * Computed per SUBJECT (not per subject+year) so the classification is stable across
- * year navigation and a thin/partial year can never misclassify it. Reads only the
- * `period` column and dedupes in JS. Real curricula carry a tiny contiguous {1..N}
- * period set, so the PostgREST 1000-row cap cannot flip the boolean: a genuinely
- * multi-period subject surfaces ≥ 2 distinct periods within any 1000-row slice.
+ * year navigation and a thin/partial year can never misclassify it.
+ *
+ * AGGREGATE IN POSTGRES, not in memory. This used to `.select('period')` every active
+ * row and dedupe in JS, but the PostgREST client caps a plain select at 1000 rows by
+ * default and several subjects exceed that (english/maths/arabic each carry >1000 active
+ * rows) — so on a large subject the verdict was decided from a truncated 1000-row sample.
+ * It never actually flipped a verdict (a multi-period subject surfaces ≥ 2 distinct
+ * periods well inside the first 1000 rows), but it is the exact truncation trap this
+ * codebase has been bitten by before (see 0047). The `curriculum_subject_shape` view
+ * (0063) does `COUNT(DISTINCT period)` server-side — one row per subject, uncapped by
+ * construction — and this reads that single row. Semantics are identical to the old
+ * `Set<number>`, empty set included: a subject with no active rows returns no view row →
+ * null → 0 → single-period, exactly as the old empty set did.
  */
 export async function isSinglePeriodSubject(subjectCode: string): Promise<boolean> {
   if (!subjectCode) return false;
   const supabase = createAdminClient();
   const { data, error } = await supabase
-    .from('curriculum_lesson_active')
-    .select('period')
+    .from('curriculum_subject_shape')
+    .select('distinct_period_count')
     .eq('subject_code', subjectCode)
-    .eq('is_active', true);
+    .maybeSingle();
   if (error) throw new Error(`Curriculum period-count read failed: ${error.message}`);
-  const periods = new Set<number>();
-  for (const r of (data ?? []) as Array<{ period: number | null }>) {
-    if (r.period != null) periods.add(r.period);
-  }
-  return periods.size <= 1;
+  const count = (data as { distinct_period_count: number } | null)?.distinct_period_count ?? 0;
+  return count <= 1;
 }
 
 /**

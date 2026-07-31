@@ -49,6 +49,9 @@ function toBrowseRow(r: CurriculumLessonRow): BrowseRow {
     period: r.period,
     weekday: r.period,
     dailyOutcome: cleanLO(r.daily_outcome ?? ''),
+    // Per-row weekly outcomes for the collapsed single-period table (one row = one week).
+    weeklyKnowledge: cleanLO(r.weekly_knowledge_lo ?? ''),
+    weeklySkills: cleanLO(r.weekly_skills_lo ?? ''),
     linguisticSkill: r.linguistic_skill ?? '',
     skillKey: skillKeyOf(r.linguistic_skill ?? ''),
     theme: (r.theme ?? '').trim(),

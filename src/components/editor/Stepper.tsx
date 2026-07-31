@@ -167,20 +167,17 @@ export function Stepper({
           })}
         </div>
 
-        <div className="flex w-[300px] shrink-0 items-center justify-end gap-[9px] pt-[1px]">
-          {/* Always rendered so the cluster keeps an identical width on every step —
-              on the first step it is hidden (but still occupies its box) and made
-              inert, so the tracker band doesn't reflow at the 1 ↔ 2 transition. */}
+        {/* The cluster sizes to its content and never flexes (`shrink-0`). Back is
+            always rendered and always reserves its box, so the cluster width is
+            identical on every step and the tracker band can't reflow at the 1 ↔ 2
+            transition. On step 1 Back is simply `disabled` (visible, greyed, inert)
+            rather than an invisible placeholder — clearer, and it fills the gap. */}
+        <div className="flex shrink-0 items-center justify-end gap-[9px] pt-[1px]">
           <button
             type="button"
             onClick={onBack}
             disabled={isFirst}
-            tabIndex={isFirst ? -1 : undefined}
-            aria-hidden={isFirst ? true : undefined}
-            className={
-              'rounded-[9px] border border-border-strong bg-surface px-[15px] py-[9px] text-[13px] font-medium text-ink hover:bg-surface-subtle' +
-              (isFirst ? ' invisible' : '')
-            }
+            className="rounded-[9px] border border-border-strong bg-surface px-[15px] py-[9px] text-[13px] font-medium text-ink hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface"
           >
             <span aria-hidden className="inline-block rtl:-scale-x-100">←</span> {t('nav.back')}
           </button>

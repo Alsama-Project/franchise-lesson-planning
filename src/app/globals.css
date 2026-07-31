@@ -21,6 +21,9 @@
   --color-teal-deep: #186155; /* deep teal text — active nav, headings */
   --color-teal-tint: #e4f0ed; /* pale-teal pill / accent fill */
   --color-teal-tint-border: #cfe6e0;
+  --color-teal-deepest: #14514a; /* darkest teal — "overrides" cue + layer-4 headings */
+  --color-teal-dashed: #bbd9d0; /* dashed "add document" affordance hairline */
+  --color-teal-muted: #8fb5ae; /* muted teal icon stroke — tool-row chevrons */
   --color-cream: #f5ede5;
 
   /* ── Editor "colour = meaning" roles ──────────────────────────────────── */
@@ -55,11 +58,37 @@
   --color-surface: #ffffff;
   --color-surface-subtle: #fbf8f3;
   --color-surface-cream: #f5ede5;
+  --color-surface-warm: #fcfaf6; /* subtle warm panel — tab bar, tool column ground */
+  --color-surface-raised: #fdfcfa; /* document card face, a hair above the warm panel */
   --color-text: #2a2422;
   --color-text-muted: #756b64;
   --color-text-faint: #a79e94;
   --color-border: #e7decf;
   --color-border-strong: #ddd4c8;
+  --color-border-subtle: #f0eae1; /* faint in-card row / section rule (lighter than -100) */
+
+  /* ── Instruction-stack authority ramp ──────────────────────────────────────
+   * The four layers of the AI instruction stack ascend in authority (a later
+   * layer wins on conflict). Each column's top-border tint encodes its rung:
+   * palest at layer 1 (Alsama context) deepening toward the brand teal at layer
+   * 4 (tool instructions), the ramp's summit — so tier 4 reuses `--color-teal`.
+   * Meaning-carrying names, not shade numbers. */
+  --color-authority-org: #cfe3df; /* layer 1 — Alsama context (lowest authority) */
+  --color-authority-academic: #a8cfc7; /* layer 2 — academic context */
+  --color-authority-subject: #6faaa0; /* layer 3 — subject context */
+  /* layer 4 — tool instructions — uses --color-teal (#1f7a6c), the ramp's top */
+
+  /* ── Safeguarding floor (cream / locked) ───────────────────────────────────
+   * The built-in output-contract + safeguarding card that sits below the stack
+   * and overrides every layer. Cream = locked, held in code, not admin-editable —
+   * a self-contained warm-neutral family distinct from the teal chrome. */
+  --color-cream-border: #e0d3c0; /* floor card + cream-surface border */
+  --color-cream-chip: #efe2d0; /* icon chip + "built in" pill fill */
+  --color-cream-ink: #4a3f33; /* floor card title text */
+  --color-cream-ink-muted: #8a6a4a; /* floor icon + pill text */
+  --color-cream-btn-bg: #fbf5ee; /* locked "Read" button fill */
+  --color-cream-btn-border: #e4d6c2; /* locked "Read" button border */
+  --color-cream-btn-text: #7a6a55; /* locked "Read" button text */
 
   /* ── Destructive / danger (RESERVED) ───────────────────────────────────────
    * The semantic palette (cream / pink / teal) carries NO destructive meaning,

@@ -30,7 +30,9 @@ import { WorksheetTemplatesTab } from './console/WorksheetTemplatesTab';
 import { AiGuideTab } from './console/AiGuideTab';
 import { SmarttGuideTab } from './console/SmarttGuideTab';
 import { UsersTab } from './console/UsersTab';
+import { AiInstructionsTab } from './console/ai-instructions/AiInstructionsTab';
 import { LanguageSetting } from './LanguageSetting';
+import type { AiContextBoard } from '@/types/ai-context';
 
 export interface SettingsConsoleProps {
   access: ConsoleAccess;
@@ -53,6 +55,8 @@ export interface SettingsConsoleProps {
   pendingCoordinatorRequests?: PendingCoordinatorRequest[];
   /** Per-subject worksheet-template status (admin: all; coordinator: own subjects). */
   worksheetTemplates?: WorksheetTemplateRow[];
+  /** AI-instructions board (admin only). `null` = load failed; `undefined` = not admin. */
+  aiContextBoard?: AiContextBoard | null;
 }
 
 export function SettingsConsole(props: SettingsConsoleProps) {
@@ -137,6 +141,15 @@ export function SettingsConsole(props: SettingsConsoleProps) {
         ) : null}
         {tab === 'worksheet_templates' && (access.isAdmin || access.isCoordinator) ? (
           <WorksheetTemplatesTab templates={props.worksheetTemplates ?? []} />
+        ) : null}
+        {tab === 'ai_instructions' && access.isAdmin ? (
+          props.aiContextBoard ? (
+            <AiInstructionsTab board={props.aiContextBoard} />
+          ) : (
+            <p className="px-[18px] py-[34px] text-center text-[13px] text-[#B23A2E]">
+              {t('aiInstructions.loadError')}
+            </p>
+          )
         ) : null}
         {tab === 'ai_guide' && access.isAdmin ? (
           <AiGuideTab active={props.resourceGuide ?? null} />

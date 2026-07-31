@@ -16,6 +16,7 @@
       "members": "Members & roles",
       "curriculum": "Curriculum",
       "worksheet_templates": "Worksheet Templates",
+      "ai_instructions": "AI instructions",
       "ai_guide": "AI resource guide",
       "smartt_guide": "SMARTT objective guide",
       "users": "Users"
@@ -369,6 +370,59 @@
       "title": "SMARTT objective guide",
       "successMessage": "New guide version saved. It is now active for all objective checks.",
       "uploadingLabel": "Uploading objective guide"
+    },
+    "aiInstructions": {
+      "title": "AI instructions",
+      "loadError": "Could not load AI instructions. Refresh to try again.",
+      "archived": "Archived",
+      "archivedTodo": "The archived documents view is not built yet.",
+      "addDocument": "Add document",
+      "none": "None",
+      "header": {
+        "documents": "{count, plural, one {# document} other {# documents}}",
+        "lastChange": "last change {date}"
+      },
+      "ramp": {
+        "start": "Applies to every lesson",
+        "end": "Overrides the layers to its left"
+      },
+      "layers": {
+        "org": "Alsama context",
+        "academic": "Academic context",
+        "subject": "Subject context",
+        "tool": "Tool instructions"
+      },
+      "tools": {
+        "worksheet_builder": "Worksheet builder",
+        "resource_generator": "Resource generator",
+        "smartt_checker": "Objective checker"
+      },
+      "upload": {
+        "uploading": "Uploading…",
+        "failed": "Upload failed. Please try again."
+      },
+      "popup": {
+        "replace": "Replace",
+        "replacing": "Replacing…",
+        "archive": "Archive",
+        "close": "Close",
+        "versionHistory": "Version history",
+        "inUse": "In use",
+        "restore": "Restore"
+      },
+      "archive": {
+        "title": "Archive “{name}”?",
+        "body": "This document will stop feeding every future AI call — the tools that rely on it will no longer see its instructions. It is not deleted; an admin can restore it later.",
+        "cancel": "Cancel",
+        "confirm": "Archive document",
+        "archiving": "Archiving…"
+      },
+      "floor": {
+        "title": "Output contract and safeguarding rules",
+        "badge": "Built in · cannot be overridden",
+        "read": "Read",
+        "readTodo": "The output-contract module is not built yet."
+      }
     }
   }
 }

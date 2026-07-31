@@ -5,7 +5,9 @@ import {
   createLetterScanner,
   ObjectiveCheckError,
   type ObjectiveCheckContext,
+  type CheckSubject,
 } from '@/lib/ai/check-objective';
+import { resolveSubjectId } from '@/lib/ai/subject-access';
 
 /**
  * POST /api/check-objective
@@ -47,6 +49,20 @@ interface CheckObjectiveBody {
   context?: unknown;
 }
 
+/**
+ * Pull the subject fields out of the wire `context` for validation + logging.
+ * These are kept OUT of {@link parseContext} so they never reach the model
+ * prompt: `subjectId` is re-validated server-side; `subjectName` is log-only.
+ */
+function readSubjectFields(value: unknown): { subjectId: unknown; subjectName: string | null } {
+  if (typeof value !== 'object' || value === null) return { subjectId: undefined, subjectName: null };
+  const v = value as Record<string, unknown>;
+  return {
+    subjectId: v.subjectId,
+    subjectName: typeof v.subjectName === 'string' ? v.subjectName : null,
+  };
+}
+
 /** Coerce an unknown `context` value into a typed, sanitised context object. */
 function parseContext(value: unknown): ObjectiveCheckContext | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -74,12 +90,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Never trust the client's subject id: get_active_context_stack is SECURITY
+  // DEFINER, so a mismatched id would silently compose under the wrong subject.
+  // Validate membership server-side; a rejected/absent id becomes null (still
+  // serviceable) and is logged on the compose record, not 400'd. The subject
+  // id/name are used only for composition + observability, never in the prompt.
+  const { subjectId: rawSubjectId, subjectName } = readSubjectFields(body.context);
+  const resolved = await resolveSubjectId(rawSubjectId);
+  const subject: CheckSubject = {
+    subjectId: resolved.subjectId,
+    subjectName,
+    resolution: resolved.resolution,
+  };
+
   // Pre-flight (missing key / empty input) throws before any stream opens, so it
   // still maps to the same HTTP status as before. Once streaming starts we've
   // committed to a 200 SSE response; late failures arrive as an `error` frame.
   let stream: Awaited<ReturnType<typeof openObjectiveCheckStream>>;
   try {
-    stream = await openObjectiveCheckStream(body.objective, parseContext(body.context));
+    stream = await openObjectiveCheckStream(body.objective, parseContext(body.context), subject);
   } catch (err) {
     if (err instanceof ObjectiveCheckError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

@@ -3,6 +3,7 @@ import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import type { ActiveContextStackRow, AiContextTool } from '@/types/ai-context';
 import { floorForTool } from './floor';
+import type { SubjectResolution } from './subject-access';
 
 /**
  * The layered-context composer — the single home for building an AI tool's
@@ -45,6 +46,27 @@ export interface ComposedContextStack {
   system: string;
   /** The documents that fed layers 1-4, in composition order. */
   docsUsed: ContextDocUsed[];
+}
+
+/**
+ * The single structured record emitted for every AI call, so `docsUsed` and the
+ * subject-resolution outcome are queryable together on one line. `subjectResolution`
+ * makes the (previously silent) null explicit: `present` = a validated subject
+ * steered the stack; `absent` = the caller supplied none; `rejected` = the caller
+ * supplied one that failed the server-side membership check and was dropped.
+ */
+export interface AiComposeLogRecord {
+  route: string;
+  tool: AiContextTool;
+  subjectName: string | null;
+  subjectId: string | null;
+  subjectResolution: SubjectResolution;
+  docsUsed: ContextDocUsed[];
+}
+
+/** Emit the per-call compose record. One event name + shape across both tools. */
+export function logAiCompose(record: AiComposeLogRecord): void {
+  console.info('[ai] compose', record);
 }
 
 /**

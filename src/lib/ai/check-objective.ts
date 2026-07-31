@@ -2,7 +2,8 @@ import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import { getLocale } from 'next-intl/server';
 import { getSmarttClient } from '@/lib/anthropic';
-import { composeContextStack } from '@/lib/ai/context-stack';
+import { composeContextStack, logAiCompose } from '@/lib/ai/context-stack';
+import type { SubjectResolution } from '@/lib/ai/subject-access';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 
 /**
@@ -49,6 +50,19 @@ export interface ObjectiveCheckContext {
   theme?: string;
   /** Year group the lesson is aimed at. */
   year?: number;
+}
+
+/**
+ * The route-validated subject for the context stack. Kept SEPARATE from
+ * {@link ObjectiveCheckContext} (which feeds the model's user prompt) so the
+ * subject id/name are used only for composition + observability and never leak
+ * into the prompt. `subjectId` is already membership-checked server-side;
+ * `subjectName` is for the log only.
+ */
+export interface CheckSubject {
+  subjectId: string | null;
+  subjectName: string | null;
+  resolution: SubjectResolution;
 }
 
 /** How a single SMARTT letter scored. */
@@ -292,6 +306,7 @@ export interface SmarttPillFrame {
 export async function openObjectiveCheckStream(
   objective: string,
   context?: ObjectiveCheckContext,
+  subject?: CheckSubject,
 ) {
   if (typeof objective !== 'string' || objective.trim().length === 0) {
     throw new ObjectiveCheckError('An objective string is required.', 400);
@@ -312,21 +327,29 @@ export async function openObjectiveCheckStream(
 
   // Compose the system prompt from the layered context stack (role → precedence
   // → layers 1-4 → floor). The floor pins the SMARTT anchor, the stem, and the
-  // JSON contract, so no uploaded layer can change the output shape. The checker
-  // is subject-agnostic today, so `subjectId` is null (org/academic/tool layers
-  // still apply; a per-subject layer would simply be absent).
+  // JSON contract, so no uploaded layer can change the output shape. `subjectId`
+  // is the route-validated UUID (or null when absent / rejected), so per-subject
+  // layers steer only when the caller belongs to that subject.
   //
   // This is UI-facing feedback, so its language follows the active UI locale,
   // resolved server-side from the NEXT_LOCALE cookie via next-intl; only the
   // floor's Arabic directive (locale 'ar') changes the feedback text.
   const locale = await getLocale();
+  const subjectId = subject?.subjectId ?? null;
   const { system: systemPrompt, docsUsed } = await composeContextStack({
     tool: 'smartt_checker',
-    subjectId: null,
+    subjectId,
     locale,
   });
-  // Observability: which documents produced this prompt (see PR/floor notes).
-  console.info('[ai] check-objective compose', { tool: 'smartt_checker', subjectId: null, docsUsed });
+  // Observability: docsUsed + how the subject was resolved, on one record.
+  logAiCompose({
+    route: '/api/check-objective',
+    tool: 'smartt_checker',
+    subjectName: subject?.subjectName ?? null,
+    subjectId,
+    subjectResolution: subject?.resolution ?? 'absent',
+    docsUsed,
+  });
 
   return client.messages.stream({
     model: MODEL,

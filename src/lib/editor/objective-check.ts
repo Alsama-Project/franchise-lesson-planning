@@ -79,6 +79,14 @@ export interface ObjectiveCheckRequestContext {
   grammarVocab?: string;
   theme?: string;
   year?: number;
+  /**
+   * The lesson's subject UUID, for the context stack. The server re-validates
+   * membership before trusting it, so it is safe to send; omit when the plan has
+   * no resolved subject. Never reaches the model prompt.
+   */
+  subjectId?: string;
+  /** The subject name, for the server's structured compose log only. */
+  subjectName?: string;
 }
 
 function isLetter(value: unknown): value is SmarttLetterAssessment {

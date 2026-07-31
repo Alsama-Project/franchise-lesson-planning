@@ -412,6 +412,10 @@ export function LessonPlanEditor({
           grammarVocab: curriculum?.grammarVocab || undefined,
           theme: curriculum?.theme || undefined,
           year: classContext.year,
+          // Subject UUID for the context stack (server re-validates membership);
+          // name is for the server's compose log only. Omitted when unresolved.
+          subjectId: classContext.subjectId ?? undefined,
+          subjectName: classContext.subjectName || undefined,
         },
         // Progressive reveal: flip each pill as its letter closes in the stream.
         (frame) =>

@@ -38,6 +38,10 @@ export async function requestGeneratedResource(
     // avoids sending empty strings that used to trip validation.
     body: JSON.stringify({
       subject: ctx.subjectName,
+      // Subject UUID for the context stack. The server re-validates membership
+      // before trusting it, so it is safe to send; omitted when the plan has no
+      // resolved subject.
+      ...(ctx.subjectId ? { subject_id: ctx.subjectId } : {}),
       lesson_stage: 'independent_practice',
       ...(typeof ctx.year === 'number' ? { year: ctx.year } : {}),
       ...(ctx.dailyOutcome.trim() ? { daily_outcome: ctx.dailyOutcome } : {}),

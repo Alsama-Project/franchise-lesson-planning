@@ -12,7 +12,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { recordUsage } from '@/lib/resources/usage';
 import { appendBlock, parseWorksheet } from '@/lib/editor/worksheet';
-import type { PlanScope, PlanStatus, WorksheetFreeBlock } from '@/types/lesson';
+import { isWorksheetV3 } from '@/lib/editor/worksheet-migrate';
+import type { PlanScope, PlanStatus, WorksheetFreeBlock, WorksheetV3 } from '@/types/lesson';
 
 /** Enough to identify a draft lesson in the picker. */
 export interface DraftLessonSummary {
@@ -132,8 +133,26 @@ export async function appendResourceBlocksToLessonAction(
     return { ok: false, error: 'You can only add to your own draft lessons.' };
   }
 
-  let worksheet = parseWorksheet(row.worksheet);
-  for (const block of blocks) worksheet = appendBlock(worksheet, block);
+  // Branch on the stored envelope's version. A v3 worksheet is a single continuous
+  // tiptap document; routing it through parseWorksheet would run migrateV3ToV2 and
+  // silently downgrade the saved document to one v2 Free block, losing the tiptap
+  // document (67 live plans are v3). Instead, append each resource block's flowing
+  // nodes — the same heading (h2 title) + body node shapes the document editor
+  // produces — straight onto doc.content and save the v3 envelope back. v2 rows keep
+  // the unchanged block-append path.
+  let worksheet: WorksheetV3 | ReturnType<typeof parseWorksheet>;
+  if (isWorksheetV3(row.worksheet)) {
+    const doc = row.worksheet.doc;
+    const existing = Array.isArray(doc.content) ? doc.content : [];
+    const appended = blocks.flatMap((b) =>
+      b.doc && Array.isArray(b.doc.content) ? b.doc.content : [],
+    );
+    worksheet = { version: 3, doc: { ...doc, type: 'doc', content: [...existing, ...appended] } };
+  } else {
+    let v2 = parseWorksheet(row.worksheet);
+    for (const block of blocks) v2 = appendBlock(v2, block);
+    worksheet = v2;
+  }
 
   const { error: updateError } = await supabase
     .from('lesson_plans')

@@ -10,6 +10,8 @@ import Anthropic from '@anthropic-ai/sdk';
  *     ({@link getSmarttClient}, used by `src/lib/ai/check-objective.ts`).
  *   - `ANTHROPIC_API_KEY_RESOURCES` → resource generation only
  *     ({@link getResourcesClient}, used by `src/lib/ai/generate-resource.ts`).
+ *   - `ANTHROPIC_API_KEY_WORKSHEET` → worksheet building only
+ *     ({@link getWorksheetClient}).
  *
  * Keys must NOT be shared or swapped between functions — that would defect the
  * per-function cost tracking. Each getter reads ONLY its own key.
@@ -23,7 +25,9 @@ import Anthropic from '@anthropic-ai/sdk';
  * function's key (or to no key at all).
  */
 
-function requireKey(name: 'ANTHROPIC_API_KEY_SMARTT' | 'ANTHROPIC_API_KEY_RESOURCES'): string {
+function requireKey(
+  name: 'ANTHROPIC_API_KEY_SMARTT' | 'ANTHROPIC_API_KEY_RESOURCES' | 'ANTHROPIC_API_KEY_WORKSHEET',
+): string {
   const key = process.env[name];
   if (!key) {
     throw new Error(
@@ -37,6 +41,7 @@ function requireKey(name: 'ANTHROPIC_API_KEY_SMARTT' | 'ANTHROPIC_API_KEY_RESOUR
 
 let smartt: Anthropic | undefined;
 let resources: Anthropic | undefined;
+let worksheet: Anthropic | undefined;
 
 /** Anthropic client for SMARTT objective checking. Uses `ANTHROPIC_API_KEY_SMARTT` only. */
 export function getSmarttClient(): Anthropic {
@@ -46,4 +51,9 @@ export function getSmarttClient(): Anthropic {
 /** Anthropic client for resource generation. Uses `ANTHROPIC_API_KEY_RESOURCES` only. */
 export function getResourcesClient(): Anthropic {
   return (resources ??= new Anthropic({ apiKey: requireKey('ANTHROPIC_API_KEY_RESOURCES') }));
+}
+
+/** Anthropic client for worksheet building. Uses `ANTHROPIC_API_KEY_WORKSHEET` only. */
+export function getWorksheetClient(): Anthropic {
+  return (worksheet ??= new Anthropic({ apiKey: requireKey('ANTHROPIC_API_KEY_WORKSHEET') }));
 }

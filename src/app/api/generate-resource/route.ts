@@ -5,6 +5,7 @@ import {
   type GenerateResourceContext,
   type LessonStage,
 } from '@/lib/ai/generate-resource';
+import { resolveSubjectId } from '@/lib/ai/subject-access';
 
 /**
  * POST /api/generate-resource
@@ -51,6 +52,11 @@ import {
  * simply omits the layer-6 section. `subject` and `teacher_prompt` remain the
  * only hard-required fields.
  *
+ * Optional `subject_id` (string): the subject UUID that steers the context stack.
+ * It is NOT trusted from the client — the route confirms the caller is a member
+ * of (or admin over) that subject before using it, and drops it to null on
+ * failure. Never 400s on an unauthorised id; the outcome is logged, not rejected.
+ *
  * Requires `ANTHROPIC_API_KEY_RESOURCES` in the environment (locally and on
  * Vercel); this is the resources-only Anthropic key, separate from SMARTT checking.
  */
@@ -69,6 +75,7 @@ interface GenerateResourceBody {
   refinement?: unknown;
   current_content?: unknown;
   lesson_block?: unknown;
+  subject_id?: unknown;
 }
 
 const LESSON_STAGES: readonly LessonStage[] = ['new_content', 'independent_practice'];
@@ -182,6 +189,12 @@ export async function POST(request: NextRequest) {
   // Layer 6 — the teacher's lesson plan for this block; sanitised, optional.
   const lessonBlock = parseLessonBlock(body.lesson_block);
 
+  // Never trust the client's subject_id: get_active_context_stack is SECURITY
+  // DEFINER, so a mismatched id would silently compose under the wrong subject.
+  // Validate membership server-side; a rejected/absent id becomes null (still
+  // serviceable), and the outcome is logged on the compose record, not 400'd.
+  const subject = await resolveSubjectId(body.subject_id);
+
   // Fold each field in only when it carries a real value, so the generator sees a
   // clean context and omits the corresponding prompt line for absent anchors.
   const context: GenerateResourceContext = {
@@ -199,6 +212,8 @@ export async function POST(request: NextRequest) {
     ...(typeof body.refinement === 'string' ? { refinement: body.refinement } : {}),
     ...(typeof body.current_content === 'string' ? { current_content: body.current_content } : {}),
     ...(lessonBlock ? { lesson_block: lessonBlock } : {}),
+    subjectId: subject.subjectId,
+    subjectResolution: subject.resolution,
   };
 
   try {

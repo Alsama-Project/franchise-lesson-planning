@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getResourcesClient } from '@/lib/anthropic';
-import { composeContextStack } from './context-stack';
+import { composeContextStack, logAiCompose } from './context-stack';
+import type { SubjectResolution } from './subject-access';
 
 /**
  * AI teaching-resource generator service ("Aya").
@@ -101,6 +102,15 @@ export interface GenerateResourceContext {
     /** The teacher's short "what I'll do" note for the block. */
     note?: string;
   };
+  /**
+   * The subject UUID that steers the context stack (layer 3 / per-subject layer
+   * 4), already validated server-side by `resolveSubjectId` — or null when the
+   * caller supplied none or it failed the membership check. The route sets this;
+   * the client never reaches the composer directly.
+   */
+  subjectId?: string | null;
+  /** How `subjectId` was resolved (observability only; never sent to the model). */
+  subjectResolution?: SubjectResolution;
 }
 
 /** Structured result of generating a resource. */
@@ -328,17 +338,20 @@ export async function generateResource(
   // output contract, marker conventions, language guard) lives in code and
   // overrides every layer. The per-lesson curriculum anchors (layer 5) and the
   // teacher's lesson plan (layer 6) stay in the USER message, after the cache
-  // breakpoint. `subjectId` is null here: the caller supplies a subject *name*,
-  // not the UUID the RPC keys on, and no per-subject documents are seeded — the
-  // org/academic/tool layers still compose correctly.
+  // breakpoint. `subjectId` is the route-validated UUID (or null when absent /
+  // rejected) so per-subject documents steer only when the caller belongs to it.
+  const subjectId = context.subjectId ?? null;
   const { system: systemPrompt, docsUsed } = await composeContextStack({
     tool: 'resource_generator',
-    subjectId: null,
+    subjectId,
   });
-  // Observability: which documents produced this prompt (see PR/floor notes).
-  console.info('[ai] generate-resource compose', {
+  // Observability: docsUsed + how the subject was resolved, on one record.
+  logAiCompose({
+    route: '/api/generate-resource',
     tool: 'resource_generator',
-    subject: context.subject,
+    subjectName: context.subject,
+    subjectId,
+    subjectResolution: context.subjectResolution ?? 'absent',
     docsUsed,
   });
 

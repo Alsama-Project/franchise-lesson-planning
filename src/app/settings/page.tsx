@@ -6,6 +6,8 @@ import { getMyMemberships } from '@/lib/auth';
 import { getOnboardingData, getMyClasses } from '@/lib/onboarding';
 import { SettingsForm } from '@/components/settings/SettingsForm';
 import { SettingsConsole } from '@/components/settings/SettingsConsole';
+import { getAiContextBoard } from '@/lib/ai-context';
+import type { AiContextBoard } from '@/types/ai-context';
 import {
   getActiveResourceGuideVersion,
   getActiveSmarttGuideVersion,
@@ -94,9 +96,12 @@ export default async function SettingsPage() {
   let pendingCoordinatorRequests: PendingCoordinatorRequest[] | undefined;
   // Per-subject worksheet-template status for the Worksheet Templates tab.
   let worksheetTemplates: WorksheetTemplateRow[] | undefined;
+  // The AI-instructions board (four-layer context stack). `null` = load failed
+  // (renders the tab's error state); `undefined` = not admin.
+  let aiContextBoard: AiContextBoard | null | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, curriculum, resourceGuide, smarttGuide, terms, users, userAxes, pendingCoordinatorRequests, worksheetTemplates] =
+    [centres, subjects, classesData, curriculum, resourceGuide, smarttGuide, terms, users, userAxes, pendingCoordinatorRequests, worksheetTemplates, aiContextBoard] =
       await Promise.all([
         getCentres(),
         getSubjects(),
@@ -109,6 +114,7 @@ export default async function SettingsPage() {
         getSubjectSpaceAxes(),
         getPendingCoordinatorRequests(),
         getWorksheetTemplates(),
+        getAiContextBoard().catch(() => null),
       ]);
   } else if (access.isCoordinator) {
     const subjectIds = [...new Set(access.coordinatorSpaces.map((s) => s.subjectId))];
@@ -147,6 +153,7 @@ export default async function SettingsPage() {
           userAxes={userAxes}
           pendingCoordinatorRequests={pendingCoordinatorRequests}
           worksheetTemplates={worksheetTemplates}
+          aiContextBoard={aiContextBoard}
         />
       </div>
     </AppShell>

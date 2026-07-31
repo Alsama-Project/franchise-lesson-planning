@@ -38,6 +38,7 @@ export type ConsoleTab =
   | 'members'
   | 'curriculum'
   | 'worksheet_templates'
+  | 'ai_instructions'
   | 'ai_guide'
   | 'smartt_guide'
   | 'users';
@@ -80,7 +81,7 @@ export async function getConsoleAccess(): Promise<ConsoleAccess> {
   const tabs: ConsoleTab[] = ['profile'];
   let defaultTab: ConsoleTab = 'profile';
   if (isAdmin) {
-    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'worksheet_templates', 'ai_guide', 'smartt_guide', 'users');
+    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'worksheet_templates', 'ai_instructions', 'ai_guide', 'smartt_guide', 'users');
     defaultTab = 'centres';
   } else if (isCoordinator) {
     // Coordinators get Worksheet Templates too (scoped to their subjects), like

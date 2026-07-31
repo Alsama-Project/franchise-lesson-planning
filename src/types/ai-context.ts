@@ -85,3 +85,91 @@ export interface ActiveContextStackRow {
   version: number;
   body_md: string;
 }
+
+// ── Admin "AI instructions" board view models ────────────────────────────────
+//
+// The shapes the admin surface renders. Assembled server-side by
+// `getAiContextBoard()` (src/lib/ai-context.ts): the raw `ai_context_doc` /
+// `ai_context_doc_version` rows are joined to their active version, their
+// `auth.users` ids resolved to display names, and grouped by layer. Display
+// concerns only — never the composition path (that stays in src/lib/ai/*).
+
+/**
+ * The fixed layer-4 tools, in the order the board lists them. Mirrors the mockup:
+ * worksheet builder · resource generator · objective checker. `smartt_checker`
+ * is labelled "Objective checker" in the UI.
+ */
+export const AI_CONTEXT_TOOLS: readonly AiContextTool[] = [
+  'worksheet_builder',
+  'resource_generator',
+  'smartt_checker',
+];
+
+/**
+ * One version in a document's history, as the popup lists it. Metadata only — the
+ * body is carried on the active version alone (see {@link AiContextDocView}), so
+ * an inactive version never ships its `body_md` to the client.
+ */
+export interface AiContextVersionView {
+  id: string;
+  version: number;
+  /** Resolved uploader display name, or null when the profile is missing/hidden. */
+  uploaderName: string | null;
+  createdAt: string;
+  isActive: boolean;
+}
+
+/**
+ * A document flattened to what the board and popup need: its identity plus its
+ * ACTIVE version's text and metadata, and the full version list (metadata only).
+ */
+export interface AiContextDocView {
+  id: string;
+  layer: AiContextLayer;
+  subjectId: string | null;
+  tool: AiContextTool | null;
+  name: string;
+  sortOrder: number;
+  /** Active version number (the one composed into prompts and shown by default). */
+  activeVersion: number;
+  /** Active version's original upload filename, or null (legacy / not captured). */
+  originalFilename: string | null;
+  /** Active version's stored markdown — rendered verbatim in the popup text panel. */
+  bodyMd: string;
+  /** Active version's uploader display name, or null when unresolved. */
+  uploaderName: string | null;
+  /** Active version's upload timestamp (`created_at`). */
+  updatedAt: string;
+  /** Full history, newest version first; the active one is flagged. */
+  versions: AiContextVersionView[];
+}
+
+/** A layer-3 row: one subject and the documents scoped to it (may be empty). */
+export interface AiContextSubjectGroup {
+  subjectId: string;
+  name: string;
+  docs: AiContextDocView[];
+}
+
+/** A layer-4 row: one tool and its documents (may be empty). */
+export interface AiContextToolGroup {
+  tool: AiContextTool;
+  docs: AiContextDocView[];
+}
+
+/**
+ * The whole board, as one server-assembled payload passed to the client tab.
+ * `subjects` lists every active subject (a subject with no documents is a normal
+ * "None" row, not an error); `tools` lists the fixed three in {@link AI_CONTEXT_TOOLS}
+ * order. `lastChange` is the most recent version upload across all documents.
+ */
+export interface AiContextBoard {
+  org: AiContextDocView[];
+  academic: AiContextDocView[];
+  subjects: AiContextSubjectGroup[];
+  tools: AiContextToolGroup[];
+  /** Total non-archived documents across every layer (the header count). */
+  totalDocs: number;
+  /** Most recent change across the board, for the header line; null when empty. */
+  lastChange: { at: string; uploaderName: string | null } | null;
+}

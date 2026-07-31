@@ -1,6 +1,7 @@
 import 'server-only';
 import type { AiContextTool } from '@/types/ai-context';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
+import { IMAGE_FLOOR } from '@/lib/ai/image-floor';
 
 /**
  * The FLOOR — the non-negotiable base of every AI tool's system prompt.
@@ -97,6 +98,10 @@ export function smarttCheckerFloor(locale: string): string {
  * `worksheet_builder` is a valid enum value but not a live tool in this branch —
  * it has no floor yet, so composing for it throws rather than silently shipping
  * a tool with no safeguarding/output floor.
+ *
+ * `worksheet_image` returns the image floor (single-sourced from
+ * `@/lib/ai/image-floor`), so `composeContextStack` appends it last as the
+ * highest-authority section. `locale` is not consulted for it.
  */
 export function floorForTool(tool: AiContextTool, locale: string): string {
   switch (tool) {
@@ -104,6 +109,8 @@ export function floorForTool(tool: AiContextTool, locale: string): string {
       return RESOURCE_GENERATOR_FLOOR;
     case 'smartt_checker':
       return smarttCheckerFloor(locale);
+    case 'worksheet_image':
+      return IMAGE_FLOOR;
     case 'worksheet_builder':
       throw new Error('No floor is defined for the worksheet_builder tool yet.');
   }

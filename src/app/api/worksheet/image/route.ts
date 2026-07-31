@@ -1,0 +1,254 @@
+// POST /api/worksheet/image — generate (or reuse) one worksheet image for a slot.
+//
+// Backend-only endpoint. It composes the image prompt from the layered AI context
+// stack (role → layers → IMAGE FLOOR), generates with OpenAI, uploads the returned
+// BYTES to the private 'resources' bucket under the 'worksheet-images/' prefix, and
+// records the image + its binding to the lesson-plan slot. It NEVER persists an
+// OpenAI-hosted URL (those expire) — only the object path.
+//
+// Everything runs through the auth'd, RLS-scoped server client — never the
+// service-role key. Both backing tables (worksheet_image, worksheet_image_use) are
+// APPEND-ONLY: "replace" (regenerate / rebind) is a fresh INSERT, and the newest
+// non-blocked row wins on read.
+//
+// Response contract (success): { slot_id, storage_path }. A refusal (over the
+// per-plan image cap) returns { slot_id, storage_path: null, refusal: 'cap_reached' }
+// with 200 — a refusal, not an error. The kill-switch returns a clean 503.
+
+import { NextResponse, type NextRequest } from 'next/server';
+import { createHash, randomUUID } from 'node:crypto';
+import { createClient } from '@/lib/supabase/server';
+import { getImagesClient } from '@/lib/openai';
+import { isWorksheetImagesEnabled } from '@/lib/ai/worksheet-images-flag';
+import { composeContextStack } from '@/lib/ai/context-stack';
+import { STYLE_VERSION } from '@/lib/ai/image-floor';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const STORAGE_BUCKET = 'resources';
+const STORAGE_PREFIX = 'worksheet-images';
+const IMAGE_MODEL = 'gpt-image-1';
+
+/** Shape accepted on the wire (validated before use). */
+interface WorksheetImageBody {
+  slot_id?: unknown;
+  brief?: unknown;
+  lesson_plan_id?: unknown;
+  subject_id?: unknown;
+  regenerate?: unknown;
+}
+
+/** Returns true for a present, non-empty string. */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Normalise a brief for the cache key: lowercase, strip punctuation (keep letters,
+ * numbers, whitespace — Unicode-aware so Arabic briefs survive), collapse
+ * whitespace, then drop any leading article(s). No stemming, no synonyms, no
+ * embeddings — a deliberately literal fold so only trivially-equivalent briefs
+ * collide.
+ */
+function normaliseBrief(brief: string): string {
+  return brief
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(?:(?:the|a|an)\s+)+/u, '');
+}
+
+/** Content-addressed key: sha256(normalise(brief) + ':' + STYLE_VERSION). */
+function promptHash(brief: string): string {
+  return createHash('sha256').update(`${normaliseBrief(brief)}:${STYLE_VERSION}`).digest('hex');
+}
+
+export async function POST(request: NextRequest) {
+  // (a) Kill-switch — checked FIRST, before the OpenAI key is ever required, so a
+  // disabled deploy returns a clean response instead of throwing on a missing key.
+  if (!isWorksheetImagesEnabled()) {
+    return NextResponse.json(
+      { error: 'Worksheet image generation is disabled.' },
+      { status: 503 },
+    );
+  }
+
+  let body: WorksheetImageBody;
+  try {
+    body = (await request.json()) as WorksheetImageBody;
+  } catch {
+    return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
+  }
+
+  const requiredStrings: [keyof WorksheetImageBody, unknown][] = [
+    ['slot_id', body.slot_id],
+    ['brief', body.brief],
+    ['lesson_plan_id', body.lesson_plan_id],
+    ['subject_id', body.subject_id],
+  ];
+  for (const [field, value] of requiredStrings) {
+    if (!isNonEmptyString(value)) {
+      return NextResponse.json(
+        { error: `Field "${field}" is required and must be a non-empty string.` },
+        { status: 400 },
+      );
+    }
+  }
+  if (body.regenerate !== undefined && typeof body.regenerate !== 'boolean') {
+    return NextResponse.json(
+      { error: 'Field "regenerate" must be a boolean when provided.' },
+      { status: 400 },
+    );
+  }
+
+  const slotId = body.slot_id as string;
+  const brief = body.brief as string;
+  const lessonPlanId = body.lesson_plan_id as string;
+  const subjectId = body.subject_id as string;
+  const regenerate = body.regenerate === true;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+
+  // (b) Cap check — count DISTINCT slot_id for this plan (each slot is one image;
+  // append-only regenerations of the same slot do not count again). PostgREST has
+  // no COUNT(DISTINCT), so we read the slot_ids under RLS and fold in JS. A request
+  // for a slot that already has an image is a re-touch, never a new slot, so it is
+  // not blocked even at the cap.
+  const cap = Number(process.env.WORKSHEET_IMAGE_CAP ?? 8);
+  const { data: slotRows, error: slotErr } = await supabase
+    .from('worksheet_image_use')
+    .select('slot_id')
+    .eq('lesson_plan_id', lessonPlanId);
+  if (slotErr) {
+    return NextResponse.json({ error: 'Could not check the image cap.' }, { status: 502 });
+  }
+  const distinctSlots = new Set((slotRows ?? []).map((r) => (r as { slot_id: string }).slot_id));
+  if (!distinctSlots.has(slotId) && distinctSlots.size >= cap) {
+    return NextResponse.json(
+      { slot_id: slotId, storage_path: null, refusal: 'cap_reached' },
+      { status: 200 },
+    );
+  }
+
+  // (c) Content-addressed cache key.
+  const hash = promptHash(brief);
+
+  // (d) Cache lookup — skipped entirely for a regenerate. Newest non-blocked row for
+  // the hash wins. Hit → record the binding and return the cached path, no generation.
+  if (!regenerate) {
+    const { data: cached } = await supabase
+      .from('worksheet_image')
+      .select('id, storage_path')
+      .eq('prompt_hash', hash)
+      .is('blocked_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const hit = cached as { id: string; storage_path: string } | null;
+    if (hit) {
+      const { error: bindErr } = await supabase.from('worksheet_image_use').insert({
+        lesson_plan_id: lessonPlanId,
+        worksheet_image_id: hit.id,
+        slot_id: slotId,
+      });
+      if (bindErr) {
+        return NextResponse.json({ error: 'Could not record image use.' }, { status: 502 });
+      }
+      return NextResponse.json({ slot_id: slotId, storage_path: hit.storage_path });
+    }
+  }
+
+  // (e) Miss (or regenerate) → generate fresh.
+  let client: ReturnType<typeof getImagesClient>;
+  try {
+    client = getImagesClient();
+  } catch (err) {
+    // Missing/misconfigured key → 503, mirroring the Anthropic routes' posture.
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'OPENAI_API_KEY_IMAGES is not configured.' },
+      { status: 503 },
+    );
+  }
+
+  // Compose the prompt: role → layers 1-4 → IMAGE FLOOR (the floor is appended last
+  // by the composer, single-sourced from image-floor.ts). The brief follows as the
+  // user-message equivalent; the floor's own text declares it overrides the user
+  // message, so brief-after-system preserves floor authority (same posture the
+  // resource generator uses for its layer-5/6 anchors).
+  const composed = await composeContextStack({ tool: 'worksheet_image', subjectId });
+  const promptSent = `${composed.system}\n\n━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}`;
+
+  let bytes: Buffer;
+  try {
+    const generated = await client.images.generate({
+      model: IMAGE_MODEL,
+      prompt: promptSent,
+      size: '1024x1024',
+      n: 1,
+    });
+    const b64 = generated.data?.[0]?.b64_json;
+    if (!b64) {
+      return NextResponse.json({ error: 'Image model returned no image.' }, { status: 502 });
+    }
+    bytes = Buffer.from(b64, 'base64');
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Image generation failed.' },
+      { status: 502 },
+    );
+  }
+
+  // Upload the BYTES to the private bucket (never an expiring OpenAI URL). The
+  // per-user prefix mirrors the resources convention; Storage sets owner =
+  // auth.uid() so the existing insert policy (owner = auth.uid()) holds.
+  const storagePath = `${STORAGE_PREFIX}/${user.id}/${randomUUID()}.png`;
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, bytes, { contentType: 'image/png', upsert: false });
+  if (uploadError) {
+    return NextResponse.json({ error: uploadError.message }, { status: 502 });
+  }
+
+  // Record the image (append-only), then bind it to the slot (append-only).
+  const { data: imageRow, error: imageError } = await supabase
+    .from('worksheet_image')
+    .insert({
+      prompt_hash: hash,
+      brief,
+      style_version: STYLE_VERSION,
+      storage_path: storagePath,
+      model: IMAGE_MODEL,
+      prompt_sent: promptSent,
+      created_by: user.id,
+    })
+    .select('id, storage_path')
+    .maybeSingle();
+  if (imageError || !imageRow) {
+    // Roll back the orphaned object so we don't leak storage.
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    return NextResponse.json(
+      { error: imageError?.message ?? 'Could not record the generated image.' },
+      { status: 502 },
+    );
+  }
+  const image = imageRow as { id: string; storage_path: string };
+
+  const { error: bindError } = await supabase.from('worksheet_image_use').insert({
+    lesson_plan_id: lessonPlanId,
+    worksheet_image_id: image.id,
+    slot_id: slotId,
+  });
+  if (bindError) {
+    // The image itself persisted (it is a shared cache row); only the binding
+    // failed. Surface it so the caller can retry the bind.
+    return NextResponse.json({ error: 'Could not record image use.' }, { status: 502 });
+  }
+
+  return NextResponse.json({ slot_id: slotId, storage_path: image.storage_path });
+}

@@ -23,7 +23,11 @@ export type AiContextLayer = 'org' | 'academic' | 'subject' | 'tool';
  * The AI tools a layer-4 (`tool`) document can target. Mirrors the
  * `ai_context_tool` Postgres enum.
  */
-export type AiContextTool = 'worksheet_builder' | 'resource_generator' | 'smartt_checker';
+export type AiContextTool =
+  | 'worksheet_builder'
+  | 'resource_generator'
+  | 'smartt_checker'
+  | 'worksheet_image';
 
 /**
  * One context document's identity — a row of `ai_context_doc`. Many documents may
@@ -96,13 +100,14 @@ export interface ActiveContextStackRow {
 
 /**
  * The fixed layer-4 tools, in the order the board lists them. Mirrors the mockup:
- * worksheet builder · resource generator · objective checker. `smartt_checker`
- * is labelled "Objective checker" in the UI.
+ * worksheet builder · resource generator · objective checker · worksheet image.
+ * `smartt_checker` is labelled "Objective checker" in the UI.
  */
 export const AI_CONTEXT_TOOLS: readonly AiContextTool[] = [
   'worksheet_builder',
   'resource_generator',
   'smartt_checker',
+  'worksheet_image',
 ];
 
 /**

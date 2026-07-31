@@ -9,7 +9,7 @@ import type { AiContextLayer, AiContextTool } from '@/types/ai-context';
 // the backstop.
 
 const LAYERS: readonly AiContextLayer[] = ['org', 'academic', 'subject', 'tool'];
-const TOOLS: readonly AiContextTool[] = ['worksheet_builder', 'resource_generator', 'smartt_checker'];
+const TOOLS: readonly AiContextTool[] = ['worksheet_builder', 'resource_generator', 'smartt_checker', 'worksheet_image'];
 
 /** Resolve the caller and require the admin role. Returns the profile, or a ready
  *  NextResponse to return as-is (401/403). */

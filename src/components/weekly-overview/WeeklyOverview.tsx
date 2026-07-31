@@ -143,7 +143,7 @@ export function WeeklyOverview({ data, view: initialView }: { data: BoardData; v
         {!data.hasClasses ? (
           <EmptyClasses />
         ) : data.years.length === 0 || data.coordinate.month === '' ? (
-          <EmptyCurriculum subjectNames={data.subjectNames} />
+          <EmptyCurriculum subjectNames={data.subjectNames} reason={data.emptyReason} />
         ) : view === 'status' ? (
           <StatusView
             years={visibleYears}
@@ -198,17 +198,27 @@ function EmptyClasses() {
 }
 
 /**
- * Shown when NONE of the user's subjects have synced curriculum for the years they
- * teach. User-wide: it names every subject the user is in (not a single "Arabic"),
- * and keeps the coordinator-sync guidance.
+ * The board-wide empty-curriculum panel, its copy driven by WHY there is nothing to
+ * show. `year_not_covered` (the subject IS synced, just not for the years this teacher
+ * holds — the Professionalism case) gets its own copy and action; it must never read
+ * as "no curriculum synced", which is the false line this fix replaces.
+ * `subject_not_synced` keeps the coordinator-sync guidance. Same panel treatment for
+ * both — only the words change.
  */
-function EmptyCurriculum({ subjectNames }: { subjectNames: string[] }) {
+function EmptyCurriculum({
+  subjectNames,
+  reason,
+}: {
+  subjectNames: string[];
+  reason: BoardData['emptyReason'];
+}) {
   const t = useTranslations('board');
+  const key = reason === 'year_not_covered' ? 'yearNotCovered' : 'notSynced';
   return (
     <div className="rounded-[14px] border border-border px-6 py-16 text-center">
-      <p className="text-[15px] font-semibold text-ink">{t('emptyCurriculum.title')}</p>
+      <p className="text-[15px] font-semibold text-ink">{t(`emptyCurriculum.${key}.title`)}</p>
       <p className="mx-auto mt-2 max-w-[460px] text-[13.5px] text-text-muted">
-        {t.rich('emptyCurriculum.body', {
+        {t.rich(`emptyCurriculum.${key}.body`, {
           count: subjectNames.length,
           subjects: subjectNames.join(', '),
           s: (chunks) => <span dir="auto">{chunks}</span>,

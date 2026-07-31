@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatNumber } from '@/lib/format';
@@ -67,10 +68,15 @@ export function WeekNav({
   // the "Week N" label — e.g. "Dec 15", "current", or "Dec 15 · current". No leading
   // separator: it sits on its own line under the label, not inline after it.
   const current = t('weekNav.current');
-  let meta: string | undefined;
+  let meta: ReactNode | undefined;
   if (mondayLabel && isCurrent) meta = `${mondayLabel} · ${current}`;
   else if (mondayLabel) meta = mondayLabel;
   else if (isCurrent) meta = current;
+  // A real week with no date: the spine gave no Monday for this teacher's centre/year,
+  // so the header would otherwise sit silently blank. Surface a quiet, coordinator-
+  // actionable teal note in the same date slot — non-blocking, never a banner, and it
+  // suppresses nothing that renders today (it only fills the slot the date would use).
+  else if (weekNo > 0) meta = <span className="text-teal">{t('weekNav.datesUnset')}</span>;
 
   const options: WeekPickerOption[] = weeks.map((w) => ({
     month: w.month,

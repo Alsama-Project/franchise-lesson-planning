@@ -11,6 +11,24 @@
 import type { PlanScope, PlanStatus } from '@/types/lesson';
 
 /**
+ * Why a band, or the whole board, shows no curriculum content — so the board can
+ * SAY why a week is blank instead of leaving a teacher staring at nothing. Every
+ * subject flows through the same computation; there are no subject literals.
+ *
+ *   • `subject_not_synced` — the subject has no curriculum rows at ANY year (board).
+ *   • `year_not_covered`   — the subject has curriculum at some year, but none at
+ *                            this year (per band, or board-wide when every band's
+ *                            year is uncovered). The Professionalism case: classes
+ *                            exist Y0–Y6, curriculum only Y3–Y6.
+ *   • `week_not_covered`   — the subject covers this year, but this particular week
+ *                            has no rows. The settled model's CORRECT blank; reads
+ *                            as normal, not as an error.
+ *
+ * Precedence, most specific wins: subject_not_synced → year_not_covered → week_not_covered.
+ */
+export type BoardEmptyReason = 'subject_not_synced' | 'year_not_covered' | 'week_not_covered';
+
+/**
  * What a slot/column shows as its status. The four stored `PlanStatus` values
  * plus the derived `not_started` (no plan covers a curriculum lesson yet) — used
  * by the Status (kanban) view.
@@ -131,6 +149,14 @@ export interface BoardYear {
   canAuthor: boolean;
   plans: BoardPlan[];
   lessons: BoardLesson[];
+  /**
+   * Why this band shows no curriculum this week, or `null` when it has content.
+   * Set ONLY when the band has no curriculum lessons for the shown week —
+   * `year_not_covered` when the subject never covers this year, `week_not_covered`
+   * when it does but this week is blank. Drives the per-band note in the Calendar
+   * view; `null` bands render their cards as before.
+   */
+  emptyReason: Exclude<BoardEmptyReason, 'subject_not_synced'> | null;
 }
 
 /** A curriculum (month, week) position the prev/next arrows step through. */
@@ -224,6 +250,16 @@ export interface BoardData {
   weeks: BoardWeekOption[];
   /** One band per year the teacher teaches, in ascending year order. */
   years: BoardYear[];
+  /**
+   * Why the WHOLE board has no curriculum to show, or `null` when it does. Only
+   * meaningful when the board falls to its empty-curriculum panel (no coordinate):
+   * `subject_not_synced` when the subject has no curriculum anywhere, or
+   * `year_not_covered` when it has curriculum but none for the years this teacher
+   * holds. Lets the empty panel name the real reason instead of the old blanket
+   * "no curriculum synced" line, which is false whenever the subject IS synced at
+   * other years.
+   */
+  emptyReason: Exclude<BoardEmptyReason, 'week_not_covered'> | null;
   /** Distinct plan owners across the visible plans — the people-filter options. */
   owners: PlanOwner[];
   /** Total plans (any status/scope) visible for this coordinate. */

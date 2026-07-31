@@ -117,6 +117,7 @@ function emptyBoard(teacherName: string): BoardData {
     currentWeek: null,
     weeks: [],
     years: [],
+    emptyReason: null,
     owners: [],
     planCount: 0,
     hasClasses: false,
@@ -264,17 +265,30 @@ export async function getBoardData(input: {
   // centre is not a scope). Drives which years show and teacher authoring.
   const taught = taughtAll.filter((c) => c.subject_id === subjectId);
 
-  // Years shown: the years the viewer teaches in the subject, else every curriculum
-  // year the subject covers (a coordinator / no-class member sees them all).
+  // Probe the subject's curriculum ONCE per candidate year (each read is scoped by
+  // subject_code + year, so a few hundred rows — never a bulk select). This gives us
+  // both the subject's COVERED years (the years the curriculum actually has rows for)
+  // and the per-year nav we build coordinates from. Reading `getCurriculumNav`'s
+  // already-computed empty result is all we need; nothing here touches Branch B.
   const candidateYears = [0, 1, 2, 3, 4, 5, 6];
+  const navByYear = new Map<number, Awaited<ReturnType<typeof getCurriculumNav>>>();
+  await Promise.all(
+    candidateYears.map(async (y) => {
+      navByYear.set(y, await getCurriculumNav(subjectCode, y));
+    }),
+  );
+  // The years the subject's curriculum actually covers (rows exist). Distinguishes
+  // "this year is never taught in the curriculum" (year_not_covered) from "the subject
+  // has no curriculum at all" (subject_not_synced) — the whole point of the fix.
+  const coveredYears = candidateYears.filter((y) => (navByYear.get(y) ?? []).length > 0);
+  const subjectHasCurriculum = coveredYears.length > 0;
+
+  // Years shown: the years the viewer teaches in the subject, else every curriculum
+  // year the subject covers (a coordinator / no-class member sees them all). A teacher
+  // whose class years fall outside `coveredYears` still gets those bands — they render
+  // an explicit "not covered" note rather than silently vanishing.
   const classYears = [...new Set(taught.map((c) => c.year))].sort((a, b) => a - b);
-  let years: number[];
-  if (classYears.length > 0) {
-    years = classYears;
-  } else {
-    const navProbe = await Promise.all(candidateYears.map((y) => getCurriculumNav(subjectCode, y)));
-    years = candidateYears.filter((_, i) => navProbe[i].length > 0);
-  }
+  const years: number[] = classYears.length > 0 ? classYears : coveredYears;
 
   // canAuthor per year: a teacher who teaches a class that year, OR a coordinator of
   // the subject (who authors born-approved plans for any year).
@@ -295,6 +309,10 @@ export async function getBoardData(input: {
   }
 
   // One year band shell (reused by the empty-coordinate return and the full return).
+  // A band with no curriculum lessons this week carries WHY it's empty: `year_not_covered`
+  // when the subject never covers this year, `week_not_covered` when it does but this
+  // week is blank (the settled model's correct blank). Subject-agnostic — the reason
+  // falls out of `coveredYears`, computed the same for every subject.
   const bandShell = (year: number, plans: BoardPlan[], lessons: BoardLesson[]): BoardYear => ({
     key: `${subjectCode}|${year}`,
     year,
@@ -305,10 +323,17 @@ export async function getBoardData(input: {
     canAuthor: canAuthorYear(year),
     plans,
     lessons,
+    emptyReason:
+      lessons.length === 0
+        ? coveredYears.includes(year)
+          ? 'week_not_covered'
+          : 'year_not_covered'
+        : null,
   });
 
   // Curriculum coordinates across the subject's years, in scheme-of-work order.
-  const navs = await Promise.all(years.map((y) => getCurriculumNav(subjectCode, y)));
+  // Reuse the per-year navs already probed above — no second round of reads.
+  const navs = years.map((y) => navByYear.get(y) ?? []);
   const weeksByMonth = new Map<string, Set<number>>();
   for (const nav of navs) {
     for (const { month, weeks } of nav) {
@@ -321,7 +346,10 @@ export async function getBoardData(input: {
     .sort((a, b) => monthIndex(a[0]) - monthIndex(b[0]))
     .flatMap(([month, weeks]) => [...weeks].sort((a, b) => a - b).map((week) => ({ month, week })));
 
-  // Nothing synced for the subject's years yet → an empty-but-valid board (year shells).
+  // No coordinates for this teacher's bands → the empty-curriculum panel. Name WHY:
+  // `subject_not_synced` when the subject has no curriculum at all, else
+  // `year_not_covered` — the subject IS synced, just not for the years this teacher
+  // holds (the Professionalism case). Never the old blanket "no curriculum synced".
   if (coords.length === 0) {
     return {
       ...emptyBoard(teacherName),
@@ -332,6 +360,7 @@ export async function getBoardData(input: {
       coordinatorAuthor,
       currentWeek: null,
       years: years.map((y) => bandShell(y, [], [])),
+      emptyReason: subjectHasCurriculum ? 'year_not_covered' : 'subject_not_synced',
       myClassesByYear,
     };
   }
@@ -498,6 +527,7 @@ export async function getBoardData(input: {
     currentWeek,
     weeks,
     years: yearBands,
+    emptyReason: null,
     owners,
     planCount,
     hasClasses: true,

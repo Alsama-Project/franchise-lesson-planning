@@ -4,7 +4,23 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { hasObjectiveContent } from '@/lib/editor/objective';
 import { isAdmin, isCoordinatorOf } from '@/lib/auth';
+import { writeBackApprovedExercises } from '@/lib/resources/write-back';
 import type { Block, PlanStatus } from '@/types/lesson';
+
+/**
+ * Write approved AI-generated worksheet exercises back into the resource bank.
+ * Fire-and-forget: awaited so it finishes within the request, but any failure is
+ * logged and swallowed — approval is the user-visible action and must never fail
+ * because of a write-back problem. Only ever called after an approve write lands.
+ */
+async function runWriteBack(planId: string, from: string): Promise<void> {
+  try {
+    const result = await writeBackApprovedExercises(planId);
+    console.info('[writeback]', from, { planId, result });
+  } catch (err) {
+    console.error('[writeback]', from, 'failed', { planId, err });
+  }
+}
 
 export interface SavePlanInput {
   id: string;
@@ -175,15 +191,30 @@ export async function setPlanStatus(
     }
   }
 
+  // A coordinator decision (approve / return) stamps `reviewed_at` — the
+  // "coordinator decided" mark read by the notifications bell — matching
+  // `decidePlan`'s shape exactly. Teacher transitions (in_progress / submitted)
+  // leave it untouched.
+  const patch: { status: PlanStatus; reviewed_at?: string } = { status };
+  if (status === 'approved' || status === 'needs_review') {
+    patch.reviewed_at = new Date().toISOString();
+  }
+
   const { data, error } = await supabase
     .from('lesson_plans')
-    .update({ status })
+    .update(patch)
     .eq('id', planId)
     .select('updated_at')
     .maybeSingle();
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
+
+  // Approval is the trigger for resource-bank write-back. Runs only after the
+  // status write succeeded, and never fails the approval (logged + swallowed).
+  if (status === 'approved') {
+    await runWriteBack(planId, 'setPlanStatus');
+  }
 
   revalidatePath('/');
   return { ok: true, updated_at: data.updated_at };
@@ -294,6 +325,12 @@ export async function decidePlan(planId: string, decision: PlanDecision): Promis
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'Plan not found or not permitted.' };
+
+  // Approval is the trigger for resource-bank write-back. Runs only after the
+  // approve write succeeded, and never fails the approval (logged + swallowed).
+  if (decision === 'approve') {
+    await runWriteBack(planId, 'decidePlan');
+  }
 
   revalidatePath('/');
   revalidatePath(`/plan/${planId}/view`);

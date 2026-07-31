@@ -62,6 +62,11 @@ export function PreviewModal({
   const [pending, startTransition] = useTransition();
 
   const isLink = !!resource.external_url;
+  // A body-backed resource (AI-generated exercise written back to the bank) has
+  // neither a file nor a link — `resources_one_source` guarantees exactly one
+  // backing, so body_md present with no file/url means it is the source. Such a
+  // row has no download route: show its body inline instead of the file actions.
+  const bodyMd = !resource.file_path && !resource.external_url ? resource.body_md : null;
   // Server-side route that mints a short-lived signed URL and redirects to it.
   // Plain anchors (not async window.open) keep these in the click gesture so the
   // browser doesn't block the new tab / download.
@@ -137,6 +142,17 @@ export function PreviewModal({
           <div dir="auto" className="text-[19px] font-semibold leading-[1.25] text-ink">{resource.title}</div>
           {resource.description ? (
             <p dir="auto" className="mt-2 text-[13px] leading-[1.5] text-text-muted">{resource.description}</p>
+          ) : null}
+
+          {/* Body-backed (AI-generated) resource: render its markdown body inline,
+              in place of the download affordance that file/link rows get. */}
+          {bodyMd ? (
+            <div
+              dir="auto"
+              className="mt-3 max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-[12px] border border-[#EFE8DD] bg-surface-subtle p-3 text-[13px] leading-[1.55] text-ink"
+            >
+              {bodyMd}
+            </div>
           ) : null}
 
           <div className="mt-[9px] inline-flex items-center gap-[6px] rounded-full bg-[#F6ECDA] px-[11px] py-1 text-[12.5px] font-semibold text-[#B0651E]">
@@ -226,6 +242,10 @@ export function PreviewModal({
               >
                 <LinkIcon size={15} />
               </a>
+            ) : bodyMd ? (
+              // Body-backed resource: no file to open/download — the body is shown
+              // inline above, so the file actions are intentionally omitted.
+              null
             ) : (
               <>
                 <a

@@ -109,6 +109,15 @@ function fallbackDoc(resource: ResourceWithTags): WorksheetDoc {
 export async function buildBlocksFromResource(
   resource: ResourceWithTags,
 ): Promise<WorksheetFreeBlock[]> {
+  // AI-generated (body-backed) resources carry a ready tiptap document — insert it
+  // directly as an editable free block. This branch is additive: every other origin
+  // (upload / link) falls through to the byte-for-byte behaviour below. Client-side
+  // only; the editor's existing debounce persists the seeded block to
+  // lesson_plans.worksheet — nothing here writes it server-side.
+  if (resource.origin === 'ai_generated' && resource.body_doc) {
+    return [freeBlock(resource.body_doc as WorksheetDoc)];
+  }
+
   const format = resourceFormat(resource);
 
   // Image / screenshot → copy the bytes into the worksheet and embed inline.

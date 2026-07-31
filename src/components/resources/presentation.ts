@@ -27,6 +27,10 @@ const FORMAT_STYLES: Record<string, FormatStyle> = {
   Audio: { c: '#6A5AA0', bg: '#EEEAF6', short: 'AUDIO' },
   Video: { c: '#C2553F', bg: '#FBEAE5', short: 'VIDEO' },
   Worksheet: { c: '#7A6E62', bg: '#F1ECE3', short: 'SHEET' },
+  // AI-generated, body-backed exercises write back with the 'Exercise' format tag
+  // (seeded in migration 0067). Without this entry a body_md row falls back to the
+  // generic "FILE" badge; the swatch mirrors the exercise_type chip tint below.
+  Exercise: { c: '#5C544E', bg: '#F3ECE2', short: 'EXER' },
 };
 
 const FORMAT_FALLBACK: FormatStyle = { c: '#7A6E62', bg: '#F1ECE3', short: 'FILE' };

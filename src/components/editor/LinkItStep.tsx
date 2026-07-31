@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { LinkItTechnique } from '@/types/lesson';
 import type { ActivityBankItem } from '@/lib/editor/load-plan';
@@ -40,6 +40,11 @@ function PreviousOutcomePanel({ outcome }: { outcome: string }) {
   );
 }
 
+/** Menu sizing: a 320px cap with internal scroll, and the clearance the flip test
+ *  requires below the button before it will consider opening upward. */
+const MENU_MAX_H = 320;
+const FLIP_GAP = 16;
+
 /** The teal "+ Add" button + its inline technique popover. */
 function AddTechnique({
   activities,
@@ -53,7 +58,11 @@ function AddTechnique({
   const t = useTranslations('wizard.linkIt');
   const [open, setOpen] = useState(false);
   const [flipUp, setFlipUp] = useState(false);
+  // The menu's rendered max-height for the chosen side, so a long list never forces a
+  // flip and the panel is always fully visible (it scrolls internally if it overflows).
+  const [maxH, setMaxH] = useState(MENU_MAX_H);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // An already-added technique drops out of the list.
   const available = activities.filter((a) => !selected.some((s) => s.technique === a.id));
 
@@ -68,25 +77,38 @@ function AddTechnique({
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  // Decide the open direction at the moment of opening (not in an effect) so the
-  // panel's first paint is already on the correct side — no downward-then-flip
-  // flicker. The trigger's viewport rect is only read client-side in this handler,
-  // so it never touches `window` during render / SSR / build.
-  // PANEL = 280px max-height + 6px offset; conservative flip against the constant
-  // avoids measuring the panel itself (which is what would force a re-flow flicker).
+  // Position the menu AFTER it renders (so we measure its real height, not a guess).
+  // The panel opens DOWNWARD by default. It flips up ONLY when the space below the
+  // button inside the VIEWPORT is genuinely less than the menu's rendered height + 16px
+  // AND there is more room above — measured against `window.innerHeight` and the
+  // button's `getBoundingClientRect`, never the step card or a scroll container. Either
+  // way the panel is capped to the room on its side, so it is always fully visible.
+  // `useLayoutEffect` runs before paint, so there is no visible downward-then-flip flash.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const needed = Math.min(menu.scrollHeight, MENU_MAX_H) + FLIP_GAP;
+    const up = spaceBelow < needed && spaceAbove > spaceBelow;
+    setFlipUp(up);
+    const room = (up ? spaceAbove : spaceBelow) - FLIP_GAP;
+    setMaxH(Math.max(140, Math.min(MENU_MAX_H, room)));
+  }, [open]);
+
+  // Open downward first (reset the flip) so the layout effect always decides from a
+  // known baseline; it flips up only if the measured space below is insufficient.
   const toggle = () => {
-    setOpen((wasOpen) => {
-      if (wasOpen) return false;
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const PANEL = 286;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        // Open up only when down doesn't fit and up is roomier; otherwise stay down.
-        setFlipUp(spaceBelow < PANEL && spaceAbove > spaceBelow);
-      }
-      return true;
-    });
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setFlipUp(false);
+    setMaxH(MENU_MAX_H);
+    setOpen(true);
   };
 
   return (
@@ -104,8 +126,15 @@ function AddTechnique({
       {open ? (
         <>
           {/* Click-away backdrop. */}
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className={`absolute start-0 z-20 max-h-[280px] w-[280px] overflow-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)] ${flipUp ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'}`}>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          {/* The panel sits above the step card, the SMARTT banner and the stepper
+              (z-30); its height is capped to the room on its side so no ancestor needs
+              to clip it and a long list scrolls inside it. */}
+          <div
+            ref={menuRef}
+            style={{ maxHeight: maxH }}
+            className={`absolute start-0 z-30 w-[280px] overflow-y-auto rounded-[12px] border border-border bg-surface p-[6px] shadow-[0_8px_28px_rgba(42,36,34,0.16)] ${flipUp ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'}`}
+          >
             {available.length === 0 ? (
               <div className="px-[10px] py-[12px] text-center text-[12.5px] text-neutral-400">
                 {t('allAdded')}

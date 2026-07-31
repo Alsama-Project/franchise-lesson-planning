@@ -53,7 +53,6 @@ export function deriveMaterials(blocks: Block[]): string[] {
 
 /** The editable lesson parts shown in the Review table, in lesson order. */
 export const REVIEW_EDITABLE_TYPES: LessonBlockType[] = [
-  'check_homework',
   'recap',
   'new_content',
   'cfu',

@@ -2,7 +2,6 @@
   "wizard": {
     "steps": {
       "objective": "SMARTT objective",
-      "homeworkCheck": "Homework check",
       "recap": "Recap",
       "newContent": "New content",
       "cfu": "Check for understanding",
@@ -74,6 +73,14 @@
       "worksheetHint": "build the sheet students work from",
       "addFromBank": "Add from bank"
     },
+    "resource": {
+      "upload": "Upload from computer",
+      "dropHint": "Drag a file here, or click to choose",
+      "uploading": "Uploading…",
+      "uploadFailed": "Upload failed. Please try again.",
+      "tooLarge": "File must be {max} MB or smaller.",
+      "badType": "That file type isn’t supported."
+    },
     "phase": {
       "aria": "Teaching phase",
       "placeholder": "— phase —"
@@ -88,6 +95,8 @@
       "notePlaceholder": "Add a note…",
       "remove": "Remove {name}",
       "techniqueFallback": "Technique",
+      "commentLabel": "Comment",
+      "commentPlaceholder": "Add a comment for this step…",
       "heading": "Link it together"
     },
     "review": {
@@ -106,7 +115,6 @@
       "parts": {
         "routines": "Standard routines",
         "routinesDetail": "Anthem · Warm-up · Cool down",
-        "homeworkCheck": "Homework check",
         "recap": "Recap",
         "newContent": "New content",
         "cfu": "Check for Understanding",

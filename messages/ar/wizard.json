@@ -2,7 +2,6 @@
   "wizard": {
     "steps": {
       "objective": "هدف SMARTT",
-      "homeworkCheck": "التحقق من الواجب",
       "recap": "الاستذكار",
       "newContent": "المحتوى الجديد",
       "cfu": "التحقق من الفهم",
@@ -74,6 +73,14 @@
       "worksheetHint": "ابنِ الورقة التي يعمل منها الطلاب",
       "addFromBank": "أضف من المكتبة"
     },
+    "resource": {
+      "upload": "ارفع من الحاسوب",
+      "dropHint": "اسحب ملفًا إلى هنا، أو انقر للاختيار",
+      "uploading": "جارٍ الرفع…",
+      "uploadFailed": "فشل الرفع. يُرجى المحاولة مرة أخرى.",
+      "tooLarge": "يجب ألا يتجاوز حجم الملف {max} ميغابايت.",
+      "badType": "نوع الملف هذا غير مدعوم."
+    },
     "phase": {
       "aria": "مرحلة التدريس",
       "placeholder": "— المرحلة —"
@@ -88,6 +95,8 @@
       "notePlaceholder": "أضف ملاحظة…",
       "remove": "إزالة {name}",
       "techniqueFallback": "تقنية",
+      "commentLabel": "تعليق",
+      "commentPlaceholder": "أضف تعليقًا لهذه الخطوة…",
       "heading": "اربط الدرس معًا"
     },
     "review": {
@@ -106,7 +115,6 @@
       "parts": {
         "routines": "الروتين المعتاد",
         "routinesDetail": "النشيد · الإحماء · التهدئة",
-        "homeworkCheck": "التحقق من الواجب",
         "recap": "الاستذكار",
         "newContent": "المحتوى الجديد",
         "cfu": "التحقق من الفهم",

@@ -56,17 +56,19 @@ the curriculum data layer was ported forward.
 ## The 50-minute rule
 
 The in-session target is **50 minutes = the sum of every block EXCEPT
-`homework`** (1+1+1+2+5+10+5+20+5). `homework` is done at home (guidance:
-30–60 min) and is excluded from the in-session total. The canonical scaffold is
+`homework`** (1+1+1+7+10+5+20+5). `homework` is done at home (guidance:
+30–60 min) and is excluded from the in-session total. (The former 2-minute
+`check_homework` block was folded into `recap`, taking it 5 → 7.) The canonical scaffold is
 `DEFAULT_BLOCKS` in `src/lib/blocks.ts`; `inSessionMinutes()` computes the total
 and `IN_SESSION_TARGET_MINUTES` is the target.
 
 ## Lesson blocks (fixed order)
 
-`anthem · warm_up · cool_down · check_homework · recap · new_content · cfu ·
+`anthem · warm_up · cool_down · recap · new_content · cfu ·
 independent_practice · exit_ticket · homework`. Phases: `we_do` for the three
 openers, `i_do` for new_content, `you_do` for independent_practice; the rest have
-no phase.
+no phase. (`check_homework` was folded into `recap` and is no longer seeded in
+`DEFAULT_BLOCKS`; it remains in the `LessonBlockType` union so legacy rows parse.)
 
 ## Local Supabase
 

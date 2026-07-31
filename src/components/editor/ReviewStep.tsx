@@ -118,7 +118,6 @@ export function ReviewStep({
       phase: null,
       minutes: routinesMinutes(blocks),
     },
-    part('check_homework', t('review.parts.homeworkCheck'), 'check_homework'),
     part('recap', t('review.parts.recap'), 'recap'),
     part('new_content', t('review.parts.newContent'), 'new_content'),
     part('cfu', t('review.parts.cfu'), 'cfu'),

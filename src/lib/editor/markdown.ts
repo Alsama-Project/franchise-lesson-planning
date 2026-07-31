@@ -181,3 +181,148 @@ export function docToMarkdown(doc: JSONContent | null | undefined): string {
     .join('\n\n')
     .trim();
 }
+
+// ── Server-safe markdown → tiptap doc ────────────────────────────────────────
+//
+// `markdownToHtml` (above) is the browser path: the HTML it emits is handed to a
+// live tiptap editor via `setContent`, or to `generateJSON` in a Client
+// Component (see `resource-to-block.ts`). Neither works in a Node route handler:
+// `generateJSON` reaches for `window.DOMParser`, and `worksheetEditorExtensions`
+// is `'use client'`. The worksheet-exercise route needs `body_md → body_doc`
+// server-side, so `markdownToDoc` builds the ProseMirror/tiptap JSON directly —
+// no DOM, no dependency, no client import.
+//
+// It emits ONLY nodes valid in `worksheetEditorExtensions` (StarterKit): `doc`,
+// `heading`, `paragraph`, `bulletList`, `orderedList`, `listItem`, `text`, plus
+// the `bold`/`italic` marks and `hardBreak`. It honours the SAME markdown subset
+// `markdownToHtml` does (the two are kept deliberately parallel), so a worksheet
+// exercise renders identically whether its doc was built here or by the editor.
+// `[Picture: …]` markers and `______` blanks are ordinary text and pass through
+// verbatim, exactly as the floor's marker conventions require.
+
+/** Parse inline emphasis (asterisk only) into tiptap text nodes with marks. */
+function inlineToNodes(text: string): JSONContent[] {
+  const nodes: JSONContent[] = [];
+  // `**bold**` is matched before `*italic*` so a bold run is not split by the
+  // single-asterisk rule. Underscores are NEVER emphasis — worksheet content is
+  // full of `______` blanks and snake_case. Non-nested by construction (the char
+  // classes forbid a `*` inside a run), matching `markdownToHtml`'s behaviour.
+  const pattern = /\*\*([^*]+)\*\*|\*([^*\s][^*]*?)\*/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  const pushText = (value: string, mark?: 'bold' | 'italic') => {
+    if (!value) return;
+    nodes.push(mark ? { type: 'text', text: value, marks: [{ type: mark }] } : { type: 'text', text: value });
+  };
+  while ((match = pattern.exec(text)) !== null) {
+    pushText(text.slice(last, match.index));
+    if (match[1] !== undefined) pushText(match[1], 'bold');
+    else pushText(match[2], 'italic');
+    last = pattern.lastIndex;
+  }
+  pushText(text.slice(last));
+  return nodes;
+}
+
+/** Build a paragraph node from lines, joining them with hard breaks. */
+function paragraphNode(lines: string[]): JSONContent {
+  const content: JSONContent[] = [];
+  lines.forEach((line, i) => {
+    if (i > 0) content.push({ type: 'hardBreak' });
+    content.push(...inlineToNodes(line.trim()));
+  });
+  return content.length ? { type: 'paragraph', content } : { type: 'paragraph' };
+}
+
+/** Wrap inline content as a list item (`listItem` holds a `paragraph`). */
+function listItemNode(text: string): JSONContent {
+  const inline = inlineToNodes(text);
+  return {
+    type: 'listItem',
+    content: [inline.length ? { type: 'paragraph', content: inline } : { type: 'paragraph' }],
+  };
+}
+
+/**
+ * Convert a simple-markdown string into a tiptap/ProseMirror `doc` — the
+ * server-safe counterpart of {@link markdownToHtml}. Supports `#`/`##`/`###`
+ * headings, `-`/`*`/`+` bullet lists, `1.` ordered lists, blank-line-separated
+ * paragraphs (multi-line paragraphs joined with hard breaks), and
+ * `**bold**` / `*italic*` inline marks. Everything else — including
+ * `[Picture: …]` markers and `______` blanks — passes through as literal text.
+ */
+export function markdownToDoc(markdown: string): JSONContent {
+  const lines = (markdown ?? '').replace(/\r\n/g, '\n').split('\n');
+  const content: JSONContent[] = [];
+
+  let para: string[] = [];
+  let list: { ordered: boolean; items: string[] } | null = null;
+
+  const flushPara = () => {
+    if (para.length) {
+      content.push(paragraphNode(para));
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (list) {
+      content.push({
+        type: list.ordered ? 'orderedList' : 'bulletList',
+        content: list.items.map(listItemNode),
+      });
+      list = null;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, '');
+
+    if (line.trim() === '') {
+      // A blank line ends a paragraph but NOT a list — AI markdown routinely puts
+      // blank lines between numbered items (mirrors `markdownToHtml`).
+      flushPara();
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushPara();
+      flushList();
+      content.push({
+        type: 'heading',
+        attrs: { level: heading[1].length },
+        content: inlineToNodes(heading[2].trim()),
+      });
+      continue;
+    }
+
+    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ordered) {
+      flushPara();
+      if (!list || !list.ordered) {
+        flushList();
+        list = { ordered: true, items: [] };
+      }
+      list.items.push(ordered[1].trim());
+      continue;
+    }
+
+    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    if (bullet) {
+      flushPara();
+      if (!list || list.ordered) {
+        flushList();
+        list = { ordered: false, items: [] };
+      }
+      list.items.push(bullet[1].trim());
+      continue;
+    }
+
+    flushList();
+    para.push(line);
+  }
+
+  flushPara();
+  flushList();
+  return { type: 'doc', content };
+}

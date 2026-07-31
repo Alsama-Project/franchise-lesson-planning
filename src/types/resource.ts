@@ -49,6 +49,17 @@ export interface Resource {
   uploaded_by: string;
   usage_count: number;
   created_at: string;
+  /**
+   * How the resource is backed (migration 0067): `upload` (file_path) | `link`
+   * (external_url) | `ai_generated` (body_md/body_doc, written back from an
+   * approved worksheet exercise). `resources_one_source` guarantees exactly one
+   * backing.
+   */
+  origin: 'upload' | 'link' | 'ai_generated';
+  /** Markdown body for ai_generated (body-backed) resources; null for file/link. */
+  body_md: string | null;
+  /** Rich-text (tiptap) body for ai_generated resources; null for file/link. */
+  body_doc: unknown | null;
 }
 
 /** A resource with its attached tags resolved (used by list/search results). */

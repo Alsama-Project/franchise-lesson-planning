@@ -19,7 +19,7 @@ import type {
 const STORAGE_BUCKET = RESOURCE_BUCKET;
 
 const RESOURCE_COLUMNS =
-  'id, title, description, subject_id, year, file_path, external_url, uploaded_by, usage_count, created_at';
+  'id, title, description, subject_id, year, file_path, external_url, uploaded_by, usage_count, created_at, origin, body_md, body_doc';
 
 /** Attach each resource's tags (one round-trip via the link table). */
 async function attachTags(

@@ -40,10 +40,14 @@ export function CalendarView({
   spansMultipleCentres?: boolean;
 }) {
   const columns = buildPeriodColumns(years, spansMultipleCentres, { readOnly, ownerId });
-  // Bands that carry no curriculum this week vanish from the period columns entirely.
-  // Surface each ONCE as a cream note so the teacher learns WHY the year is blank
-  // instead of seeing nothing at all.
-  const emptyBands = years.filter((band) => band.emptyReason !== null);
+  // A `week_not_covered` band (the year is covered, this week is just blank) no
+  // longer renders anything — one such strip per empty year was noise for a teacher
+  // holding several years. A `year_not_covered` gap is different: a distinct,
+  // actionable "this year isn't in the curriculum" fact, so it keeps its per-band
+  // note. When NO band resolves any content, a single board-level note stands in
+  // (below) so the week never reads as a blank page.
+  const coverageGaps = years.filter((band) => band.emptyReason === 'year_not_covered');
+  const hasContent = columns.some((column) => column.cards.length > 0);
 
   return (
     <section className="overflow-x-auto">
@@ -61,15 +65,20 @@ export function CalendarView({
         ))}
       </div>
 
-      {/* One cream note per year that has no curriculum this week — never one per
-          period column. Non-interactive: a statement about curriculum-provided
-          content, so it carries the same cream/read-only treatment as the worksheet
-          "given" surface, not the ghost card's interactive create affordance. */}
-      {emptyBands.length > 0 ? (
+      {/* Coverage gaps (year_not_covered) keep their per-band cream note — a
+          statement about curriculum-provided content, so it carries the same
+          cream/read-only treatment as the worksheet "given" surface, not the ghost
+          card's interactive create affordance. Otherwise, when the board resolves no
+          content at all, a single board-level note stands in — never one per band. */}
+      {coverageGaps.length > 0 ? (
         <div className="mt-[16px] flex min-w-[900px] flex-col gap-[10px]">
-          {emptyBands.map((band) => (
+          {coverageGaps.map((band) => (
             <BandEmptyNote key={band.key} band={band} />
           ))}
+        </div>
+      ) : !hasContent ? (
+        <div className="mt-[16px] min-w-[900px]">
+          <BoardEmptyNote />
         </div>
       ) : null}
     </section>
@@ -77,23 +86,39 @@ export function CalendarView({
 }
 
 /**
- * A blank year band, explained. Cream (#F5EDE5) and non-interactive — it states why
- * the curriculum gives nothing this week, it is not a create slot. `year_not_covered`
- * (the subject never covers this year — Professionalism runs Y3–Y6, so a Y2 class has
- * no curriculum) reads as a coverage fact; `week_not_covered` (the year is covered but
- * this week is blank) reads as normal, the settled model's correct blank.
+ * A `year_not_covered` band, explained. Cream (#F5EDE5) and non-interactive — the
+ * subject never covers this year (Professionalism runs Y3–Y6, so a Y2 class has no
+ * curriculum), a coverage fact worth naming, not a create slot. The normal
+ * this-week-is-blank case (`week_not_covered`) no longer renders a note at all.
  */
 function BandEmptyNote({ band }: { band: BoardYear }) {
   const t = useTranslations('board');
   const locale = useLocale();
-  const key = band.emptyReason === 'year_not_covered' ? 'yearNotCovered' : 'weekNotCovered';
   return (
     <div className="rounded-[12px] border border-given-border bg-cream px-[14px] py-[12px]">
       <div dir="auto" className="text-[11.5px] font-medium text-given-label">
         {band.subjectName} · {t('card.year', { n: formatNumber(band.year, locale) })}
       </div>
       <p dir="auto" className="mt-[2px] text-[12.5px] leading-[1.45] text-text-muted">
-        {t(`bandEmpty.${key}`)}
+        {t('bandEmpty.yearNotCovered')}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The board-level empty state: shown when NO band resolves any content for the week
+ * (and there is no coverage-gap note to explain it). Same cream/read-only strip
+ * treatment as {@link BandEmptyNote} — a statement about curriculum-provided content,
+ * not a create slot — but a single element with no subject/year label, so the week
+ * never reads as a blank page.
+ */
+function BoardEmptyNote() {
+  const t = useTranslations('board');
+  return (
+    <div className="rounded-[12px] border border-given-border bg-cream px-[14px] py-[12px]">
+      <p className="text-[12.5px] leading-[1.45] text-text-muted">
+        {t('bandEmpty.nothingScheduled')}
       </p>
     </div>
   );

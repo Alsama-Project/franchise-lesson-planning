@@ -1,18 +1,32 @@
 // Calendar-date resolution for the planning board's curriculum weeks.
 //
-// ⚠️ TEMPORARY STOPGAP — read before changing. `public.term_week (week_no
-// smallint pk, starts_on date)` is a HAND-MAINTAINED mapping from a curriculum
-// teaching-week number to that week's real Monday. George applies the rows by
-// SQL; the table is intentionally EMPTY for now and will be replaced wholesale
-// by the warehouse / timetable schedule later. This helper is the SINGLE point
-// that turns a teaching-week number into calendar facts, so swapping the source
-// later is a one-file edit. Everything date-related on the board (the "· current"
-// flag, the "Week of …" label, and the day-column dates) flows through here.
+// SOURCE OF TRUTH — `public.term_week` is a VIEW (migration 0062) derived from
+// `term × term_school × term_year`. `week_no` is contiguous 1..N across holiday
+// gaps but restarts PER `(school_id, year)`: Year 0 is February-anchored, Y1–6 are
+// September-anchored, and each centre may carry its own dates, so a single global
+// week sequence is meaningless. The view therefore returns ONE ROW PER
+// `(school_id, year)` for every `week_no`. Every resolver here MUST filter by
+// `(school_id, year)` — `week_no` alone is NOT unique and never assume it is.
+// (Pre-0062 this file read a flat table keyed by a globally-unique `week_no`; that
+// model is gone. `.eq('week_no', n).maybeSingle()` used to be safe and no longer is.)
 //
-// Because the table is empty at runtime, callers MUST degrade gracefully: a
-// missing row yields `{ mondayDate: null, isCurrent: false }` and NO date is ever
-// fabricated (no "+7 from a guessed start" fallback). Only a real `term_week`
-// row produces a date or a "current" week.
+// A term with no `term_school` OR no `term_year` link produces zero rows, so a
+// missing row is the normal "no term calendar for this (centre, year)" state, not
+// an error: it yields `{ mondayDate: null, isCurrent: false }` and NO date is ever
+// fabricated (no "+7 from a guessed start" fallback). Only a real `term_week` row
+// produces a date or a "current" week.
+//
+// ERRORS SURFACE — these resolvers THROW on a PostgREST error rather than swallowing
+// it and degrading to null. A query failure and a genuine no-terms result must never
+// look the same to a caller (that ambiguity is exactly what hid the 0062 breakage:
+// a cardinality violation rendered as a polite "Term dates not set").
+//
+// DIVERGENCE (known limitation) — when a centre's years disagree on the calendar (a
+// Y0-only February term, say), the same `week_no` maps to different `starts_on`
+// across years. The board still shows ONE week header, so where a single answer is
+// forced (`resolveCurrentTermWeekNo` / `resolveNearestTermWeekNo`, and the date in
+// `resolveTermWeek`) we pick the LOWEST year deterministically. Designing a real
+// multi-year header is future work; this keeps the pick stable meanwhile.
 
 import type { createClient } from '@/lib/supabase/server';
 import { addDays, daysBetween, mondayOf, todayInBeirut } from '@/lib/week';
@@ -29,23 +43,39 @@ export interface TermWeekResolution {
 
 /**
  * Resolve a curriculum teaching-week number to its calendar Monday and whether it
- * contains today, by reading the (currently empty) `term_week` mapping. Returns
- * `{ mondayDate: null, isCurrent: false }` whenever the row is absent — the only
- * state until George seeds the table — so the board degrades to numbers + labels
- * with dates dormant. Reference tables are read-only to authenticated users, so
- * the auth'd client suffices.
+ * contains today, for a centre and a set of curriculum years.
+ *
+ * Scoped to the active centre (`schoolId`) and the teacher's shown year bands
+ * (`years`). RESOLVED IF ANY BAND RESOLVES — a `week_no` present for any of the
+ * years counts as "the term calendar covers this week", so the board shows no
+ * warning. The returned date is the LOWEST resolving year's Monday (the divergence
+ * tie-break above). Returns `{ mondayDate: null, isCurrent: false }` only when no
+ * band has a row — the honest "no term calendar for this centre/year" state.
+ *
+ * Throws on a PostgREST error. Returns unresolved (no query) when `schoolId` is null
+ * or `years` is empty — there is nothing to scope against.
  */
 export async function resolveTermWeek(
   supabase: ServerSupabase,
+  schoolId: string | null,
+  years: number[],
   weekNo: number,
 ): Promise<TermWeekResolution> {
-  const { data } = await supabase
-    .from('term_week')
-    .select('starts_on')
-    .eq('week_no', weekNo)
-    .maybeSingle();
+  if (!schoolId || years.length === 0) return { mondayDate: null, isCurrent: false };
 
-  const mondayDate = (data as { starts_on?: string | null } | null)?.starts_on ?? null;
+  const { data, error } = await supabase
+    .from('term_week')
+    .select('year, starts_on')
+    .eq('school_id', schoolId)
+    .eq('week_no', weekNo)
+    .in('year', years)
+    .order('year', { ascending: true });
+
+  if (error) throw new Error(`resolveTermWeek: term_week query failed: ${error.message}`);
+
+  // Lowest resolving year's Monday (rows already ordered by year ascending).
+  const rows = (data ?? []) as Array<{ year: number | null; starts_on: string | null }>;
+  const mondayDate = rows.find((r) => !!r.starts_on)?.starts_on ?? null;
   if (!mondayDate) return { mondayDate: null, isCurrent: false };
 
   // ISO `YYYY-MM-DD` strings compare lexicographically, so no Date math is needed.
@@ -56,22 +86,35 @@ export async function resolveTermWeek(
 }
 
 /**
- * The teaching-week number whose real week contains today (Asia/Beirut), or `null`
- * when today falls outside every seeded term (holidays / gaps, or the table isn't
- * seeded yet). Resolved by matching today's Monday against `term_week.starts_on`, so
- * weekends resolve to their own Mon–Fri week. The board uses this to land on the
- * current week when the URL names no coordinate.
+ * The teaching-week number whose real week contains today (Asia/Beirut) for a centre
+ * and set of years, or `null` when today falls outside every seeded term (holidays /
+ * gaps, or the calendar isn't seeded for this centre). Resolved by matching today's
+ * Monday against `term_week.starts_on`, so weekends resolve to their own Mon–Fri week.
+ * The board uses this to land on the current week when the URL names no coordinate.
+ *
+ * When years diverge (the same Monday maps to different `week_no` across years), the
+ * LOWEST year wins deterministically. Throws on a PostgREST error; returns `null`
+ * (no query) when `schoolId` is null or `years` is empty.
  */
 export async function resolveCurrentTermWeekNo(
   supabase: ServerSupabase,
+  schoolId: string | null,
+  years: number[],
 ): Promise<number | null> {
+  if (!schoolId || years.length === 0) return null;
+
   const monday = mondayOf(todayInBeirut());
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('term_week')
-    .select('week_no')
+    .select('week_no, year')
+    .eq('school_id', schoolId)
     .eq('starts_on', monday)
+    .in('year', years)
+    .order('year', { ascending: true })
     .order('week_no', { ascending: true })
     .limit(1);
+
+  if (error) throw new Error(`resolveCurrentTermWeekNo: term_week query failed: ${error.message}`);
 
   const weekNo = (data?.[0] as { week_no?: number | null } | undefined)?.week_no;
   return typeof weekNo === 'number' ? weekNo : null;
@@ -80,31 +123,53 @@ export async function resolveCurrentTermWeekNo(
 /**
  * The teaching-week number the "This week" button jumps to: today's own term week
  * when seeded, else the NEAREST seeded term week (min |starts_on − today's Monday|).
- * Returns `null` only when `term_week` is entirely empty. Unlike
+ * Returns `null` only when the centre's years have no seeded weeks at all. Unlike
  * `resolveCurrentTermWeekNo` (which drives on-load defaulting and must stay exact),
  * this always lands on a real seeded week so the button is never a dead end while the
- * table's coverage lags the calendar.
+ * calendar's coverage lags today.
+ *
+ * Scoped to `(schoolId, years)`; ties in distance break to the LOWEST year (the
+ * divergence tie-break). Throws on a PostgREST error; returns `null` (no query) when
+ * `schoolId` is null or `years` is empty.
  */
 export async function resolveNearestTermWeekNo(
   supabase: ServerSupabase,
+  schoolId: string | null,
+  years: number[],
 ): Promise<number | null> {
+  if (!schoolId || years.length === 0) return null;
+
   // Prefer today's exact week when it's seeded.
-  const exact = await resolveCurrentTermWeekNo(supabase);
+  const exact = await resolveCurrentTermWeekNo(supabase, schoolId, years);
   if (exact != null) return exact;
 
   // Else pick the seeded week whose Monday is closest to today's Monday.
   const monday = mondayOf(todayInBeirut());
-  const { data } = await supabase.from('term_week').select('week_no, starts_on');
-  const rows = (data ?? []) as Array<{ week_no: number | null; starts_on: string | null }>;
+  const { data, error } = await supabase
+    .from('term_week')
+    .select('week_no, year, starts_on')
+    .eq('school_id', schoolId)
+    .in('year', years);
+
+  if (error) throw new Error(`resolveNearestTermWeekNo: term_week query failed: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{
+    week_no: number | null;
+    year: number | null;
+    starts_on: string | null;
+  }>;
 
   let bestWeekNo: number | null = null;
   let bestDistance = Infinity;
+  let bestYear = Infinity;
   for (const row of rows) {
-    if (typeof row.week_no !== 'number' || !row.starts_on) continue;
+    if (typeof row.week_no !== 'number' || !row.starts_on || typeof row.year !== 'number') continue;
     const distance = Math.abs(daysBetween(monday, row.starts_on));
-    if (distance < bestDistance) {
+    // Nearest Monday wins; on a tie, the lowest year wins deterministically.
+    if (distance < bestDistance || (distance === bestDistance && row.year < bestYear)) {
       bestDistance = distance;
       bestWeekNo = row.week_no;
+      bestYear = row.year;
     }
   }
   return bestWeekNo;

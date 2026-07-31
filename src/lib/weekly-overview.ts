@@ -372,11 +372,17 @@ export async function getBoardData(input: {
     weekNo: i + 1,
   }));
 
+  // Term-calendar resolution is scoped to the viewer's ACTIVE CENTRE (single) and
+  // the board's shown year bands (`years`). A pure coordinator holds no membership
+  // and thus no active centre, so `activeSchoolId` is null — the resolvers then
+  // return unresolved (the "no term calendar" state), never an arbitrary centre's dates.
+  const activeSchoolId = activeMembership?.schoolId ?? null;
+
   // Resolve the selected coordinate from the params (snap to a real one), else land
   // on the week containing today (Asia/Beirut) via `term_week`, else the first week.
   let index = coords.findIndex((c) => c.month === input.month && c.week === input.week);
   if (index === -1) {
-    const currentWeekNo = await resolveCurrentTermWeekNo(supabase);
+    const currentWeekNo = await resolveCurrentTermWeekNo(supabase, activeSchoolId, years);
     index =
       currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
         ? currentWeekNo - 1
@@ -387,10 +393,10 @@ export async function getBoardData(input: {
   const next = index < coords.length - 1 ? coords[index + 1] : null;
 
   const weekNo = index + 1;
-  const { mondayDate, isCurrent } = await resolveTermWeek(supabase, weekNo);
+  const { mondayDate, isCurrent } = await resolveTermWeek(supabase, activeSchoolId, years, weekNo);
 
   // The "This week" button's jump target.
-  const currentWeekNo = await resolveNearestTermWeekNo(supabase);
+  const currentWeekNo = await resolveNearestTermWeekNo(supabase, activeSchoolId, years);
   const currentWeek =
     currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
       ? coords[currentWeekNo - 1]

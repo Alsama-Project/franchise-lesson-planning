@@ -14,6 +14,7 @@ import { WeekLessonPlansDocument } from '@/lib/pdf/LessonPlanDocument';
 import { loadWeekPdfModels } from '@/lib/pdf/load';
 import { pdfResponse } from '@/lib/pdf/render';
 import { resolveTermWeek } from '@/lib/term-week';
+import { getActiveSpace } from '@/lib/active-space';
 import { formatWeekRange } from '@/lib/week';
 
 export const runtime = 'nodejs';
@@ -51,13 +52,16 @@ export async function GET(request: Request) {
   const models = await loadWeekPdfModels({ subjectCode, years, month, week });
 
   // Reuse the board's date resolution: the teaching-week number maps to a real
-  // Monday via `term_week`. When that table has no row yet (the current state),
-  // fall back to the curriculum coordinate label so the header is never blank.
+  // Monday via `term_week`, scoped (as the board is) to the viewer's active centre
+  // and the requested years. When no term covers that (centre, year, week) — or the
+  // viewer has no active centre — fall back to the curriculum coordinate label so
+  // the header is never blank.
   const coordinateLabel = `${month} · Week ${week}`;
   let weekLabel = coordinateLabel;
   if (Number.isInteger(weekNo) && weekNo > 0) {
     const supabase = await createClient();
-    const { mondayDate } = await resolveTermWeek(supabase, weekNo);
+    const activeSpace = await getActiveSpace();
+    const { mondayDate } = await resolveTermWeek(supabase, activeSpace?.schoolId ?? null, years, weekNo);
     weekLabel = mondayDate ? formatWeekRange(mondayDate) : `Week ${weekNo} · ${coordinateLabel}`;
   }
 

@@ -160,6 +160,36 @@ function TechniqueRow({
   );
 }
 
+/**
+ * The step-level teacher comment on Check for understanding / Exit ticket. This
+ * sits ALONGSIDE the per-technique note inputs (it does not replace them) and
+ * persists to the block's `note` field. Pink = teacher-editable.
+ */
+function CommentSection({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const t = useTranslations('wizard.linkIt');
+  return (
+    <div className="mt-[14px] border-t border-[#F0EAE1] pt-[14px]">
+      <label className="mb-[7px] block text-[12px] font-bold uppercase tracking-[0.05em] text-neutral-700">
+        {t('commentLabel')}
+      </label>
+      <textarea
+        dir="auto"
+        rows={2}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t('commentPlaceholder')}
+        className={`resize-y ${NOTE_FIELD}`}
+      />
+    </div>
+  );
+}
+
 /** A technique group: a card per selected technique, then the "+ Add" control. */
 function TechniqueGroup({
   activities,
@@ -257,17 +287,29 @@ export function LinkItStep({
             />
           </>
         ) : part === 'cfu' ? (
-          <TechniqueGroup
-            activities={cfuActivities}
-            selected={linkIt.checkForUnderstanding}
-            onChange={(next) => onChange({ ...linkIt, checkForUnderstanding: next })}
-          />
+          <>
+            <TechniqueGroup
+              activities={cfuActivities}
+              selected={linkIt.checkForUnderstanding}
+              onChange={(next) => onChange({ ...linkIt, checkForUnderstanding: next })}
+            />
+            <CommentSection
+              value={linkIt.cfuComment}
+              onChange={(next) => onChange({ ...linkIt, cfuComment: next })}
+            />
+          </>
         ) : (
-          <TechniqueGroup
-            activities={exitActivities}
-            selected={linkIt.exitTicket}
-            onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
-          />
+          <>
+            <TechniqueGroup
+              activities={exitActivities}
+              selected={linkIt.exitTicket}
+              onChange={(next) => onChange({ ...linkIt, exitTicket: next })}
+            />
+            <CommentSection
+              value={linkIt.exitComment}
+              onChange={(next) => onChange({ ...linkIt, exitComment: next })}
+            />
+          </>
         )}
       </div>
     </fieldset>

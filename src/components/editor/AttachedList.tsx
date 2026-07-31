@@ -11,24 +11,30 @@ import { XIcon } from '@/components/resources/icons';
 export function AttachedList({
   resources,
   onRemove,
+  showEmptyState = true,
 }: {
   resources: ResourceWithTags[];
   onRemove: (resourceId: string) => void;
+  /** When false the "none yet" dashed box is suppressed — used where an upload
+   *  drop-zone already serves as the empty-state affordance below this list. */
+  showEmptyState?: boolean;
 }) {
   return (
     <div>
       <div className="mb-[8px] flex items-center gap-[8px]">
         <span className="text-[12px] font-bold uppercase tracking-[0.05em] text-neutral-700">
-          Attached from the bank
+          Attached
         </span>
         <span className="text-[11px] text-text-faint">
           {resources.length === 0 ? 'none yet' : `${resources.length} attached`}
         </span>
       </div>
       {resources.length === 0 ? (
-        <div className="rounded-[10px] border border-dashed border-border-strong px-3 py-[14px] text-center text-[12px] text-text-faint">
-          Add resources from the bank on the right — they appear here.
-        </div>
+        showEmptyState ? (
+          <div className="rounded-[10px] border border-dashed border-border-strong px-3 py-[14px] text-center text-[12px] text-text-faint">
+            Add resources from the bank — they appear here.
+          </div>
+        ) : null
       ) : (
         <div className="flex flex-col gap-[7px]">
           {resources.map((r) => {

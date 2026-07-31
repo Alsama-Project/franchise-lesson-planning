@@ -724,6 +724,11 @@ export function LessonPlanEditor({
                       title={stepHeading('practice')}
                       block={practiceBlock}
                       onPatch={(patch) => patchType('independent_practice', patch)}
+                      context={worksheetContext}
+                      vocabulary={resourceBank.vocabulary}
+                      attachedResources={attachedFor(practiceBlock)}
+                      onAttach={(resource) => attachResource('independent_practice', resource)}
+                      onRemove={(resourceId) => detachResource('independent_practice', resourceId)}
                       showWorksheet={false}
                       locked={locked}
                     />

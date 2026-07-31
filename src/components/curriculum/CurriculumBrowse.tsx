@@ -867,6 +867,22 @@ interface TopicCell {
   rowSpan: number;
 }
 
+/** The period table's columns, in display order. */
+type ColKey = 'period' | 'outcome' | 'skill' | 'topic' | 'resources';
+const COL_ORDER: ColKey[] = ['period', 'outcome', 'skill', 'topic', 'resources'];
+/** Fixed column widths; the chosen flexible column is overridden to `w-auto`. */
+const COL_WIDTH: Record<ColKey, string> = {
+  period: 'w-[80px]',
+  outcome: 'w-auto',
+  skill: 'w-[76px]',
+  topic: 'w-[96px]',
+  resources: 'w-[104px]',
+};
+/** Which surviving column absorbs the slack — the longest-text one present. So a
+ *  weekly-grain subject with no Learning-outcome column gives Resources the width to show
+ *  a readable label instead of wrapping mid-URL. */
+const FLEX_PRIORITY: ColKey[] = ['outcome', 'resources', 'topic', 'skill', 'period'];
+
 function WeekTable({
   rows,
   selected,
@@ -904,23 +920,115 @@ function WeekTable({
     return cells;
   }, [rows]);
 
+  // Whether a column has ANYTHING to show for a given row. Note `outcome` is empty when the
+  // daily text merely repeats the Weekly panel (composed weekly-grain subjects) — so a
+  // column that is only the em-dash repeated down the week reads as empty and is dropped.
+  const hasCell = (key: ColKey, row: BrowseRow): boolean => {
+    switch (key) {
+      case 'period':
+        return row.period != null;
+      case 'outcome':
+        return row.dailyOutcome.trim() !== '' && !isDailyRedundant(row.dailyOutcome, weekly);
+      case 'skill':
+        return row.linguisticSkill.trim() !== '';
+      case 'topic':
+        return row.theme.trim() !== '';
+      case 'resources':
+        return row.resources.length > 0;
+    }
+  };
+
+  // The rendered content for a cell, or null when this row has nothing there (→ em-dash).
+  const cellContent = (key: ColKey, row: BrowseRow): React.ReactNode => {
+    if (!hasCell(key, row)) return null;
+    switch (key) {
+      case 'period':
+        return t('period', { n: formatNumber(row.period as number, locale) });
+      case 'outcome':
+        return <DailyOutcome text={row.dailyOutcome} />;
+      case 'skill':
+        return (
+          <span dir="auto" className={SKILL_TEXT[row.skillKey]}>
+            {row.linguisticSkill}
+          </span>
+        );
+      case 'topic':
+        return (
+          <span dir="auto" className="text-[13px] text-neutral-700">
+            {row.theme}
+          </span>
+        );
+      case 'resources':
+        return <ResourceLines resources={row.resources} />;
+    }
+  };
+
+  // Rule 1: suppress any column that is empty for EVERY row of the displayed week.
+  const visible = COL_ORDER.filter((k) => rows.some((row) => hasCell(k, row)));
+
+  const emptyCell = <span className="text-text-faint">{t('empty')}</span>;
+
+  // Rule 2: one surviving column (or none) ⇒ don't render a table at all. Show the
+  // surviving value in the SAME selectable row treatment so the row stays selectable and
+  // In Focus / "Plan this lesson" keep working off the lifted `selected` index.
+  if (visible.length <= 1) {
+    const only = visible[0];
+    return (
+      <div className="overflow-hidden rounded-[14px] border border-border">
+        {rows.map((row, i) => {
+          const isSelected = i === selected;
+          return (
+            <div
+              key={row.lessonKey}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
+              onClick={() => onSelect(i)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(i);
+                }
+              }}
+              dir="auto"
+              className={cn(
+                'block cursor-pointer border-s-[3px] border-t border-border px-[16px] py-[14px] text-[13.5px] leading-[1.45] text-ink outline-none transition-colors first:border-t-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal/40',
+                isSelected ? 'border-s-teal bg-[#edf5f2]' : 'border-s-transparent',
+              )}
+            >
+              {(only ? cellContent(only, row) : null) ?? emptyCell}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const firstCol = visible[0];
+  const flexCol = FLEX_PRIORITY.find((k) => visible.includes(k));
+  const widthFor = (k: ColKey) => (k === flexCol ? 'w-auto' : COL_WIDTH[k]);
+  const headLabel: Record<ColKey, string> = {
+    period: t('table.period'),
+    outcome: t('table.learningOutcome'),
+    skill: t('table.skill'),
+    topic: t('table.topic'),
+    resources: t('table.resources'),
+  };
+
   return (
     <div className="overflow-hidden rounded-[14px] border border-border">
       {/* `table-fixed` so the column-width hints below actually BIND — under the default
           auto layout an unbreakable resource URL widened its column and starved the
-          outcome column (and forced Arabic to one word per line). The outcome column is
+          outcome column (and forced Arabic to one word per line). The flexible column is
           `w-auto`, so it takes all width the fixed columns don't. */}
       <table className="w-full table-fixed border-collapse text-left">
         <thead>
           <tr className="bg-surface-cream">
-            {/* LEARNING OUTCOME holds the long, most-read text — let it take all the
-                remaining width; the other columns are squeezed to tight fixed widths
-                so the LO column is clearly the widest. */}
-            <Th className="w-[80px]">{t('table.period')}</Th>
-            <Th className="w-auto border-s border-border">{t('table.learningOutcome')}</Th>
-            <Th className="w-[76px] border-s border-border">{t('table.skill')}</Th>
-            <Th className="w-[96px] border-s border-border">{t('table.topic')}</Th>
-            <Th className="w-[104px] border-s border-border">{t('table.resources')}</Th>
+            {visible.map((k) => (
+              <Th key={k} className={cn(widthFor(k), k !== firstCol && 'border-s border-border')}>
+                {headLabel[k]}
+              </Th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -928,9 +1036,12 @@ function WeekTable({
             const isSelected = i === selected;
             const topic = topicCells[i];
             const tint = isSelected ? 'bg-[#edf5f2]' : '';
-            // Drop a daily outcome that merely repeats the Weekly panel above (composed
-            // weekly-grain subjects); IT/English keep their genuine daily outcome.
-            const dailyRedundant = isDailyRedundant(row.dailyOutcome, weekly);
+            // Leading border: the first visible column carries the teal selection accent
+            // (a 3px start-border); the rest carry the plain column divider.
+            const leadBorder = (k: ColKey) =>
+              k === firstCol
+                ? cn('border-s-[3px]', isSelected ? 'border-s-teal' : 'border-s-transparent')
+                : 'border-s border-border';
             return (
               <tr
                 key={row.lessonKey}
@@ -945,64 +1056,43 @@ function WeekTable({
                 aria-selected={isSelected}
                 className="cursor-pointer border-t border-border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal/40"
               >
-                <td
-                  dir="auto"
-                  className={cn(
-                    'border-s-[3px] px-[16px] py-[14px] align-top text-[13.5px] font-semibold text-ink',
-                    isSelected ? 'border-s-teal' : 'border-s-transparent',
-                    tint,
-                  )}
-                >
-                  {row.period != null
-                    ? t('period', { n: formatNumber(row.period, locale) })
-                    : t('empty')}
-                </td>
-                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
-                  {!dailyRedundant && row.dailyOutcome ? (
-                    <DailyOutcome text={row.dailyOutcome} />
-                  ) : (
-                    <span>{t('empty')}</span>
-                  )}
-                </td>
-                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] font-medium', tint)}>
-                  {row.linguisticSkill ? (
-                    <span dir="auto" className={SKILL_TEXT[row.skillKey]}>
-                      {row.linguisticSkill}
-                    </span>
-                  ) : (
-                    <span className="text-text-faint">{t('empty')}</span>
-                  )}
-                </td>
-                {topic ? (
-                  // The merged Topic cell spans its same-Theme run. Vertical dividers
-                  // (border-s here + border-s on Resources) frame its full height and
-                  // the row separators close its top/bottom, so the merge reads as an
-                  // intentional merged cell rather than empty white space. Topic text
-                  // stays de-emphasised (same weight/colour as other cells — no teal,
-                  // no highlight); only borders carry the structure.
-                  <td
-                    dir="auto"
-                    rowSpan={topic.rowSpan}
-                    className="border-s border-border px-[16px] py-[14px] align-top"
-                  >
-                    {topic.theme ? (
-                      <span dir="auto" className="text-[13px] text-neutral-700">
-                        {topic.theme}
-                      </span>
-                    ) : null}
-                  </td>
-                ) : null}
-                <td dir="auto" className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13px] text-neutral-700', tint)}>
-                  {row.resources.length > 0 ? (
-                    // `break-all` (same treatment as FocusCard) so a long raw URL wraps
-                    // inside its capped column instead of forcing the table wide.
-                    <span dir="auto" className="block break-all [overflow-wrap:anywhere]">
-                      {row.resources.map((r) => r.label).join(' · ')}
-                    </span>
-                  ) : (
-                    <span className="text-text-faint">{t('empty')}</span>
-                  )}
-                </td>
+                {visible.map((k) => {
+                  if (k === 'topic') {
+                    // The merged Topic cell spans its same-Theme run: render once per run
+                    // (on the run's first row), and NOTHING on the spanned-over rows.
+                    return topic ? (
+                      <td
+                        key={k}
+                        dir="auto"
+                        rowSpan={topic.rowSpan}
+                        className={cn(leadBorder(k), 'px-[16px] py-[14px] align-top')}
+                      >
+                        {topic.theme ? (
+                          <span dir="auto" className="text-[13px] text-neutral-700">
+                            {topic.theme}
+                          </span>
+                        ) : null}
+                      </td>
+                    ) : null;
+                  }
+                  const base =
+                    k === 'period'
+                      ? 'text-[13.5px] font-semibold text-ink'
+                      : k === 'outcome'
+                        ? 'text-[13.5px] leading-[1.45] text-ink'
+                        : k === 'skill'
+                          ? 'text-[13px] font-medium'
+                          : 'text-[13px] text-neutral-700';
+                  return (
+                    <td
+                      key={k}
+                      dir="auto"
+                      className={cn(leadBorder(k), 'px-[16px] py-[14px] align-top', base, tint)}
+                    >
+                      {cellContent(k, row) ?? emptyCell}
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}
@@ -1118,19 +1208,7 @@ function FocusCard({
             <p className="mt-[16px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500">
               {t('focus.resources')}
             </p>
-            <ul className="mt-[8px] space-y-[8px]">
-              {row.resources.map((r, i) => (
-                <li key={`${r.label}-${i}`} className="flex min-w-0 items-start gap-[9px]">
-                  <ResourceIcon label={r.label} />
-                  {/* Resource labels are often raw URLs (e.g. langeek.co/…) — break
-                      inside the string with break-all so they can't bleed past the
-                      card edge. min-w-0 lets the flex child actually shrink. */}
-                  <span dir="auto" className="min-w-0 break-all text-[13.5px] text-ink">
-                    {r.label}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <ResourceLines resources={row.resources} className="mt-[8px]" />
           </>
         ) : null}
 
@@ -1161,6 +1239,33 @@ function FocusCard({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The resource list treatment shared by the In-Focus card and the period table's
+ * Resources column: one icon-prefixed line per resource, the label wrapping with
+ * `break-all` so a bare URL can't bleed past its container. Single source of truth so the
+ * two surfaces never drift (a bare-URL resource reads the same in both).
+ */
+function ResourceLines({
+  resources,
+  className,
+}: {
+  resources: { label: string; url?: string }[];
+  className?: string;
+}) {
+  return (
+    <ul className={cn('space-y-[8px]', className)}>
+      {resources.map((r, i) => (
+        <li key={`${r.label}-${i}`} className="flex min-w-0 items-start gap-[9px]">
+          <ResourceIcon label={r.label} />
+          <span dir="auto" className="min-w-0 break-all text-[13.5px] text-ink">
+            {r.label}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

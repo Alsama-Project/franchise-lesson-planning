@@ -95,8 +95,6 @@
       "notePlaceholder": "Add a note…",
       "remove": "Remove {name}",
       "techniqueFallback": "Technique",
-      "commentLabel": "Comment",
-      "commentPlaceholder": "Add a comment for this step…",
       "heading": "Link it together"
     },
     "review": {

@@ -2,11 +2,8 @@
 //
 // "Link it together" is the Recap + Check-for-understanding + Exit-ticket section
 // of the editor. Its data lives inside the `lesson_plans.blocks` JSONB array (no
-// dedicated columns): the Recap free-text on the `recap` block's `note`, the
-// chosen techniques on the `cfu` / `exit_ticket` blocks' `techniques` array, and
-// the step-level teacher comment for CfU / Exit ticket on those same blocks'
-// `note` field (unused by the technique model, so free for the comment; mirrors
-// how Recap uses `note`).
+// dedicated columns): the Recap free-text on the `recap` block's `note`, and the
+// chosen techniques on the `cfu` / `exit_ticket` blocks' `techniques` array.
 //
 // There is NO SQL migration: a single normalizer maps ANY plan row — new or
 // legacy — into the in-app `LinkIt` shape at read time. Legacy plans stored a
@@ -21,20 +18,14 @@ import { getBlock, patchBlock } from '@/lib/editor/plan-blocks';
 export interface LinkIt {
   recap: string;
   checkForUnderstanding: LinkItTechnique[];
-  /** Step-level teacher comment on Check for understanding (cfu block `note`). */
-  cfuComment: string;
   exitTicket: LinkItTechnique[];
-  /** Step-level teacher comment on Exit ticket (exit_ticket block `note`). */
-  exitComment: string;
 }
 
 /** The safe default for a plan with no Link-it data. */
 export const EMPTY_LINK_IT: LinkIt = {
   recap: '',
   checkForUnderstanding: [],
-  cfuComment: '',
   exitTicket: [],
-  exitComment: '',
 };
 
 /** A pre-approved technique as the editor knows it (subset of ActivityBankItem). */
@@ -70,29 +61,20 @@ export function normalizeLinkIt(blocks: Block[]): LinkIt {
   return {
     recap: getBlock(blocks, 'recap')?.note ?? '',
     checkForUnderstanding: normalizeCategory(getBlock(blocks, 'cfu')),
-    cfuComment: getBlock(blocks, 'cfu')?.note ?? '',
     exitTicket: normalizeCategory(getBlock(blocks, 'exit_ticket')),
-    exitComment: getBlock(blocks, 'exit_ticket')?.note ?? '',
   };
 }
 
 /**
  * Write a `LinkIt` back onto the blocks array for persistence. Recap goes to the
  * `recap` block's `note`; the technique arrays go to the `cfu` / `exit_ticket`
- * blocks' `techniques`; the step-level CfU / Exit comments go to those blocks'
- * `note`. The legacy `activity_ref` / `activity_title` fields are deliberately
- * untouched (left in place for rollback).
+ * blocks' `techniques`. The legacy `activity_ref` / `activity_title` fields are
+ * deliberately untouched (left in place for rollback).
  */
 export function applyLinkIt(blocks: Block[], linkIt: LinkIt): Block[] {
   let next = patchBlock(blocks, 'recap', { note: linkIt.recap });
-  next = patchBlock(next, 'cfu', {
-    techniques: linkIt.checkForUnderstanding,
-    note: linkIt.cfuComment,
-  });
-  next = patchBlock(next, 'exit_ticket', {
-    techniques: linkIt.exitTicket,
-    note: linkIt.exitComment,
-  });
+  next = patchBlock(next, 'cfu', { techniques: linkIt.checkForUnderstanding });
+  next = patchBlock(next, 'exit_ticket', { techniques: linkIt.exitTicket });
   return next;
 }
 

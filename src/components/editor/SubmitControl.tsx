@@ -100,7 +100,7 @@ export function SubmitControl({
       )}
     >
       {submitting ? <Spinner size={15} /> : null}
-      {submitting ? t('submitting') : t('submitForApproval')}
+      {submitting ? t('submitting') : t('submit')}
     </button>
   );
 }

@@ -435,7 +435,7 @@ function SinglePeriodGrid({ rows, spaced }: { rows: BrowseRow[]; spaced: boolean
         spaced && 'mt-[20px]',
       )}
     >
-      <WeekTable rows={rows} selected={safeIndex} onSelect={setSelected} rowLabel={rowLabel} />
+      <WeekTable rows={rows} selected={safeIndex} onSelect={setSelected} rowLabel={rowLabel} collapsed />
       <div className="lg:sticky lg:top-[80px]">
         <FocusCard row={focusRow} periodLabel={rowLabel(safeIndex)} />
       </div>
@@ -841,6 +841,82 @@ function DailyOutcome({ text }: { text: string }) {
   );
 }
 
+// ── Collapsed single-period outcome cell ─────────────────────────────────────────
+//
+// For a single-period subject (Yoga / Awareness) the collapsed table has no Weekly
+// Outcome panel, so each week's Weekly Knowledge / Skills surface HERE, inside the
+// week's "Learning Outcome" cell, as a labelled stack. Heading colours mirror
+// `OutcomeColumns` (teal Knowledge, rose Skills) so the collapsed and normal views
+// read consistently.
+//
+// These subjects ingest via `composeWeekly`, which synthesises `daily_outcome` FROM the
+// weekly Skills column — so the daily outcome is usually the SAME text as weekly Skills.
+// De-dup on VALUE (never on subject): when the daily outcome equals weekly Skills after
+// whitespace normalisation it is already shown as Skills and is not repeated; only when
+// it genuinely differs is it added as a third "Daily outcome" line. Each of the three is
+// omitted (label included) when empty; if all three are empty the cell renders nothing.
+
+/** Trim + collapse internal whitespace, for the daily-vs-skills value comparison. */
+function normalizeOutcome(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function OutcomeLine({
+  label,
+  labelClassName,
+  children,
+}: {
+  label: string;
+  labelClassName: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className={cn('text-[12px] font-semibold', labelClassName)}>{label}</p>
+      <div className="mt-[4px] text-[13.5px] leading-[1.45] text-ink [overflow-wrap:anywhere]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function WeeklyOutcomeCell({
+  knowledge,
+  skills,
+  daily,
+}: {
+  knowledge: string;
+  skills: string;
+  daily: string;
+}) {
+  const t = useTranslations('curriculum');
+  const hasKnowledge = knowledge.trim() !== '';
+  const hasSkills = skills.trim() !== '';
+  const showDaily = daily.trim() !== '' && normalizeOutcome(daily) !== normalizeOutcome(skills);
+  if (!hasKnowledge && !hasSkills && !showDaily) return null;
+  return (
+    <div className="space-y-[12px]">
+      {hasKnowledge ? (
+        // teal accent = "Knowledge" — matches OutcomeColumns
+        <OutcomeLine label={t('knowledge')} labelClassName="text-teal">
+          <span dir="auto">{knowledge}</span>
+        </OutcomeLine>
+      ) : null}
+      {hasSkills ? (
+        // rose accent = "Skills" — matches OutcomeColumns (NOT the editable-pink #b62a5c)
+        <OutcomeLine label={t('skills')} labelClassName="text-[#b8366b]">
+          <span dir="auto">{skills}</span>
+        </OutcomeLine>
+      ) : null}
+      {showDaily ? (
+        <OutcomeLine label={t('focus.dailyOutcome')} labelClassName="text-neutral-500">
+          <DailyOutcome text={daily} />
+        </OutcomeLine>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Week grid: table + focus card ───────────────────────────────────────────────
 
 function WeekGrid({ data }: { data: CurriculumBrowseData }) {
@@ -872,6 +948,7 @@ function WeekTable({
   selected,
   onSelect,
   rowLabel,
+  collapsed = false,
 }: {
   rows: BrowseRow[];
   selected: number;
@@ -879,6 +956,9 @@ function WeekTable({
   /** Overrides the PERIOD cell label (single-period view uses the week ordinal). When
    *  omitted, the cell reads the row's own DB period — multi-period behaviour, unchanged. */
   rowLabel?: (index: number) => string;
+  /** Collapsed single-period view: the Learning Outcome cell renders each week's own
+   *  Weekly Knowledge / Skills (a labelled stack) instead of just the daily outcome. */
+  collapsed?: boolean;
 }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
@@ -949,7 +1029,13 @@ function WeekTable({
                   {rowLabel ? rowLabel(i) : t('period', { n: formatNumber(row.period, locale) })}
                 </td>
                 <td className={cn('border-s border-border px-[16px] py-[14px] align-top text-[13.5px] leading-[1.45] text-ink', tint)}>
-                  {row.dailyOutcome ? (
+                  {collapsed ? (
+                    <WeeklyOutcomeCell
+                      knowledge={row.weeklyKnowledge}
+                      skills={row.weeklySkills}
+                      daily={row.dailyOutcome}
+                    />
+                  ) : row.dailyOutcome ? (
                     <DailyOutcome text={row.dailyOutcome} />
                   ) : (
                     <span>{t('empty')}</span>

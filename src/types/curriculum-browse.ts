@@ -53,6 +53,16 @@ export interface BrowseRow {
   weekday: number;
   /** Daily learning outcome (stem-cleaned). May be empty. */
   dailyOutcome: string;
+  /**
+   * This row's own Weekly Knowledge / Skills learning outcome (stem-cleaned; empty when
+   * absent). Carried PER ROW so the collapsed single-period table can show each week's
+   * own weekly outcomes — every collapsed row is a distinct week, so these must not come
+   * from `CurriculumBrowseData.weekly` (which holds only the single resolved-coordinate
+   * week). Present on every row but rendered only by the collapsed view; the normal
+   * daily-shape view reads its weekly outcomes from `CurriculumBrowseData.weekly`.
+   */
+  weeklyKnowledge: string;
+  weeklySkills: string;
   /** Raw linguistic-skill label as stored (drives the pill text). */
   linguisticSkill: string;
   /** Normalised macro-skill key — picks the pill colour. */

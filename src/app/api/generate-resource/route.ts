@@ -45,6 +45,12 @@ import {
  * When `current_content` + `refinement` are both present the route refines the
  * provided content instead of generating fresh, and returns the full updated resource.
  *
+ * Optional `lesson_block` (layer 6 — the teacher's lesson plan for this block):
+ *   { "teacher_does"?: string, "students_do"?: string, "phase"?: string | null, "note"?: string }
+ * Sanitised and gated: any subset may be present; an absent or all-empty block
+ * simply omits the layer-6 section. `subject` and `teacher_prompt` remain the
+ * only hard-required fields.
+ *
  * Requires `ANTHROPIC_API_KEY_RESOURCES` in the environment (locally and on
  * Vercel); this is the resources-only Anthropic key, separate from SMARTT checking.
  */
@@ -62,6 +68,7 @@ interface GenerateResourceBody {
   teacher_prompt?: unknown;
   refinement?: unknown;
   current_content?: unknown;
+  lesson_block?: unknown;
 }
 
 const LESSON_STAGES: readonly LessonStage[] = ['new_content', 'independent_practice'];
@@ -69,6 +76,23 @@ const LESSON_STAGES: readonly LessonStage[] = ['new_content', 'independent_pract
 /** Returns true for a present, non-empty string. */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Coerce an unknown `lesson_block` (layer 6 — the teacher's lesson plan) into the
+ * typed, sanitised shape: only the non-empty `teacher_does` / `students_do` /
+ * `phase` / `note` fields survive. Returns undefined when absent or carrying no
+ * usable field, so the generator drops the layer-6 section entirely.
+ */
+function parseLessonBlock(value: unknown): GenerateResourceContext['lesson_block'] | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  const block: NonNullable<GenerateResourceContext['lesson_block']> = {};
+  if (isNonEmptyString(v.teacher_does)) block.teacher_does = v.teacher_does;
+  if (isNonEmptyString(v.students_do)) block.students_do = v.students_do;
+  if (isNonEmptyString(v.phase)) block.phase = v.phase;
+  if (isNonEmptyString(v.note)) block.note = v.note;
+  return Object.keys(block).length > 0 ? block : undefined;
 }
 
 export async function POST(request: NextRequest) {
@@ -145,6 +169,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (
+    body.lesson_block !== undefined &&
+    (typeof body.lesson_block !== 'object' || body.lesson_block === null || Array.isArray(body.lesson_block))
+  ) {
+    return NextResponse.json(
+      { error: 'Field "lesson_block" must be an object when provided.' },
+      { status: 400 },
+    );
+  }
+
+  // Layer 6 — the teacher's lesson plan for this block; sanitised, optional.
+  const lessonBlock = parseLessonBlock(body.lesson_block);
+
   // Fold each field in only when it carries a real value, so the generator sees a
   // clean context and omits the corresponding prompt line for absent anchors.
   const context: GenerateResourceContext = {
@@ -161,6 +198,7 @@ export async function POST(request: NextRequest) {
     ...(isNonEmptyString(body.monthly_lo) ? { monthly_lo: body.monthly_lo } : {}),
     ...(typeof body.refinement === 'string' ? { refinement: body.refinement } : {}),
     ...(typeof body.current_content === 'string' ? { current_content: body.current_content } : {}),
+    ...(lessonBlock ? { lesson_block: lessonBlock } : {}),
   };
 
   try {

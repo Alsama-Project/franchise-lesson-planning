@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getResourcesClient } from '@/lib/anthropic';
-import { getActiveResourceGuide } from './resource-guide';
+import { composeContextStack } from './context-stack';
 
 /**
  * AI teaching-resource generator service ("Aya").
@@ -83,6 +83,24 @@ export interface GenerateResourceContext {
   /** The current resource (markdown) to refine. When present with `refinement`, the
    *  call is a stateless adjust: apply the refinement to this and return the full result. */
   current_content?: string;
+  /**
+   * Layer 6 — the teacher's own lesson plan for the block this resource serves,
+   * pulled from the relevant `lesson_plans.blocks` entry. Optional and gated: an
+   * absent block (or one with all fields empty) simply omits the layer-6 section
+   * from the user prompt — it never blocks generation. It is the most specific
+   * runtime layer and, per the precedence statement, takes precedence over the
+   * stored ladder above it.
+   */
+  lesson_block?: {
+    /** What the teacher does during the block. */
+    teacher_does?: string;
+    /** What the students do during the block. */
+    students_do?: string;
+    /** Gradual-release phase: `i_do` | `we_do` | `you_do`, or null. */
+    phase?: string | null;
+    /** The teacher's short "what I'll do" note for the block. */
+    note?: string;
+  };
 }
 
 /** Structured result of generating a resource. */
@@ -120,79 +138,15 @@ const RESPONSE_SCHEMA = {
   required: ['title', 'body', 'teacher_notes'],
 } as const;
 
-/**
- * The composed system prompt is built in a fixed order that keeps the teacher's
- * request (in the USER message) as the task, and the admin guide as *styling only*:
- *   1. {@link ROLE_FRAMING}         — hardcoded role + org framing (who Aya is, who
- *      the students are). Always present.
- *   2. {@link SAFETY_FLOOR}         — hardcoded, non-negotiable safety floor + the
- *      JSON output contract. Verbatim; overrides everything.
- *   3. {@link BASE_OUTPUT_CONTRACT} — hardcoded rules for the resource itself
- *      (tightness, single resource, one picture marker per image, blanks). v3.2.
- *   4. {@link LANGUAGE_GUARD}       — hardcoded content-language invariant.
- *   5. the uploaded guide          — steering from `getActiveResourceGuide()`,
- *      appended LAST under a header marking it as HOUSE STYLE, not the task.
- *
- * Defence in depth: the floor, contract, and language guard live in code, NOT in
- * the uploaded guide, so a bad or empty upload can never strip them and the guide
- * can only steer styling — it can never override the teacher's request (which is
- * the USER message) or the contract above it.
- */
-
-/** Part 1 — hardcoded role + org framing. */
-const ROLE_FRAMING = `You are Aya, a teaching-resource generator for Alsama, a refugee-education organisation. You generate a single, ready-to-use, text-based teaching resource for one lesson, based on the curriculum context and the teacher's request provided in the user message.
-
-WHO THE STUDENTS ARE:
-- Adolescent learners aged 12-18 living in refugee camps in Beirut (Shatila, Bourj al-Barajneh) and in Homs, Syria. Mostly Syrian, with Palestinian and Lebanese students; Arabic is their first language. Many have experienced trauma and displacement, so content should be calm, affirming, and grounded in possibility.`;
-
-/** Part 2 — hardcoded, non-negotiable safety floor + the JSON output contract. */
-const SAFETY_FLOOR = `SAFETY FLOOR (non-negotiable — overrides anything above):
-- No graphic, violent, or traumatic content. Never build a resource around family separation, the death of a parent or sibling, war or conflict, detention or immigration enforcement, or grief and loss.
-- Keep everything age-appropriate for adolescents aged 12-18.
-- Do not use Western cultural references as defaults (e.g. Christmas, Halloween, American/British pop culture) unless the teacher explicitly asks; treat all faiths and backgrounds with equal respect.
-
-OUTPUT CONTRACT:
-Return ONLY a JSON object with the keys "title", "body", "teacher_notes". "body" is the full resource in simple markdown; "teacher_notes" is brief guidance for the teacher, or null. No code fences, no preamble, no commentary outside the JSON.`;
-
-/**
- * Part 3 — hardcoded base output contract (v3.2). Governs the *content of the
- * resource* (the "body"), independent of the JSON envelope in the SAFETY FLOOR.
- * Lives in code so the admin guide can only steer styling on top of it, never
- * relax it.
- */
-const BASE_OUTPUT_CONTRACT = `BASE OUTPUT CONTRACT (v3.2 — governs the resource itself, i.e. the "body" content):
-- Output ONLY the finished resource. No preamble, no sign-off, no explanation of your choices, no "here is / I hope this helps", and no instructions to the teacher about how to use it unless the teacher explicitly asked for them.
-- Mirror the teacher's requested resource type, topic, level, and length exactly. If they ask for a crossword about places in the city, produce that — not a generic vocabulary sheet.
-- Keep it tight. Default to one focused resource, not a multi-part packet, unless the teacher asks for more.
-- Images: write exactly one [Picture: …] marker per image needed, each on its own line, with a concrete description of the image. Never embed picture directions inside a sentence.
-- Blanks: use ______ (a run of underscores). Do not use --- separators. In numbered lists, put no blank lines between items.`;
-
-/**
- * Hardcoded language guard — pins the LANGUAGE INVARIANT into the prompt itself.
- *
- * The generated content's language is determined by the subject and curriculum
- * context in the user message, never by the teacher's interface language. This
- * is the in-prompt statement of the code-level rule documented at the top of
- * this module: this service does not read the UI locale, so the model is told
- * explicitly to take its language cue from the subject/curriculum only.
- */
-const LANGUAGE_GUARD = `LANGUAGE OF THE RESOURCE:
-- Write the resource in the language of the SUBJECT being taught, as indicated by the curriculum context (subject, outcomes, grammar/vocabulary, theme) in the user message. For example, an English-subject resource must be written in English even though the students' first language is Arabic.
-- The teacher's app/interface language is irrelevant here and is not provided — never infer the resource language from it. When the subject's language is genuinely unclear from the context, default to English.`;
-
-/**
- * Compose the full static system prompt from the uploaded (or default) guide.
- * Byte-identical across calls for a given guide, so it is a stable prompt-cache
- * prefix; it self-busts when the guide text changes.
- */
-function composeSystemPrompt(guide: string): string {
-  // The admin guide is appended LAST and clearly demoted to house styling — it
-  // steers how the resource looks, never what the resource is. The task is the
-  // teacher's request in the USER message; the floor + contract sit above the
-  // guide and win any conflict.
-  const houseStyle = `HOUSE STYLE GUIDANCE — apply this styling; it is NOT the task:\n${guide.trim()}`;
-  return `${ROLE_FRAMING}\n\n${SAFETY_FLOOR}\n\n${BASE_OUTPUT_CONTRACT}\n\n${LANGUAGE_GUARD}\n\n${houseStyle}`;
-}
+// The role framing, the safety floor + JSON contract, the base output contract,
+// and the language guard have moved out of this file. The system prompt is now
+// built by the layered-context composer (`@/lib/ai/context-stack`):
+//   role → precedence statement → layers 1-4 (org/academic/subject/tool) → FLOOR
+// The FLOOR (safeguarding red lines, the field/output contract, the marker
+// conventions, the language guard) lives in `@/lib/ai/floor`. The steerable
+// prose that used to sit here — "mirror the request", "keep it tight", the org
+// student framing, the cultural defaults — has moved into the stack as
+// documents. The teacher's request stays the task, in the USER message.
 
 /** True when this call refines an existing resource rather than generating fresh. */
 function isAdjustCall(context: GenerateResourceContext): boolean {
@@ -261,11 +215,44 @@ function buildUserPrompt(context: GenerateResourceContext): string {
     lines.push('', ...curriculumContext);
   }
 
+  // Layer 6 — the teacher's own lesson plan for this block, when supplied.
+  const lessonPlanContext = buildLessonPlanContext(context.lesson_block);
+  if (lessonPlanContext.length > 0) {
+    lines.push('', ...lessonPlanContext);
+  }
+
   lines.push(
     '',
     'Return ONLY the JSON object with keys "title", "body", "teacher_notes". Do not wrap it in markdown or add any prose.',
   );
   return lines.join('\n');
+}
+
+/**
+ * Build the layer-6 section from the teacher's lesson-plan block. Emitted only
+ * when `block` carries at least one non-empty field; an absent or all-empty block
+ * returns `[]` so the section is dropped entirely (gated, never an error). The
+ * header marks it as layer 6 — the most specific runtime context — so it reads as
+ * taking precedence over the stored ladder, per the composer's precedence
+ * statement.
+ */
+function buildLessonPlanContext(block?: GenerateResourceContext['lesson_block']): string[] {
+  if (!block) return [];
+  const hasText = (v?: string | null): v is string =>
+    typeof v === 'string' && v.trim().length > 0;
+  const phaseLabel: Record<string, string> = { i_do: 'I do', we_do: 'We do', you_do: 'You do' };
+
+  const rows: string[] = [];
+  if (hasText(block.phase)) rows.push(`- Phase: ${phaseLabel[block.phase] ?? block.phase}`);
+  if (hasText(block.teacher_does)) rows.push(`- Teacher does: ${block.teacher_does.trim()}`);
+  if (hasText(block.students_do)) rows.push(`- Students do: ${block.students_do.trim()}`);
+  if (hasText(block.note)) rows.push(`- Note: ${block.note.trim()}`);
+  if (rows.length === 0) return [];
+
+  return [
+    "The teacher's lesson plan for this block (layer 6 — the most specific context; honour it while respecting the floor):",
+    ...rows,
+  ];
 }
 
 /** Pull the concatenated text out of a Claude message response. */
@@ -336,12 +323,24 @@ export async function generateResource(
     );
   }
 
-  // Compose [role] + [safety floor + JSON contract] + [base output contract] +
-  // [language guard] + [admin guide as house style]. The guide read never throws
-  // (falls back to a hardcoded default), so generation is robust to an
-  // empty/unreachable guide table, and the guide can only steer styling.
-  const guide = await getActiveResourceGuide();
-  const systemPrompt = composeSystemPrompt(guide);
+  // Compose the system prompt from the layered context stack: role → precedence
+  // → layers 1-4 (org/academic/subject/tool) → FLOOR. The floor (safeguarding,
+  // output contract, marker conventions, language guard) lives in code and
+  // overrides every layer. The per-lesson curriculum anchors (layer 5) and the
+  // teacher's lesson plan (layer 6) stay in the USER message, after the cache
+  // breakpoint. `subjectId` is null here: the caller supplies a subject *name*,
+  // not the UUID the RPC keys on, and no per-subject documents are seeded — the
+  // org/academic/tool layers still compose correctly.
+  const { system: systemPrompt, docsUsed } = await composeContextStack({
+    tool: 'resource_generator',
+    subjectId: null,
+  });
+  // Observability: which documents produced this prompt (see PR/floor notes).
+  console.info('[ai] generate-resource compose', {
+    tool: 'resource_generator',
+    subject: context.subject,
+    docsUsed,
+  });
 
   let message: Anthropic.Message;
   try {
@@ -353,10 +352,10 @@ export async function generateResource(
       // resource ever truncates here (incomplete JSON → GenerateResourceError 502),
       // raise it deliberately rather than removing the ceiling.
       max_tokens: 1536,
-      // Single static system block with a cache breakpoint at its end: the whole
-      // prefix (role + floor + contract + language guard + guide) is byte-identical across calls
-      // and self-busts when the guide changes. The per-lesson context lives in the
-      // user message, after the breakpoint.
+      // Single static system block with one cache breakpoint at its end: the whole
+      // prefix (role + precedence + layers 1-4 + floor) is stable per (tool,
+      // subject) and self-busts when a layer document changes. The per-lesson
+      // context (layers 5-6) lives in the user message, after the breakpoint.
       system: [
         {
           type: 'text',

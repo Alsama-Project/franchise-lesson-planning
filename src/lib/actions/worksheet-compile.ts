@@ -33,11 +33,14 @@
 // editor's debounce, but compile no longer READS that column — its base is always
 // the freshly-fetched scaffold (pristine `markdownToDoc` output, never carrying a
 // `wsCompiled` tag). So two consecutive compiles over unchanged rows produce
-// byte-identical output by construction. Every node compile inserts is still
-// tagged with the `wsCompiled` attr (see `tagCompiled`), and the base is still run
-// through `stripCompiled` — defensive and preserving the marker contract: the tag
-// lives only in the JSONB, the editor schema doesn't declare it, so read-only/
-// print/PDF renders drop it harmlessly.
+// byte-identical output by construction, and compile's convergence no longer
+// depends on the tag surviving an editor round trip at all. Every node compile
+// inserts is still tagged with the `wsCompiled` attr (see `tagCompiled` in
+// worksheet-assemble.ts), and the base is still run through `stripCompiled` —
+// defensive, and preserving the marker contract. The tag is declared by the
+// `WsCompiledMarker` editor extension so it survives `getJSON()` (default `false`,
+// `renderHTML` → `{}`), meaning it round-trips in the JSONB yet still emits nothing
+// to read-only/print/PDF output.
 
 import { createClient } from '@/lib/supabase/server';
 import { readWorksheetScaffoldMarkdown, scaffoldDocContent } from '@/lib/ai/worksheet-shared';

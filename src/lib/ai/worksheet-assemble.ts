@@ -10,7 +10,10 @@
 import type { WorksheetV3 } from '@/types/lesson';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
- *  it. A plain JSON attribute — no schema/migration change; the editor ignores it. */
+ *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
+ *  editor extension declares it (default `false`, `renderHTML` → `{}`) so it
+ *  survives a `getJSON()` round trip yet emits nothing to printed HTML / PDF. Kept
+ *  in sync with that extension's attribute name by hand. */
 export const COMPILED_ATTR = 'wsCompiled';
 
 /** Tag one top-level node as compile-inserted (idempotency marker). */

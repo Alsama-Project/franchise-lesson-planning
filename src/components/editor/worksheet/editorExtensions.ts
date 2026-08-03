@@ -11,6 +11,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import type { AnyExtension } from '@tiptap/core';
 import { ResizableImage, type FloatImageInfo } from './resizableImage';
 import { FontSize } from './fontSize';
+import { WsCompiledMarker } from './doc/nodes/WsCompiledMarker';
 
 export interface WorksheetEditorOptions {
   /** Called when the teacher converts an inline image to a free floating one. */
@@ -32,5 +33,9 @@ export function worksheetEditorExtensions(opts: WorksheetEditorOptions = {}): An
     FontSize,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ResizableImage.configure({ inline: false, allowBase64: false, onFloatImage: opts.onFloatImage }),
+    // Declares the compile idempotency marker (`wsCompiled`) so a compiled doc
+    // serialised through this bundle (e.g. the print/`generateHTML` path) keeps its
+    // tag. Declare-only, emits nothing to the DOM. See doc/nodes/WsCompiledMarker.
+    WsCompiledMarker,
   ];
 }

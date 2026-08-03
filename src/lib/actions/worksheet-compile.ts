@@ -20,6 +20,18 @@
 //
 // "Exercise N" is never persisted and never printed — it is a render-time label
 // only, so nothing here writes it into the doc.
+//
+// IDEMPOTENCY: compile is fill-not-replace against `lesson_plans.worksheet`, and
+// its OWN output is persisted back into that same column — so the next run reads
+// the already-filled doc as its "template". Without care that re-inserts every
+// exercise again and the doc grows unboundedly. To converge, every node compile
+// inserts is tagged with the `wsCompiled` attr (see `tagCompiled`), and the top of
+// each run STRIPS those tagged nodes back out (`stripCompiled`), recovering the
+// bare scaffold before filling. Repeated compiles over unchanged rows therefore
+// produce byte-identical output. The tag lives only in the JSONB; the editor
+// schema doesn't declare it, so read-only/print/PDF renders drop it harmlessly,
+// and it survives in the stored column (the pane renders rows, never re-serialising
+// the doc through tiptap) so the NEXT compile can find and strip it.
 
 import { createClient } from '@/lib/supabase/server';
 import { headingText, worksheetV3Doc } from '@/lib/ai/worksheet-shared';
@@ -30,6 +42,32 @@ interface ExerciseRow {
   position: number;
   body_doc: WorksheetDoc | null;
   generation: WorksheetExerciseGeneration | null;
+}
+
+/** The marker attr stamped on every node compile inserts, so a later run can strip
+ *  it. A plain JSON attribute — no schema/migration change; the editor ignores it. */
+const COMPILED_ATTR = 'wsCompiled';
+
+/** Tag one top-level node as compile-inserted (idempotency marker). */
+function tagCompiled(node: unknown): unknown {
+  if (!node || typeof node !== 'object') return node;
+  const n = node as Record<string, unknown>;
+  const attrs = n.attrs && typeof n.attrs === 'object' ? (n.attrs as Record<string, unknown>) : {};
+  return { ...n, attrs: { ...attrs, [COMPILED_ATTR]: true } };
+}
+
+/** True when a node was inserted by a previous compile run. */
+function isCompiled(node: unknown): boolean {
+  const attrs = (node as { attrs?: unknown })?.attrs;
+  return (
+    !!attrs && typeof attrs === 'object' && (attrs as Record<string, unknown>)[COMPILED_ATTR] === true
+  );
+}
+
+/** Recover the bare scaffold from a (possibly already-filled) template doc's content
+ *  by dropping every node a previous compile inserted. */
+function stripCompiled(content: unknown[]): unknown[] {
+  return content.filter((n) => !isCompiled(n));
 }
 
 /** The flowing nodes of an exercise's body_doc, or [] when it carries none. */
@@ -68,9 +106,11 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
     .filter((e) => e.nodes.length > 0);
 
   // Base content: the seeded template's doc (a deep clone so we never mutate the
-  // stored plan), or empty when there is no v3 template.
+  // stored plan), or empty when there is no v3 template. STRIP any nodes a previous
+  // compile inserted first, so a re-compile re-fills the bare scaffold rather than
+  // stacking a second copy of every exercise (idempotency — see the file header).
   const baseContent: unknown[] = templateDoc
-    ? structuredClone(Array.isArray(templateDoc.content) ? templateDoc.content : [])
+    ? stripCompiled(structuredClone(Array.isArray(templateDoc.content) ? templateDoc.content : []))
     : [];
 
   // Which anchors correspond to a real heading in the template.
@@ -85,7 +125,8 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   const byAnchor = new Map<string, unknown[][]>();
   const appended: unknown[][] = [];
   for (const ex of exercises) {
-    const nodes = structuredClone(ex.nodes);
+    // Tag every inserted node so the NEXT compile can strip it back out (idempotency).
+    const nodes = structuredClone(ex.nodes).map(tagCompiled);
     if (ex.anchor && headingTexts.has(ex.anchor)) {
       const list = byAnchor.get(ex.anchor) ?? [];
       list.push(nodes);

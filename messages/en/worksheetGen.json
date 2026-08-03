@@ -1,0 +1,40 @@
+{
+  "worksheetGen": {
+    "generate": "Generate worksheet",
+    "regenerateAll": "Regenerate all",
+    "filling": "Aya is filling your worksheet",
+    "print": "Print",
+    "regenerate": "Regenerate",
+    "edit": "Edit",
+    "doneEditing": "Done",
+    "tryAgain": "Try again",
+    "failed": "This exercise didn’t come back.",
+    "editedByYou": "Edited by you",
+    "origin": {
+      "generated": "New",
+      "reused": "Reused from bank",
+      "adapted": "Adapted from bank"
+    },
+    "image": {
+      "regenerate": "Regenerate image",
+      "replace": "Replace image",
+      "replaceDeferred": "Replacing an image with your own arrives with image rendering, in the next update.",
+      "tryAgain": "Try again",
+      "count": "{n} of {cap} images"
+    },
+    "confirm": {
+      "keep": "Keep",
+      "regenerate": "Regenerate",
+      "regenerateAnyway": "Regenerate anyway",
+      "allTitle": "Regenerate the whole worksheet?",
+      "allBody": "This plans a fresh set of exercises and replaces every one on the sheet.",
+      "allEditedBody": "Some exercises carry your edits. Regenerating plans a fresh set and replaces the whole sheet — your edits will be lost.",
+      "cardTitle": "Regenerate this exercise?",
+      "cardEditedBody": "This exercise carries your edits. Regenerating replaces its content — your edits will be lost."
+    },
+    "partial": {
+      "someReady": "{ready} of {total} exercises ready.",
+      "carryOn": "You can keep working; the rest can be regenerated."
+    }
+  }
+}

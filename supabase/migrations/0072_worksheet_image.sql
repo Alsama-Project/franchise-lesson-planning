@@ -61,6 +61,19 @@ create table if not exists public.worksheet_image_use (
   created_at            timestamptz not null default now()
 );
 
+-- Self-heal: if worksheet_image_use was created by the SUPERSEDED 0069 (which had
+-- no worksheet_exercise_id), the `create table if not exists` above is a no-op, so
+-- the column must be added idempotently. The table is empty (the feature has never
+-- run — the route cannot insert without this column), so NOT NULL is safe. On a
+-- fresh apply the column already exists and this is a no-op.
+alter table public.worksheet_image_use
+  add column if not exists worksheet_exercise_id uuid not null
+    references public.worksheet_exercise (id) on delete cascade;
+
+-- Drop the superseded 0069 index name if it lingers (it indexed
+-- (lesson_plan_id, slot_id, created_at desc); replaced by the exercise-scoped one).
+drop index if exists public.worksheet_image_use_slot_idx;
+
 -- Lesson-plan-scoped reads (kept from the original spec).
 create index if not exists worksheet_image_use_lesson_plan_idx
   on public.worksheet_image_use (lesson_plan_id);

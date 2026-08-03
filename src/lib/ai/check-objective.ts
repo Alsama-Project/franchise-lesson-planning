@@ -1,9 +1,9 @@
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
-import { getLocale } from 'next-intl/server';
 import { getSmarttClient } from '@/lib/anthropic';
 import { composeContextStack, logAiCompose } from '@/lib/ai/context-stack';
 import type { SubjectResolution } from '@/lib/ai/subject-access';
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
 
 /**
@@ -63,6 +63,17 @@ export interface CheckSubject {
   subjectId: string | null;
   subjectName: string | null;
   resolution: SubjectResolution;
+  /**
+   * The language the feedback must be WRITTEN in — the subject's
+   * `content_language` when the subject resolved, else English. Resolved at the
+   * route (never from the UI locale), so this module adds no subject lookup.
+   */
+  contentLanguage: WorksheetContentLanguage;
+  /**
+   * How {@link contentLanguage} was chosen: `subject` = read from the resolved
+   * subject; `fallback` = subject absent/rejected, English used and recorded.
+   */
+  languageResolution: 'subject' | 'fallback';
 }
 
 /** How a single SMARTT letter scored. */
@@ -250,8 +261,9 @@ export interface SmarttPillFrame {
  *
  * The request body is byte-identical to the non-streaming call it replaces —
  * same model, `max_tokens`, cached static system prefix (role framing + active
- * guide + FLOOR, + Arabic directive when locale is `ar`), and `json_schema`
- * output config — so prompt caching carries over untouched. The caller iterates
+ * guide + FLOOR, + Arabic directive when the SUBJECT's content language is `ar`),
+ * and `json_schema` output config — so prompt caching carries over untouched. The
+ * cache prefix is stable per (guide + content language). The caller iterates
  * the returned stream for text deltas (see {@link createLetterScanner}) and then
  * validates `stream.finalMessage()` via {@link finalizeStreamedCheck}.
  *
@@ -290,17 +302,20 @@ export async function openObjectiveCheckStream(
   // is the route-validated UUID (or null when absent / rejected), so per-subject
   // layers steer only when the caller belongs to that subject.
   //
-  // This is UI-facing feedback, so its language follows the active UI locale,
-  // resolved server-side from the NEXT_LOCALE cookie via next-intl; only the
-  // floor's Arabic directive (locale 'ar') changes the feedback text.
-  const locale = await getLocale();
+  // Feedback language follows the SUBJECT's content language, resolved at the
+  // route from `subjects.content_language` (never the UI locale) and threaded in
+  // via `subject.contentLanguage`; only the floor's Arabic directive (content
+  // language 'ar') changes the feedback text. When the subject did not resolve,
+  // the route falls back to English and records it (see `languageResolution`).
   const subjectId = subject?.subjectId ?? null;
+  const contentLanguage = subject?.contentLanguage ?? 'en';
   const { system: systemPrompt, docsUsed } = await composeContextStack({
     tool: 'smartt_checker',
     subjectId,
-    locale,
+    contentLanguage,
   });
-  // Observability: docsUsed + how the subject was resolved, on one record.
+  // Observability: docsUsed + how the subject AND the feedback language were
+  // resolved, on one record — so a fallback to English is queryable, not silent.
   logAiCompose({
     route: '/api/check-objective',
     tool: 'smartt_checker',
@@ -308,6 +323,8 @@ export async function openObjectiveCheckStream(
     subjectId,
     subjectResolution: subject?.resolution ?? 'absent',
     docsUsed,
+    feedbackLanguage: contentLanguage,
+    languageResolution: subject?.languageResolution ?? 'fallback',
   });
 
   return client.messages.stream({
@@ -321,8 +338,8 @@ export async function openObjectiveCheckStream(
     temperature: 0,
     // Single static system block with a cache breakpoint at its end — cloned
     // from generate-resource. The whole prefix is byte-identical across calls for
-    // a given guide+locale, so it is a stable prompt-cache prefix; it self-busts
-    // when the guide text changes. The per-objective text lives in the user
+    // a given guide + content language, so it is a stable prompt-cache prefix; it
+    // self-busts when the guide text changes. The per-objective text lives in the user
     // message, after the breakpoint.
     system: [
       {

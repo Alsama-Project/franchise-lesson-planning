@@ -64,9 +64,26 @@ function layoutCss(align: ImageAlign, float: ImageFloat, width: number | null): 
   return css.join(';');
 }
 
+/**
+ * The URL an image node renders from. A generated image carries a `storagePath`
+ * (an object path in the private bucket) and is served through the auth'd,
+ * re-signing GET /api/worksheet-image route — NEVER a persisted signed URL,
+ * which would expire. A teacher-uploaded image has no `storagePath`, so its
+ * existing `src` (a long-lived signed URL) passes through unchanged.
+ *
+ * Single-sourced here so the NodeView and the static renderHTML (the print /
+ * generateHTML path) resolve identically and cannot drift.
+ */
+export function resolveImageSrc(src: string, storagePath: string | null): string {
+  return storagePath
+    ? `/api/worksheet-image?storage_path=${encodeURIComponent(storagePath)}`
+    : src;
+}
+
 function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, extension }: NodeViewProps) {
   const t = useTranslations('worksheet');
   const src = node.attrs.src as string;
+  const storagePath = (node.attrs.storagePath as string | null) ?? null;
   const alt = (node.attrs.alt as string | null) ?? '';
   const title = (node.attrs.title as string | null) ?? undefined;
   const width = (node.attrs.width as number | null) ?? null;
@@ -138,7 +155,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
-        src={src}
+        src={resolveImageSrc(src, storagePath)}
         alt={alt}
         title={title}
         draggable={false}
@@ -410,6 +427,24 @@ export const ResizableImage = Image.extend<{
         parseHTML: (el) => (el as HTMLElement).getAttribute('data-float') || 'none',
         renderHTML: () => ({}),
       },
+      // The object path of a GENERATED image in the private bucket. When set, both
+      // render paths serve through /api/worksheet-image (see resolveImageSrc) instead
+      // of the node's `src`. Round-trips via data-storage-path. Null for uploads.
+      storagePath: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute('data-storage-path') || null,
+        renderHTML: (attrs) =>
+          attrs.storagePath ? { 'data-storage-path': attrs.storagePath as string } : {},
+      },
+      // The image slot this node is bound to. NOT read anywhere in this branch — it
+      // exists so the UI workstream can wire a Regenerate control to a slot without
+      // reopening this file. Round-trips via data-slot-id.
+      slotId: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute('data-slot-id') || null,
+        renderHTML: (attrs) =>
+          attrs.slotId ? { 'data-slot-id': attrs.slotId as string } : {},
+      },
     };
   },
 
@@ -417,9 +452,14 @@ export const ResizableImage = Image.extend<{
     const align = ((node.attrs.align as ImageAlign | null) ?? 'center') as ImageAlign;
     const float = ((node.attrs.float as ImageFloat | null) ?? 'none') as ImageFloat;
     const width = (node.attrs.width as number | null) ?? null;
+    const storagePath = (node.attrs.storagePath as string | null) ?? null;
     return [
       'img',
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
+        // storagePath wins when set (served via the re-signing route); otherwise the
+        // node's own src passes through unchanged. Overrides the src that the parent
+        // Image attribute placed into HTMLAttributes.
+        src: resolveImageSrc((node.attrs.src as string) ?? '', storagePath),
         style: layoutCss(align, float, width),
         'data-align': align,
         'data-float': float,

@@ -4,19 +4,13 @@
 -- This file USES the 'safeguarding' enum value (File 1), so it must not share a
 -- transaction with the ALTER TYPE that added it — hence three separate executions.
 --
--- ⚠️ DO NOT RUN THIS FILE UNTIL SECTION 3 IS FILLED IN. The redefinition of
--- get_active_context_stack is intentionally left as a placeholder: its body must be
--- the LIVE definition (dumped via pg_get_functiondef), NOT re-authored from the
--- migration tree, which carries duplicate 0066_* files. George supplies the live
--- body; CC slots it in with the one-line safeguarding exclusion added. See PR notes.
---
 -- Contents:
 --   1. Amend the ai_context_doc_scope CHECK to admit layer = 'safeguarding'.
 --   2. NEW get_active_safeguarding_doc(tool) — the security-definer read the
 --      composer uses (the ai_context_doc tables are admin-only under RLS, so a
 --      teacher reaches the row only through a definer RPC, exactly as for the
 --      steerable stack).
---   3. [PLACEHOLDER] Amend get_active_context_stack to EXCLUDE safeguarding.
+--   3. get_active_context_stack is INTENTIONALLY NOT TOUCHED — see the note in §3.
 --   4. A BEFORE UPDATE trigger blocking the archive of the last active safeguarding
 --      doc for a tool.
 --
@@ -79,16 +73,27 @@ revoke execute on function public.get_active_safeguarding_doc(public.ai_context_
 grant  execute on function public.get_active_safeguarding_doc(public.ai_context_tool) to authenticated;
 
 
--- ── 3. [PLACEHOLDER] Amend get_active_context_stack to EXCLUDE safeguarding ───────
--- DO NOT invent this body. George pastes the LIVE definition here (pg_get_functiondef),
--- and CC adds a single guard so a layer = 'safeguarding' row can never be returned —
--- e.g. `and d.layer <> 'safeguarding'` in the WHERE clause (belt-and-braces; the
--- existing WHERE already matches only org/academic/subject/tool, so a safeguarding
--- row falls through today, but the exclusion is made explicit and permanent here).
--- Until this section is present, DO NOT RUN File 2.
+-- ── 3. get_active_context_stack is NOT amended — safeguarding is excluded by ──────
+-- construction, so there is nothing to change here.
 --
---   create or replace function public.get_active_context_stack(...)
---   ... LIVE BODY, with the safeguarding exclusion added ...
+-- The stack RPC's WHERE clause matches only:
+--     d.layer in ('org','academic')
+--  OR (d.layer = 'subject' and d.subject_id = p_subject_id)
+--  OR (d.layer = 'tool'    and d.tool = p_tool and (d.subject_id is null or ... ))
+-- A layer = 'safeguarding' row satisfies none of those disjuncts, so the RPC already
+-- never returns it — and its layer_rank CASE has no 'safeguarding' arm either.
+--
+-- Adding an explicit `d.layer <> 'safeguarding'` guard would be behaviourally
+-- redundant while forcing a full rewrite of a live SECURITY DEFINER function that all
+-- of the AI composition paths depend on — a function whose body the migration tree
+-- (duplicate 0066_* files) cannot be trusted to reproduce. Redundant clause, real
+-- clobber risk: the wrong trade. So this migration leaves get_active_context_stack
+-- untouched.
+--
+-- The future-broadening case (someone later widens that WHERE clause) is caught in
+-- CODE, not SQL: composeContextStack drops any safeguarding row the RPC returns from
+-- the ladder and logs it at error level (src/lib/ai/context-stack.ts), so safeguarding
+-- can never double-compose into the steerable layers.
 
 
 -- ── 4. Guard: never archive the LAST active safeguarding doc for a tool ───────────

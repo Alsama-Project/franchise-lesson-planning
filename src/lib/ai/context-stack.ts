@@ -172,7 +172,22 @@ export async function composeContextStack({
   subjectId?: string | null;
   locale?: string;
 }): Promise<ComposedContextStack> {
-  const rows = await readActiveStack(tool, subjectId);
+  const stackRows = await readActiveStack(tool, subjectId);
+
+  // Invariant: safeguarding is composed separately at floor position (below) and must
+  // NEVER arrive through get_active_context_stack. That RPC excludes it by construction
+  // — its WHERE clause matches only org/academic/subject/tool, so a 'safeguarding' row
+  // falls through (see migration 20260803170100, §3). This guard is the assertion that
+  // catches a future broadening of that SECURITY DEFINER function: if one ever returns a
+  // safeguarding row, drop it from the ladder and log loudly, so it can never
+  // double-compose into the steerable layers.
+  const rows = stackRows.filter((r) => r.layer !== 'safeguarding');
+  if (rows.length !== stackRows.length) {
+    console.error(
+      '[context-stack] invariant violated: get_active_context_stack returned safeguarding row(s) — excluded from the ladder (safeguarding composes only at floor position)',
+      { tool, subjectId },
+    );
+  }
 
   if (rows.length === 0) {
     console.error('[context-stack] empty stack — misconfiguration', { tool, subjectId });

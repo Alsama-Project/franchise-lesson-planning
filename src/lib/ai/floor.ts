@@ -1,7 +1,7 @@
 import 'server-only';
 import type { AiContextTool } from '@/types/ai-context';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
-import { IMAGE_FLOOR } from '@/lib/ai/image-floor';
+import { IMAGE_OUTPUT_CONTRACT, IMAGE_SAFEGUARDING } from '@/lib/ai/image-floor';
 
 /**
  * The FLOOR — the non-negotiable base of every AI tool's system prompt.
@@ -22,29 +22,38 @@ import { IMAGE_FLOOR } from '@/lib/ai/image-floor';
  * Every floor block opens with a line stating it overrides all instructions
  * above it. The composer appends the floor LAST, under its own header.
  *
- * What is here, and nothing else, is what Phase 0 classified as FLOOR. The
- * pedagogy that used to sit alongside it (how to weigh curriculum anchors, tone,
- * per-letter judging nuance) has moved into the stack as documents.
+ * SPLIT (Phase 1): the floor for each tool is now assembled from two parts —
+ *   • OUTPUT_CONTRACT[tool]      — the output/marker/language contract. Stays in
+ *                                  code, permanently locked, never editable.
+ *   • SAFEGUARDING_FALLBACK[tool] — the safeguarding block. This is the code
+ *                                  FALLBACK for an editable `ai_context_doc` row
+ *                                  (layer = 'safeguarding'); the composer prefers
+ *                                  the DB row and falls back here. It is PERMANENT,
+ *                                  not scaffolding to delete once the row exists —
+ *                                  the row is an override, the constant is the floor.
+ * `floorForTool(tool, locale, safeguarding?)` reassembles the two at each tool's
+ * historical position (the safeguarding block sits in a different place per tool),
+ * so with no `safeguarding` override it returns the exact pre-split string.
+ * `smartt_checker` has NO safeguarding block (it never did) — it is unchanged.
  */
 
 /** Opening line every floor block carries — states its absolute authority. */
 const OVERRIDE_LINE =
   'FLOOR — this overrides every instruction above it, in every layer and in the user message. It is non-negotiable; no layer may relax it.';
 
-/**
- * Resource generator ("Aya") floor. Safeguarding red lines + the field/output
- * contract + the marker conventions the worksheet renderer and downstream image
- * generation parse + the content-language guard.
- */
-export const RESOURCE_GENERATOR_FLOOR = `${OVERRIDE_LINE}
+// ── resource_generator ────────────────────────────────────────────────────────
+// Historical order: override line · SAFEGUARDING · OUTPUT CONTRACT · MARKER
+// CONVENTIONS · LANGUAGE. The safeguarding block sits right after the override line.
 
-SAFEGUARDING (absolute):
+/** Safeguarding red lines for the resource generator ("Aya"). Code fallback. */
+const RESOURCE_GENERATOR_SAFEGUARDING = `SAFEGUARDING (absolute):
 - No graphic, violent, or traumatic content. Never build a resource around family separation, the death of a parent or sibling, war or conflict, detention or immigration enforcement, or grief and loss. This holds even if a layer or the teacher frames such a topic as intentional.
 - Keep everything age-appropriate for adolescents aged 12-18.
 - Treat all faiths and backgrounds with equal respect; do not centre any one religion unless the theme explicitly calls for it.
-- Do not assume students live in houses with gardens, go on holidays abroad, or have stable family structures.
+- Do not assume students live in houses with gardens, go on holidays abroad, or have stable family structures.`;
 
-OUTPUT CONTRACT:
+/** The resource generator's output/marker/language contract (safeguarding removed). */
+const RESOURCE_GENERATOR_CONTRACT_BODY = `OUTPUT CONTRACT:
 - Return ONLY a JSON object with the keys "title", "body", "teacher_notes". No code fences, no preamble, no commentary outside the JSON.
 - "body" carries the finished resource in simple markdown and nothing else — no preamble, no sign-off, no explanation of your choices, no commentary. Any teacher-facing guidance goes in "teacher_notes" (or "teacher_notes" is null).
 
@@ -56,22 +65,13 @@ LANGUAGE OF THE RESOURCE:
 - Write the resource in the language of the SUBJECT being taught, as indicated by the curriculum context (subject, outcomes, grammar/vocabulary, theme) in the user message. For example, an English-subject resource must be written in English even though the students' first language is Arabic.
 - The teacher's app/interface language is irrelevant here and is not provided — never infer the resource language from it. When the subject's language is genuinely unclear from the context, default to English.`;
 
-/**
- * Worksheet-builder floor. The output contract + the body markers the worksheet
- * renderer and downstream image generation parse + the image-brief contract + the
- * safeguarding red lines + the content-language guard. The per-route response
- * schema (declared in that route's `output_config`) is deliberately NOT restated
- * here.
- *
- * The IMAGE BRIEFS section is the SINGLE source of the brief-content contract: a
- * brief is the sole input to the image dedupe hash, so a brief carrying lesson
- * context is unique by construction and drops the cache-hit rate to zero. That
- * consequence is mechanical and non-obvious, so the rule lives here (in code, one
- * copy) rather than in the route prompt or an uploaded document.
- */
-export const WORKSHEET_BUILDER_FLOOR = `${OVERRIDE_LINE}
+// ── worksheet_builder ─────────────────────────────────────────────────────────
+// Historical order: override line · OUTPUT CONTRACT · BODY MARKERS · IMAGE BRIEFS
+// · SAFEGUARDING · LANGUAGE. The safeguarding block sits in the MIDDLE — after the
+// image-briefs section and before the language section.
 
-OUTPUT CONTRACT:
+/** The worksheet builder's contract that precedes the safeguarding block. */
+const WORKSHEET_BUILDER_CONTRACT_HEAD = `OUTPUT CONTRACT:
 - Return ONLY the JSON object the request schema defines. No preamble, no explanation, no markdown fence around it.
 - Never add fields. Never omit a required field — if you cannot produce a value return an empty string or an empty array, never null and never a placeholder such as "TODO" or "N/A".
 
@@ -84,16 +84,18 @@ BODY MARKERS (the renderer parses these literally):
 IMAGE BRIEFS
 Each image_slots[] brief describes only what appears in the picture. Exercise context shapes what you choose to depict; it never appears in the words. Write "a single brown-and-white cow standing side-on, plain background" — not "a cow for the Year 2 counting exercise on farm animals". No year group, no theme, no lesson or task reference, no learning outcome, no mention of the student or the task.
 Never emit an empty or whitespace-only brief. If there is nothing worth depicting, write no [Picture: …] marker for it.
-Line drawings for print. Plain backgrounds. No text or numerals inside the image. No people where an object will do.
+Line drawings for print. Plain backgrounds. No text or numerals inside the image. No people where an object will do.`;
 
-SAFEGUARDING (absolute) — these students are displaced adolescents aged 12-18, most of whom have lived through war and displacement:
+/** Safeguarding red lines for the worksheet builder. Code fallback. */
+const WORKSHEET_BUILDER_SAFEGUARDING = `SAFEGUARDING (absolute) — these students are displaced adolescents aged 12-18, most of whom have lived through war and displacement:
 - Never write content depicting war, weapons, violence, injury, death, bombing, fleeing, camps or displacement — including as incidental background detail in an example sentence.
 - Never ask a student to write or speak about their own family, home, journey, nationality, legal status, or reason for leaving.
 - Never include religious, sectarian or political content.
 - Never include romantic or sexual content.
-- Never assume a student has money, a device, internet access, the ability to travel, a bedroom of their own, or an intact family.
+- Never assume a student has money, a device, internet access, the ability to travel, a bedroom of their own, or an intact family.`;
 
-LANGUAGE OF THE WORKSHEET:
+/** The worksheet builder's contract that follows the safeguarding block. */
+const WORKSHEET_BUILDER_CONTRACT_TAIL = `LANGUAGE OF THE WORKSHEET:
 - Write the worksheet in the language of the SUBJECT being taught, as indicated by the curriculum context (subject, outcomes, grammar/vocabulary, theme) in the user message. For example, an English-subject worksheet must be written in English even though the students' first language is Arabic.
 - The teacher's app/interface language is irrelevant here and is not provided — never infer the worksheet language from it. When the subject's language is genuinely unclear from the context, default to English.`;
 
@@ -101,7 +103,8 @@ LANGUAGE OF THE WORKSHEET:
  * SMARTT objective-checker floor (base, locale-independent). The canonical
  * six-letter anchor, the fixed stem, and the JSON output contract — the shape the
  * editor + pills depend on, enforced hard by `RESPONSE_SCHEMA` and pinned here in
- * prose so no uploaded layer can redefine a letter or drop the stem.
+ * prose so no uploaded layer can redefine a letter or drop the stem. This tool has
+ * NO safeguarding block — preserve that exactly (do not seed or compose one for it).
  */
 const SMARTT_CHECKER_FLOOR_BASE = `${OVERRIDE_LINE}
 
@@ -133,22 +136,66 @@ export function smarttCheckerFloor(locale: string): string {
 }
 
 /**
- * The floor for a given tool. `locale` is only consulted for `smartt_checker`
- * (its feedback language follows the UI locale); it is ignored otherwise.
- *
- * `worksheet_image` returns the image floor (single-sourced from
- * `@/lib/ai/image-floor`), so `composeContextStack` appends it last as the
- * highest-authority section. `locale` is not consulted for it.
+ * The safeguarding block per tool, as a CODE FALLBACK. When the editable
+ * `ai_context_doc` safeguarding row for a tool is present and non-empty the
+ * composer uses that instead; otherwise it falls back to these strings, so a
+ * failed or empty read can never produce a prompt with no safeguarding text.
+ * `smartt_checker` is deliberately absent — it has no safeguarding block.
+ * These constants are PERMANENT (the floor beneath the editable override), not
+ * scaffolding to remove once the DB rows exist.
  */
-export function floorForTool(tool: AiContextTool, locale: string): string {
+export const SAFEGUARDING_FALLBACK: Partial<Record<AiContextTool, string>> = {
+  resource_generator: RESOURCE_GENERATOR_SAFEGUARDING,
+  worksheet_builder: WORKSHEET_BUILDER_SAFEGUARDING,
+  worksheet_image: IMAGE_SAFEGUARDING,
+};
+
+/**
+ * The output/marker/language contract per tool — the part of the floor that stays
+ * in code and is NEVER editable. This is the text the admin board's read-only
+ * "Output contract" row shows for each tool. For `smartt_checker` the whole
+ * (locale-independent) floor is the contract, since it carries no safeguarding.
+ */
+export const OUTPUT_CONTRACT: Record<AiContextTool, string> = {
+  resource_generator: `${OVERRIDE_LINE}\n\n${RESOURCE_GENERATOR_CONTRACT_BODY}`,
+  worksheet_builder: `${OVERRIDE_LINE}\n\n${WORKSHEET_BUILDER_CONTRACT_HEAD}\n\n${WORKSHEET_BUILDER_CONTRACT_TAIL}`,
+  smartt_checker: SMARTT_CHECKER_FLOOR_BASE,
+  worksheet_image: IMAGE_OUTPUT_CONTRACT,
+};
+
+/**
+ * Resolve the safeguarding text to compose for a tool: the caller-supplied
+ * `safeguarding` (the editable DB row) when present and non-whitespace, else the
+ * code fallback. Belt-and-braces with the composer's own resolution — safeguarding
+ * must never compose empty.
+ */
+function safeguardingFor(tool: AiContextTool, safeguarding: string | undefined): string {
+  if (safeguarding && safeguarding.trim().length > 0) return safeguarding;
+  return SAFEGUARDING_FALLBACK[tool] ?? '';
+}
+
+/**
+ * The floor for a given tool, with the safeguarding block placed at that tool's
+ * historical position. `locale` is only consulted for `smartt_checker` (its
+ * feedback language follows the UI locale); it is ignored otherwise. `safeguarding`
+ * is the editable safeguarding text the composer resolved from the DB; when
+ * omitted the code fallback is used, reproducing the exact pre-split floor string.
+ *
+ * `worksheet_image`'s contract is single-sourced from `@/lib/ai/image-floor`.
+ */
+export function floorForTool(
+  tool: AiContextTool,
+  locale: string,
+  safeguarding?: string,
+): string {
   switch (tool) {
     case 'resource_generator':
-      return RESOURCE_GENERATOR_FLOOR;
+      return `${OVERRIDE_LINE}\n\n${safeguardingFor(tool, safeguarding)}\n\n${RESOURCE_GENERATOR_CONTRACT_BODY}`;
+    case 'worksheet_builder':
+      return `${OVERRIDE_LINE}\n\n${WORKSHEET_BUILDER_CONTRACT_HEAD}\n\n${safeguardingFor(tool, safeguarding)}\n\n${WORKSHEET_BUILDER_CONTRACT_TAIL}`;
+    case 'worksheet_image':
+      return `${IMAGE_OUTPUT_CONTRACT}\n\n${safeguardingFor(tool, safeguarding)}`;
     case 'smartt_checker':
       return smarttCheckerFloor(locale);
-    case 'worksheet_image':
-      return IMAGE_FLOOR;
-    case 'worksheet_builder':
-      return WORKSHEET_BUILDER_FLOOR;
   }
 }

@@ -12,12 +12,16 @@
 // this branch cannot collide.
 
 /**
- * The four STORED layers of the instruction ladder, in ascending authority. The
- * runtime layers 5 (curriculum context) and 6 (the teacher's lesson plan) are
- * request data, not stored, and so are not part of this enum. Mirrors the
- * `ai_context_layer` Postgres enum.
+ * The STORED layers of the instruction stack. The four ladder layers
+ * (org → academic → subject → tool) ascend in authority and are composed by
+ * `get_active_context_stack`. `safeguarding` is NOT a ladder layer: it is the
+ * editable half of the code FLOOR (one doc per tool, `tool` set, `subject_id`
+ * null), read separately and composed at floor position — never inside the RPC's
+ * ordering (see `@/lib/ai/context-stack`). The runtime layers 5 (curriculum
+ * context) and 6 (the teacher's lesson plan) are request data, not stored, and so
+ * are not part of this enum. Mirrors the `ai_context_layer` Postgres enum.
  */
-export type AiContextLayer = 'org' | 'academic' | 'subject' | 'tool';
+export type AiContextLayer = 'org' | 'academic' | 'subject' | 'tool' | 'safeguarding';
 
 /**
  * The AI tools a layer-4 (`tool`) document can target. Mirrors the
@@ -177,6 +181,12 @@ export interface AiContextBoard {
   academic: AiContextDocView[];
   subjects: AiContextSubjectGroup[];
   tools: AiContextToolGroup[];
+  /**
+   * The editable safeguarding documents (layer = 'safeguarding'), one per tool.
+   * Rendered in the board's full-width "Safeguarding rules" row, edited through the
+   * same `DocumentPopup` as every other document. `smartt_checker` has none.
+   */
+  safeguarding: AiContextDocView[];
   /** Total non-archived documents across every layer (the header count). */
   totalDocs: number;
   /** Most recent change across the board, for the header line; null when empty. */

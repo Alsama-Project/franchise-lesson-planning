@@ -393,7 +393,8 @@
         "org": "Alsama context",
         "academic": "Academic context",
         "subject": "Subject context",
-        "tool": "Tool instructions"
+        "tool": "Tool instructions",
+        "safeguarding": "Safeguarding"
       },
       "tools": {
         "worksheet_builder": "Worksheet builder",
@@ -421,11 +422,15 @@
         "confirm": "Archive document",
         "archiving": "Archiving…"
       },
-      "floor": {
-        "title": "Output contract and safeguarding rules",
-        "badge": "Built in · cannot be overridden",
+      "safeguarding": {
+        "title": "Safeguarding rules",
+        "subtitle": "Editable, versioned rules — one per tool, edited like any other document."
+      },
+      "outputContract": {
+        "title": "Output contract",
+        "badge": "Built in · defined in code",
         "read": "Read",
-        "readTodo": "The output-contract module is not built yet."
+        "note": "Defined in the application code and locked. There is nothing here to edit — it is shown so you can see exactly what each tool must always return."
       }
     }
   }

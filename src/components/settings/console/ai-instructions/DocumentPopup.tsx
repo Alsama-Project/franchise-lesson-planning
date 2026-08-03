@@ -15,8 +15,10 @@ import { fullDate } from './helpers';
 import { useDocUpload, useFilePicker } from './useDocUpload';
 import { UploadProgressBar } from '../upload';
 
-/** Ladder position for the layer badge — 1 org · 2 academic · 3 subject · 4 tool. */
-const LAYER_RANK: Record<AiContextDocView['layer'], number> = {
+/** Ladder position for the layer badge — 1 org · 2 academic · 3 subject · 4 tool.
+ *  `safeguarding` is deliberately absent: it sits below the numbered ladder, not
+ *  among it, so its badge is a lock glyph rather than a rank number. */
+const LAYER_RANK: Partial<Record<AiContextDocView['layer'], number>> = {
   org: 1,
   academic: 2,
   subject: 3,
@@ -106,7 +108,12 @@ export function DocumentPopup({
           <div className="min-w-0 flex-1">
             <div className="mb-[7px] flex items-center gap-[9px]">
               <span className="inline-flex size-[20px] items-center justify-center rounded-full bg-teal text-[10px] font-bold text-white">
-                {LAYER_RANK[doc.layer]}
+                {LAYER_RANK[doc.layer] ?? (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <rect x="4" y="11" width="16" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                  </svg>
+                )}
               </span>
               <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-teal-deepest">
                 {groupLabel ? `${layerLabel} · ${groupLabel}` : layerLabel}
@@ -145,14 +152,19 @@ export function DocumentPopup({
             >
               {replacing ? t('aiInstructions.popup.replacing') : t('aiInstructions.popup.replace')}
             </button>
-            <button
-              type="button"
-              onClick={onArchive}
-              disabled={busy}
-              className="rounded-[9px] border border-danger-border bg-surface px-[13px] py-[8px] text-[12.5px] font-semibold text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
-            >
-              {t('aiInstructions.popup.archive')}
-            </button>
+            {/* Safeguarding docs can be replaced/restored but never archived — one must
+                stay active per tool (DB trigger enforces it). Hide the control so nobody
+                hits an error they can't act on. */}
+            {doc.layer !== 'safeguarding' ? (
+              <button
+                type="button"
+                onClick={onArchive}
+                disabled={busy}
+                className="rounded-[9px] border border-danger-border bg-surface px-[13px] py-[8px] text-[12.5px] font-semibold text-danger transition-colors hover:bg-danger-bg disabled:opacity-50"
+              >
+                {t('aiInstructions.popup.archive')}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onClose}

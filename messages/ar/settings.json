@@ -393,7 +393,8 @@
         "org": "سياق ألسمة",
         "academic": "السياق الأكاديمي",
         "subject": "سياق المادة",
-        "tool": "تعليمات الأداة"
+        "tool": "تعليمات الأداة",
+        "safeguarding": "Safeguarding"
       },
       "tools": {
         "worksheet_builder": "منشئ أوراق العمل",
@@ -421,11 +422,15 @@
         "confirm": "أرشفة المستند",
         "archiving": "جارٍ الأرشفة…"
       },
-      "floor": {
-        "title": "عقد المخرجات وقواعد الحماية",
-        "badge": "مدمج · لا يمكن تجاوزه",
-        "read": "قراءة",
-        "readTodo": "لم يتم إنشاء وحدة عقد المخرجات بعد."
+      "safeguarding": {
+        "title": "Safeguarding rules",
+        "subtitle": "Editable, versioned rules — one per tool, edited like any other document."
+      },
+      "outputContract": {
+        "title": "Output contract",
+        "badge": "Built in · defined in code",
+        "read": "Read",
+        "note": "Defined in the application code and locked. There is nothing here to edit — it is shown so you can see exactly what each tool must always return."
       }
     }
   }

@@ -48,5 +48,10 @@ export async function GET(request: NextRequest) {
     return new NextResponse('Could not generate a link for this image.', { status: 502 });
   }
 
-  return NextResponse.redirect(data.signedUrl);
+  // no-store: the redirect target is a short-lived signed URL. A cached 302 would
+  // keep sending the browser to a URL that has since expired — the exact failure
+  // this re-signing route exists to prevent.
+  const redirect = NextResponse.redirect(data.signedUrl);
+  redirect.headers.set('Cache-Control', 'no-store');
+  return redirect;
 }

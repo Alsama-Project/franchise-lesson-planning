@@ -19,6 +19,14 @@ import ar from '../../../messages/ar/worksheetArtifact.json';
  *  `subjects.content_language` (see migration 0061). */
 export type WorksheetContentLanguage = 'en' | 'ar';
 
+/** Narrow an arbitrary `subjects.content_language` value to a supported content
+ *  language, defaulting to English (mirrors the DB default) for null/unknown. Lives
+ *  beside its type so every server path — the worksheet loader and the SMARTT
+ *  checker's subject resolver — narrows the column one identical way. */
+export function toContentLanguage(value: unknown): WorksheetContentLanguage {
+  return value === 'ar' ? 'ar' : 'en';
+}
+
 /** The artifact catalog shape (keys are fixed by the English source of truth). */
 export type WorksheetArtifactCatalog = typeof en;
 export type WorksheetArtifactKey = keyof WorksheetArtifactCatalog;

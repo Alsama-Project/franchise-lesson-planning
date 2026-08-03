@@ -1,4 +1,4 @@
--- 20260803170200_seed_safeguarding_context_docs.sql
+-- 20260803180200_seed_safeguarding_context_docs.sql
 --
 -- FILE 3 OF 3 — RUN ALONE, THIRD, IN ITS OWN EXECUTION, AFTER Files 1 and 2.
 -- Depends on the 'safeguarding' enum value (File 1) and the amended scope CHECK
@@ -82,5 +82,5 @@ from ins_doc;
 
 -- Ledger (going-forward convention; see 20260803093441).
 insert into applied_migration (filename, note)
-values ('20260803170200_seed_safeguarding_context_docs.sql', null)
+values ('20260803180200_seed_safeguarding_context_docs.sql', null)
 on conflict (filename) do nothing;

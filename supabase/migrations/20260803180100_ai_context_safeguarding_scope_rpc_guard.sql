@@ -1,4 +1,4 @@
--- 20260803170100_ai_context_safeguarding_scope_rpc_guard.sql
+-- 20260803180100_ai_context_safeguarding_scope_rpc_guard.sql
 --
 -- FILE 2 OF 3 — RUN ALONE, SECOND, IN ITS OWN EXECUTION, AFTER File 1 has COMMITTED.
 -- This file USES the 'safeguarding' enum value (File 1), so it must not share a
@@ -47,16 +47,30 @@ alter table public.ai_context_doc add constraint ai_context_doc_scope check (
 -- Ordered + limited defensively in case more than one safeguarding doc ever exists
 -- for a tool (the seed creates exactly one); the archive guard in §4 keeps at least
 -- one active. NULL when there is none — the composer logs and uses the code fallback.
+--
+-- In-body auth guard, matching the convention 20260803170000_secdef_reader_auth_guards
+-- established for user-facing SECURITY DEFINER readers (get_active_context_stack): a
+-- session-less or deactivated caller raises 42501 rather than reading through the
+-- definer. plpgsql (not sql) so the guard can RAISE before the query. The composer
+-- always calls this on the RLS-honouring server client with a live user session.
 create or replace function public.get_active_safeguarding_doc(
   p_tool public.ai_context_tool
 )
 returns text
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
+declare
+  v_body text;
+begin
+  if auth.uid() is null or public.is_deactivated() then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
   select v.body_md
+    into v_body
   from ai_context_doc d
   join ai_context_doc_version v
     on v.doc_id = d.id and v.is_active
@@ -66,6 +80,9 @@ as $$
     and d.is_archived = false
   order by d.sort_order, d.created_at
   limit 1;
+
+  return v_body;
+end;
 $$;
 
 revoke all     on function public.get_active_safeguarding_doc(public.ai_context_tool) from public;
@@ -137,6 +154,6 @@ create trigger ai_context_doc_guard_safeguarding
 -- Records File 1 (which could not record itself — bare ALTER TYPE only) and File 2.
 insert into applied_migration (filename, note)
 values
-  ('20260803170000_ai_context_layer_add_safeguarding.sql', null),
-  ('20260803170100_ai_context_safeguarding_scope_rpc_guard.sql', null)
+  ('20260803180000_ai_context_layer_add_safeguarding.sql', null),
+  ('20260803180100_ai_context_safeguarding_scope_rpc_guard.sql', null)
 on conflict (filename) do nothing;

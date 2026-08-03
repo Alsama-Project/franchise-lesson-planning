@@ -4,13 +4,10 @@ import { DEFAULT_BLOCKS } from '@/lib/blocks';
 import { getTagVocabulary, listFolders, getResourcesByIds } from '@/lib/resources';
 import type { Block, LessonBlockType, LessonPlan, PlanScope } from '@/types/lesson';
 import type { Folder, ResourceWithTags, TagsByDimension } from '@/types/resource';
-import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
-
-/** Narrow an arbitrary `subjects.content_language` value to a supported language,
- *  defaulting to English (mirrors the DB default) for null/unknown. */
-function toContentLanguage(value: unknown): WorksheetContentLanguage {
-  return value === 'ar' ? 'ar' : 'en';
-}
+import {
+  toContentLanguage,
+  type WorksheetContentLanguage,
+} from '@/lib/editor/worksheet-content-locale';
 
 /** Block types that have a pre-approved activity bank today. */
 export const ACTIVITY_BLOCK_TYPES: LessonBlockType[] = ['cfu', 'exit_ticket'];

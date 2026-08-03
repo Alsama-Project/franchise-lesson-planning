@@ -115,22 +115,29 @@ The objective — and your suggested rewrite — must use the exact stem "${OBJE
 Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
 
 /**
- * Language directive appended to the SMARTT floor ONLY when the teacher's UI
- * locale is Arabic. The objective check is UI-facing feedback, so its language
- * follows the UI locale (unlike the resource generator, whose content language
- * follows the subject). This switches only the human-readable feedback text; the
- * JSON keys, the status enum, and the English stem are untouched, so the
- * `ObjectiveCheckResult` shape is identical in either locale.
+ * Language directive appended to the SMARTT floor ONLY when the SUBJECT's content
+ * language is Arabic. Feedback language follows the subject being planned — not
+ * the teacher's UI locale — so an Arabic-medium subject gets Arabic feedback even
+ * for an English-UI teacher, and an English subject gets English feedback for an
+ * Arabic-UI teacher. This is the same content-language rule the resource generator
+ * and worksheet already follow. It switches only the human-readable feedback text;
+ * the JSON keys, the status enum, and the English stem are untouched, so the
+ * `ObjectiveCheckResult` shape is identical either way.
+ *
+ * The directive text itself is unchanged from when it was UI-locale-gated — only
+ * the condition that appends it (see {@link smarttCheckerFloor}) now reads the
+ * subject's `content_language`.
  */
 const SMARTT_ARABIC_DIRECTIVE = `LANGUAGE: The teacher reads this feedback in Arabic. Write the human-readable feedback text — every "note" (the per-letter notes) — in Modern Standard Arabic (الفصحى).
 Do NOT translate or alter the JSON contract: keep all JSON keys in English, keep each "status" value as the exact English literal "strong" or "needs work". The "improved_objective" MUST still begin with the exact stem "${OBJECTIVE_STEM}" — leave the stem in English, unchanged.`;
 
 /**
- * The SMARTT checker floor, with the Arabic directive appended when `locale`
- * is `'ar'` — exactly as the old `composeSystemPrompt(guide, locale)` did.
+ * The SMARTT checker floor, with the Arabic directive appended when
+ * `contentLanguage` is `'ar'` (the SUBJECT's content language, resolved at the
+ * route from `subjects.content_language` — never the UI locale).
  */
-export function smarttCheckerFloor(locale: string): string {
-  return locale === 'ar'
+export function smarttCheckerFloor(contentLanguage: string): string {
+  return contentLanguage === 'ar'
     ? `${SMARTT_CHECKER_FLOOR_BASE}\n\n${SMARTT_ARABIC_DIRECTIVE}`
     : SMARTT_CHECKER_FLOOR_BASE;
 }
@@ -176,8 +183,9 @@ function safeguardingFor(tool: AiContextTool, safeguarding: string | undefined):
 
 /**
  * The floor for a given tool, with the safeguarding block placed at that tool's
- * historical position. `locale` is only consulted for `smartt_checker` (its
- * feedback language follows the UI locale); it is ignored otherwise. `safeguarding`
+ * historical position. `contentLanguage` is only consulted for `smartt_checker`
+ * (its feedback language follows the SUBJECT's content language, resolved at the
+ * route — never the UI locale); it is ignored for every other tool. `safeguarding`
  * is the editable safeguarding text the composer resolved from the DB; when
  * omitted the code fallback is used, reproducing the exact pre-split floor string.
  *
@@ -185,7 +193,7 @@ function safeguardingFor(tool: AiContextTool, safeguarding: string | undefined):
  */
 export function floorForTool(
   tool: AiContextTool,
-  locale: string,
+  contentLanguage: string,
   safeguarding?: string,
 ): string {
   switch (tool) {
@@ -196,6 +204,6 @@ export function floorForTool(
     case 'worksheet_image':
       return `${IMAGE_OUTPUT_CONTRACT}\n\n${safeguardingFor(tool, safeguarding)}`;
     case 'smartt_checker':
-      return smarttCheckerFloor(locale);
+      return smarttCheckerFloor(contentLanguage);
   }
 }

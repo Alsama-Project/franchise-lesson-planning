@@ -1,4 +1,4 @@
--- 20260803170000_ai_context_layer_add_safeguarding.sql
+-- 20260803180000_ai_context_layer_add_safeguarding.sql
 --
 -- FILE 1 OF 3 — RUN ALONE, FIRST, IN ITS OWN EXECUTION.
 --
@@ -19,7 +19,7 @@
 -- Idempotent: IF NOT EXISTS makes a re-run a no-op.
 --
 -- Ledger: this file cannot also insert its applied_migration row (only the bare
--- ALTER TYPE may live here). File 2 records BOTH 20260803170000 and 20260803170100.
+-- ALTER TYPE may live here). File 2 records BOTH 20260803180000 and 20260803180100.
 --
 -- PROVENANCE: authored here; George applies it BY HAND in the Supabase SQL editor.
 -- CC never applies migrations.

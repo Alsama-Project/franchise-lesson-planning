@@ -216,6 +216,7 @@
       "uploaded": "Uploaded",
       "noGuide": "No guide uploaded — using the built-in default.",
       "upload": "Upload",
+      "download": "Download current text",
       "uploading": "Uploading…",
       "uploadFailed": "Upload failed. Please try again.",
       "badge": {
@@ -402,6 +403,7 @@
         "failed": "Upload failed. Please try again."
       },
       "popup": {
+        "download": "Download current text",
         "replace": "Replace",
         "replacing": "Replacing…",
         "archive": "Archive",

@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/auth';
 import { docxToMarkdown } from '@/lib/ai/docx';
+import { deriveMarkdownFilename, textAttachmentResponse } from '@/lib/download/text-attachment';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/smartt-objective-guide
@@ -143,4 +146,58 @@ export async function POST(request: NextRequest) {
 
   const row = data as { id: string; created_at: string };
   return NextResponse.json({ id: row.id, created_at: row.created_at }, { status: 201 });
+}
+
+/**
+ * GET /api/smartt-objective-guide
+ *
+ * Admin-only download of the guide CURRENTLY IN FORCE — the derived `content`
+ * text (markdown) that the objective checker actually consumes, not the original
+ * uploaded file (the bytes are not retained; original-byte retention is a
+ * separate branch). Served as a `.md` attachment.
+ *
+ * Auth reuses the POST guard verbatim: getCurrentProfile() → 401 if none, 403
+ * unless role === 'admin'; the table's admin-only RLS is the backstop. A missing
+ * guide is a 404, never an empty file.
+ *
+ * Faithful clone of GET /api/ai-resource-guide — different table, same posture.
+ */
+export async function GET() {
+  // ── Authorise: signed-in admin only (identical to POST) ──
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+  }
+  if (profile.role !== 'admin') {
+    return NextResponse.json(
+      { error: 'Only administrators can update the SMARTT objective guide.' },
+      { status: 403 },
+    );
+  }
+
+  // Active version = latest created_at (mirrors get_active_smartt_guide()).
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('smartt_objective_guide')
+    .select('content, original_filename, created_at')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: 'Could not load the guide.' }, { status: 500 });
+  }
+  const row = data as
+    | { content: string; original_filename: string | null; created_at: string }
+    | null;
+  if (!row || !row.content) {
+    return NextResponse.json({ error: 'No guide uploaded.' }, { status: 404 });
+  }
+
+  const filename = deriveMarkdownFilename({
+    originalFilename: row.original_filename,
+    fallbackSlug: 'smartt-objective-guide',
+    createdAt: row.created_at,
+  });
+  return textAttachmentResponse(filename, row.content);
 }

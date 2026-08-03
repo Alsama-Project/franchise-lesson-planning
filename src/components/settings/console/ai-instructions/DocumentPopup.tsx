@@ -120,6 +120,20 @@ export function DocumentPopup({
             </div>
           </div>
           <div className="flex items-center gap-[8px]">
+            {/* Download the active version's text — what this document currently
+                contributes to the prompt, not the uploaded original. */}
+            <a
+              href={`/api/admin/context-docs/${doc.id}/download`}
+              download
+              aria-disabled={busy || undefined}
+              className={
+                busy
+                  ? 'pointer-events-none rounded-[9px] border border-teal-tint-border bg-surface px-[13px] py-[8px] text-[12.5px] font-semibold text-teal opacity-50'
+                  : 'rounded-[9px] border border-teal-tint-border bg-surface px-[13px] py-[8px] text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal-tint'
+              }
+            >
+              {t('aiInstructions.popup.download')}
+            </a>
             <button
               type="button"
               onClick={open}

@@ -19,7 +19,6 @@ import {
   getSubjectSpaceAxes,
   getTerms,
   getUsersAdmin,
-  getWorksheetTemplates,
   type AdminUser,
   type CentreRow,
   type ConsoleClassesData,
@@ -29,7 +28,6 @@ import {
   type SubjectRow,
   type SubjectSpaceAxes,
   type TermRow,
-  type WorksheetTemplateRow,
 } from '@/lib/console';
 
 // Per-request: reflects the live session, memberships and org structure.
@@ -88,14 +86,12 @@ export default async function SettingsPage() {
   let userAxes: SubjectSpaceAxes | undefined;
   // Pending coordinator-access requests for the Users-tab triage section.
   let pendingCoordinatorRequests: PendingCoordinatorRequest[] | undefined;
-  // Per-subject worksheet-template status for the Worksheet Templates tab.
-  let worksheetTemplates: WorksheetTemplateRow[] | undefined;
   // The AI-instructions board (four-layer context stack). `null` = load failed
   // (renders the tab's error state); `undefined` = not admin.
   let aiContextBoard: AiContextBoard | null | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, curriculum, terms, users, userAxes, pendingCoordinatorRequests, worksheetTemplates, aiContextBoard] =
+    [centres, subjects, classesData, curriculum, terms, users, userAxes, pendingCoordinatorRequests, aiContextBoard] =
       await Promise.all([
         getCentres(),
         getSubjects(),
@@ -105,15 +101,13 @@ export default async function SettingsPage() {
         getUsersAdmin().catch(() => null),
         getSubjectSpaceAxes(),
         getPendingCoordinatorRequests(),
-        getWorksheetTemplates(),
         getAiContextBoard().catch(() => null),
       ]);
   } else if (access.isCoordinator) {
     const subjectIds = [...new Set(access.coordinatorSpaces.map((s) => s.subjectId))];
-    [subjectMembers, curriculum, worksheetTemplates] = await Promise.all([
+    [subjectMembers, curriculum] = await Promise.all([
       getSubjectMembers().catch(() => null),
       getCurriculumStatus(subjectIds),
-      getWorksheetTemplates(subjectIds),
     ]);
   }
 
@@ -142,7 +136,6 @@ export default async function SettingsPage() {
           users={users}
           userAxes={userAxes}
           pendingCoordinatorRequests={pendingCoordinatorRequests}
-          worksheetTemplates={worksheetTemplates}
           aiContextBoard={aiContextBoard}
         />
       </div>

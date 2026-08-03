@@ -13,8 +13,6 @@ import type {
   SubjectMember,
   CurriculumSubjectStatus,
   PendingCoordinatorRequest,
-  ResourceGuideVersion,
-  SmarttGuideVersion,
   SubjectRow,
   SubjectSpaceAxes,
   TermRow,
@@ -27,8 +25,6 @@ import { TermCalendarTab } from './console/TermCalendarTab';
 import { CoordinatorMembersTab } from './console/MembersTab';
 import { CurriculumTab } from './console/CurriculumTab';
 import { WorksheetTemplatesTab } from './console/WorksheetTemplatesTab';
-import { AiGuideTab } from './console/AiGuideTab';
-import { SmarttGuideTab } from './console/SmarttGuideTab';
 import { UsersTab } from './console/UsersTab';
 import { AiInstructionsTab } from './console/ai-instructions/AiInstructionsTab';
 import { LanguageSetting } from './LanguageSetting';
@@ -44,8 +40,6 @@ export interface SettingsConsoleProps {
   /** `null` = load failed (error state); `undefined` = not loaded (non-coordinator). */
   subjectMembers?: SubjectMember[] | null;
   curriculum?: CurriculumSubjectStatus[];
-  resourceGuide?: ResourceGuideVersion | null;
-  smarttGuide?: SmarttGuideVersion | null;
   terms?: TermRow[];
   /** `null` = load failed (error state); `undefined` = not loaded (non-admin). */
   users?: AdminUser[] | null;
@@ -150,12 +144,6 @@ export function SettingsConsole(props: SettingsConsoleProps) {
               {t('aiInstructions.loadError')}
             </p>
           )
-        ) : null}
-        {tab === 'ai_guide' && access.isAdmin ? (
-          <AiGuideTab active={props.resourceGuide ?? null} />
-        ) : null}
-        {tab === 'smartt_guide' && access.isAdmin ? (
-          <SmarttGuideTab active={props.smarttGuide ?? null} />
         ) : null}
         {tab === 'users' && access.isAdmin ? (
           <UsersTab

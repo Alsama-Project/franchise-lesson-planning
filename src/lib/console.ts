@@ -39,8 +39,6 @@ export type ConsoleTab =
   | 'curriculum'
   | 'worksheet_templates'
   | 'ai_instructions'
-  | 'ai_guide'
-  | 'smartt_guide'
   | 'users';
 
 export interface CoordinatorSpace {
@@ -63,8 +61,8 @@ export interface ConsoleAccess {
 
 /**
  * Resolve which console tabs the signed-in user gets and where they land.
- * Admin → Centres · Subjects · Classes · Calendar · Curriculum · AI resource guide
- * · SMARTT objective guide · Users (+ Profile first). The admin Members tab is
+ * Admin → Centres · Subjects · Classes · Calendar · Curriculum · Worksheet
+ * templates · AI instructions · Users (+ Profile first). The admin Members tab is
  * retired — user access is managed from the Users-tab "Edit access" modal.
  * Coordinator (non-admin, ≥1 coordinated subject) → Members · Curriculum.
  * Everyone has Profile. Teacher → Profile only.
@@ -81,7 +79,7 @@ export async function getConsoleAccess(): Promise<ConsoleAccess> {
   const tabs: ConsoleTab[] = ['profile'];
   let defaultTab: ConsoleTab = 'profile';
   if (isAdmin) {
-    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'worksheet_templates', 'ai_instructions', 'ai_guide', 'smartt_guide', 'users');
+    tabs.push('centres', 'subjects', 'classes', 'calendar', 'curriculum', 'worksheet_templates', 'ai_instructions', 'users');
     defaultTab = 'centres';
   } else if (isCoordinator) {
     // Coordinators get Worksheet Templates too (scoped to their subjects), like
@@ -740,106 +738,6 @@ export async function getCurriculumStatus(
       hasStoredOriginal: (lastGood?.original_storage_path ?? null) != null,
     };
   });
-}
-
-// ── AI resource guide (admin) ────────────────────────────────────────────────
-
-/**
- * The active AI-resource-guide version, for the admin Settings surface. The
- * console shows the original filename + upload date only (no text preview); the
- * stored `content` is served to the AI backend through the security-definer read
- * function (`get_active_resource_guide()`) and is not exposed here.
- */
-export interface ResourceGuideVersion {
-  /** The original uploaded filename, or null on rows predating capture (0021). */
-  originalFilename: string | null;
-  /** When this version was uploaded (`created_at`). */
-  createdAt: string;
-  /** True when the retained original file is available for byte-faithful download
-   *  (Branch 2a, `original_storage_path`); false for versions predating retention,
-   *  which download as derived `.md`. Drives the download control's label. */
-  hasStoredOriginal: boolean;
-}
-
-/**
- * Load the active (latest) AI-resource-guide version for the admin console.
- * Returns null when no guide has been uploaded yet (the UI then notes that the
- * built-in default guide is in use). Admin-only by RLS
- * (`ai_resource_guide_select_admin`); a non-admin read yields no rows → null.
- *
- * `original_filename` is null on versions uploaded before 0021; the UI falls back
- * to showing the upload date alone in that case.
- */
-export async function getActiveResourceGuideVersion(): Promise<ResourceGuideVersion | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('ai_resource_guide')
-    .select('original_filename, original_storage_path, created_at')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const row = data as
-    | { original_filename: string | null; original_storage_path: string | null; created_at: string }
-    | null;
-  if (!row) return null;
-
-  return {
-    originalFilename: row.original_filename,
-    createdAt: row.created_at,
-    hasStoredOriginal: row.original_storage_path != null,
-  };
-}
-
-// ── SMARTT objective guide (admin) ───────────────────────────────────────────
-
-/**
- * The active SMARTT-objective-guide version, for the admin Settings surface. The
- * console shows the original filename + upload date only (no text preview); the
- * stored `content` is served to the AI backend through the security-definer read
- * function (`get_active_smartt_guide()`) and is not exposed here.
- */
-export interface SmarttGuideVersion {
-  /** The original uploaded filename, or null on rows predating capture (0021). */
-  originalFilename: string | null;
-  /** When this version was uploaded (`created_at`). */
-  createdAt: string;
-  /** True when the retained original file is available for byte-faithful download
-   *  (Branch 2a, `original_storage_path`); false for versions predating retention,
-   *  which download as derived `.md`. Drives the download control's label. */
-  hasStoredOriginal: boolean;
-}
-
-/**
- * Load the active (latest) SMARTT-objective-guide version for the admin console.
- * Returns null when no guide has been uploaded yet (the UI then notes that the
- * built-in default guide is in use). Admin-only by RLS
- * (`smartt_objective_guide_select_admin`); a non-admin read yields no rows → null.
- *
- * `original_filename` is null on versions uploaded before 0021; the UI falls back
- * to showing the upload date alone in that case.
- *
- * Faithful clone of {@link getActiveResourceGuideVersion} — different table.
- */
-export async function getActiveSmarttGuideVersion(): Promise<SmarttGuideVersion | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('smartt_objective_guide')
-    .select('original_filename, original_storage_path, created_at')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const row = data as
-    | { original_filename: string | null; original_storage_path: string | null; created_at: string }
-    | null;
-  if (!row) return null;
-
-  return {
-    originalFilename: row.original_filename,
-    createdAt: row.created_at,
-    hasStoredOriginal: row.original_storage_path != null,
-  };
 }
 
 // ── Term calendar (admin) ─────────────────────────────────────────────────────

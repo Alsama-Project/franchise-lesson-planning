@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseCurriculumWorkbook, splitInlineMonthly } from '../parse';
+import { parseCurriculumWorkbook, splitInlineMonthly, resolveMonthlySplit } from '../parse';
 import { cleanResourceList, isNoResource } from '../types';
 import { makeWorkbook, headerBlock, type CellSpec } from './fixtures';
 
@@ -738,4 +738,98 @@ test('cleanResourceList: trims labels, drops empty, tolerates null', () => {
   assert.deepEqual(cleanResourceList([{ label: '  Flashcards  ' }, { label: ' " ' }]), [
     { label: 'Flashcards', url: undefined },
   ]);
+});
+
+// ── Awareness monthly split (Defect 1, Part B) ────────────────────────────────────
+//
+// Awareness ships the same inline-labelled Knowledge/Skills blob as the other split
+// subjects, but the column matcher routes it to `monthly_skills_lo` (its header names
+// Skills), so it never reaches the combined `monthlyLearningOutcome` column the splitter
+// read. `resolveMonthlySplit` tries the combined column first, then falls back to a split
+// column when exactly one is populated with both labels. Scope is Awareness alone: every
+// other subject carries zero both-label rows in a split column, so the fallback returns
+// null (its both-labels guard) and their output is byte-identical.
+
+const AWARE_BLOB =
+  'Knowledge Learning Outcome:\nUnderstand what emotions are.\n' +
+  'Skills Learning Outcome:\nName and describe feelings.';
+
+test('resolveMonthlySplit: fallback fires when combined empty and one split column holds both labels', () => {
+  const r = resolveMonthlySplit('awareness', null, null, AWARE_BLOB);
+  assert.deepEqual(r, {
+    knowledge: 'Understand what emotions are.',
+    skills: 'Name and describe feelings.',
+  });
+  // Overwrite semantics: the skills result is ONLY the skills portion — the whole blob
+  // (which still carried the knowledge sentence + label) must not survive in skills.
+  assert.doesNotMatch(r!.skills, /Knowledge Learning Outcome/i);
+  assert.doesNotMatch(r!.skills, /Understand what emotions are/i);
+  assert.doesNotMatch(r!.knowledge, /Skills Learning Outcome/i);
+});
+
+test('resolveMonthlySplit: fallback reads whichever single split column is populated', () => {
+  // Same blob, but landed in the knowledge column instead — still resolves.
+  const r = resolveMonthlySplit('awareness', null, AWARE_BLOB, null);
+  assert.deepEqual(r, {
+    knowledge: 'Understand what emotions are.',
+    skills: 'Name and describe feelings.',
+  });
+});
+
+test('resolveMonthlySplit: does NOT fire when BOTH split columns are populated (already split)', () => {
+  assert.equal(
+    resolveMonthlySplit('awareness', null, 'Understand emotions.', AWARE_BLOB),
+    null,
+  );
+});
+
+test('resolveMonthlySplit: does NOT fire when the combined column splits successfully', () => {
+  // Combined populated + splits → primary wins; the split columns are never consulted.
+  const r = resolveMonthlySplit('awareness', AWARE_BLOB, null, 'IGNORED skills blob');
+  assert.deepEqual(r, {
+    knowledge: 'Understand what emotions are.',
+    skills: 'Name and describe feelings.',
+  });
+});
+
+test('resolveMonthlySplit: single populated split column WITHOUT both labels → null (byte-identity guard)', () => {
+  // A real, non-blob split column (professionalism/awareness alike) is left untouched.
+  assert.equal(resolveMonthlySplit('awareness', null, null, 'Name and describe feelings.'), null);
+  assert.equal(
+    resolveMonthlySplit('professionalism', null, null, 'Skills: describe reliable conduct.'),
+    null,
+  );
+});
+
+test('resolveMonthlySplit: english never splits (subject not in the allowlist) → null', () => {
+  assert.equal(resolveMonthlySplit('english', null, null, AWARE_BLOB), null);
+  assert.equal(resolveMonthlySplit('english', AWARE_BLOB, null, null), null);
+});
+
+test('Awareness monthly blob in monthly_skills_lo is split + overwritten end-to-end', () => {
+  const headers: CellSpec[] = [
+    '', 'Year', 'Month', 'Week', 'Monthly Skills Learning Outcome',
+    'Weekly Skill Learning Outcome', 'Weekly Knowledge Learning Outcome', 'Resources',
+  ];
+  const w1: CellSpec[] = ['', 'Year 1', 'October', 1, AWARE_BLOB, 'Skill one', 'Know one', 'Book A'];
+  // Blank monthly cell forward-fills the blob down the month — the split must apply there too.
+  const w2: CellSpec[] = ['', '', '', 2, '', 'Skill two', 'Know two', 'Book B'];
+  const wb = makeWorkbook({ 'Awareness Cirriculum V3': [...headerBlock(headers), w1, w2] });
+
+  const { lessonRows } = parseCurriculumWorkbook(wb, 'awareness');
+  assert.equal(lessonRows.length, 2);
+  for (const row of lessonRows) {
+    // Skills column now holds ONLY the skills portion (overwrite, not fill) …
+    assert.equal(row.monthly_skills_lo, 'Name and describe feelings.');
+    // … knowledge column holds ONLY the knowledge portion …
+    assert.equal(row.monthly_knowledge_lo, 'Understand what emotions are.');
+    // … no literal label text leaks, and neither sentence appears in both columns.
+    assert.doesNotMatch(row.monthly_skills_lo ?? '', /Learning Outcome/i);
+    assert.doesNotMatch(row.monthly_knowledge_lo ?? '', /Learning Outcome/i);
+    assert.doesNotMatch(row.monthly_skills_lo ?? '', /Understand what emotions/i);
+    // Weekly panel is untouched by the monthly fix.
+    assert.equal(row.monthly_lo, null);
+  }
+  assert.equal(lessonRows[0].weekly_skills_lo, 'Skill one');
+  assert.equal(lessonRows[0].weekly_knowledge_lo, 'Know one');
 });

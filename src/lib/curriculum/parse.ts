@@ -141,12 +141,22 @@ export function isNonLessonMarker(dailyOutcome: string | null, period: number | 
 // section, and freeform rows therefore fall through to the one-column view rather than
 // getting mis-attributed text. monthly_lo is always preserved regardless.
 
-/** Subjects whose combined monthly cell carries inline Knowledge/Skills labels.
+/** Subjects whose monthly cell carries inline Knowledge/Skills labels.
  *  Professionalism (V4) ships the same inline-labelled shape — labels alone on their
- *  own line, prose on the following line — so it is split here too; English is absent
- *  because its combined cell uses bare `Skills`/`Knowledge` heading lines that the
- *  browse renderer splits at read time instead. */
-const MONTHLY_SPLIT_SUBJECTS = new Set(['maths', 'science', 'it', 'arabic', 'professionalism']);
+ *  own line, prose on the following line — so it is split here too. Awareness ships the
+ *  identical labelled blob, but the column matcher routes it to `monthly_skills_lo`
+ *  (its header names Skills), so `resolveMonthlySplit` reads that split column via the
+ *  fallback below. English is absent because its combined cell uses bare
+ *  `Skills`/`Knowledge` heading lines that the browse renderer splits at read time
+ *  instead — its bare headings would over-match here. */
+const MONTHLY_SPLIT_SUBJECTS = new Set([
+  'maths',
+  'science',
+  'it',
+  'arabic',
+  'professionalism',
+  'awareness',
+]);
 
 // Terminator after the label. Two branches, gated on whether the full
 // `learning outcome(s)` phrase is present:
@@ -206,6 +216,38 @@ export function splitInlineMonthly(
   const skills = buf.skills.join('\n').trim();
   if (!knowledge || !skills) return null;
   return { knowledge, skills };
+}
+
+/**
+ * Resolve a row's monthly Knowledge/Skills split, choosing the splitter's INPUT.
+ *
+ * The combined `monthlyLearningOutcome` column is tried first, unchanged — the shape
+ * every already-split subject (Maths/Science/IT/Arabic/Professionalism) uses. When that
+ * yields no split, fall back to a SPLIT column: if EXACTLY ONE of the mapped
+ * knowledge/skills columns is populated and it carries BOTH inline labels, split that
+ * value instead. This is Awareness's shape — the column matcher routes its combined blob
+ * to `monthly_skills_lo` (the header names Skills), so the blob never reaches the combined
+ * column; the fallback reads it back out of the split column and separates it.
+ *
+ * The single-column guard is deliberate: when BOTH split columns already carry content
+ * the source is genuinely pre-split (nothing to do), so we return null and the caller
+ * keeps the mapped columns as-is. Because the fallback still runs `splitInlineMonthly`,
+ * its both-labels-required guard means a populated split column WITHOUT both labels also
+ * returns null — so every subject that isn't Awareness stays byte-for-byte unchanged
+ * (their split columns carry zero both-label rows).
+ */
+export function resolveMonthlySplit(
+  subjectCode: string,
+  combined: string | null,
+  knowledge: string | null,
+  skills: string | null,
+): { knowledge: string; skills: string } | null {
+  const primary = splitInlineMonthly(subjectCode, combined);
+  if (primary) return primary;
+  const kFilled = knowledge != null && knowledge.trim() !== '';
+  const sFilled = skills != null && skills.trim() !== '';
+  if (kFilled === sFilled) return null; // both populated (already split) or neither
+  return splitInlineMonthly(subjectCode, kFilled ? knowledge : skills);
 }
 
 /** First non-empty cell of these rows marks a header-block meta row, not data. */
@@ -760,7 +802,12 @@ export function parseCurriculumWorkbook(
         periodForKey,
         periodLabel,
       );
-      const monthlySplit = splitInlineMonthly(subjectCode, value('monthlyLearningOutcome'));
+      const monthlySplit = resolveMonthlySplit(
+        subjectCode,
+        value('monthlyLearningOutcome'),
+        value('monthlyKnowledgeLearningOutcome'),
+        value('monthlySkillLearningOutcome'),
+      );
       // Resolve the weekly outcome columns once — reused verbatim for the weekly_* fields
       // and (for weekly-shape sheets with no Daily-LO column) as the per-lesson daily_outcome.
       const weeklySkillsResolved = cleanWeeklySkills(
@@ -786,10 +833,13 @@ export function parseCurriculumWorkbook(
         theme: rawAt(r, 'theme') ?? rawAt(r, 'topic'),
         resources: parseResources(resourceText, resourceUrl),
         taxonomy_id: rawAt(r, 'lessonIdentifier'),
-        // Maths/Science/IT/Arabic bake Knowledge/Skills into the combined monthly cell
-        // with inline labels; split them into the separate columns the browse UI prefers
-        // (monthly_lo is preserved below). Falls back to the mapped split columns
-        // (Professionalism) or null when no inline split applies.
+        // Maths/Science/IT/Arabic/Professionalism bake Knowledge/Skills into the combined
+        // monthly cell with inline labels; split them into the separate columns the browse
+        // UI prefers (monthly_lo is preserved below). Awareness's blob lands in
+        // `monthly_skills_lo` instead, so `resolveMonthlySplit` reads it back from there.
+        // When a split resolves, BOTH columns are taken from it — this OVERWRITES the
+        // source column that held the whole blob, so the knowledge text isn't duplicated.
+        // Otherwise the mapped split columns pass through (or null when nothing splits).
         monthly_knowledge_lo: monthlySplit
           ? monthlySplit.knowledge
           : value('monthlyKnowledgeLearningOutcome'),

@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import type { ActiveContextStackRow, AiContextTool } from '@/types/ai-context';
-import { floorForTool } from './floor';
+import { floorForTool, SAFEGUARDING_FALLBACK } from './floor';
 import type { SubjectResolution } from './subject-access';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 
@@ -22,9 +22,11 @@ import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-lo
  *   6. Teacher's lesson plan
  *
  * Later layers win on conflict. Beneath the ladder and overriding all of it sits
- * the FLOOR (`@/lib/ai/floor`) — the output contract, the safeguarding red
- * lines, and the language guard — which stays in code because breaking it breaks
- * the app or harms a student. This structure exists because of a real production
+ * the FLOOR (`@/lib/ai/floor`). Its output contract, marker conventions and
+ * language guard stay in code (locked); its SAFEGUARDING block is now an editable
+ * `ai_context_doc` row (layer = 'safeguarding'), read here separately and composed
+ * at floor position, with the code constant as a permanent fallback so a failed or
+ * empty read can never strip safeguarding. This structure exists because of a real production
  * failure: a hardcoded floor and an uploaded guide gave contradictory
  * instructions and nothing declared which won. Now the ladder + an explicit
  * precedence statement + the floor make the resolution visible.
@@ -138,6 +140,30 @@ const readActiveStack = cache(
 );
 
 /**
+ * Read the active safeguarding doc's body for a tool, SEPARATELY from the steerable
+ * stack — safeguarding composes at floor position, never inside the RPC's
+ * `layer_rank, sort_order, created_at` ordering, so it is fetched on its own. The
+ * `ai_context_doc` tables are admin-only under RLS (0063), so a teacher's request
+ * reaches this row only through the security-definer `get_active_safeguarding_doc`
+ * RPC, on the RLS-honouring server client — never the service-role key.
+ *
+ * Returns the body text, or `null` when there is no active row OR the read errors.
+ * Unlike {@link readActiveStack} (which swallows errors into `[]` silently for the
+ * benign missing-layer case), a failed/absent safeguarding read is a fault we must
+ * NOT hide: the caller logs it at error level and composes the code fallback, so a
+ * failed read can never silently produce a prompt with no safeguarding text.
+ */
+const readActiveSafeguarding = cache(async (tool: AiContextTool): Promise<string | null> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('get_active_safeguarding_doc', { p_tool: tool });
+  if (error) {
+    console.error('[context-stack] safeguarding read failed', { tool, error: error.message });
+    return null;
+  }
+  return typeof data === 'string' ? data : null;
+});
+
+/**
  * Compose the system prompt for a tool from the layered context stack.
  *
  * Order (exact): role → precedence statement → layers 1-4 (in the order the RPC
@@ -171,7 +197,22 @@ export async function composeContextStack({
   locale?: string;
   contentLanguage?: WorksheetContentLanguage;
 }): Promise<ComposedContextStack> {
-  const rows = await readActiveStack(tool, subjectId);
+  const stackRows = await readActiveStack(tool, subjectId);
+
+  // Invariant: safeguarding is composed separately at floor position (below) and must
+  // NEVER arrive through get_active_context_stack. That RPC excludes it by construction
+  // — its WHERE clause matches only org/academic/subject/tool, so a 'safeguarding' row
+  // falls through (see migration 20260803180100, §3). This guard is the assertion that
+  // catches a future broadening of that SECURITY DEFINER function: if one ever returns a
+  // safeguarding row, drop it from the ladder and log loudly, so it can never
+  // double-compose into the steerable layers.
+  const rows = stackRows.filter((r) => r.layer !== 'safeguarding');
+  if (rows.length !== stackRows.length) {
+    console.error(
+      '[context-stack] invariant violated: get_active_context_stack returned safeguarding row(s) — excluded from the ladder (safeguarding composes only at floor position)',
+      { tool, subjectId },
+    );
+  }
 
   if (rows.length === 0) {
     console.error('[context-stack] empty stack — misconfiguration', { tool, subjectId });
@@ -184,8 +225,27 @@ export async function composeContextStack({
     sections.push(`━━━ ${label} · "${row.doc_name}" ━━━\n${row.body_md.trim()}`);
   }
 
+  // Safeguarding composes inside the floor, at each tool's historical position
+  // (handled by floorForTool). Prefer the editable DB row; when it is absent, errors,
+  // or is empty, log loudly and use the code fallback — safeguarding must never
+  // compose empty. `smartt_checker` has no safeguarding slot (no fallback entry), so
+  // the read is skipped and it contributes nothing, exactly as before.
+  let safeguarding: string | undefined;
+  if (SAFEGUARDING_FALLBACK[tool] !== undefined) {
+    const dbBody = await readActiveSafeguarding(tool);
+    if (dbBody && dbBody.trim().length > 0) {
+      safeguarding = dbBody;
+    } else {
+      console.error('[context-stack] safeguarding missing/empty — using code fallback', {
+        tool,
+        reason: dbBody === null ? 'absent_or_error' : 'empty',
+      });
+      safeguarding = SAFEGUARDING_FALLBACK[tool];
+    }
+  }
+
   sections.push(
-    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage)}`,
+    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage, safeguarding)}`,
   );
 
   const docsUsed: ContextDocUsed[] = rows.map((r) => ({

@@ -1,0 +1,27 @@
+-- 20260803180000_ai_context_layer_add_safeguarding.sql
+--
+-- FILE 1 OF 3 — RUN ALONE, FIRST, IN ITS OWN EXECUTION.
+--
+-- ALTER TYPE ... ADD VALUE ONLY. Nothing else may live in this file. Postgres
+-- commits the new enum value but forbids USING it until the adding transaction has
+-- ended, so any statement that references 'safeguarding' (the scope CHECK and the
+-- new RPC in File 2; the seed in File 3) MUST run in a separate, later transaction.
+-- Running the three files as one batch fails in the Supabase SQL editor with:
+--   unsafe use of new value "safeguarding".
+-- (Same rule the 0070 enum-widen file called out for 'worksheet_image'.)
+--
+-- Adds the 'safeguarding' layer to ai_context_layer (0063). A safeguarding doc is an
+-- editable ai_context_doc row carrying one tool's safeguarding block. The composer
+-- reads it SEPARATELY from get_active_context_stack (File 2's get_active_safeguarding_doc)
+-- and composes it at floor position, with a permanent code fallback
+-- (src/lib/ai/floor.ts) so a failed or empty read can never strip safeguarding.
+--
+-- Idempotent: IF NOT EXISTS makes a re-run a no-op.
+--
+-- Ledger: this file cannot also insert its applied_migration row (only the bare
+-- ALTER TYPE may live here). File 2 records BOTH 20260803180000 and 20260803180100.
+--
+-- PROVENANCE: authored here; George applies it BY HAND in the Supabase SQL editor.
+-- CC never applies migrations.
+
+alter type public.ai_context_layer add value if not exists 'safeguarding';

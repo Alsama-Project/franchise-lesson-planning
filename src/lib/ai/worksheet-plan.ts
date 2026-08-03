@@ -128,7 +128,7 @@ function blockLines(blocks: Block[]): string[] {
 /** Build the user-turn prompt. The generation brief rules live here, not the floor. */
 function buildUserPrompt(context: WorksheetPlanContext): string {
   const lines: string[] = [
-    'TASK — plan the student worksheet for this lesson as an ordered list of exercises. Return one spec per exercise, in the order they should appear on the worksheet.',
+    'TASK — plan the student worksheet for this lesson as an ordered list of exercises. An exercise is the printed work for one student-facing block the teacher wrote. Return one spec per such block, in block order.',
     '',
     ...blockLines(context.blocks),
   ];
@@ -160,7 +160,10 @@ function buildUserPrompt(context: WorksheetPlanContext): string {
   lines.push(
     '',
     'How to plan the exercises:',
-    '- "Students do" in a block is the primary source of exercises. "Teacher does" yields an exercise only when the student needs the artefact in front of them — a worked example does; an oral drill does not.',
+    '- The blocks are the ONLY source of exercises. A "Students do" activity is a student-facing block; a "Teacher does" activity is one only when the student needs the artefact printed in front of them — a worked example does, an oral drill does not.',
+    '- One student-facing block, one exercise, in block order. A block is one activity the teacher wrote about. Two Independent practice blocks — a gap fill and a crossword — are two exercises. Never merge two blocks into one exercise; never split one block into several.',
+    '- A block that needs nothing printed yields no exercise: an oral drill or a Think–Pair–Share produces nothing on paper, whether it is written under "Students do" or "Teacher does". Do not pad to make counts match, and never drop or combine blocks to shrink them.',
+    '- Curriculum context — theme, vocabulary, grammar, outcomes — shapes how an exercise is written. It never adds one.',
     `- template_anchor is the heading text in the template that the exercise fills, or null when there is no template or no matching heading.`,
     `- image_count is how many images the exercise needs. The TOTAL image_count across all specs MUST NOT exceed ${MAX_TOTAL_IMAGES}.`,
     '- position is the 1-based order of the exercise on the worksheet.',

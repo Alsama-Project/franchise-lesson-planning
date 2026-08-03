@@ -575,6 +575,85 @@ test('splitInlineMonthly: professionalism single-section cell → null (both-lab
   );
 });
 
+// ── Defect 2: professionalism V4 space-run separator (colon-less, prose on label line) ──
+//
+// The V4 professionalism shape is a label phrase followed on the SAME line, after a run
+// of spaces and NO colon, by the prose (CRLF-delimited). This previously returned null —
+// the old regex demanded a colon or end-of-line after the phrase. The relaxation permits
+// a space-run separator, but ONLY when the full `learning outcome(s)` phrase is present.
+
+test('splitInlineMonthly: professionalism space-run separator, no colon, prose on the label line (CRLF)', () => {
+  // The exact failing V4 shape: "<phrase>  <prose>" with a space-run, no colon, CRLF.
+  const blob =
+    'Knowledge Learning Outcome  Compare professional and personal relationships.\r\n' +
+    'Skills Learning Outcome  Build professional relationships and manage well-being.';
+  const r = splitInlineMonthly('professionalism', blob);
+  assert.deepEqual(r, {
+    knowledge: 'Compare professional and personal relationships.',
+    skills: 'Build professional relationships and manage well-being.',
+  });
+});
+
+test('splitInlineMonthly: bare keyword + space-run + prose must NOT be read as a label → null', () => {
+  // The over-match guard. A prose line beginning with the BARE keyword must fall through:
+  // the space-run separator is gated on the full `learning outcome(s)` phrase, absent here.
+  assert.equal(
+    splitInlineMonthly('professionalism', 'Knowledge is power and drives learning.\nSkills are built over time.'),
+    null,
+  );
+  // Sharper: one real (phrase) label + one bare-keyword prose line → only one section seen → null.
+  assert.equal(
+    splitInlineMonthly(
+      'professionalism',
+      'Knowledge Learning Outcome  Explain the concept.\nSkills matter a great deal here.',
+    ),
+    null,
+  );
+});
+
+test('splitInlineMonthly: "<phrase> : x" — colon precedes the space-run alternative (k[0]/rest pinned)', () => {
+  // Ordering pin. `\s*:` MUST be tried before `\s+`; otherwise the space before the colon
+  // terminates the label and ": x" leaks into `rest`. rest must be "Explain X.", not ": Explain X.".
+  const blob = 'Knowledge Learning Outcome : Explain X.\nSkills Learning Outcome : Classify Y.';
+  const r = splitInlineMonthly('science', blob);
+  assert.deepEqual(r, { knowledge: 'Explain X.', skills: 'Classify Y.' });
+});
+
+test('splitInlineMonthly: label-free blob and single-label blob both return null unchanged', () => {
+  assert.equal(splitInlineMonthly('professionalism', 'Just some prose with no labels at all.'), null);
+  assert.equal(
+    splitInlineMonthly('science', 'Knowledge Learning Outcome  Explain X.\n. more knowledge only.'),
+    null,
+  );
+});
+
+test('splitInlineMonthly: colon and EOL shapes unchanged by the relaxation (IT-64 / science-670 byte-identity)', () => {
+  // The relaxation must not shift ANY currently-passing line. These are the exact colon and
+  // end-of-line shapes the passing IT-64 and science-670 corpora use; their split output is
+  // pinned so a change to k[0]/rest would fail here. (Full-corpus byte-identity is re-checked
+  // by George's reingest against the real workbooks via the self-skipping regression gate.)
+  // Colon, same-line content:
+  assert.deepEqual(
+    splitInlineMonthly('science', 'Knowledge Learning Outcome: Explain ecosystems.\nSkills Learning Outcome: Classify organisms.'),
+    { knowledge: 'Explain ecosystems.', skills: 'Classify organisms.' },
+  );
+  // Colon then space-run then content (existing science shape):
+  assert.deepEqual(
+    splitInlineMonthly('science', 'Knowledge Learning Outcome:      Explain ecosystems.\nSkills Learning Outcome:      Classify organisms.'),
+    { knowledge: 'Explain ecosystems.', skills: 'Classify organisms.' },
+  );
+  // End-of-line label, content on the following line (label `rest` empty):
+  assert.deepEqual(
+    splitInlineMonthly('it', 'Skill Learning Outcome:\nUse formatting tools.\nKnowledge Learning Outcome:\nIdentify file types.'),
+    { knowledge: 'Identify file types.', skills: 'Use formatting tools.' },
+  );
+  // Singular "Skill", "Monthly" prefix, and EOL-with-no-colon label alone on its line:
+  assert.deepEqual(
+    splitInlineMonthly('maths', 'Monthly Knowledge\n. Understand place value.\nMonthly Skills\n. Compare and order numbers.'),
+    { knowledge: '. Understand place value.', skills: '. Compare and order numbers.' },
+  );
+});
+
 // ── Real-workbook regression gate (self-skips without the gitignored IP files) ─────
 //
 // Proves the blank-cell fix leaves the untouched subjects byte-identical: for a subject

@@ -148,8 +148,19 @@ export function isNonLessonMarker(dailyOutcome: string | null, period: number | 
  *  browse renderer splits at read time instead. */
 const MONTHLY_SPLIT_SUBJECTS = new Set(['maths', 'science', 'it', 'arabic', 'professionalism']);
 
-const KNOWLEDGE_LABEL = /^\s*(?:monthly\s+)?knowledge(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;
-const SKILLS_LABEL = /^\s*(?:monthly\s+)?skills?(?:\s+learning\s+outcomes?)?\s*(?::|$)/i;
+// Terminator after the label. Two branches, gated on whether the full
+// `learning outcome(s)` phrase is present:
+//  • Full phrase present → colon OR a space-run (content on the label line, no colon)
+//    OR end-of-line. The space-run branch is what lets professionalism's V4 shape
+//    ("Knowledge Learning Outcome  <prose>", no colon) split. `\s*:` MUST precede `\s+`
+//    so "Outcome : x" terminates k[0] at the colon and never leaks ": x" into `rest`.
+//  • Bare keyword only ("Knowledge", "Skills") → colon OR end-of-line ONLY, never a
+//    space-run. This is the over-match guard: a prose line beginning with the bare
+//    keyword ("Knowledge is power…") must NOT be read as a label.
+const KNOWLEDGE_LABEL =
+  /^\s*(?:monthly\s+)?knowledge(?:\s+learning\s+outcomes?(?:\s*:|\s+|\s*$)|\s*(?::|$))/i;
+const SKILLS_LABEL =
+  /^\s*(?:monthly\s+)?skills?(?:\s+learning\s+outcomes?(?:\s*:|\s+|\s*$)|\s*(?::|$))/i;
 const AR_KNOWLEDGE_LABEL = /^\s*(?:ال)?معرفة\s*(?::|$)/;
 const AR_SKILLS_LABEL = /^\s*(?:ال)?مهارات\s*(?::|$)/;
 

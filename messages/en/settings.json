@@ -398,7 +398,8 @@
       "tools": {
         "worksheet_builder": "Worksheet builder",
         "resource_generator": "Resource generator",
-        "smartt_checker": "Objective checker"
+        "smartt_checker": "Objective checker",
+        "worksheet_image": "Worksheet image"
       },
       "upload": {
         "uploading": "Uploading…",

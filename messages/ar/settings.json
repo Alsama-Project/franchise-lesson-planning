@@ -398,7 +398,8 @@
       "tools": {
         "worksheet_builder": "منشئ أوراق العمل",
         "resource_generator": "مولّد الموارد",
-        "smartt_checker": "مدقق الأهداف"
+        "smartt_checker": "مدقق الأهداف",
+        "worksheet_image": "صورة أوراق العمل"
       },
       "upload": {
         "uploading": "جارٍ الرفع…",

@@ -842,6 +842,29 @@ function WeekGrid({ data, spaced }: { data: CurriculumBrowseData; spaced: boolea
   const safeIndex = Math.min(selected, data.rows.length - 1);
   const focusRow = data.rows[safeIndex];
 
+  // Column suppression drives the row-region treatment (all value-based, no subject
+  // identity):
+  //   • ≥2 surviving columns → the full table (WeekTable).
+  //   • exactly 1, and it is NOT already in the In Focus card (only `period`) → an
+  //     inline single-column row treatment (still WeekTable, table shell dropped).
+  //   • exactly 1 already carried by In Focus, OR 0 surviving columns → NO row region:
+  //     the strip would carry nothing new, so In Focus alone holds the content + Plan.
+  const visible = useMemo(() => visibleColumns(data.rows, data.weekly), [data.rows, data.weekly]);
+  const showRowRegion =
+    visible.length >= 2 || (visible.length === 1 && !IN_FOCUS_COLUMNS.has(visible[0]));
+
+  // When there is no row region, selection can't be re-pointed by clicking a row, but it
+  // still survives: the lifted `selected` index (clamped to `safeIndex`) keeps In Focus
+  // and Plan this lesson targeting the resolved lesson — for a weekly-grain subject the
+  // week is a single row, so that is the only lesson anyway.
+  if (!showRowRegion) {
+    return (
+      <div className={cn('lg:max-w-[420px]', spaced && 'mt-[20px]')}>
+        <FocusCard row={focusRow} weekly={data.weekly} />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -851,7 +874,13 @@ function WeekGrid({ data, spaced }: { data: CurriculumBrowseData; spaced: boolea
     >
       {/* The week's rows share one Weekly outcome, so the daily-vs-weekly de-dup reads
           `data.weekly` for every row rather than a per-row copy. */}
-      <WeekTable rows={data.rows} selected={safeIndex} onSelect={setSelected} weekly={data.weekly} />
+      <WeekTable
+        rows={data.rows}
+        selected={safeIndex}
+        onSelect={setSelected}
+        weekly={data.weekly}
+        visible={visible}
+      />
       {/* Sticky so the IN FOCUS card stays in view while the day table scrolls.
           top offset clears the 64px (h-16) sticky shell header + a small gap. */}
       <div className="lg:sticky lg:top-[80px]">
@@ -883,17 +912,63 @@ const COL_WIDTH: Record<ColKey, string> = {
  *  a readable label instead of wrapping mid-URL. */
 const FLEX_PRIORITY: ColKey[] = ['outcome', 'resources', 'topic', 'skill', 'period'];
 
+/**
+ * Whether a column has ANYTHING to show for a given row. `outcome` is empty when the
+ * daily text merely repeats the Weekly panel (composed weekly-grain subjects), so a
+ * column that is only the em-dash repeated down the week reads as empty and is dropped.
+ * Pure, module-level, and value-based so both the row region (WeekTable) and the
+ * render-mode decision (WeekGrid) agree on the same surviving-column set.
+ */
+function hasCellValue(key: ColKey, row: BrowseRow, weekly: WeeklyOutcome): boolean {
+  switch (key) {
+    case 'period':
+      return row.period != null;
+    case 'outcome':
+      return row.dailyOutcome.trim() !== '' && !isDailyRedundant(row.dailyOutcome, weekly);
+    case 'skill':
+      return row.linguisticSkill.trim() !== '';
+    case 'topic':
+      return row.theme.trim() !== '';
+    case 'resources':
+      return row.resources.length > 0;
+  }
+}
+
+/** Column suppression (Rule 1): the columns non-empty for at least one row of the week. */
+function visibleColumns(rows: BrowseRow[], weekly: WeeklyOutcome): ColKey[] {
+  return COL_ORDER.filter((k) => rows.some((row) => hasCellValue(k, row, weekly)));
+}
+
+/**
+ * Columns whose surviving value the In Focus card already carries: the SKILL / TOPIC
+ * chips, the DAILY OUTCOME block, and the RESOURCES list. When suppression leaves ONE
+ * column and it is one of these, the single-column row region would only repeat what In
+ * Focus shows a few inches to the right (the empty-topic-strip fault), so we render no
+ * row region at all — In Focus carries the content and the Plan this lesson action.
+ *
+ * `period` is deliberately absent: it appears only in the In Focus *header* label, not as
+ * card content, so a period-only survivor still renders inline in the row treatment.
+ *
+ * Value-based and per-week (keyed off which column survived for the displayed week's
+ * rows) — never a subject name or code.
+ */
+const IN_FOCUS_COLUMNS: ReadonlySet<ColKey> = new Set<ColKey>(['outcome', 'skill', 'topic', 'resources']);
+
 function WeekTable({
   rows,
   selected,
   onSelect,
   weekly,
+  visible,
 }: {
   rows: BrowseRow[];
   selected: number;
   onSelect: (i: number) => void;
   /** The week's Weekly outcome — used to drop a daily-outcome cell that merely repeats it. */
   weekly: WeeklyOutcome;
+  /** The surviving columns after suppression (Rule 1), computed once by the parent so the
+   *  render-mode decision and the row region agree. Length ≥ 2 → table; length 1 → inline. */
+  visible: ColKey[];
 }) {
   const t = useTranslations('curriculum');
   const locale = useLocale();
@@ -920,23 +995,9 @@ function WeekTable({
     return cells;
   }, [rows]);
 
-  // Whether a column has ANYTHING to show for a given row. Note `outcome` is empty when the
-  // daily text merely repeats the Weekly panel (composed weekly-grain subjects) — so a
-  // column that is only the em-dash repeated down the week reads as empty and is dropped.
-  const hasCell = (key: ColKey, row: BrowseRow): boolean => {
-    switch (key) {
-      case 'period':
-        return row.period != null;
-      case 'outcome':
-        return row.dailyOutcome.trim() !== '' && !isDailyRedundant(row.dailyOutcome, weekly);
-      case 'skill':
-        return row.linguisticSkill.trim() !== '';
-      case 'topic':
-        return row.theme.trim() !== '';
-      case 'resources':
-        return row.resources.length > 0;
-    }
-  };
+  // Whether a column has ANYTHING to show for a given row — delegates to the shared,
+  // value-based predicate the parent used to compute `visible`, so the two never drift.
+  const hasCell = (key: ColKey, row: BrowseRow): boolean => hasCellValue(key, row, weekly);
 
   // The rendered content for a cell, or null when this row has nothing there (→ em-dash).
   const cellContent = (key: ColKey, row: BrowseRow): React.ReactNode => {
@@ -963,14 +1024,14 @@ function WeekTable({
     }
   };
 
-  // Rule 1: suppress any column that is empty for EVERY row of the displayed week.
-  const visible = COL_ORDER.filter((k) => rows.some((row) => hasCell(k, row)));
-
+  // Rule 1 (column suppression) was applied by the parent: `visible` is the surviving set.
   const emptyCell = <span className="text-text-faint">{t('empty')}</span>;
 
-  // Rule 2: one surviving column (or none) ⇒ don't render a table at all. Show the
-  // surviving value in the SAME selectable row treatment so the row stays selectable and
-  // In Focus / "Plan this lesson" keep working off the lifted `selected` index.
+  // Rule 2: one surviving column ⇒ don't render a table at all. Show the surviving value in
+  // the SAME selectable row treatment so the row stays selectable and In Focus / "Plan this
+  // lesson" keep working off the lifted `selected` index. (The parent only routes a single
+  // NON-In-Focus survivor here — a single In-Focus survivor, or zero, renders no row region
+  // at all — but the `only`/em-dash fallbacks keep this correct for any single-column set.)
   if (visible.length <= 1) {
     const only = visible[0];
     return (

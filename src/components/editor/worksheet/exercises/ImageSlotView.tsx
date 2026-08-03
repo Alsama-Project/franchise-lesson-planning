@@ -4,11 +4,13 @@
 // the very first frame), so a picture landing — or failing — never shifts the text
 // around it.
 //
-// On THIS branch a ready slot cannot yet DISPLAY its picture (the render wiring —
-// resolving `storage_path` through `/api/worksheet-image` inside the image node —
-// lands in the next image branch). So every state shows the `[Picture: …]` token
-// in monospace on the paper: this is exactly the printed form with images off, so
-// it reads as deliberate, not as missing work.
+// A `ready` slot DISPLAYS its generated picture, resolved from `storage_path`
+// through the auth'd, re-signing GET /api/worksheet-image route (never a persisted
+// signed URL). The picture is contained within the reserved box — same height in
+// every state — with its aspect ratio kept and no cropping. Every OTHER state, and
+// a `ready` slot whose object turns out unreachable (`onError`), falls back to the
+// `[Picture: …]` token in monospace on the paper: exactly the images-off print
+// form, so it reads as deliberate, not as missing work.
 //
 // State → controls beneath the box (a teal strip, never a menu):
 //   • ready    → Regenerate image · Replace image
@@ -16,8 +18,10 @@
 //   • refused  → nothing   (cap reached; retrying refuses again — no Try again, no error)
 //   • pending  → nothing   (image gen skipped/disabled; the sheet still carries the token)
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { ImageSlot } from '@/types/worksheet-exercise';
+import { resolveImageSrc } from '../resizableImage';
 import { IMAGE_SLOT_HEIGHT } from './heights';
 
 export type SlotDisplayState = 'ready' | 'failed' | 'refused' | 'pending';
@@ -49,16 +53,40 @@ export function ImageSlotView({
   const t = useTranslations('worksheetGen');
   const state = slotDisplayState(slot, refused);
 
+  // A slot can be `ready` in the row while the object is unreachable (deleted file,
+  // storage outage, bad path). On the <img>'s error we revert THIS slot to the token
+  // — a broken-image icon on the worksheet paper is a worse failure than the token,
+  // which at least tells the teacher what was meant to be there.
+  const [imgError, setImgError] = useState(false);
+  const showImage = state === 'ready' && !imgError;
+
   return (
     <div className="my-[14px]">
-      {/* Reserved box — the token on the paper, exactly the images-off print form. */}
+      {/* Reserved box — SAME height in every state (IMAGE_SLOT_HEIGHT), so a landing
+          or failing picture never shifts the text. When it holds a picture the box
+          reads as content (no dashed reservation border, no fill); otherwise it shows
+          the `[Picture: …]` token, exactly the images-off print form. */}
       <div
-        className="flex items-center justify-center rounded-[10px] border border-dashed border-[#E6D9C7] bg-[#FBF8F3] px-4 text-center"
+        className={
+          showImage
+            ? 'flex items-center justify-center rounded-[10px] px-4 text-center'
+            : 'flex items-center justify-center rounded-[10px] border border-dashed border-[#E6D9C7] bg-[#FBF8F3] px-4 text-center'
+        }
         style={{ height: IMAGE_SLOT_HEIGHT }}
       >
-        <span className="font-mono text-[12.5px] text-neutral-500" dir="auto">
-          [Picture: {slot.brief}]
-        </span>
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolveImageSrc('', slot.storage_path)}
+            alt={slot.brief}
+            onError={() => setImgError(true)}
+            style={{ maxHeight: '100%', maxWidth: '100%', display: 'block' }}
+          />
+        ) : (
+          <span className="font-mono text-[12.5px] text-neutral-500" dir="auto">
+            [Picture: {slot.brief}]
+          </span>
+        )}
       </div>
 
       {state === 'ready' ? (

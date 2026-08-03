@@ -22,8 +22,9 @@ import { isWorksheetDocEditorEnabled } from '@/lib/editor/doc-flag';
 import { sourceVersion } from '@/lib/editor/worksheet-migrate';
 import { WorksheetBuilder } from './WorksheetBuilder';
 import type { WorksheetContext } from './context';
-import { DocumentWorksheet, type SaveState } from './doc/DocumentWorksheet';
+import { type SaveState } from './doc/DocumentWorksheet';
 import { DocumentWorksheetReadOnly } from './doc/DocumentWorksheetReadOnly';
+import { GeneratingPane } from './exercises/ExerciseSurface';
 
 export function WorksheetPane({
   value,
@@ -41,8 +42,12 @@ export function WorksheetPane({
   const docEditor = isWorksheetDocEditorEnabled();
 
   if (docEditor) {
+    // The generating pane: it loads the plan's exercise rows and either shows the
+    // card surface (rows exist / are being generated) or the untouched continuous
+    // DocumentWorksheet scaffold (no rows yet), with the Generate / Regenerate-all
+    // header above both.
     return (
-      <DocumentWorksheet
+      <GeneratingPane
         value={value}
         onChange={onChange}
         context={context}

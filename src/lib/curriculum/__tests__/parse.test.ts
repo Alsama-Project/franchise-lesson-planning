@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseCurriculumWorkbook, splitInlineMonthly } from '../parse';
+import { cleanResourceList, isNoResource } from '../types';
 import { makeWorkbook, headerBlock, type CellSpec } from './fixtures';
 
 // ── English daily-grain workbook — the no-regression anchor ───────────────────────
@@ -688,4 +689,53 @@ test('regression — arabic changes ONLY at the genuine W15 collision', {
   const { report } = parseFixture('arabic');
   assert.deepEqual(report.droppedCollisions.map((c) => c.key), ['arabic|Y5|December|W15|wk']);
   assert.equal(report.droppedBlankWeekRows.length, 0);
+});
+
+// ── Resources rendering — the shared non-resource filter (Part A) ──────────────────
+//
+// `parseResources` splits a multi-line source cell on newlines, so a stray quote
+// character alone on the cell's first/last line becomes a standalone entry. The shared
+// render-time filter drops any entry that is empty once quote characters, whitespace and
+// punctuation are stripped — used by every surface (weekly table, In Focus card, Topics,
+// Search) so they cannot diverge.
+
+test('isNoResource: drops bare quote / punctuation-only / blank / em-dash / n/a', () => {
+  for (const junk of ['"', "'", '“', '”', '«»', '', '   ', '—', '--', '...', 'n/a', 'N/A']) {
+    assert.equal(isNoResource(junk), true, `expected "${junk}" to be a non-resource`);
+  }
+});
+
+test('isNoResource: keeps a real label, a page ref and a raw URL', () => {
+  for (const real of [
+    'EASE — Early Adolescent Skills for Emotions (WHO)',
+    'Jumpstart p6',
+    'https://example.com/handout.pdf',
+    '6',
+  ]) {
+    assert.equal(isNoResource(real), false, `expected "${real}" to be a resource`);
+  }
+});
+
+test('cleanResourceList: strips the phantom quote entries but keeps the URLs (Yoga Y1 W16 shape)', () => {
+  const raw = [
+    { label: '"' },
+    { label: 'https://example.com/a', url: 'https://example.com/a' },
+    { label: 'https://example.com/b', url: 'https://example.com/b' },
+    { label: 'https://example.com/c', url: 'https://example.com/c' },
+    { label: '"' },
+  ];
+  const cleaned = cleanResourceList(raw);
+  assert.equal(cleaned.length, 3);
+  assert.deepEqual(cleaned.map((r) => r.url), [
+    'https://example.com/a',
+    'https://example.com/b',
+    'https://example.com/c',
+  ]);
+});
+
+test('cleanResourceList: trims labels, drops empty, tolerates null', () => {
+  assert.deepEqual(cleanResourceList(null), []);
+  assert.deepEqual(cleanResourceList([{ label: '  Flashcards  ' }, { label: ' " ' }]), [
+    { label: 'Flashcards', url: undefined },
+  ]);
 });

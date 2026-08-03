@@ -899,18 +899,22 @@ interface TopicCell {
 /** The period table's columns, in display order. */
 type ColKey = 'period' | 'outcome' | 'skill' | 'topic' | 'resources';
 const COL_ORDER: ColKey[] = ['period', 'outcome', 'skill', 'topic', 'resources'];
-/** Fixed column widths; the chosen flexible column is overridden to `w-auto`. */
+/** Fixed column widths; the chosen flexible column is overridden to `w-auto`. Topic is
+ *  wide enough that curriculum content (Arabic themes especially) reads across a readable
+ *  width instead of wrapping one word per line; Resources is capped so a long label / raw
+ *  URL wraps inside its column rather than sprawling across the row. */
 const COL_WIDTH: Record<ColKey, string> = {
   period: 'w-[80px]',
   outcome: 'w-auto',
   skill: 'w-[76px]',
-  topic: 'w-[96px]',
-  resources: 'w-[104px]',
+  topic: 'w-[150px]',
+  resources: 'w-[112px]',
 };
-/** Which surviving column absorbs the slack — the longest-text one present. So a
- *  weekly-grain subject with no Learning-outcome column gives Resources the width to show
- *  a readable label instead of wrapping mid-URL. */
-const FLEX_PRIORITY: ColKey[] = ['outcome', 'resources', 'topic', 'skill', 'period'];
+/** Which surviving column absorbs the slack — the longest prose column present. Topic
+ *  precedes Resources: on a weekly-grain subject with no Learning-outcome column (Awareness)
+ *  the slack goes to Topic (so Arabic reads wide) while Resources stays capped and wraps,
+ *  rather than Resources sprawling and squeezing Topic to one word per line. */
+const FLEX_PRIORITY: ColKey[] = ['outcome', 'topic', 'resources', 'skill', 'period'];
 
 /**
  * Whether a column has ANYTHING to show for a given row. `outcome` is empty when the

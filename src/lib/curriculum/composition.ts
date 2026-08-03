@@ -31,7 +31,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { cleanLO } from '@/lib/curriculumUtils';
 import { parseTaxonomyId, isTaxonomyLeaf, skillKnowledgeKey } from '@/lib/curriculum/taxonomy';
-import type { CurriculumResource } from '@/lib/curriculum/types';
+import { cleanResourceList, type CurriculumResource } from '@/lib/curriculum/types';
 
 // ── Tree shapes (Subject → Yearly → S.K group → ordered hours) ──────────────────────
 
@@ -93,18 +93,6 @@ const MONTH_ORDER = [
 function monthIndex(month: string): number {
   const i = MONTH_ORDER.indexOf(month);
   return i === -1 ? MONTH_ORDER.length : i;
-}
-
-/** A resource label carrying no real resource (blank / em-dash / "n/a"). */
-function isNoResource(label: string): boolean {
-  const s = label.trim().toLowerCase();
-  return s === '' || s === '—' || s === 'n/a';
-}
-
-function cleanResources(resources: CurriculumResource[] | null): CurriculumResource[] {
-  return (resources ?? [])
-    .filter((r) => r.label && !isNoResource(r.label))
-    .map((r) => ({ label: r.label.trim(), url: r.url }));
 }
 
 /** The columns the tree needs from a scoped (subject, year) read. */
@@ -192,7 +180,7 @@ export async function getCompositionTree(
         hour: p.hour,
         dailyOutcome: cleanLO(r.daily_outcome ?? '') || null,
         calendarSlot: { year: r.year, month: r.month, week: r.week, period: r.period },
-        resources: cleanResources(r.resources),
+        resources: cleanResourceList(r.resources),
         taxonomyId: r.taxonomy_id,
         lessonKey: r.lesson_key,
         strandLabel: (r.linguistic_skill ?? r.focus_area ?? '').trim() || null,
@@ -596,7 +584,7 @@ export async function getTopicsData(subject: string): Promise<TopicsData> {
       lessonKey: r.lesson_key,
       dailyOutcome: cleanLO(r.daily_outcome ?? '') || null,
       strandLabel: (r.strand_label ?? '').trim() || null,
-      resources: cleanResources(r.resources),
+      resources: cleanResourceList(r.resources),
     });
   }
 

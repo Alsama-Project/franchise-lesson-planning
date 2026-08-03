@@ -18,7 +18,7 @@ import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { cleanLO } from '@/lib/curriculumUtils';
-import type { CurriculumResource } from '@/lib/curriculum/types';
+import { cleanResourceList, type CurriculumResource } from '@/lib/curriculum/types';
 
 /** One searchable lesson — the client filters/ranks over an array of these. */
 export interface SearchRecord {
@@ -54,18 +54,6 @@ const MONTH_ORDER = [
 function monthIndex(month: string): number {
   const i = MONTH_ORDER.indexOf(month);
   return i === -1 ? MONTH_ORDER.length : i;
-}
-
-/** A resource label carrying no real resource (blank / em-dash / "n/a"). */
-function isNoResource(label: string): boolean {
-  const s = label.trim().toLowerCase();
-  return s === '' || s === '—' || s === 'n/a';
-}
-
-function cleanResources(resources: CurriculumResource[] | null): CurriculumResource[] {
-  return (resources ?? [])
-    .filter((r) => r.label && !isNoResource(r.label))
-    .map((r) => ({ label: r.label.trim(), url: r.url }));
 }
 
 const SEARCH_COLUMNS =
@@ -128,7 +116,7 @@ export async function getSearchData(subject: string): Promise<SearchData> {
       focusArea: (r.focus_area ?? '').trim() || null,
       linguisticSkill: (r.linguistic_skill ?? '').trim() || null,
       grammarVocabulary: cleanLO(r.grammar_vocabulary ?? '') || null,
-      resources: cleanResources(r.resources),
+      resources: cleanResourceList(r.resources),
     });
   }
 

@@ -11,6 +11,33 @@ export interface CurriculumResource {
 }
 
 /**
+ * A resource label that carries no real resource. The baked spreadsheet export
+ * spells "empty" several ways: null/blank, an em-dash placeholder, the literal
+ * "n/a", and — because a multi-line source cell is split into entries at ingest —
+ * a stray quote character alone on the cell's first/last line. An entry that is
+ * empty once quote characters, whitespace and punctuation are stripped carries no
+ * resource, so it is dropped.
+ */
+export function isNoResource(label: string): boolean {
+  const s = label.trim().toLowerCase();
+  if (s === 'n/a') return true;
+  return s.replace(/[\p{P}\p{S}\s]/gu, '') === '';
+}
+
+/**
+ * Drop non-resource entries and trim the survivors. The single shared filter for
+ * every render surface (the weekly table cell, the In Focus card, the Topics
+ * spiral and Search) so the phantom-resource fix cannot diverge between them.
+ */
+export function cleanResourceList(
+  resources: CurriculumResource[] | null,
+): CurriculumResource[] {
+  return (resources ?? [])
+    .filter((r) => r.label && !isNoResource(r.label))
+    .map((r) => ({ label: r.label.trim(), url: r.url }));
+}
+
+/**
  * A row of `curriculum_lesson` as *read* by the app (curriculumUtils → the picker,
  * editor, weekly overview). Daily-grain subjects (English et al.) always have a
  * numeric `period`; weekly-grain subjects (Awareness) read back null — the current

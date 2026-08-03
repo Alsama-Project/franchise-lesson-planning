@@ -39,6 +39,30 @@ function plainText(nodes: JNode[] | undefined): string {
   return nodes.map((n) => (n.type === 'text' ? n.text ?? '' : plainText(n.content))).join('');
 }
 
+/** Normalise a title/heading for the leading-title comparison: trimmed,
+ *  case-insensitive, with a single trailing colon (ASCII or full-width) tolerated. */
+function normaliseTitle(text: string): string {
+  return text.trim().replace(/[:：]\s*$/, '').trim().toLowerCase();
+}
+
+/**
+ * Drop body_doc's FIRST node when it is a heading that merely repeats the
+ * exercise title — the card already prints the title as its `<h3>`, and the
+ * generator (prompt: "a heading is optional") often opens body_md with that same
+ * title. Only the first node, only a heading, only on a trimmed/case-insensitive/
+ * trailing-colon-tolerant match; a non-matching heading is a real sub-heading the
+ * model sometimes writes and is left untouched. An empty title never strips (the
+ * card falls back to "Exercise N"). Leading title headings carry no `[Picture: …]`
+ * markers, so removing one never shifts the image-slot cursor mapping below.
+ */
+function stripLeadingTitleHeading(content: JNode[], title: string): JNode[] {
+  const first = content[0];
+  if (!first || first.type !== 'heading') return content;
+  const key = normaliseTitle(title);
+  if (!key || normaliseTitle(plainText(first.content)) !== key) return content;
+  return content.slice(1);
+}
+
 export function ExerciseBody({
   exercise,
   slotBaseIndex,
@@ -57,9 +81,13 @@ export function ExerciseBody({
     : [];
   const slots = Array.isArray(exercise.image_slots) ? exercise.image_slots : [];
 
+  // The card's <h3> is the durable title; drop a body_doc leading heading that
+  // just repeats it, so the exercise isn't printed with its name twice.
+  const bodyContent = stripLeadingTitleHeading(content, exercise.title);
+
   const rendered: ReactNode[] = [];
   let cursor = 0; // threaded synchronously through this render only
-  content.forEach((node, i) => {
+  bodyContent.forEach((node, i) => {
     // A marker-alone paragraph → the slot's reserved box.
     if (node.type === 'paragraph' && PICTURE_ONLY_RE.test(plainText(node.content))) {
       const slot = slots[cursor];

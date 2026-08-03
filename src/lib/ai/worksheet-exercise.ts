@@ -42,22 +42,51 @@ export interface WorksheetExerciseContext {
   anchors: CurriculumAnchors | null;
 }
 
+/**
+ * One image slot the MODEL authors, per `[Picture: …]` marker, in marker order.
+ * The model authors only the `brief`; the brief's content contract lives in the
+ * WORKSHEET_BUILDER_FLOOR (IMAGE BRIEFS) — not here and not in the user prompt.
+ * The slot's `subject` is the marker text (set server-side, not by the model),
+ * and the mechanical fields (`slot_id`, `status`, `storage_path`) are added by
+ * the route.
+ */
+export interface AuthoredImageSlot {
+  brief: string;
+}
+
 /** The generator's result plus the provenance the route stamps back onto the row. */
 export interface WorksheetExerciseResult {
   bodyMd: string;
+  /** The model-authored briefs, in marker order (see {@link AuthoredImageSlot}). */
+  imageSlots: AuthoredImageSlot[];
   docsUsed: ContextDocUsed[];
   model: string;
   promptHash: string;
 }
 
-/** The model returns just the exercise body markdown; the floor governs its shape. */
+/**
+ * The model returns the exercise body markdown AND one brief per `[Picture: …]`
+ * marker, in marker order. The floor governs the body's shape and the brief's
+ * content contract; the schema here only pins the structure.
+ */
 const RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     body_md: { type: 'string' },
+    image_slots: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          brief: { type: 'string' },
+        },
+        required: ['brief'],
+      },
+    },
   },
-  required: ['body_md'],
+  required: ['body_md', 'image_slots'],
 } as const;
 
 /** Build the user-turn prompt for one exercise. Marker/language rules live in the floor. */
@@ -89,7 +118,10 @@ function buildUserPrompt(context: WorksheetExerciseContext): string {
   lines.push(
     '',
     'Write only the exercise itself — a heading is optional; no teacher notes, no answer key, no commentary.',
-    'Return ONLY the JSON object with the key "body_md". No prose, no markdown fence.',
+    '',
+    'IMAGES — "image_slots": return one entry per [Picture: …] marker in body_md, in the SAME order the markers appear (an empty array if there are none). Each entry has a single field, "brief".',
+    '',
+    'Return ONLY the JSON object with keys "body_md" and "image_slots". No prose, no markdown fence.',
   );
   return lines.join('\n');
 }
@@ -103,8 +135,8 @@ function extractText(message: Anthropic.Message): string {
     .trim();
 }
 
-/** Parse the model reply into the exercise body markdown. */
-function parseBodyMd(text: string): string {
+/** Parse the model reply into the exercise body markdown + authored image slots. */
+function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSlot[] } {
   let raw = text;
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fence) raw = fence[1].trim();
@@ -115,11 +147,17 @@ function parseBodyMd(text: string): string {
   } catch {
     throw new WorksheetExerciseError('Model did not return valid JSON.', 502);
   }
-  const bodyMd = (parsed as { body_md?: unknown })?.body_md;
-  if (typeof bodyMd !== 'string' || bodyMd.trim().length === 0) {
+  const obj = (parsed ?? {}) as { body_md?: unknown; image_slots?: unknown };
+  if (typeof obj.body_md !== 'string' || obj.body_md.trim().length === 0) {
     throw new WorksheetExerciseError('Model JSON did not contain a non-empty "body_md".', 502);
   }
-  return bodyMd;
+  const imageSlots: AuthoredImageSlot[] = Array.isArray(obj.image_slots)
+    ? obj.image_slots.map((s) => {
+        const o = (s ?? {}) as Record<string, unknown>;
+        return { brief: typeof o.brief === 'string' ? o.brief.trim() : '' };
+      })
+    : [];
+  return { bodyMd: obj.body_md, imageSlots };
 }
 
 /**
@@ -173,6 +211,6 @@ export async function generateExercise(
     );
   }
 
-  const bodyMd = parseBodyMd(extractText(message));
-  return { bodyMd, docsUsed, model: MODEL, promptHash: promptHash(userPrompt) };
+  const { bodyMd, imageSlots } = parseReply(extractText(message));
+  return { bodyMd, imageSlots, docsUsed, model: MODEL, promptHash: promptHash(userPrompt) };
 }

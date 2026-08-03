@@ -58,9 +58,16 @@ LANGUAGE OF THE RESOURCE:
 
 /**
  * Worksheet-builder floor. The output contract + the body markers the worksheet
- * renderer and downstream image generation parse + the safeguarding red lines +
- * the content-language guard. The per-route response schema (declared in that
- * route's `output_config`) is deliberately NOT restated here.
+ * renderer and downstream image generation parse + the image-brief contract + the
+ * safeguarding red lines + the content-language guard. The per-route response
+ * schema (declared in that route's `output_config`) is deliberately NOT restated
+ * here.
+ *
+ * The IMAGE BRIEFS section is the SINGLE source of the brief-content contract: a
+ * brief is the sole input to the image dedupe hash, so a brief carrying lesson
+ * context is unique by construction and drops the cache-hit rate to zero. That
+ * consequence is mechanical and non-obvious, so the rule lives here (in code, one
+ * copy) rather than in the route prompt or an uploaded document.
  */
 export const WORKSHEET_BUILDER_FLOOR = `${OVERRIDE_LINE}
 
@@ -73,6 +80,11 @@ BODY MARKERS (the renderer parses these literally):
 - An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.
 - Permitted markdown: headings, ordered lists, unordered lists, bold, italic.
 - Forbidden: tables, horizontal rules (---), code fences, HTML, emoji.
+
+IMAGE BRIEFS
+Each image_slots[] brief describes only what appears in the picture. Exercise context shapes what you choose to depict; it never appears in the words. Write "a single brown-and-white cow standing side-on, plain background" — not "a cow for the Year 2 counting exercise on farm animals". No year group, no theme, no lesson or task reference, no learning outcome, no mention of the student or the task.
+Never emit an empty or whitespace-only brief. If there is nothing worth depicting, write no [Picture: …] marker for it.
+Line drawings for print. Plain backgrounds. No text or numerals inside the image. No people where an object will do.
 
 SAFEGUARDING (absolute) — these students are displaced adolescents aged 12-18, most of whom have lived through war and displacement:
 - Never write content depicting war, weapons, violence, injury, death, bombing, fleeing, camps or displacement — including as incidental background detail in an example sentence.

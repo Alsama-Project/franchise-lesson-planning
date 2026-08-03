@@ -56,9 +56,16 @@ export interface ExerciseSpec {
 export interface ImageSlot {
   /** Stable id for this slot within the exercise. */
   slot_id: string;
-  /** The subject the image is for (the plan's subject uuid), steering the illustrator. */
+  /**
+   * The marker text, unexpanded (e.g. "a cow") — a human-readable UI label set
+   * from the `[Picture: …]` marker server-side; nothing on the server consumes it.
+   */
   subject: string | null;
-  /** The literal picture description from the marker. */
+  /**
+   * The model-authored visual brief for this slot's image. Its content contract
+   * (what a brief may and may not contain) is the single copy in
+   * `WORKSHEET_BUILDER_FLOOR` — not restated here.
+   */
   brief: string;
   /** Lifecycle of the slot's image. */
   status: 'pending' | 'ready' | 'failed';

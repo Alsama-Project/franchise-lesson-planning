@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   generateExercise,
   WorksheetExerciseError,
+  type AuthoredImageSlot,
   type WorksheetExerciseContext,
 } from '@/lib/ai/worksheet-exercise';
 import { readCurriculumAnchors } from '@/lib/ai/worksheet-shared';
@@ -20,7 +21,8 @@ import type {
  * Backend-only. Generates (or regenerates) one worksheet exercise's content from
  * its stored spec, and writes it back to the SAME `worksheet_exercise` row:
  * `body_md`, the derived `body_doc` tiptap fragment, `status = 'ready'`, the
- * `image_slots` derived from the `[Picture: …]` markers, and `generation`
+ * `image_slots` (one per surviving `[Picture: …]` marker — the model authors each
+ * brief; empty-brief markers are dropped from `body_md`), and `generation`
  * updated with the fresh model/prompt_hash. On failure the row is set to
  * `status = 'failed'` — never left stuck on `'generating'`.
  *
@@ -44,25 +46,39 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /**
- * Derive image slots from the `[Picture: …]` markers in `body_md`. The markers
- * stay in `body_md` (and thus `body_doc`); each becomes one pending slot the
- * image route later fills. `subject` carries the plan's subject uuid so the
- * illustrator can be steered.
+ * Reconcile the `[Picture: …]` markers in `body_md` with the model-authored
+ * briefs into the persisted slots, and return the (possibly trimmed) `body_md`.
+ *
+ * The markers are walked in order and paired with the model's briefs. A slot
+ * whose brief is empty or whitespace-only is DROPPED, and its marker is removed
+ * from `body_md` in the same pass — so the count of persisted slots always
+ * equals the count of markers that remain in the persisted `body_md`. `subject`
+ * is set to the marker text, unexpanded (a human-readable label; nothing on the
+ * server consumes it); the model does not author it. The mechanical fields
+ * (`slot_id`, `status`, `storage_path`) are added here. The brief's content
+ * contract lives solely in the worksheet-builder floor.
  */
-function deriveImageSlots(bodyMd: string, subjectId: string | null): ImageSlot[] {
+function reconcileImageSlots(
+  bodyMd: string,
+  authored: AuthoredImageSlot[],
+): { bodyMd: string; slots: ImageSlot[] } {
   const slots: ImageSlot[] = [];
-  const re = /\[Picture:\s*([^\]]+)\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(bodyMd)) !== null) {
+  let i = 0;
+  const cleaned = bodyMd.replace(/\[Picture:\s*([^\]]+)\]/g, (full, inner: string) => {
+    const brief = authored[i++]?.brief?.trim() ?? '';
+    if (!brief) return ''; // empty/whitespace brief → drop the marker and the slot
     slots.push({
       slot_id: randomUUID(),
-      subject: subjectId,
-      brief: m[1].trim(),
+      subject: inner.trim(),
+      brief,
       status: 'pending',
       storage_path: null,
     });
-  }
-  return slots;
+    return full; // keep the marker unchanged
+  });
+  // Dropping a marker that sat alone on its line can leave a blank line; collapse
+  // any run of 3+ newlines back to a paragraph break.
+  return { bodyMd: cleaned.replace(/\n{3,}/g, '\n\n'), slots };
 }
 
 export async function POST(request: NextRequest) {
@@ -148,9 +164,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unexpected error generating exercise.' }, { status: 500 });
   }
 
-  const bodyMd = result.bodyMd;
+  // Reconcile first: dropping empty-brief markers may trim body_md, so body_doc
+  // must be built from the cleaned markdown and the cleaned markdown persisted.
+  const { bodyMd, slots: imageSlots } = reconcileImageSlots(result.bodyMd, result.imageSlots);
   const bodyDoc = markdownToDoc(bodyMd);
-  const imageSlots = deriveImageSlots(bodyMd, subjectId);
   const generation: WorksheetExerciseGeneration = {
     model: result.model,
     docs_used: result.docsUsed,

@@ -57,15 +57,14 @@ export interface ImageSlot {
   /** Stable id for this slot within the exercise. */
   slot_id: string;
   /**
-   * The literal thing depicted, exactly as written in the `[Picture: …]` marker,
-   * unexpanded (e.g. "a cow") — authored by the model, not the plan's subject uuid.
+   * The marker text, unexpanded (e.g. "a cow") — a human-readable UI label set
+   * from the `[Picture: …]` marker server-side; nothing on the server consumes it.
    */
   subject: string | null;
   /**
-   * A full visual description written for an image model that will never see the
-   * exercise — describes ONLY what appears in the picture (e.g. "A single
-   * brown-and-white cow standing side-on, plain background"), never the year,
-   * subject, exercise type, learning outcome, or the student.
+   * The model-authored visual brief for this slot's image. Its content contract
+   * (what a brief may and may not contain) is the single copy in
+   * `WORKSHEET_BUILDER_FLOOR` — not restated here.
    */
   brief: string;
   /** Lifecycle of the slot's image. */

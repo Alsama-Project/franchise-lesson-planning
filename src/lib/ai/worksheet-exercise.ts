@@ -44,20 +44,20 @@ export interface WorksheetExerciseContext {
 
 /**
  * One image slot the MODEL authors, per `[Picture: …]` marker, in marker order.
- * `subject` is the literal thing depicted (unexpanded); `brief` is a full visual
- * description written for an image model that will never see the exercise. The
- * mechanical slot fields (`slot_id`, `status`, `storage_path`) are added by the
- * route, not the model.
+ * The model authors only the `brief`; the brief's content contract lives in the
+ * WORKSHEET_BUILDER_FLOOR (IMAGE BRIEFS) — not here and not in the user prompt.
+ * The slot's `subject` is the marker text (set server-side, not by the model),
+ * and the mechanical fields (`slot_id`, `status`, `storage_path`) are added by
+ * the route.
  */
 export interface AuthoredImageSlot {
-  subject: string;
   brief: string;
 }
 
 /** The generator's result plus the provenance the route stamps back onto the row. */
 export interface WorksheetExerciseResult {
   bodyMd: string;
-  /** The model-authored slots, in marker order (see {@link AuthoredImageSlot}). */
+  /** The model-authored briefs, in marker order (see {@link AuthoredImageSlot}). */
   imageSlots: AuthoredImageSlot[];
   docsUsed: ContextDocUsed[];
   model: string;
@@ -65,9 +65,9 @@ export interface WorksheetExerciseResult {
 }
 
 /**
- * The model returns the exercise body markdown AND one authored image slot per
- * `[Picture: …]` marker, in marker order. The floor governs the body's shape;
- * the slot subject/brief rules are stated in the user prompt.
+ * The model returns the exercise body markdown AND one brief per `[Picture: …]`
+ * marker, in marker order. The floor governs the body's shape and the brief's
+ * content contract; the schema here only pins the structure.
  */
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -80,10 +80,9 @@ const RESPONSE_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         properties: {
-          subject: { type: 'string' },
           brief: { type: 'string' },
         },
-        required: ['subject', 'brief'],
+        required: ['brief'],
       },
     },
   },
@@ -120,16 +119,7 @@ function buildUserPrompt(context: WorksheetExerciseContext): string {
     '',
     'Write only the exercise itself — a heading is optional; no teacher notes, no answer key, no commentary.',
     '',
-    'IMAGES — "image_slots":',
-    'Return one image_slots entry per [Picture: …] marker in body_md, in the SAME order the markers appear. If there are no markers, return an empty array. The number of entries MUST equal the number of markers.',
-    'Each entry has two fields:',
-    '- subject: the literal thing depicted, exactly as written in the marker, unexpanded — e.g. "a cow".',
-    '- brief: a full visual description written FOR AN IMAGE MODEL THAT WILL NEVER SEE THIS EXERCISE. The marker text is short; expand it using the exercise you just wrote to decide what to depict.',
-    'The brief describes ONLY what appears in the picture; the exercise context shapes what you choose to depict but never appears in the words.',
-    '  good: "A single brown-and-white cow standing side-on, plain background."',
-    '  bad:  "A cow for the Year 2 counting exercise."',
-    'Never name the year, subject, exercise type, learning outcome, or the student in a brief. If the exercise needs three apples, say three apples — not "three apples so students can count them".',
-    'Line drawings for print, plain backgrounds, no text or numerals inside the image, no people where an object will do. The safeguarding floor applies to images exactly as to text.',
+    'IMAGES — "image_slots": return one entry per [Picture: …] marker in body_md, in the SAME order the markers appear (an empty array if there are none). Each entry has a single field, "brief".',
     '',
     'Return ONLY the JSON object with keys "body_md" and "image_slots". No prose, no markdown fence.',
   );
@@ -164,10 +154,7 @@ function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSl
   const imageSlots: AuthoredImageSlot[] = Array.isArray(obj.image_slots)
     ? obj.image_slots.map((s) => {
         const o = (s ?? {}) as Record<string, unknown>;
-        return {
-          subject: typeof o.subject === 'string' ? o.subject.trim() : '',
-          brief: typeof o.brief === 'string' ? o.brief.trim() : '',
-        };
+        return { brief: typeof o.brief === 'string' ? o.brief.trim() : '' };
       })
     : [];
   return { bodyMd: obj.body_md, imageSlots };

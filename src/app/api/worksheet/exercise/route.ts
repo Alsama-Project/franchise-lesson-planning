@@ -21,8 +21,9 @@ import type {
  * Backend-only. Generates (or regenerates) one worksheet exercise's content from
  * its stored spec, and writes it back to the SAME `worksheet_exercise` row:
  * `body_md`, the derived `body_doc` tiptap fragment, `status = 'ready'`, the
- * `image_slots` (one per `[Picture: …]` marker, subject/brief authored by the
- * model), and `generation` updated with the fresh model/prompt_hash. On failure the row is set to
+ * `image_slots` (one per surviving `[Picture: …]` marker — the model authors each
+ * brief; empty-brief markers are dropped from `body_md`), and `generation`
+ * updated with the fresh model/prompt_hash. On failure the row is set to
  * `status = 'failed'` — never left stuck on `'generating'`.
  *
  * Input: `{ exercise_id }`. Nothing else. `body_md` is the source of truth;
@@ -45,32 +46,39 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /**
- * Build the image slots for the row. The `[Picture: …]` markers in `body_md` are
- * the SOURCE OF TRUTH for how many images the exercise needs (the renderer parses
- * them), so slot count always equals marker count. Each marker is paired, in
- * order, with the model-authored slot ({@link AuthoredImageSlot}) — `subject` the
- * literal thing depicted, `brief` a full visual description for an image model
- * that never sees the exercise. If the model returned fewer entries than there
- * are markers, the marker text is used as a safe fallback. The mechanical fields
- * (`slot_id`, `status`, `storage_path`) are added here, not by the model. The
- * markers stay in `body_md` unchanged.
+ * Reconcile the `[Picture: …]` markers in `body_md` with the model-authored
+ * briefs into the persisted slots, and return the (possibly trimmed) `body_md`.
+ *
+ * The markers are walked in order and paired with the model's briefs. A slot
+ * whose brief is empty or whitespace-only is DROPPED, and its marker is removed
+ * from `body_md` in the same pass — so the count of persisted slots always
+ * equals the count of markers that remain in the persisted `body_md`. `subject`
+ * is set to the marker text, unexpanded (a human-readable label; nothing on the
+ * server consumes it); the model does not author it. The mechanical fields
+ * (`slot_id`, `status`, `storage_path`) are added here. The brief's content
+ * contract lives solely in the worksheet-builder floor.
  */
-function buildImageSlots(bodyMd: string, authored: AuthoredImageSlot[]): ImageSlot[] {
-  const markers: string[] = [];
-  const re = /\[Picture:\s*([^\]]+)\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(bodyMd)) !== null) markers.push(m[1].trim());
-
-  return markers.map((markerText, i) => {
-    const a = authored[i];
-    return {
+function reconcileImageSlots(
+  bodyMd: string,
+  authored: AuthoredImageSlot[],
+): { bodyMd: string; slots: ImageSlot[] } {
+  const slots: ImageSlot[] = [];
+  let i = 0;
+  const cleaned = bodyMd.replace(/\[Picture:\s*([^\]]+)\]/g, (full, inner: string) => {
+    const brief = authored[i++]?.brief?.trim() ?? '';
+    if (!brief) return ''; // empty/whitespace brief → drop the marker and the slot
+    slots.push({
       slot_id: randomUUID(),
-      subject: a?.subject ? a.subject : markerText,
-      brief: a?.brief ? a.brief : markerText,
+      subject: inner.trim(),
+      brief,
       status: 'pending',
       storage_path: null,
-    };
+    });
+    return full; // keep the marker unchanged
   });
+  // Dropping a marker that sat alone on its line can leave a blank line; collapse
+  // any run of 3+ newlines back to a paragraph break.
+  return { bodyMd: cleaned.replace(/\n{3,}/g, '\n\n'), slots };
 }
 
 export async function POST(request: NextRequest) {
@@ -156,9 +164,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unexpected error generating exercise.' }, { status: 500 });
   }
 
-  const bodyMd = result.bodyMd;
+  // Reconcile first: dropping empty-brief markers may trim body_md, so body_doc
+  // must be built from the cleaned markdown and the cleaned markdown persisted.
+  const { bodyMd, slots: imageSlots } = reconcileImageSlots(result.bodyMd, result.imageSlots);
   const bodyDoc = markdownToDoc(bodyMd);
-  const imageSlots = buildImageSlots(bodyMd, result.imageSlots);
   const generation: WorksheetExerciseGeneration = {
     model: result.model,
     docs_used: result.docsUsed,

@@ -7,8 +7,8 @@ import {
 } from '@/lib/ai/worksheet-plan';
 import {
   readCurriculumAnchors,
-  readWorksheetTemplateBody,
-  templateHeadings,
+  readWorksheetScaffoldMarkdown,
+  scaffoldHeadings,
 } from '@/lib/ai/worksheet-shared';
 import { originFromSource } from '@/types/worksheet-exercise';
 import type { Block } from '@/types/lesson';
@@ -119,9 +119,9 @@ export async function POST(request: NextRequest) {
   const subjectId = plan.subject_id;
 
   // Everything below is a gated anchor — never fatal if absent.
-  const [anchors, templateBody, exerciseTypes] = await Promise.all([
+  const [anchors, scaffoldMarkdown, exerciseTypes] = await Promise.all([
     readCurriculumAnchors(supabase, plan.curriculum_lesson_id, plan.curriculum_version_id),
-    readWorksheetTemplateBody(supabase, subjectId),
+    readWorksheetScaffoldMarkdown(supabase, subjectId),
     readExerciseTypes(supabase, subjectId),
   ]);
 
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     curriculumLessonId: plan.curriculum_lesson_id,
     blocks: Array.isArray(plan.blocks) ? plan.blocks : [],
     anchors,
-    templateHeadings: templateHeadings(templateBody),
+    templateHeadings: scaffoldHeadings(scaffoldMarkdown),
     exerciseTypes,
   };
 

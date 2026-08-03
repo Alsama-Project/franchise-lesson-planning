@@ -53,6 +53,14 @@ export interface SyncArgs {
    */
   fileName?: string;
   /**
+   * Storage path of the retained ORIGINAL workbook in the `source-documents`
+   * bucket (migration 20260803140000), recorded on the run for byte-faithful
+   * download. Only interactive uploads set this — the caller uploads the bytes at
+   * the request boundary with the RLS client and threads the path here. The n8n
+   * secret path has no session user, so it never sets this (stays null).
+   */
+  originalStoragePath?: string | null;
+  /**
    * PUBLISH AS A NEW VERSION instead of reconciling the current one. This is a
    * distinct action, not a normal upload:
    *   • false / omitted (default) = RECONCILE the subject's active version — upsert
@@ -77,7 +85,7 @@ export async function syncCurriculumWorkbook(
   supabase: SupabaseClient,
   args: SyncArgs,
 ): Promise<CurriculumSyncResult> {
-  const { buffer, subjectCode, source, sheet, fileName, newVersion = false } = args;
+  const { buffer, subjectCode, source, sheet, fileName, originalStoragePath, newVersion = false } = args;
   const runTimestamp = new Date().toISOString();
 
   // Open a sync run first so even a parse failure is recorded.
@@ -87,6 +95,7 @@ export async function syncCurriculumWorkbook(
       subject_code: subjectCode,
       source,
       source_filename: fileName ?? null,
+      original_storage_path: originalStoragePath ?? null,
       started_at: runTimestamp,
       status: 'running',
     })

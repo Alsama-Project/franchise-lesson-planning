@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/auth';
 import { docxToMarkdown } from '@/lib/ai/docx';
 import { deriveMarkdownFilename, textAttachmentResponse } from '@/lib/download/text-attachment';
+import {
+  removeSourceDocument,
+  signSourceDocumentDownloadUrl,
+  uploadSourceDocument,
+} from '@/lib/download/source-documents';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,17 +132,38 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Insert a new version (RLS enforces admin + uploaded_by = caller) ──
-  // `original_filename` (0021) is display metadata for the admin console; the
-  // served `content` is unchanged. We store the original (case-preserving) name.
+  // ── Retain the original bytes (Branch 2a) ──
+  // Store the raw file in the admin-only `source-documents` bucket via the RLS
+  // client (the admin session owns the object); the service-role key is never
+  // used. Parse output is unchanged — this is byte retention alongside it.
   const supabase = await createClient();
+  const uploaded = await uploadSourceDocument(supabase, profile.id, file);
+  if (!uploaded.ok) {
+    return NextResponse.json(
+      { error: 'Could not store the uploaded file. Please try again.' },
+      { status: 500 },
+    );
+  }
+
+  // ── Insert a new version (RLS enforces admin + uploaded_by = caller) ──
+  // `original_filename` (0021) is display metadata; `original_storage_path`
+  // (20260803140000) points at the retained original. The served `content` is
+  // unchanged. We store the original (case-preserving) name.
   const { data, error } = await supabase
     .from('smartt_objective_guide')
-    .insert({ content, uploaded_by: profile.id, original_filename: file.name })
+    .insert({
+      content,
+      uploaded_by: profile.id,
+      original_filename: file.name,
+      original_storage_path: uploaded.path,
+    })
     .select('id, created_at')
     .single();
 
   if (error) {
+    // Roll back the orphaned object so a failed insert never leaks storage
+    // (mirrors uploadWorksheetImageAction's cleanup).
+    await removeSourceDocument(supabase, uploaded.path);
     return NextResponse.json(
       { error: 'Could not save the guide. Please try again.' },
       { status: 500 },
@@ -151,10 +177,11 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/smartt-objective-guide
  *
- * Admin-only download of the guide CURRENTLY IN FORCE — the derived `content`
- * text (markdown) that the objective checker actually consumes, not the original
- * uploaded file (the bytes are not retained; original-byte retention is a
- * separate branch). Served as a `.md` attachment.
+ * Admin-only download of the guide CURRENTLY IN FORCE. Fallback chain (Branch 2a):
+ * if the active version has a retained original (`original_storage_path`), redirect
+ * to a short-lived signed URL that saves the byte-identical original under its true
+ * filename; otherwise serve the derived `content` markdown as a `.md` attachment
+ * (Branch 1 behaviour, unchanged — what pre-Branch-2a rows fall back to).
  *
  * Auth reuses the POST guard verbatim: getCurrentProfile() → 401 if none, 403
  * unless role === 'admin'; the table's admin-only RLS is the backstop. A missing
@@ -179,7 +206,7 @@ export async function GET() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('smartt_objective_guide')
-    .select('content, original_filename, created_at')
+    .select('content, original_filename, original_storage_path, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -188,10 +215,27 @@ export async function GET() {
     return NextResponse.json({ error: 'Could not load the guide.' }, { status: 500 });
   }
   const row = data as
-    | { content: string; original_filename: string | null; created_at: string }
+    | {
+        content: string;
+        original_filename: string | null;
+        original_storage_path: string | null;
+        created_at: string;
+      }
     | null;
   if (!row || !row.content) {
     return NextResponse.json({ error: 'No guide uploaded.' }, { status: 404 });
+  }
+
+  // Prefer the retained original (byte-identical) when present.
+  if (row.original_storage_path) {
+    const downloadName = row.original_filename?.trim() || 'source-document';
+    const url = await signSourceDocumentDownloadUrl(supabase, row.original_storage_path, downloadName);
+    if (url) {
+      const redirect = NextResponse.redirect(url);
+      redirect.headers.set('Cache-Control', 'no-store');
+      return redirect;
+    }
+    // Signing failed (e.g. object removed) — fall through to the derived text.
   }
 
   const filename = deriveMarkdownFilename({

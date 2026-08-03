@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile, getMyMemberships } from '@/lib/auth';
 import { importCurriculumWorkbook } from '@/lib/curriculum/import';
+import { removeSourceDocument, uploadSourceDocument } from '@/lib/download/source-documents';
 import type { UnresolvedCurriculumRow } from '@/lib/curriculum/types';
 
 /**
@@ -65,8 +66,8 @@ export async function importCurriculumAction(
   const profile = await getCurrentProfile();
   if (!profile) return { ok: false, message: 'You must be signed in.' };
 
+  const supabase = await createClient();
   if (profile.role !== 'admin') {
-    const supabase = await createClient();
     const { data } = await supabase
       .from('subjects')
       .select('id')
@@ -79,14 +80,31 @@ export async function importCurriculumAction(
     }
   }
 
+  // Retain the original workbook for ADMIN interactive uploads only. The
+  // `source-documents` bucket is admin-only (its RLS gates on is_admin()), so a
+  // non-admin member's reconcile intentionally retains nothing and proceeds
+  // unchanged. This server action is the interactive path; the n8n secret path is
+  // the route (/api/curriculum/import) and never reaches this code.
+  let originalStoragePath: string | null = null;
+  if (profile.role === 'admin') {
+    const uploaded = await uploadSourceDocument(supabase, profile.id, file);
+    if (!uploaded.ok) {
+      return { ok: false, message: 'Could not store the uploaded file. Please try again.' };
+    }
+    originalStoragePath = uploaded.path;
+  }
+
   const buffer = await file.arrayBuffer();
   const result = await importCurriculumWorkbook({
     buffer,
     subjectCode,
     source: 'upload',
     fileName: file.name,
+    originalStoragePath,
   });
   if (result.status === 'error') {
+    // Roll back the orphaned original so a failed import never leaks storage.
+    if (originalStoragePath) await removeSourceDocument(supabase, originalStoragePath);
     return { ok: false, message: result.error ?? 'Import failed.' };
   }
   return {
@@ -122,15 +140,25 @@ export async function publishCurriculumVersionAction(
     return { ok: false, message: 'Only an admin can publish a new curriculum version.' };
   }
 
+  // Publish is admin-only, so retention always applies here (admin-only bucket).
+  const supabase = await createClient();
+  const uploaded = await uploadSourceDocument(supabase, profile.id, file);
+  if (!uploaded.ok) {
+    return { ok: false, message: 'Could not store the uploaded file. Please try again.' };
+  }
+
   const buffer = await file.arrayBuffer();
   const result = await importCurriculumWorkbook({
     buffer,
     subjectCode,
     source: 'upload',
     fileName: file.name,
+    originalStoragePath: uploaded.path,
     newVersion: true,
   });
   if (result.status === 'error') {
+    // Roll back the orphaned original so a failed publish never leaks storage.
+    await removeSourceDocument(supabase, uploaded.path);
     return { ok: false, message: result.error ?? 'Publish failed.' };
   }
   return {

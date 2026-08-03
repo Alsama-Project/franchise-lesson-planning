@@ -132,7 +132,10 @@ export function DocumentPopup({
                   : 'rounded-[9px] border border-teal-tint-border bg-surface px-[13px] py-[8px] text-[12.5px] font-semibold text-teal transition-colors hover:bg-teal-tint'
               }
             >
-              {t('aiInstructions.popup.download')}
+              {/* Label reflects what the download yields — the retained original
+                  (Branch 2b) or the derived current text. Reuses the guide keys
+                  (2a); same `settings` namespace, identical meaning. */}
+              {doc.hasStoredOriginal ? t('guide.downloadOriginal') : t('guide.download')}
             </a>
             <button
               type="button"

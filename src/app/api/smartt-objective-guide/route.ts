@@ -2,10 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/auth';
 import { docxToMarkdown } from '@/lib/ai/docx';
-import { deriveMarkdownFilename, textAttachmentResponse } from '@/lib/download/text-attachment';
 import {
+  originalOrDerivedDownload,
   removeSourceDocument,
-  signSourceDocumentDownloadUrl,
   uploadSourceDocument,
 } from '@/lib/download/source-documents';
 
@@ -226,22 +225,12 @@ export async function GET() {
     return NextResponse.json({ error: 'No guide uploaded.' }, { status: 404 });
   }
 
-  // Prefer the retained original (byte-identical) when present.
-  if (row.original_storage_path) {
-    const downloadName = row.original_filename?.trim() || 'source-document';
-    const url = await signSourceDocumentDownloadUrl(supabase, row.original_storage_path, downloadName);
-    if (url) {
-      const redirect = NextResponse.redirect(url);
-      redirect.headers.set('Cache-Control', 'no-store');
-      return redirect;
-    }
-    // Signing failed (e.g. object removed) — fall through to the derived text.
-  }
-
-  const filename = deriveMarkdownFilename({
+  // Prefer the retained original (byte-identical), else the derived `.md`.
+  return originalOrDerivedDownload(supabase, {
+    originalStoragePath: row.original_storage_path,
     originalFilename: row.original_filename,
     fallbackSlug: 'smartt-objective-guide',
     createdAt: row.created_at,
+    derivedText: row.content,
   });
-  return textAttachmentResponse(filename, row.content);
 }

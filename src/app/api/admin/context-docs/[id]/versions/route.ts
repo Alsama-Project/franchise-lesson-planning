@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/context-docs/guard';
 import { parseUploadedDoc } from '@/lib/context-docs/parse-upload';
+import { removeSourceDocument, uploadSourceDocument } from '@/lib/download/source-documents';
 
 /**
  * POST /api/admin/context-docs/[id]/versions
@@ -39,14 +40,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const parsed = await parseUploadedDoc(form);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
 
+  const file = form.get('file');
+  if (!(file instanceof File)) {
+    // parsed.ok implies a valid file; this is a defensive guard for the uploader.
+    return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
+  }
+
   const supabase = await createClient();
+
+  // Retain the original bytes (Branch 2b) BEFORE the RPC, so a rollback is possible
+  // if the RPC fails. RLS client → admin session owns the object (source-documents
+  // is admin-only); the service-role key is never used. Parse output is unchanged.
+  const uploaded = await uploadSourceDocument(supabase, gate.profile.id, file);
+  if (!uploaded.ok) {
+    return NextResponse.json(
+      { error: 'Could not store the uploaded file. Please try again.' },
+      { status: 500 },
+    );
+  }
+
   const { data, error } = await supabase.rpc('replace_ai_context_doc', {
     p_doc_id: id,
     p_body_md: parsed.text,
     p_original_filename: parsed.filename,
+    p_original_storage_path: uploaded.path,
   });
 
   if (error) {
+    // Roll back the orphaned object so a failed RPC never leaks storage.
+    await removeSourceDocument(supabase, uploaded.path);
     // A missing / non-permitted doc surfaces as the RPC's "Document not found".
     const notFound = /not found/i.test(error.message ?? '');
     return NextResponse.json(

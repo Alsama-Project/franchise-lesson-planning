@@ -406,7 +406,6 @@
         "failed": "Upload failed. Please try again."
       },
       "popup": {
-        "download": "Download current text",
         "replace": "Replace",
         "replacing": "Replacing…",
         "archive": "Archive",

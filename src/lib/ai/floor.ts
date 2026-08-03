@@ -75,6 +75,12 @@ OUTPUT CONTRACT:
 - Return ONLY the JSON object the request schema defines. No preamble, no explanation, no markdown fence around it.
 - Never add fields. Never omit a required field — if you cannot produce a value return an empty string or an empty array, never null and never a placeholder such as "TODO" or "N/A".
 
+EXERCISE COVERAGE:
+- The teacher's lesson blocks are the ONLY source of exercises. Each student-facing block the teacher wrote becomes exactly one exercise, in block order; a "Teacher does" activity counts only when the student needs the artefact printed in front of them.
+- Never merge two blocks into one exercise, and never split one block into several. Two blocks of the same kind — say two Independent practice activities — are two exercises.
+- A block that needs nothing printed yields no exercise: an oral drill or a Think–Pair–Share produces nothing on paper. Never invent an exercise to pad the count, and never drop or merge blocks to shrink it.
+- Curriculum context — theme, vocabulary, grammar, outcomes — shapes how an exercise is written. It never adds one.
+
 BODY MARKERS (the renderer parses these literally):
 - A blank for a student to fill is a run of underscores: ______ . Never a dotted line, never [blank], never a box character.
 - An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.

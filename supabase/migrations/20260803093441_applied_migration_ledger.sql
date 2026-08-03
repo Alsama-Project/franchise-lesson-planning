@@ -44,7 +44,8 @@ comment on table applied_migration is
 -- text, on the unmerged claude/writeback-curriculum-key branch; confirmed
 -- absent from the live schema) and anything else not present on `main`.
 insert into applied_migration (filename, note)
-values
+select filename, 'backfilled from repo listing'
+from (values
   ('0001_init_enums.sql'),
   ('0002_core_tables.sql'),
   ('0003_lesson_plans.sql'),
@@ -125,6 +126,7 @@ values
   ('0071_seed_worksheet_image_context_doc.sql'),
   ('0071_writeback_uploaded_by_fallback.sql'),
   ('0072_worksheet_image.sql')
+) as m(filename)
 on conflict (filename) do nothing;
 
 -- This migration records itself, per the going-forward convention.

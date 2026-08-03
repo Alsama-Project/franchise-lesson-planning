@@ -29,6 +29,7 @@ interface RawVersion {
   version: number;
   body_md: string;
   original_filename: string | null;
+  original_storage_path: string | null;
   uploaded_by: string;
   created_at: string;
   is_active: boolean;
@@ -66,7 +67,7 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
       .from('ai_context_doc')
       .select(
         'id, layer, subject_id, tool, name, sort_order, created_at, ' +
-          'versions:ai_context_doc_version(id, version, body_md, original_filename, uploaded_by, created_at, is_active)',
+          'versions:ai_context_doc_version(id, version, body_md, original_filename, original_storage_path, uploaded_by, created_at, is_active)',
       )
       .eq('is_archived', false)
       .order('sort_order', { ascending: true })
@@ -130,6 +131,7 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
       sortOrder: doc.sort_order,
       activeVersion: active.version,
       originalFilename: active.original_filename,
+      hasStoredOriginal: active.original_storage_path != null,
       bodyMd: active.body_md,
       uploaderName: nameById.get(active.uploaded_by) ?? null,
       updatedAt: active.created_at,

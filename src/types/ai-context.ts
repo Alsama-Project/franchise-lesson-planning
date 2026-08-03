@@ -139,6 +139,10 @@ export interface AiContextDocView {
   activeVersion: number;
   /** Active version's original upload filename, or null (legacy / not captured). */
   originalFilename: string | null;
+  /** True when the active version has a retained original file (Branch 2b,
+   *  `original_storage_path`) — download yields the byte-identical original;
+   *  false → download yields the derived `.md`. Drives the download label. */
+  hasStoredOriginal: boolean;
   /** Active version's stored markdown — rendered verbatim in the popup text panel. */
   bodyMd: string;
   /** Active version's uploader display name, or null when unresolved. */

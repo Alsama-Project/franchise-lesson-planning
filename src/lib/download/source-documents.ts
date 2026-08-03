@@ -1,7 +1,9 @@
 import 'server-only';
 
+import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildResourceStoragePath } from '@/lib/resources/storage';
+import { deriveMarkdownFilename, textAttachmentResponse } from '@/lib/download/text-attachment';
 
 // Server helper for the private, admin-only `source-documents` bucket (migration
 // 20260803140000) — where Branch 2a retains the ORIGINAL uploaded bytes for
@@ -67,4 +69,47 @@ export async function signSourceDocumentDownloadUrl(
     .createSignedUrl(path, SOURCE_DOCUMENTS_SIGNED_TTL_SECONDS, { download: downloadName });
   if (error || !data) return null;
   return data.signedUrl;
+}
+
+/**
+ * The shared original-then-derived download fallback (Branch 2a/2b). When a
+ * retained original exists, redirect to a short-lived signed URL that saves the
+ * byte-identical original under its true filename; otherwise serve the derived
+ * markdown as a `.md` attachment (Branch 1 behaviour). If signing the original
+ * fails (e.g. the object was removed), fall through to the derived text rather
+ * than error. Callers authorise first — this holds no auth logic.
+ */
+export async function originalOrDerivedDownload(
+  supabase: SupabaseClient,
+  opts: {
+    /** Path of the retained original, or null → derived-only. */
+    originalStoragePath: string | null;
+    /** Original filename — the download name for the original AND the source for
+     *  the derived `.md` name. */
+    originalFilename: string | null;
+    /** Stable slug for the derived filename fallback when no original name exists. */
+    fallbackSlug: string;
+    /** ISO timestamp of the version being served (derived-name fallback). */
+    createdAt: string;
+    /** The derived text to serve when no original is present. */
+    derivedText: string;
+  },
+): Promise<Response> {
+  if (opts.originalStoragePath) {
+    const downloadName = opts.originalFilename?.trim() || 'source-document';
+    const url = await signSourceDocumentDownloadUrl(supabase, opts.originalStoragePath, downloadName);
+    if (url) {
+      const redirect = NextResponse.redirect(url);
+      redirect.headers.set('Cache-Control', 'no-store');
+      return redirect;
+    }
+    // Signing failed (e.g. object removed) — fall through to the derived text.
+  }
+
+  const filename = deriveMarkdownFilename({
+    originalFilename: opts.originalFilename,
+    fallbackSlug: opts.fallbackSlug,
+    createdAt: opts.createdAt,
+  });
+  return textAttachmentResponse(filename, opts.derivedText);
 }

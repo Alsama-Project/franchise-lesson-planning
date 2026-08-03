@@ -9,8 +9,6 @@ import { SettingsConsole } from '@/components/settings/SettingsConsole';
 import { getAiContextBoard } from '@/lib/ai-context';
 import type { AiContextBoard } from '@/types/ai-context';
 import {
-  getActiveResourceGuideVersion,
-  getActiveSmarttGuideVersion,
   getCentres,
   getConsoleAccess,
   getConsoleClasses,
@@ -28,8 +26,6 @@ import {
   type SubjectMember,
   type CurriculumSubjectStatus,
   type PendingCoordinatorRequest,
-  type ResourceGuideVersion,
-  type SmarttGuideVersion,
   type SubjectRow,
   type SubjectSpaceAxes,
   type TermRow,
@@ -84,8 +80,6 @@ export default async function SettingsPage() {
   // "not loaded because not a coordinator" (`undefined`).
   let subjectMembers: SubjectMember[] | null | undefined;
   let curriculum: CurriculumSubjectStatus[] | undefined;
-  let resourceGuide: ResourceGuideVersion | null | undefined;
-  let smarttGuide: SmarttGuideVersion | null | undefined;
   let terms: TermRow[] | undefined;
   // `null` distinguishes a load failure (renders the tab's error state) from
   // "not loaded because not admin" (`undefined`).
@@ -101,14 +95,12 @@ export default async function SettingsPage() {
   let aiContextBoard: AiContextBoard | null | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, curriculum, resourceGuide, smarttGuide, terms, users, userAxes, pendingCoordinatorRequests, worksheetTemplates, aiContextBoard] =
+    [centres, subjects, classesData, curriculum, terms, users, userAxes, pendingCoordinatorRequests, worksheetTemplates, aiContextBoard] =
       await Promise.all([
         getCentres(),
         getSubjects(),
         getConsoleClasses(),
         getCurriculumStatus(),
-        getActiveResourceGuideVersion(),
-        getActiveSmarttGuideVersion(),
         getTerms(),
         getUsersAdmin().catch(() => null),
         getSubjectSpaceAxes(),
@@ -146,8 +138,6 @@ export default async function SettingsPage() {
           classesData={classesData}
           subjectMembers={subjectMembers}
           curriculum={curriculum}
-          resourceGuide={resourceGuide}
-          smarttGuide={smarttGuide}
           terms={terms}
           users={users}
           userAxes={userAxes}

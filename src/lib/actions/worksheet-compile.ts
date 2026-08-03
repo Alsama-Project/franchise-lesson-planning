@@ -36,11 +36,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { headingText, worksheetV3Doc } from '@/lib/ai/worksheet-shared';
 import type { WorksheetDoc, WorksheetV3 } from '@/types/lesson';
-import type { WorksheetExerciseGeneration } from '@/types/worksheet-exercise';
+import type { ImageSlot, WorksheetExerciseGeneration } from '@/types/worksheet-exercise';
 
 interface ExerciseRow {
   position: number;
   body_doc: WorksheetDoc | null;
+  image_slots: ImageSlot[] | null;
   generation: WorksheetExerciseGeneration | null;
 }
 
@@ -77,6 +78,72 @@ function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
   return Array.isArray(content) ? content : [];
 }
 
+// ── Image slots → image nodes ────────────────────────────────────────────────
+//
+// A generated image is authored as a `[Picture: …]` marker, which `markdownToDoc`
+// passes through as literal text, so in body_doc it is a top-level `paragraph`
+// whose only content is that one marker (the floor requires each marker alone on
+// its own line). The exercise route builds `image_slots` one-per-marker in the
+// SAME order the markers appear in body_md (and thus body_doc), so within a row
+// the k-th marker paragraph pairs with `image_slots[k]`. Where that slot has a
+// non-null `storage_path`, the marker is replaced by a `ResizableImage` node
+// (tiptap node type `image`) carrying `storagePath` + `slotId`; `src` is left null
+// so `resolveImageSrc` re-signs from the path (never a persisted, expiring URL).
+// Where there is no paired slot, or its `storage_path` is null, the text marker is
+// left exactly as it is — the pre-image fallback the teacher already sees, which
+// must not regress.
+
+const PICTURE_MARKER = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
+
+/**
+ * If `node` is a marker paragraph — a `paragraph` whose entire content is text
+ * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
+ * return the trimmed marker text; otherwise null. A paragraph carrying a marker
+ * plus any other text (or any non-text inline node) is NOT a marker paragraph.
+ */
+function markerParagraphText(node: unknown): string | null {
+  const n = node as { type?: unknown; content?: unknown };
+  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
+  let text = '';
+  for (const child of n.content) {
+    const c = child as { type?: unknown; text?: unknown };
+    if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
+    text += c.text;
+  }
+  return PICTURE_MARKER.test(text) ? text.trim() : null;
+}
+
+/** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
+ *  serves from `storagePath` through the re-signing route. */
+function slotImageNode(slot: ImageSlot): unknown {
+  return {
+    type: 'image',
+    attrs: {
+      src: null,
+      alt: slot.subject ?? null,
+      storagePath: slot.storage_path,
+      slotId: slot.slot_id,
+    },
+  };
+}
+
+/**
+ * Replace each marker paragraph in one exercise's top-level nodes with its slot's
+ * image node, where that slot's image is ready. The marker index resets per call
+ * (per exercise row) and advances on EVERY marker paragraph — resolved or not — so
+ * a null-storage marker never shifts the pairing of a later one. Returns a new
+ * array of the same length; non-marker nodes and unresolved markers pass through
+ * unchanged.
+ */
+function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] {
+  let i = 0;
+  return nodes.map((node) => {
+    if (markerParagraphText(node) === null) return node;
+    const slot = slots[i++]; // advance per marker, before the resolved-check
+    return slot && slot.storage_path ? slotImageNode(slot) : node;
+  });
+}
+
 /**
  * Compile the worksheet for a plan. Returns the assembled `{ version: 3, doc }`.
  * Reads run through the caller's auth'd, RLS-scoped client.
@@ -93,13 +160,15 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
 
   const { data: exRows } = await supabase
     .from('worksheet_exercise')
-    .select('position, body_doc, generation')
+    .select('position, body_doc, image_slots, generation')
     .eq('lesson_plan_id', lessonPlanId)
     .order('position', { ascending: true });
   const exercises = ((exRows ?? []) as ExerciseRow[])
     .map((row) => ({
       anchor: row.generation?.spec?.template_anchor?.trim() || null,
-      nodes: exerciseNodes(row.body_doc),
+      // Pair markers ↔ slots per row (fresh index), against THIS row's own
+      // body_doc + image_slots, before the empty-body filter below.
+      nodes: fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []),
     }))
     // Only exercises that actually carry content participate; a skeleton /
     // failed / still-generating row (null body_doc) is skipped.

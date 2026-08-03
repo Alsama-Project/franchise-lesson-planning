@@ -382,11 +382,15 @@ function GroupRow({
           onClick={onToggle}
           className="flex w-full items-center gap-[9px] bg-teal-tint px-[11px] py-[11px] text-start"
         >
-          <span dir="auto" className="flex-1 text-[12.5px] font-bold text-teal-deepest">
+          <span
+            dir="auto"
+            title={label}
+            className="min-w-0 flex-1 truncate text-[12.5px] font-bold text-teal-deepest"
+          >
             {label}
           </span>
-          <span className="text-[11.5px] text-teal">{count}</span>
-          <ChevronUp className="text-teal" />
+          <span className="shrink-0 text-[11.5px] text-teal">{count}</span>
+          <ChevronUp className="shrink-0 text-teal" />
         </button>
         <div className="flex flex-col gap-[7px] px-[10px] pt-[9px] pb-[11px]">
           {docs.map((doc) => (
@@ -414,16 +418,19 @@ function GroupRow({
     >
       <span
         dir="auto"
-        className={`flex-1 text-[12.5px] font-semibold ${isEmpty ? 'text-neutral-700' : 'text-ink'}`}
+        title={label}
+        className={`min-w-0 flex-1 truncate text-[12.5px] font-semibold ${isEmpty ? 'text-neutral-700' : 'text-ink'}`}
       >
         {label}
       </span>
       {isEmpty ? (
-        <span className="text-[11.5px] text-text-faint">{t('aiInstructions.none')}</span>
+        <span className="shrink-0 text-[11.5px] text-text-faint">{t('aiInstructions.none')}</span>
       ) : (
         <>
-          <span className="text-[11.5px] text-neutral-700">{count}</span>
-          <ChevronDown className={tone === 'tool' ? 'text-teal-muted' : 'text-neutral-300'} />
+          <span className="shrink-0 text-[11.5px] text-neutral-700">{count}</span>
+          <ChevronDown
+            className={`shrink-0 ${tone === 'tool' ? 'text-teal-muted' : 'text-neutral-300'}`}
+          />
         </>
       )}
     </button>

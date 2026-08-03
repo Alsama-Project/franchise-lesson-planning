@@ -30,6 +30,10 @@ import { STYLE_VERSION } from '@/lib/ai/image-floor';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// A real generation took 48s against the inherited platform default, and the
+// prompt only grows once the real house-style document lands. Set to the plan
+// ceiling (300s) so a slow-but-successful generation is never killed mid-flight.
+export const maxDuration = 300;
 
 const STORAGE_BUCKET = 'resources';
 const STORAGE_PREFIX = 'worksheet-images';

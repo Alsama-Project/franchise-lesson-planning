@@ -232,6 +232,18 @@ function CurriculumCard({ status, isAdmin }: { status: CurriculumSubjectStatus; 
                   e.target.value = '';
                 }}
               />
+              {/* Download the ORIGINAL workbook currently in force (Branch 2a).
+                  Admin-only, and only when the latest successful run retained one
+                  (an interactive admin upload — never an n8n sync). */}
+              {isAdmin && status.hasStoredOriginal ? (
+                <a
+                  href={`/api/curriculum/original?subject_code=${encodeURIComponent(status.code)}`}
+                  download
+                  className="text-[12.5px] font-semibold text-[#186155] transition-opacity hover:opacity-70"
+                >
+                  {t('curriculum.action.downloadOriginal')}
+                </a>
+              ) : null}
               <GhostButton tone="teal" onClick={() => fileRef.current?.click()}>
                 {t('curriculum.action.upload')}
               </GhostButton>

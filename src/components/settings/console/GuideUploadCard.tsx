@@ -13,6 +13,9 @@ export interface GuideVersionInfo {
   originalFilename: string | null;
   /** Upload timestamp (`created_at`). */
   createdAt: string;
+  /** True when a retained original file (Branch 2a) is downloadable; false for
+   *  versions predating retention, which download as derived `.md`. */
+  hasStoredOriginal: boolean;
 }
 
 /**
@@ -135,15 +138,16 @@ export function GuideUploadCard({
               e.target.value = '';
             }}
           />
-          {/* Download the guide currently in force — the derived text the AI
-              consumes, not the uploaded original. Only when one exists. */}
+          {/* Download the guide currently in force. The label reflects what the
+              user actually gets: the retained original file when one exists
+              (Branch 2a), otherwise the derived current text (Branch 1 fallback). */}
           {active ? (
             <a
               href={endpoint}
               download
               className="text-[12.5px] font-semibold text-[#186155] transition-opacity hover:opacity-70"
             >
-              {t('guide.download')}
+              {active.hasStoredOriginal ? t('guide.downloadOriginal') : t('guide.download')}
             </a>
           ) : null}
           <GhostButton tone="teal" disabled={pending} onClick={() => fileRef.current?.click()}>

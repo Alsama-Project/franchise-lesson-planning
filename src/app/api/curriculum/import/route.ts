@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile, getMyMemberships } from '@/lib/auth';
 import { importCurriculumWorkbook } from '@/lib/curriculum/import';
 import { parseCurriculumWorkbook } from '@/lib/curriculum/parse';
+import { removeSourceDocument, uploadSourceDocument } from '@/lib/download/source-documents';
 import type { CurriculumSyncSource } from '@/lib/curriculum/types';
 
 /**
@@ -31,6 +32,10 @@ export async function POST(request: NextRequest) {
   let sheet = request.nextUrl.searchParams.get('sheet') ?? undefined;
   let fileName = '';
   let buffer: ArrayBuffer | null = null;
+  // The multipart File object, kept only so an interactive (session) upload can
+  // retain the original bytes below. A raw-binary body (the typical n8n shape)
+  // leaves this null, so there is nothing to retain on that path.
+  let originalFile: File | null = null;
 
   const contentType = request.headers.get('content-type') ?? '';
   if (contentType.includes('multipart/form-data')) {
@@ -49,6 +54,7 @@ export async function POST(request: NextRequest) {
     if (file instanceof File) {
       buffer = await file.arrayBuffer();
       fileName = file.name;
+      originalFile = file;
     }
   } else {
     buffer = await request.arrayBuffer();
@@ -102,15 +108,45 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ── Retain the original workbook — INTERACTIVE ADMIN uploads only ──
+  // Byte retention is bound to `source === 'upload'` (a session), never `'n8n'`:
+  // the source discriminant is fixed by authorise() above, and the n8n secret
+  // path resolves to `'n8n'` with no session user — so it cannot enter this
+  // block, and even if it somehow did, the source-documents bucket's is_admin()
+  // RLS would reject the write. A non-admin member session skips retention (the
+  // bucket is admin-only). The interactive UI uses the server action, not this
+  // route; this branch retains for a session that uploads via the API directly.
+  let originalStoragePath: string | null = null;
+  if (source === 'upload' && originalFile) {
+    const profile = await getCurrentProfile();
+    if (profile?.role === 'admin') {
+      const supabase = await createClient();
+      const uploaded = await uploadSourceDocument(supabase, profile.id, originalFile);
+      if (!uploaded.ok) {
+        return NextResponse.json(
+          { error: 'Could not store the uploaded file.' },
+          { status: 500 },
+        );
+      }
+      originalStoragePath = uploaded.path;
+    }
+  }
+
   // ── Run the import ──
   const result = await importCurriculumWorkbook({
     buffer,
     subjectCode,
     source,
     fileName: fileName || undefined,
+    originalStoragePath,
     newVersion,
   });
   if (result.status === 'error') {
+    // Roll back the orphaned original so a failed import never leaks storage.
+    if (originalStoragePath) {
+      const supabase = await createClient();
+      await removeSourceDocument(supabase, originalStoragePath);
+    }
     return NextResponse.json(result, { status: 422 });
   }
   return NextResponse.json(result);

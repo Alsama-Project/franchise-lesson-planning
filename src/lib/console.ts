@@ -654,6 +654,13 @@ export interface CurriculumSubjectStatus {
    * always agree with the current table.
    */
   unresolvedLive: number;
+  /**
+   * True when the most recent SUCCESSFUL sync run retained an original workbook
+   * (Branch 2a, `original_storage_path`) — i.e. it came from an interactive admin
+   * upload. False when the latest good run came from n8n (retains nothing) or
+   * predates retention. Drives whether the admin download control renders.
+   */
+  hasStoredOriginal: boolean;
 }
 
 /**
@@ -668,7 +675,7 @@ export async function getCurriculumStatus(
     supabase.from('subjects').select('id, name, code').is('archived_at', null).order('name'),
     supabase
       .from('curriculum_sync_run')
-      .select('subject_code, status, rows_upserted, rows_deactivated, unresolved, started_at, finished_at, error')
+      .select('subject_code, status, rows_upserted, rows_deactivated, unresolved, started_at, finished_at, error, original_storage_path')
       .order('started_at', { ascending: false }),
     // Live "unresolved" per subject: active rows with no daily outcome. Cheap (a few
     // hundred single-column rows) and always current, unlike the stored run count.
@@ -695,6 +702,7 @@ export async function getCurriculumStatus(
     started_at: string | null;
     finished_at: string | null;
     error: string | null;
+    original_storage_path: string | null;
   }>;
 
   // Rows are newest-first, so the first per code is the latest, and the first
@@ -729,6 +737,7 @@ export async function getCurriculumStatus(
         : null,
       lastGoodAt: lastGood?.finished_at ?? null,
       unresolvedLive: unresolvedByCode.get(s.code) ?? 0,
+      hasStoredOriginal: (lastGood?.original_storage_path ?? null) != null,
     };
   });
 }
@@ -746,6 +755,10 @@ export interface ResourceGuideVersion {
   originalFilename: string | null;
   /** When this version was uploaded (`created_at`). */
   createdAt: string;
+  /** True when the retained original file is available for byte-faithful download
+   *  (Branch 2a, `original_storage_path`); false for versions predating retention,
+   *  which download as derived `.md`. Drives the download control's label. */
+  hasStoredOriginal: boolean;
 }
 
 /**
@@ -761,15 +774,21 @@ export async function getActiveResourceGuideVersion(): Promise<ResourceGuideVers
   const supabase = await createClient();
   const { data } = await supabase
     .from('ai_resource_guide')
-    .select('original_filename, created_at')
+    .select('original_filename, original_storage_path, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = data as { original_filename: string | null; created_at: string } | null;
+  const row = data as
+    | { original_filename: string | null; original_storage_path: string | null; created_at: string }
+    | null;
   if (!row) return null;
 
-  return { originalFilename: row.original_filename, createdAt: row.created_at };
+  return {
+    originalFilename: row.original_filename,
+    createdAt: row.created_at,
+    hasStoredOriginal: row.original_storage_path != null,
+  };
 }
 
 // ── SMARTT objective guide (admin) ───────────────────────────────────────────
@@ -785,6 +804,10 @@ export interface SmarttGuideVersion {
   originalFilename: string | null;
   /** When this version was uploaded (`created_at`). */
   createdAt: string;
+  /** True when the retained original file is available for byte-faithful download
+   *  (Branch 2a, `original_storage_path`); false for versions predating retention,
+   *  which download as derived `.md`. Drives the download control's label. */
+  hasStoredOriginal: boolean;
 }
 
 /**
@@ -802,15 +825,21 @@ export async function getActiveSmarttGuideVersion(): Promise<SmarttGuideVersion 
   const supabase = await createClient();
   const { data } = await supabase
     .from('smartt_objective_guide')
-    .select('original_filename, created_at')
+    .select('original_filename, original_storage_path, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = data as { original_filename: string | null; created_at: string } | null;
+  const row = data as
+    | { original_filename: string | null; original_storage_path: string | null; created_at: string }
+    | null;
   if (!row) return null;
 
-  return { originalFilename: row.original_filename, createdAt: row.created_at };
+  return {
+    originalFilename: row.original_filename,
+    createdAt: row.created_at,
+    hasStoredOriginal: row.original_storage_path != null,
+  };
 }
 
 // ── Term calendar (admin) ─────────────────────────────────────────────────────

@@ -19,6 +19,9 @@ interface ImportArgs {
   source: CurriculumSyncSource;
   /** Original workbook filename, when known — recorded on the run for the reconcile UI. */
   fileName?: string;
+  /** Storage path of the retained original workbook (source-documents bucket),
+   *  set only by interactive uploads; null on the n8n path. Threaded to the run. */
+  originalStoragePath?: string | null;
   /** Publish as a new curriculum version instead of reconciling the active one. */
   newVersion?: boolean;
 }

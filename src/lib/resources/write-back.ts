@@ -84,10 +84,13 @@ interface WorksheetExerciseRow {
   generation: Record<string, unknown> | null;
 }
 
-/** The curriculum lesson resolved for the plan (all fields best-effort/nullable). */
+/**
+ * The curriculum lesson resolved for the plan (all fields best-effort/nullable).
+ * Used ONLY for daily_outcome and the subject_id/year fallback — NOT to derive
+ * resources.curriculum_lesson_id, which is the plan's text lesson_key stored
+ * verbatim.
+ */
 interface CurriculumResolution {
-  /** curriculum_lesson.id (uuid) — the FK target for resources.curriculum_lesson_id. */
-  id: string | null;
   /** subject_id resolved from curriculum_lesson.subject_code → subjects.code. */
   subjectId: string | null;
   year: number | null;
@@ -111,13 +114,12 @@ async function resolveCurriculumLesson(
   supabase: Supa,
   plan: PlanRow,
 ): Promise<CurriculumResolution> {
-  const empty: CurriculumResolution = { id: null, subjectId: null, year: null, dailyOutcome: null };
+  const empty: CurriculumResolution = { subjectId: null, year: null, dailyOutcome: null };
   const key = plan.curriculum_lesson_id;
   if (!key) return empty;
 
-  const cols = 'id, subject_code, year, daily_outcome';
+  const cols = 'subject_code, year, daily_outcome';
   type CurriculumRow = {
-    id: string;
     subject_code: string | null;
     year: number | null;
     daily_outcome: string | null;
@@ -125,25 +127,31 @@ async function resolveCurriculumLesson(
   let row: CurriculumRow | null = null;
 
   if (plan.curriculum_version_id) {
+    // (lesson_key, curriculum_version_id) is UNIQUE on curriculum_lesson
+    // (curriculum_lesson_version_lesson_key_uidx — 0056, reaffirmed 0059), so this
+    // resolves EXACTLY the plan's pinned version's row. No `is_active` filter and,
+    // deliberately, NO fall back to the active-version view: a plan authored against
+    // an older version must resolve THAT version's row, never silently jump to the
+    // active (newer) version's row for the same lesson_key.
     const { data } = await supabase
       .from('curriculum_lesson')
       .select(cols)
       .eq('lesson_key', key)
       .eq('curriculum_version_id', plan.curriculum_version_id)
-      .eq('is_active', true)
-      .limit(1);
-    row = ((data ?? []) as CurriculumRow[])[0] ?? null;
-  }
-
-  if (!row) {
-    // Unstamped/legacy plan, or the pinned read missed: fall back to the subject's
-    // active version via the view (which is `select cl.*`, so it carries `id`).
+      .maybeSingle();
+    row = (data as CurriculumRow | null) ?? null;
+  } else {
+    // Unstamped/legacy plan (no pinned version): there is no "plan's version" to
+    // honour, so resolve against the subject's active version via the view (which
+    // filters is_active + active version, and where lesson_key is unique). Mirrors
+    // getLessonById's unstamped path — this is a legacy resolution, not a fallback
+    // away from a pinned version.
     const { data } = await supabase
       .from('curriculum_lesson_active')
       .select(cols)
       .eq('lesson_key', key)
-      .limit(1);
-    row = ((data ?? []) as CurriculumRow[])[0] ?? null;
+      .maybeSingle();
+    row = (data as CurriculumRow | null) ?? null;
   }
 
   if (!row) return empty;
@@ -159,7 +167,6 @@ async function resolveCurriculumLesson(
   }
 
   return {
-    id: row.id,
     subjectId,
     year: row.year ?? null,
     dailyOutcome: (row.daily_outcome ?? null) || null,
@@ -227,15 +234,18 @@ export async function writeBackApprovedExercises(planId: string): Promise<WriteB
   if (!plan) return skip('plan_not_found');
   if (plan.status !== 'approved') return skip('not_approved');
 
-  // ── Resolve subject_id + year + daily_outcome + curriculum_lesson_id BEFORE any
-  //    insert (resources_ai_scoped rejects a null subject_id/year — a check
-  //    violation must never be the error path). ──
+  // ── Resolve subject_id + year + daily_outcome BEFORE any insert (resources_ai_scoped
+  //    rejects a null subject_id/year — a check violation must never be the error
+  //    path). resources.curriculum_lesson_id is NOT resolved here: it is the plan's
+  //    text lesson_key, stored verbatim (see the upsert patch). ──
   const curriculum = await resolveCurriculumLesson(supabase, plan);
 
   const subjectId = plan.subject_id ?? curriculum.subjectId ?? null;
   const year = plan.year ?? curriculum.year ?? null;
   const dailyOutcome = curriculum.dailyOutcome;
-  const curriculumLessonId = curriculum.id;
+  // resources.curriculum_lesson_id is TEXT holding the same lesson_key slug as
+  // lesson_plans.curriculum_lesson_id — copied verbatim, no lookup/cast/uuid resolve.
+  const curriculumLessonId = plan.curriculum_lesson_id;
 
   const subjectResolvedVia: ResolvedVia = plan.subject_id
     ? 'plan'

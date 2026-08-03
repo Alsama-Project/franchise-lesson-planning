@@ -75,6 +75,7 @@
     },
     "resource": {
       "upload": "Upload from computer",
+      "downloadFile": "Download file",
       "dropHint": "Drag a file here, or click to choose",
       "uploading": "Uploading…",
       "uploadFailed": "Upload failed. Please try again.",

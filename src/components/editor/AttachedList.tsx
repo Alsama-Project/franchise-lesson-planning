@@ -6,18 +6,23 @@
 
 import type { ResourceWithTags } from '@/types/resource';
 import { resourceView } from '@/components/resources/presentation';
-import { XIcon } from '@/components/resources/icons';
+import { DownloadIcon, XIcon } from '@/components/resources/icons';
 
 export function AttachedList({
   resources,
   onRemove,
   showEmptyState = true,
+  downloadLabel,
 }: {
   resources: ResourceWithTags[];
   onRemove: (resourceId: string) => void;
   /** When false the "none yet" dashed box is suppressed — used where an upload
    *  drop-zone already serves as the empty-state affordance below this list. */
   showEmptyState?: boolean;
+  /** When provided, file-backed rows show a download control with this accessible
+   *  label. The label is passed in because this component is translation-free;
+   *  its caller owns the i18n namespace. */
+  downloadLabel?: string;
 }) {
   return (
     <div>
@@ -53,6 +58,19 @@ export function AttachedList({
                 <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">
                   {r.title}
                 </span>
+                {/* Download the file currently in place — only for file-backed
+                    rows (link / AI-generated resources have no file to fetch). */}
+                {downloadLabel && r.file_path ? (
+                  <a
+                    href={`/api/resources/${r.id}/file?download=1`}
+                    download
+                    aria-label={downloadLabel}
+                    title={downloadLabel}
+                    className="flex-shrink-0 text-neutral-300 hover:text-teal"
+                  >
+                    <DownloadIcon size={15} />
+                  </a>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => onRemove(r.id)}

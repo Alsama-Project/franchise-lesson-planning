@@ -135,6 +135,17 @@ export function GuideUploadCard({
               e.target.value = '';
             }}
           />
+          {/* Download the guide currently in force — the derived text the AI
+              consumes, not the uploaded original. Only when one exists. */}
+          {active ? (
+            <a
+              href={endpoint}
+              download
+              className="text-[12.5px] font-semibold text-[#186155] transition-opacity hover:opacity-70"
+            >
+              {t('guide.download')}
+            </a>
+          ) : null}
           <GhostButton tone="teal" disabled={pending} onClick={() => fileRef.current?.click()}>
             {pending ? t('guide.uploading') : t('guide.upload')}
           </GhostButton>

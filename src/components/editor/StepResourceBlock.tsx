@@ -142,7 +142,12 @@ export function StepResourceBlock({
 
   return (
     <div>
-      <AttachedList resources={attachedResources} onRemove={onRemove} showEmptyState={false} />
+      <AttachedList
+        resources={attachedResources}
+        onRemove={onRemove}
+        showEmptyState={false}
+        downloadLabel={t('resource.downloadFile')}
+      />
 
       <div className="mt-[10px] flex flex-col gap-[9px]">
         {/* Direct upload — the dashed drop-zone doubles as the click-to-pick target. */}

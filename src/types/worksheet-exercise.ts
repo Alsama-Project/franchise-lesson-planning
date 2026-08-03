@@ -56,9 +56,17 @@ export interface ExerciseSpec {
 export interface ImageSlot {
   /** Stable id for this slot within the exercise. */
   slot_id: string;
-  /** The subject the image is for (the plan's subject uuid), steering the illustrator. */
+  /**
+   * The literal thing depicted, exactly as written in the `[Picture: …]` marker,
+   * unexpanded (e.g. "a cow") — authored by the model, not the plan's subject uuid.
+   */
   subject: string | null;
-  /** The literal picture description from the marker. */
+  /**
+   * A full visual description written for an image model that will never see the
+   * exercise — describes ONLY what appears in the picture (e.g. "A single
+   * brown-and-white cow standing side-on, plain background"), never the year,
+   * subject, exercise type, learning outcome, or the student.
+   */
   brief: string;
   /** Lifecycle of the slot's image. */
   status: 'pending' | 'ready' | 'failed';

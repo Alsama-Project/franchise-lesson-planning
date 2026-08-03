@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   generateExercise,
   WorksheetExerciseError,
+  type AuthoredImageSlot,
   type WorksheetExerciseContext,
 } from '@/lib/ai/worksheet-exercise';
 import { readCurriculumAnchors } from '@/lib/ai/worksheet-shared';
@@ -20,8 +21,8 @@ import type {
  * Backend-only. Generates (or regenerates) one worksheet exercise's content from
  * its stored spec, and writes it back to the SAME `worksheet_exercise` row:
  * `body_md`, the derived `body_doc` tiptap fragment, `status = 'ready'`, the
- * `image_slots` derived from the `[Picture: …]` markers, and `generation`
- * updated with the fresh model/prompt_hash. On failure the row is set to
+ * `image_slots` (one per `[Picture: …]` marker, subject/brief authored by the
+ * model), and `generation` updated with the fresh model/prompt_hash. On failure the row is set to
  * `status = 'failed'` — never left stuck on `'generating'`.
  *
  * Input: `{ exercise_id }`. Nothing else. `body_md` is the source of truth;
@@ -44,25 +45,32 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /**
- * Derive image slots from the `[Picture: …]` markers in `body_md`. The markers
- * stay in `body_md` (and thus `body_doc`); each becomes one pending slot the
- * image route later fills. `subject` carries the plan's subject uuid so the
- * illustrator can be steered.
+ * Build the image slots for the row. The `[Picture: …]` markers in `body_md` are
+ * the SOURCE OF TRUTH for how many images the exercise needs (the renderer parses
+ * them), so slot count always equals marker count. Each marker is paired, in
+ * order, with the model-authored slot ({@link AuthoredImageSlot}) — `subject` the
+ * literal thing depicted, `brief` a full visual description for an image model
+ * that never sees the exercise. If the model returned fewer entries than there
+ * are markers, the marker text is used as a safe fallback. The mechanical fields
+ * (`slot_id`, `status`, `storage_path`) are added here, not by the model. The
+ * markers stay in `body_md` unchanged.
  */
-function deriveImageSlots(bodyMd: string, subjectId: string | null): ImageSlot[] {
-  const slots: ImageSlot[] = [];
+function buildImageSlots(bodyMd: string, authored: AuthoredImageSlot[]): ImageSlot[] {
+  const markers: string[] = [];
   const re = /\[Picture:\s*([^\]]+)\]/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(bodyMd)) !== null) {
-    slots.push({
+  while ((m = re.exec(bodyMd)) !== null) markers.push(m[1].trim());
+
+  return markers.map((markerText, i) => {
+    const a = authored[i];
+    return {
       slot_id: randomUUID(),
-      subject: subjectId,
-      brief: m[1].trim(),
+      subject: a?.subject ? a.subject : markerText,
+      brief: a?.brief ? a.brief : markerText,
       status: 'pending',
       storage_path: null,
-    });
-  }
-  return slots;
+    };
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -150,7 +158,7 @@ export async function POST(request: NextRequest) {
 
   const bodyMd = result.bodyMd;
   const bodyDoc = markdownToDoc(bodyMd);
-  const imageSlots = deriveImageSlots(bodyMd, subjectId);
+  const imageSlots = buildImageSlots(bodyMd, result.imageSlots);
   const generation: WorksheetExerciseGeneration = {
     model: result.model,
     docs_used: result.docsUsed,

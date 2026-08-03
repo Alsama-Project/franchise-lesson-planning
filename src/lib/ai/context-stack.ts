@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import type { ActiveContextStackRow, AiContextTool } from '@/types/ai-context';
 import { floorForTool } from './floor';
 import type { SubjectResolution } from './subject-access';
+import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 
 /**
  * The layered-context composer — the single home for building an AI tool's
@@ -62,6 +63,20 @@ export interface AiComposeLogRecord {
   subjectId: string | null;
   subjectResolution: SubjectResolution;
   docsUsed: ContextDocUsed[];
+  /**
+   * The language the model was instructed to WRITE feedback in. Checker-only —
+   * feedback language follows the subject's `content_language`, so this makes the
+   * (otherwise invisible) language choice queryable alongside `docsUsed`. Omitted
+   * for tools whose language is not route-resolved this way.
+   */
+  feedbackLanguage?: WorksheetContentLanguage;
+  /**
+   * How `feedbackLanguage` was chosen — mirrors `subjectResolution`:
+   * `subject` = read from the resolved subject's `content_language`;
+   * `fallback` = the subject was absent/rejected so no read was made and English
+   * was used. A silent drop to UI locale never happens; this records the fallback.
+   */
+  languageResolution?: 'subject' | 'fallback';
 }
 
 /** Emit the per-call compose record. One event name + shape across both tools. */
@@ -134,17 +149,27 @@ const readActiveStack = cache(
  * A COMPLETELY empty stack is a misconfiguration: it is logged at error level
  * and the prompt is still built from role + floor (no invented content).
  *
- * `locale` is only consulted for `smartt_checker`'s floor (its feedback language
- * follows the UI locale); it is ignored for other tools.
+ * `contentLanguage` is only consulted for `smartt_checker`'s floor (its feedback
+ * language follows the SUBJECT's `content_language`, resolved at the route); it is
+ * ignored for other tools. `locale` is retained in this shared signature for the
+ * non-checker callers that still pass it, but the composer no longer consults it —
+ * the checker's language now comes from `contentLanguage`, never the UI locale.
  */
 export async function composeContextStack({
   tool,
   subjectId = null,
-  locale = 'en',
+  contentLanguage = 'en',
 }: {
   tool: AiContextTool;
   subjectId?: string | null;
+  /**
+   * Retained in the shared signature so non-checker callers may keep passing it,
+   * but the composer no longer consults it — the checker's feedback language now
+   * comes from `contentLanguage`, never the UI locale. Deliberately not
+   * destructured so it introduces no dead binding.
+   */
   locale?: string;
+  contentLanguage?: WorksheetContentLanguage;
 }): Promise<ComposedContextStack> {
   const rows = await readActiveStack(tool, subjectId);
 
@@ -160,7 +185,7 @@ export async function composeContextStack({
   }
 
   sections.push(
-    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, locale)}`,
+    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage)}`,
   );
 
   const docsUsed: ContextDocUsed[] = rows.map((r) => ({

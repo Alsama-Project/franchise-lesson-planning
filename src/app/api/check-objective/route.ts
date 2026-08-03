@@ -7,7 +7,7 @@ import {
   type ObjectiveCheckContext,
   type CheckSubject,
 } from '@/lib/ai/check-objective';
-import { resolveSubjectId } from '@/lib/ai/subject-access';
+import { resolveSubjectId, resolveFeedbackLanguage } from '@/lib/ai/subject-access';
 
 /**
  * POST /api/check-objective
@@ -97,10 +97,20 @@ export async function POST(request: NextRequest) {
   // id/name are used only for composition + observability, never in the prompt.
   const { subjectId: rawSubjectId, subjectName } = readSubjectFields(body.context);
   const resolved = await resolveSubjectId(rawSubjectId);
+
+  // Feedback language follows the SUBJECT's content_language, never the UI locale
+  // (Kadria's guide §7: Arabic-medium subjects get Arabic feedback even for an
+  // English-UI teacher). The resolver reads it only for a subject that actually
+  // resolved; an absent/rejected id triggers no `subjects` query and falls back to
+  // English, recorded as 'fallback' — never a silent drop to UI locale.
+  const { contentLanguage, languageResolution } = await resolveFeedbackLanguage(resolved);
+
   const subject: CheckSubject = {
     subjectId: resolved.subjectId,
     subjectName,
     resolution: resolved.resolution,
+    contentLanguage,
+    languageResolution,
   };
 
   // Pre-flight (missing key / empty input) throws before any stream opens, so it

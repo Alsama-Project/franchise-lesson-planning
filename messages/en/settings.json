@@ -380,6 +380,11 @@
       "archived": "Archived",
       "archivedTodo": "The archived documents view is not built yet.",
       "addDocument": "Add document",
+      "addForSubject": {
+        "label": "Add for a subject",
+        "choose": "Choose subject…"
+      },
+      "subjectScope": "Applies to {subject} only",
       "none": "None",
       "header": {
         "documents": "{count, plural, one {# document} other {# documents}}",

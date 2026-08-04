@@ -35,6 +35,7 @@ import { PageBreak } from './nodes/PageBreak';
 import { ResourceRef } from './nodes/ResourceRef';
 import { Indent } from './nodes/Indent';
 import { HintPlaceholder } from './nodes/HintPlaceholder';
+import { WsCompiledMarker } from './nodes/WsCompiledMarker';
 
 /** Cmd/Ctrl-K → link (Docs/Word parity): prompt for a URL on the current selection.
  *  Bold/italic/underline (Mod-b/i/u), undo/redo (Mod-z / Mod-Shift-z), and Docs-style
@@ -127,5 +128,9 @@ export function worksheetDocExtensions(
     Caption,
     PageBreak,
     ResourceRef,
+    // Declares the compile idempotency marker (`wsCompiled`) so it survives
+    // `getJSON()`; without it a single edit strips the tag and the next compile
+    // duplicates every exercise. Declare-only, no DOM output. See the extension file.
+    WsCompiledMarker,
   ];
 }

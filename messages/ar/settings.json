@@ -380,6 +380,11 @@
       "archived": "المؤرشفة",
       "archivedTodo": "لم يتم إنشاء عرض المستندات المؤرشفة بعد.",
       "addDocument": "إضافة مستند",
+      "addForSubject": {
+        "label": "إضافة لمادة",
+        "choose": "اختر مادة…"
+      },
+      "subjectScope": "ينطبق على {subject} فقط",
       "none": "لا يوجد",
       "header": {
         "documents": "{count, plural, zero {# مستند} one {# مستند} two {# مستندان} few {# مستندات} many {# مستندًا} other {# مستند}}",

@@ -1,7 +1,14 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { createClient } from '@/lib/supabase/server';
+import { markdownToDoc } from '@/lib/editor/markdown';
+import { headingText } from '@/lib/ai/worksheet-assemble';
 import type { WorksheetDoc } from '@/types/lesson';
+import type { ActiveContextStackRow } from '@/types/ai-context';
+
+// `headingText` lives in the pure (test-importable) assembly module; re-exported
+// here so existing importers keep resolving it from worksheet-shared.
+export { headingText };
 
 /**
  * Shared server-side helpers for the worksheet-generation spine (the plan and
@@ -91,33 +98,66 @@ export function anchorLines(anchors: CurriculumAnchors | null): string[] {
 }
 
 /**
- * Read the subject's Worksheet Master Template body (the seeded v3/v2 envelope,
- * or null when the subject has no template). SELECT-able by any authenticated
- * user (0062), so it runs through the same auth'd client.
+ * Read the SUBJECT-SCOPED `worksheet_builder` scaffold — the markdown of the
+ * layer-4 context document whose `subject_id` matches this subject — or null when
+ * the subject has no per-subject worksheet_builder document. This is the single
+ * source of the worksheet scaffold: the planner derives its heading list from it
+ * (so the model anchors against real headings) and compile builds its base
+ * document from it (so those anchors have something to match). One source, no
+ * divergence — replacing the old split of planner-reads-`worksheet_template` /
+ * compile-reads-the-stale-plan-clone.
+ *
+ * WHY THE DIFF: `get_active_context_stack` returns tool-layer rows without a
+ * `subject_id` column, so a single call can't tell the GLOBAL worksheet_builder
+ * doc (prose instructions — must NOT become a scaffold) from a per-subject one.
+ * The stack for a subject contains BOTH the global and the subject-scoped tool
+ * docs; the stack for a null subject contains ONLY the global. The tool-layer doc
+ * present in the former but not the latter is the per-subject override — the
+ * scaffold. Runs through the security-definer RPC on the caller's RLS-scoped
+ * client (the `ai_context_doc` tables are admin-only under RLS); never the
+ * service-role key. Any read error resolves to null (no scaffold → compile
+ * appends every exercise in order), never an exception.
  */
-export async function readWorksheetTemplateBody(
+export async function readWorksheetScaffoldMarkdown(
   supabase: ServerClient,
   subjectId: string | null,
-): Promise<unknown> {
+): Promise<string | null> {
   if (!subjectId) return null;
-  const { data } = await supabase
-    .from('worksheet_template')
-    .select('body')
-    .eq('subject_id', subjectId)
-    .maybeSingle();
-  return (data as { body: unknown } | null)?.body ?? null;
+  const [subjectStack, globalStack] = await Promise.all([
+    supabase.rpc('get_active_context_stack', {
+      p_tool: 'worksheet_builder',
+      p_subject_id: subjectId,
+    }),
+    supabase.rpc('get_active_context_stack', {
+      p_tool: 'worksheet_builder',
+      p_subject_id: null,
+    }),
+  ]);
+  const subjectRows = (Array.isArray(subjectStack.data) ? subjectStack.data : []) as ActiveContextStackRow[];
+  const globalRows = (Array.isArray(globalStack.data) ? globalStack.data : []) as ActiveContextStackRow[];
+
+  // Global tool-layer doc ids — everything NOT scoped to this subject.
+  const globalToolIds = new Set(globalRows.filter((r) => r.layer === 'tool').map((r) => r.doc_id));
+  // The subject-scoped tool docs are the tool-layer rows unique to the subject call.
+  const scoped = subjectRows.filter((r) => r.layer === 'tool' && !globalToolIds.has(r.doc_id));
+  // First by the RPC's composition order (layer_rank, sort_order, created_at).
+  return scoped.length > 0 ? scoped[0].body_md : null;
 }
 
-/** Concatenated text of a tiptap heading node, or null when the node is not a heading. */
-export function headingText(node: unknown): string | null {
-  if (!node || typeof node !== 'object') return null;
-  const n = node as { type?: string; content?: unknown[] };
-  if (n.type !== 'heading' || !Array.isArray(n.content)) return null;
-  const text = n.content
-    .map((c) => (c && typeof c === 'object' ? ((c as { text?: string }).text ?? '') : ''))
-    .join('')
-    .trim();
-  return text.length > 0 ? text : null;
+/** The scaffold's top-level doc nodes, built from its markdown (empty when null).
+ *  Compile fills exercises into these; the planner reads their headings — both
+ *  through `markdownToDoc`, so the two agree on exactly which headings exist. */
+export function scaffoldDocContent(markdown: string | null): unknown[] {
+  if (!markdown) return [];
+  const doc = markdownToDoc(markdown);
+  return Array.isArray(doc.content) ? doc.content : [];
+}
+
+/** The distinct heading texts in the scaffold markdown (via `markdownToDoc`), the
+ *  exact set compile can match `template_anchor` against. Empty when null. */
+export function scaffoldHeadings(markdown: string | null): string[] {
+  if (!markdown) return [];
+  return templateHeadings({ version: 3, doc: markdownToDoc(markdown) });
 }
 
 /** The v3 tiptap doc inside a worksheet/template body, or null for v2/empty/absent. */

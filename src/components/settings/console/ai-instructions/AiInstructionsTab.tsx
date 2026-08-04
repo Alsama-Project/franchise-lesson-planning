@@ -16,6 +16,7 @@ import {
   type AiContextBoard,
   type AiContextDocView,
   type AiContextLayer,
+  type AiContextTool,
 } from '@/types/ai-context';
 import { ErrorText } from '../ui';
 import { UploadProgressBar } from '../upload';
@@ -76,12 +77,21 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
     return parts.join(' · ');
   })();
 
+  const subjectName = (subjectId: string | null): string | null =>
+    subjectId ? (board.subjects.find((s) => s.subjectId === subjectId)?.name ?? null) : null;
+
   const layerLabelFor = (doc: AiContextDocView): string => t(`aiInstructions.layers.${doc.layer}`);
   const groupLabelFor = (doc: AiContextDocView): string | null => {
     if (doc.layer === 'subject') {
-      return board.subjects.find((s) => s.subjectId === doc.subjectId)?.name ?? null;
+      return subjectName(doc.subjectId);
     }
-    if (doc.layer === 'tool' && doc.tool) return t(`aiInstructions.tools.${doc.tool}`);
+    if (doc.layer === 'tool' && doc.tool) {
+      const toolLabel = t(`aiInstructions.tools.${doc.tool}`);
+      // A per-subject tool override reads as "Worksheet builder · English" so the
+      // popup header distinguishes it from the global tool document.
+      const subj = subjectName(doc.subjectId);
+      return subj ? `${toolLabel} · ${subj}` : toolLabel;
+    }
     return null;
   };
 
@@ -186,6 +196,8 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
               }
               tone="tool"
               addFields={{ layer: 'tool', tool: g.tool }}
+              subjects={board.subjects.map((s) => ({ subjectId: s.subjectId, name: s.name }))}
+              tool={g.tool}
               onOpen={setOpenDocId}
             />
           ))}
@@ -320,12 +332,17 @@ function DocCard({
   doc,
   onOpen,
   showUploader,
+  subjectName,
 }: {
   doc: AiContextDocView;
   onOpen: (id: string) => void;
   /** Group cards show the uploader; layer 1–2 cards show version + date only. */
   showUploader?: boolean;
+  /** Set for a per-subject tool override → shows a scope badge that distinguishes
+   *  it from the tool's global document. Null/absent for a global doc. */
+  subjectName?: string | null;
 }) {
+  const t = useTranslations('settings');
   const locale = useLocale();
   const meta = [
     `v${doc.activeVersion}`,
@@ -340,8 +357,19 @@ function DocCard({
         showUploader ? 'bg-surface' : 'bg-surface-raised'
       }`}
     >
-      <div dir="auto" className="text-[12.5px] font-semibold leading-[1.35] text-ink">
-        {doc.name}
+      <div className="flex items-start gap-[7px]">
+        <div dir="auto" className="min-w-0 flex-1 text-[12.5px] font-semibold leading-[1.35] text-ink">
+          {doc.name}
+        </div>
+        {subjectName ? (
+          <span
+            dir="auto"
+            title={t('aiInstructions.subjectScope', { subject: subjectName })}
+            className="shrink-0 rounded-full bg-teal-tint px-[8px] py-[2px] text-[10.5px] font-semibold text-teal-deep"
+          >
+            {subjectName}
+          </span>
+        ) : null}
       </div>
       <div dir="auto" className="mt-[5px] text-[11px] text-text-faint">
         {meta.join(' · ')}
@@ -360,6 +388,8 @@ function GroupRow({
   onToggle,
   tone,
   addFields,
+  subjects,
+  tool,
   onOpen,
 }: {
   label: string;
@@ -369,10 +399,16 @@ function GroupRow({
   onToggle: () => void;
   tone: 'subject' | 'tool';
   addFields: Record<string, string>;
+  /** Subjects available for a per-subject override (tool column only). */
+  subjects?: { subjectId: string; name: string }[];
+  /** The tool this row is for (tool column only) — drives the per-subject add path. */
+  tool?: AiContextTool;
   onOpen: (id: string) => void;
 }) {
   const t = useTranslations('settings');
   const isEmpty = count === 0;
+  const subjectNameOf = (subjectId: string | null): string | null =>
+    subjectId ? (subjects?.find((s) => s.subjectId === subjectId)?.name ?? null) : null;
 
   if (expanded) {
     return (
@@ -394,9 +430,19 @@ function GroupRow({
         </button>
         <div className="flex flex-col gap-[7px] px-[10px] pt-[9px] pb-[11px]">
           {docs.map((doc) => (
-            <DocCard key={doc.id} doc={doc} onOpen={onOpen} showUploader />
+            <DocCard
+              key={doc.id}
+              doc={doc}
+              onOpen={onOpen}
+              showUploader
+              subjectName={tone === 'tool' ? subjectNameOf(doc.subjectId) : null}
+            />
           ))}
           <AddDocument fields={addFields} />
+          {/* Tool column only: a per-subject override of this tool's instructions. */}
+          {tone === 'tool' && tool && subjects && subjects.length > 0 ? (
+            <AddSubjectDocument tool={tool} subjects={subjects} />
+          ) : null}
         </div>
       </div>
     );
@@ -457,6 +503,62 @@ function AddDocument({ fields }: { fields: Record<string, string> }) {
       >
         {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addDocument')}`}
       </button>
+      {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
+      {error ? <ErrorText>{error}</ErrorText> : null}
+    </div>
+  );
+}
+
+/**
+ * Add a PER-SUBJECT override of a tool's instructions: pick a subject, then a file,
+ * and the document is created with `layer='tool'`, this `tool`, and the chosen
+ * `subject_id` (validated by the same route + DB scope check as the global add). The
+ * scaffold document `compileWorksheet` reads for worksheet_builder is created here.
+ */
+function AddSubjectDocument({
+  tool,
+  subjects,
+}: {
+  tool: AiContextTool;
+  subjects: { subjectId: string; name: string }[];
+}) {
+  const t = useTranslations('settings');
+  const [subjectId, setSubjectId] = useState('');
+  const { pending, error, upload } = useDocUpload();
+  const { input, open } = useFilePicker((file) =>
+    upload('/api/admin/context-docs', file, {
+      layer: 'tool',
+      tool,
+      subject_id: subjectId,
+      name: filenameStem(file.name),
+    }),
+  );
+  return (
+    <div className="flex flex-col gap-[8px]">
+      {input}
+      <div className="flex items-center gap-[7px]">
+        <select
+          value={subjectId}
+          onChange={(e) => setSubjectId(e.target.value)}
+          aria-label={t('aiInstructions.addForSubject.choose')}
+          className="min-w-0 flex-1 rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
+        >
+          <option value="">{t('aiInstructions.addForSubject.choose')}</option>
+          {subjects.map((s) => (
+            <option key={s.subjectId} value={s.subjectId}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={open}
+          disabled={pending || !subjectId}
+          className="shrink-0 rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
+        >
+          {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addForSubject.label')}`}
+        </button>
+      </div>
       {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
       {error ? <ErrorText>{error}</ErrorText> : null}
     </div>

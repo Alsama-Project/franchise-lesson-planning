@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getResourcesClient } from '@/lib/anthropic';
-import { composeContextStack, logAiCompose } from './context-stack';
+import { composeContextStack, logAiCompose, ContextStackError } from './context-stack';
 import type { SubjectResolution } from './subject-access';
 
 /**
@@ -341,10 +341,15 @@ export async function generateResource(
   // breakpoint. `subjectId` is the route-validated UUID (or null when absent /
   // rejected) so per-subject documents steer only when the caller belongs to it.
   const subjectId = context.subjectId ?? null;
-  const { system: systemPrompt, docsUsed } = await composeContextStack({
-    tool: 'resource_generator',
-    subjectId,
-  });
+  let composed: Awaited<ReturnType<typeof composeContextStack>>;
+  try {
+    composed = await composeContextStack({ tool: 'resource_generator', subjectId });
+  } catch (err) {
+    // Fail closed: surface the composer's "not configured" as a clean 503, not a 500.
+    if (err instanceof ContextStackError) throw new GenerateResourceError(err.message, err.status);
+    throw err;
+  }
+  const { system: systemPrompt, docsUsed } = composed;
   // Observability: docsUsed + how the subject was resolved, on one record.
   logAiCompose({
     route: '/api/generate-resource',

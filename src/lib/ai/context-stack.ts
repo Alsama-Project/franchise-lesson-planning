@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import type { ActiveContextStackRow, AiContextTool } from '@/types/ai-context';
-import { floorForTool, SAFEGUARDING_FALLBACK } from './floor';
+import { floorForTool } from './floor';
 import type { SubjectResolution } from './subject-access';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 
@@ -22,19 +22,39 @@ import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-lo
  *   6. Teacher's lesson plan
  *
  * Later layers win on conflict. Beneath the ladder and overriding all of it sits
- * the FLOOR (`@/lib/ai/floor`). Its output contract, marker conventions and
- * language guard stay in code (locked); its SAFEGUARDING block is now an editable
- * `ai_context_doc` row (layer = 'safeguarding'), read here separately and composed
- * at floor position, with the code constant as a permanent fallback so a failed or
- * empty read can never strip safeguarding. This structure exists because of a real production
- * failure: a hardcoded floor and an uploaded guide gave contradictory
- * instructions and nothing declared which won. Now the ladder + an explicit
- * precedence statement + the floor make the resolution visible.
+ * the FLOOR (`@/lib/ai/floor`) — now ONLY the machine response contract per tool.
+ * All instruction content (house style, pedagogy, language, exercise coverage,
+ * image briefs, safeguarding) lives in the uploaded docs (layers 1-4); code
+ * carries only the response shape.
+ *
+ * FAIL CLOSED: a prompt missing all four layers is worthless regardless of safety,
+ * so an errored or empty stack is a hard failure, not a partial compose. The read
+ * throws {@link ContextStackError} on an RPC error, and {@link composeContextStack}
+ * throws on an empty stack; the calling routes surface a clear message to the user
+ * instead of generating against a stripped prompt.
  *
  * Read path: `get_active_context_stack(tool, subject_id)` runs in the teacher's
  * (non-admin) request through the security-definer RPC on the RLS-honouring
  * server client — never the service-role key.
  */
+
+/**
+ * Thrown when the layered context stack cannot be composed — an RPC error or a
+ * completely empty stack (a misconfiguration). Carries an HTTP `status` the calling
+ * routes surface directly, and a user-facing `message`, so the failure reads as a
+ * comprehensible "not configured" rather than a 500.
+ */
+export class ContextStackError extends Error {
+  status: number;
+  constructor(
+    message = 'AI instructions have not been set up yet. Ask an administrator to configure the AI instruction documents before using this feature.',
+    status = 503,
+  ) {
+    super(message);
+    this.name = 'ContextStackError';
+    this.status = status;
+  }
+}
 
 /** One document that contributed to a composed prompt, for observability. */
 export interface ContextDocUsed {
@@ -121,11 +141,13 @@ const LAYER_LABEL: Record<string, string> = {
 
 /**
  * Read the active stack for `(tool, subjectId)` via the RLS-honouring server
- * client. Memoised per-request with React `cache()` — matching the pattern the
- * deleted `getActive*Guide` helpers used — so repeated composes in one request
- * share a single DB round-trip. Keyed on the primitive args (not an object) so
- * the cache actually hits. Returns `[]` on error; the caller logs the empty
- * stack as a misconfiguration and still composes role + floor.
+ * client. Memoised per-request with React `cache()` so repeated composes in one
+ * request share a single DB round-trip. Keyed on the primitive args (not an
+ * object) so the cache actually hits.
+ *
+ * FAIL CLOSED: an RPC error (or a malformed, non-array result) THROWS
+ * {@link ContextStackError} rather than being swallowed into `[]`. A transient DB
+ * error must not silently produce a prompt stripped of every uploaded instruction.
  */
 const readActiveStack = cache(
   async (tool: AiContextTool, subjectId: string | null): Promise<ActiveContextStackRow[]> => {
@@ -134,34 +156,17 @@ const readActiveStack = cache(
       p_tool: tool,
       p_subject_id: subjectId,
     });
-    if (error || !Array.isArray(data)) return [];
+    if (error || !Array.isArray(data)) {
+      console.error('[context-stack] stack read failed', {
+        tool,
+        subjectId,
+        error: error?.message ?? 'non-array result',
+      });
+      throw new ContextStackError();
+    }
     return data as ActiveContextStackRow[];
   },
 );
-
-/**
- * Read the active safeguarding doc's body for a tool, SEPARATELY from the steerable
- * stack — safeguarding composes at floor position, never inside the RPC's
- * `layer_rank, sort_order, created_at` ordering, so it is fetched on its own. The
- * `ai_context_doc` tables are admin-only under RLS (0063), so a teacher's request
- * reaches this row only through the security-definer `get_active_safeguarding_doc`
- * RPC, on the RLS-honouring server client — never the service-role key.
- *
- * Returns the body text, or `null` when there is no active row OR the read errors.
- * Unlike {@link readActiveStack} (which swallows errors into `[]` silently for the
- * benign missing-layer case), a failed/absent safeguarding read is a fault we must
- * NOT hide: the caller logs it at error level and composes the code fallback, so a
- * failed read can never silently produce a prompt with no safeguarding text.
- */
-const readActiveSafeguarding = cache(async (tool: AiContextTool): Promise<string | null> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc('get_active_safeguarding_doc', { p_tool: tool });
-  if (error) {
-    console.error('[context-stack] safeguarding read failed', { tool, error: error.message });
-    return null;
-  }
-  return typeof data === 'string' ? data : null;
-});
 
 /**
  * Compose the system prompt for a tool from the layered context stack.
@@ -172,8 +177,9 @@ const readActiveSafeguarding = cache(async (tool: AiContextTool): Promise<string
  *
  * Missing layers are legitimate, not errors — a subject with no subject-context
  * document composes fine with that layer simply absent; nothing is substituted.
- * A COMPLETELY empty stack is a misconfiguration: it is logged at error level
- * and the prompt is still built from role + floor (no invented content).
+ * A COMPLETELY empty stack, however, is a misconfiguration: the composer FAILS
+ * CLOSED and throws {@link ContextStackError} rather than composing role + floor
+ * against no instruction content (see the fail-closed note at the top).
  *
  * `contentLanguage` is only consulted for `smartt_checker`'s floor (its feedback
  * language follows the SUBJECT's `content_language`, resolved at the route); it is
@@ -197,25 +203,18 @@ export async function composeContextStack({
   locale?: string;
   contentLanguage?: WorksheetContentLanguage;
 }): Promise<ComposedContextStack> {
-  const stackRows = await readActiveStack(tool, subjectId);
+  const rows = await readActiveStack(tool, subjectId);
 
-  // Invariant: safeguarding is composed separately at floor position (below) and must
-  // NEVER arrive through get_active_context_stack. That RPC excludes it by construction
-  // — its WHERE clause matches only org/academic/subject/tool, so a 'safeguarding' row
-  // falls through (see migration 20260803180100, §3). This guard is the assertion that
-  // catches a future broadening of that SECURITY DEFINER function: if one ever returns a
-  // safeguarding row, drop it from the ladder and log loudly, so it can never
-  // double-compose into the steerable layers.
-  const rows = stackRows.filter((r) => r.layer !== 'safeguarding');
-  if (rows.length !== stackRows.length) {
-    console.error(
-      '[context-stack] invariant violated: get_active_context_stack returned safeguarding row(s) — excluded from the ladder (safeguarding composes only at floor position)',
-      { tool, subjectId },
-    );
-  }
-
+  // FAIL CLOSED: a completely empty stack means none of the four uploaded layers
+  // resolved — a misconfiguration. Composing role + floor against it would produce
+  // a prompt with no instruction content, so throw instead and let the route
+  // surface a clear message. (`readActiveStack` has already thrown on an RPC error.)
   if (rows.length === 0) {
-    console.error('[context-stack] empty stack — misconfiguration', { tool, subjectId });
+    console.error('[context-stack] empty stack — refusing to compose a partial prompt', {
+      tool,
+      subjectId,
+    });
+    throw new ContextStackError();
   }
 
   const sections: string[] = [ROLE[tool], PRECEDENCE_STATEMENT];
@@ -225,27 +224,10 @@ export async function composeContextStack({
     sections.push(`━━━ ${label} · "${row.doc_name}" ━━━\n${row.body_md.trim()}`);
   }
 
-  // Safeguarding composes inside the floor, at each tool's historical position
-  // (handled by floorForTool). Prefer the editable DB row; when it is absent, errors,
-  // or is empty, log loudly and use the code fallback — safeguarding must never
-  // compose empty. `smartt_checker` has no safeguarding slot (no fallback entry), so
-  // the read is skipped and it contributes nothing, exactly as before.
-  let safeguarding: string | undefined;
-  if (SAFEGUARDING_FALLBACK[tool] !== undefined) {
-    const dbBody = await readActiveSafeguarding(tool);
-    if (dbBody && dbBody.trim().length > 0) {
-      safeguarding = dbBody;
-    } else {
-      console.error('[context-stack] safeguarding missing/empty — using code fallback', {
-        tool,
-        reason: dbBody === null ? 'absent_or_error' : 'empty',
-      });
-      safeguarding = SAFEGUARDING_FALLBACK[tool];
-    }
-  }
-
+  // The floor is now purely code: the machine response contract for this tool. All
+  // instruction content (including safeguarding) lives in the uploaded layers above.
   sections.push(
-    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage, safeguarding)}`,
+    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage)}`,
   );
 
   const docsUsed: ContextDocUsed[] = rows.map((r) => ({

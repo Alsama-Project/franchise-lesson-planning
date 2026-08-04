@@ -1,26 +1,21 @@
 'use client';
 
 // The admin "AI instructions" board — the layered instruction stack that drives
-// every AI feature. Ported from ai-instructions-v3.html: three screens (board,
-// tool/subject expanded inside its column, document popup). Layers ascend in
-// authority left→right (1 Alsama · 2 academic · 3 subject · 4 tool); below them
-// sits the built-in, non-editable safeguarding floor. Admins upload and manage
-// the documents in layers 1–4 here.
+// every AI feature. Four layer columns, ascending in authority left→right
+// (1 Alsama · 2 academic · 3 subject · 4 tool). All instruction content — house
+// style, pedagogy, language, safeguarding, tool restrictions — lives in these
+// uploaded documents; the machine response contract stays in code and has no UI.
 //
-// Colour semantics are preserved: cream = locked (floor), teal = tools/actions/
-// chrome, red = destructive (Archive). Pink is the wordmark only (in the shell)
-// and does not appear on this surface.
+// Colour semantics: teal = tools/actions/chrome, red = destructive (Archive).
+// Pink is the wordmark only (in the shell) and does not appear on this surface.
 
-import { useEffect, useState, useTransition, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useTransition, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import {
-  AI_CONTEXT_TOOLS,
   type AiContextBoard,
   type AiContextDocView,
   type AiContextLayer,
-  type AiContextTool,
 } from '@/types/ai-context';
 import { ErrorText } from '../ui';
 import { UploadProgressBar } from '../upload';
@@ -40,8 +35,6 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [archiveDocId, setArchiveDocId] = useState<string | null>(null);
-  // The read-only "Output contract" viewer, keyed by the tool whose contract is open.
-  const [contractTool, setContractTool] = useState<AiContextTool | null>(null);
 
   const openDoc = openDocId ? findDoc(board, openDocId) : null;
   const archiveDoc = archiveDocId ? findDoc(board, archiveDocId) : null;
@@ -88,8 +81,7 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
     if (doc.layer === 'subject') {
       return board.subjects.find((s) => s.subjectId === doc.subjectId)?.name ?? null;
     }
-    if ((doc.layer === 'tool' || doc.layer === 'safeguarding') && doc.tool)
-      return t(`aiInstructions.tools.${doc.tool}`);
+    if (doc.layer === 'tool' && doc.tool) return t(`aiInstructions.tools.${doc.tool}`);
     return null;
   };
 
@@ -200,11 +192,6 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
         </Column>
       </div>
 
-      {/* The floor, split in two full-width rows: the editable safeguarding half and
-          the code-locked output-contract half. */}
-      <SafeguardingRow docs={board.safeguarding} onOpen={setOpenDocId} />
-      <OutputContractRow onRead={setContractTool} />
-
       {openDoc ? (
         <DocumentPopup
           doc={openDoc}
@@ -225,14 +212,6 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
             setArchiveDocId(null);
             setArchiveError(null);
           }}
-        />
-      ) : null}
-
-      {contractTool ? (
-        <OutputContractPopup
-          tool={contractTool}
-          toolLabel={t(`aiInstructions.tools.${contractTool}`)}
-          onClose={() => setContractTool(null)}
         />
       ) : null}
     </div>
@@ -481,202 +460,6 @@ function AddDocument({ fields }: { fields: Record<string, string> }) {
       {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
       {error ? <ErrorText>{error}</ErrorText> : null}
     </div>
-  );
-}
-
-// ── The floor, split: editable safeguarding row + locked output-contract row ───
-
-/** A padlock glyph, sized to fit the leading chip. */
-function LockGlyph({ size = 14, className }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-      <rect x="4" y="11" width="16" height="9" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-/**
- * Full-width "Safeguarding rules" row — the editable half of the floor. One entry
- * per tool (`smartt_checker` has none), each an ordinary document opening the same
- * `DocumentPopup` (edit / replace / version history) as every other document.
- */
-function SafeguardingRow({
-  docs,
-  onOpen,
-}: {
-  docs: AiContextDocView[];
-  onOpen: (id: string) => void;
-}) {
-  const t = useTranslations('settings');
-  return (
-    <div className="mb-[16px] rounded-[12px] border border-border [border-top:3px_solid_var(--color-teal)] px-[18px] pt-[16px] pb-[16px]">
-      <div className="mb-[4px] flex items-center gap-[10px]">
-        <span className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-[8px] bg-teal-tint text-teal-deep">
-          <LockGlyph />
-        </span>
-        <span className="flex-1 text-[14.5px] font-semibold text-ink">
-          {t('aiInstructions.safeguarding.title')}
-        </span>
-        <span className="text-[11.5px] text-text-faint">{docs.length}</span>
-      </div>
-      <p dir="auto" className="mb-[13px] ps-[40px] text-[12px] text-text-faint">
-        {t('aiInstructions.safeguarding.subtitle')}
-      </p>
-      <div className="grid grid-cols-1 gap-[9px] md:grid-cols-2 xl:grid-cols-3">
-        {docs.map((doc) => (
-          <DocCard key={doc.id} doc={doc} onOpen={onOpen} showUploader />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Full-width "Output contract" row — the locked half of the floor (cream/lock,
- * mirroring the previous floor card). One read-only entry per tool; the lock is an
- * explanation (defined in code, nothing to edit), not a withheld permission.
- */
-function OutputContractRow({ onRead }: { onRead: (tool: AiContextTool) => void }) {
-  const t = useTranslations('settings');
-  return (
-    <div className="rounded-[12px] border border-cream-border bg-cream px-[18px] pt-[15px] pb-[16px]">
-      <div className="mb-[6px] flex flex-wrap items-center gap-[13px]">
-        <span className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-[8px] bg-cream-chip text-cream-ink-muted">
-          <LockGlyph />
-        </span>
-        <span className="flex-1 text-[14.5px] font-semibold text-cream-ink">
-          {t('aiInstructions.outputContract.title')}
-        </span>
-        <span className="rounded-[5px] bg-cream-chip px-[9px] py-[4px] text-[10.5px] font-bold uppercase tracking-[0.05em] text-cream-ink-muted">
-          {t('aiInstructions.outputContract.badge')}
-        </span>
-      </div>
-      <p dir="auto" className="mb-[13px] ps-[43px] text-[12px] text-cream-ink-muted">
-        {t('aiInstructions.outputContract.note')}
-      </p>
-      <div className="grid grid-cols-1 gap-[9px] md:grid-cols-2 xl:grid-cols-4">
-        {AI_CONTEXT_TOOLS.map((tool) => (
-          <div
-            key={tool}
-            className="flex items-center gap-[9px] rounded-[9px] border border-cream-btn-border bg-cream-btn-bg px-[12px] py-[10px]"
-          >
-            <span dir="auto" className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-cream-ink">
-              {t(`aiInstructions.tools.${tool}`)}
-            </span>
-            <button
-              type="button"
-              onClick={() => onRead(tool)}
-              className="shrink-0 rounded-[8px] border border-cream-btn-border bg-surface px-[11px] py-[6px] text-[11.5px] font-semibold text-cream-btn-text transition-colors hover:bg-cream-chip"
-            >
-              {t('aiInstructions.outputContract.read')}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Read-only viewer for a tool's output contract. Fetches the code text from the
- * admin-gated route and renders it verbatim, with a note stating it is defined in
- * code and has nothing to edit. No edit / replace / archive / version controls.
- */
-function OutputContractPopup({
-  tool,
-  toolLabel,
-  onClose,
-}: {
-  tool: AiContextTool;
-  toolLabel: string;
-  onClose: () => void;
-}) {
-  const t = useTranslations('settings');
-  const [text, setText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    fetch(`/api/admin/context-docs/output-contract?tool=${encodeURIComponent(tool)}`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error('failed');
-        const data = (await res.json()) as { text: string };
-        if (live) setText(data.text);
-      })
-      .catch(() => {
-        if (live) setError(t('aiInstructions.loadError'));
-      });
-    return () => {
-      live = false;
-    };
-  }, [tool, t]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={toolLabel}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-4 py-[34px]"
-      style={{ background: 'rgba(42,36,34,0.45)' }}
-    >
-      <div className="w-full max-w-[760px] overflow-hidden rounded-[14px] border border-cream-border bg-surface shadow-[0_22px_44px_-18px_rgba(42,30,22,0.45)]">
-        {/* Header: identity + lock + close */}
-        <div className="flex items-start gap-[14px] border-b border-border-subtle bg-cream px-[22px] pt-[20px] pb-[16px]">
-          <div className="min-w-0 flex-1">
-            <div className="mb-[7px] flex items-center gap-[9px]">
-              <span className="inline-flex size-[20px] items-center justify-center rounded-full bg-cream-chip text-cream-ink-muted">
-                <LockGlyph size={11} />
-              </span>
-              <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-cream-ink-muted">
-                {`${t('aiInstructions.outputContract.title')} · ${toolLabel}`}
-              </span>
-            </div>
-            <div dir="auto" className="text-[13px] text-cream-ink-muted">
-              {t('aiInstructions.outputContract.note')}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t('aiInstructions.popup.close')}
-            className="inline-flex size-[32px] items-center justify-center rounded-[9px] border border-border text-neutral-700 transition-colors hover:bg-surface-warm"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Body: the contract text, verbatim */}
-        {error ? (
-          <p className="mx-[22px] my-[18px] rounded-[10px] border border-danger-border bg-danger-bg px-[12px] py-[8px] text-[12.5px] font-medium text-danger">
-            {error}
-          </p>
-        ) : (
-          <div
-            dir="auto"
-            className="max-h-[460px] overflow-auto whitespace-pre-wrap px-[22px] pt-[18px] pb-[24px] font-mono text-[12px] leading-[1.8] text-neutral-900"
-          >
-            {text ?? `${t('aiInstructions.outputContract.read')}…`}
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body,
   );
 }
 

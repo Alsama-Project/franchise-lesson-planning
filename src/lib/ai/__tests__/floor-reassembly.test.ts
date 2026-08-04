@@ -66,17 +66,39 @@ test('worksheet_image floor is only its precedence line (no style/context/safegu
   }
 });
 
-test('smartt_checker floor is untouched (anchor + stem + JSON contract, both locales)', () => {
+test('smartt_checker floor keeps the contract, both locales', () => {
   const en = floorForTool('smartt_checker', 'en');
   const ar = floorForTool('smartt_checker', 'ar');
   assert.equal(en, smarttCheckerFloor('en'));
   assert.equal(ar, smarttCheckerFloor('ar'));
-  // The SMARTT floor legitimately still carries its anchor + stem — it is untouched
-  // this branch (its contract and pedagogy are interleaved mid-sentence).
+  // Contract that MUST stay in code: the six-letter anchor (each letter named), the
+  // fixed stem (a code dependency — objective.ts compares against OBJECTIVE_STEM),
+  // and the JSON contract (status enum + note + improved_objective).
   assert.match(en, /SMARTT is the fixed anchor/);
+  for (const letter of ['Specific', 'Measurable', 'Achievable', 'Relevant', 'Time-bound', 'Tangible']) {
+    assert.match(en, new RegExp(letter), `anchor must name ${letter}`);
+  }
   assert.match(en, /By the end of this session, I will be able to/);
   assert.match(en, /"strong" or "needs work"/);
+  assert.match(en, /improved_objective/);
   // The Arabic content-language directive is appended only for 'ar'.
   assert.equal(en.includes('الفصحى'), false);
   assert.match(ar, /الفصحى/);
+});
+
+test('smartt_checker floor no longer carries the extracted pedagogy', () => {
+  // These three fragments were interleaved with the contract and moved to the
+  // handback (docs/context-doc-handback/smartt_checker.md). If any reappears, the
+  // pedagogy has leaked back into code.
+  const SMARTT_PEDAGOGY_ABSENT = [
+    "Alsama's distinctive final letter", // the Tangible gloss
+    'observable, student-facing action', // the stem's pedagogical qualifier
+    'single one-line', // the note length qualifier
+  ];
+  for (const lang of ['en', 'ar'] as const) {
+    const floor = floorForTool('smartt_checker', lang);
+    for (const phrase of SMARTT_PEDAGOGY_ABSENT) {
+      assert.equal(floor.includes(phrase), false, `smartt floor (${lang}) must not contain: ${phrase}`);
+    }
+  }
 });

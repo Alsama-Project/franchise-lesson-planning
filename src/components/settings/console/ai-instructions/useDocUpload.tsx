@@ -59,15 +59,21 @@ export function useDocUpload(): DocUploadState {
   return { pending, error, upload, clearError: () => setError(null) };
 }
 
+/** The default document accept list — markdown / text / Word (the context-doc
+ *  upload flows). Frame uploads pass their own `accept` (HTML only). */
+const DEFAULT_ACCEPT =
+  '.md,.txt,.docx,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 /** A hidden `<input type=file>` bound to a picker. Returns the input ref + an
- *  `open()` to trigger it, so callers render their own visible affordance. */
-export function useFilePicker(onPick: (file: File) => void) {
+ *  `open()` to trigger it, so callers render their own visible affordance.
+ *  `accept` defaults to the document list; frame uploads pass `.html`. */
+export function useFilePicker(onPick: (file: File) => void, accept: string = DEFAULT_ACCEPT) {
   const ref = useRef<HTMLInputElement>(null);
   const input = (
     <input
       ref={ref}
       type="file"
-      accept=".md,.txt,.docx,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      accept={accept}
       className="hidden"
       onChange={(e) => {
         const f = e.target.files?.[0];

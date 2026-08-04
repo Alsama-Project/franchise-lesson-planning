@@ -425,6 +425,14 @@
         "cancel": "Cancel",
         "confirm": "Archive document",
         "archiving": "Archiving…"
+      },
+      "worksheetFrame": {
+        "title": "Worksheet page frames",
+        "subtitle": "The printed page furniture around each subject's worksheet — masthead, Name/Date/Class, objective strip, footer. Upload an HTML frame per subject, or leave a subject on the built-in page. Uploading replaces the current frame.",
+        "builtIn": "Using the built-in page",
+        "uploaded": "Uploaded",
+        "upload": "Upload",
+        "replace": "Replace"
       }
     }
   }

@@ -4,6 +4,7 @@ import {
   AI_CONTEXT_TOOLS,
   type AiContextBoard,
   type AiContextDocView,
+  type AiContextFrameView,
   type AiContextLayer,
   type AiContextSubjectGroup,
   type AiContextToolGroup,
@@ -62,7 +63,7 @@ interface RawDoc {
 export async function getAiContextBoard(): Promise<AiContextBoard | null> {
   const supabase = await createClient();
 
-  const [docsRes, subjectsRes] = await Promise.all([
+  const [docsRes, subjectsRes, framesRes] = await Promise.all([
     supabase
       .from('ai_context_doc')
       .select(
@@ -77,12 +78,21 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
       .select('id, name')
       .is('archived_at', null)
       .order('name', { ascending: true }),
+    // Uploaded worksheet page frames — one row per subject that has one. A read
+    // failure here is non-fatal: the frames row simply shows every subject on the
+    // built-in page (frames defaults to []).
+    supabase.from('worksheet_frame').select('subject_id, original_filename, updated_at'),
   ]);
 
   if (docsRes.error) return null;
 
   const rawDocs = (docsRes.data ?? []) as unknown as RawDoc[];
   const subjectRows = (subjectsRes.data ?? []) as Array<{ id: string; name: string }>;
+  const frameRows = (framesRes.data ?? []) as Array<{
+    subject_id: string;
+    original_filename: string | null;
+    updated_at: string;
+  }>;
 
   // ── Resolve uploader ids → display names in one query ──
   const uploaderIds = new Set<string>();
@@ -161,11 +171,18 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
     docs: docViews.filter((d) => d.layer === 'tool' && d.tool === tool),
   }));
 
+  const frames: AiContextFrameView[] = frameRows.map((f) => ({
+    subjectId: f.subject_id,
+    originalFilename: f.original_filename,
+    updatedAt: f.updated_at,
+  }));
+
   return {
     org,
     academic,
     subjects,
     tools,
+    frames,
     totalDocs: docViews.length,
     lastChange,
   };

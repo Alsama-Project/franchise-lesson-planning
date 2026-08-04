@@ -80,8 +80,20 @@ export interface GenerationApi extends GenerationState {
   retryCard: (exerciseId: string) => Promise<void>;
   /** (Re)generate one image slot. `regenerate` bypasses the cache. */
   generateSlot: (exerciseId: string, slotId: string, regenerate: boolean) => Promise<void>;
-  /** Persist a teacher edit of one card (body_doc + status:'edited') and recompile. */
-  applyEdit: (exerciseId: string, bodyDoc: WorksheetDoc) => Promise<void>;
+  /**
+   * Persist a teacher edit of one card (body_doc + status:'edited') — the pure row
+   * write ONLY, with NO recompile. Returns whether the write succeeded. Decoupled
+   * from `recompile` so a card edit is never lost even when the document is dirty and
+   * the rebuild is deferred (Part B). The caller decides when (or whether) to rebuild.
+   */
+  persistEdit: (exerciseId: string, bodyDoc: WorksheetDoc) => Promise<boolean>;
+  /**
+   * Rebuild the compiled document from the current exercise rows and persist it. This
+   * is the recompile half of the old `applyEdit`, exposed so the caller can defer it
+   * (and re-run it later — e.g. from the out-of-date banner). Best-effort: a compile
+   * failure never blocks the pane.
+   */
+  recompile: () => Promise<void>;
 }
 
 /** Overwrite one slot on a row (by slot_id), preserving array order (cap-critical). */
@@ -266,16 +278,16 @@ export function useWorksheetGeneration({
     [exercises, lessonPlanId, subjectId, compileAndPersist],
   );
 
-  const applyEdit = useCallback(
-    async (exerciseId: string, bodyDoc: WorksheetDoc) => {
+  const persistEdit = useCallback(
+    async (exerciseId: string, bodyDoc: WorksheetDoc): Promise<boolean> => {
       const res = await saveExerciseEdit(exerciseId, bodyDoc);
-      if (!res.ok) return;
+      if (!res.ok) return false;
       setExercises((cur) =>
         cur.map((e) => (e.id === exerciseId ? { ...e, body_doc: bodyDoc, status: 'edited' } : e)),
       );
-      await compileAndPersist();
+      return true;
     },
-    [compileAndPersist],
+    [],
   );
 
   return {
@@ -289,6 +301,7 @@ export function useWorksheetGeneration({
     regenerateCard,
     retryCard,
     generateSlot,
-    applyEdit,
+    persistEdit,
+    recompile: compileAndPersist,
   };
 }

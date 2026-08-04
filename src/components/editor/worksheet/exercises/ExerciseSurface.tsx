@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Spinner } from '@/components/ui/Spinner';
-import type { Worksheet, WorksheetV3 } from '@/types/lesson';
+import type { Worksheet, WorksheetDoc, WorksheetV3 } from '@/types/lesson';
 import type { TagsByDimension } from '@/types/resource';
 import type { WorksheetExercise } from '@/types/worksheet-exercise';
 import { loadWorksheetExercises } from '@/lib/actions/worksheet-exercise';
@@ -30,6 +30,8 @@ import { ExerciseSkeleton } from './ExerciseSkeleton';
 import { CardConfirm } from './CardConfirm';
 import { IMAGE_CAP, useWorksheetGeneration } from './useWorksheetGeneration';
 import { skeletonHeight } from './heights';
+import { ZoomControls } from '../doc/ZoomControls';
+import { clampZoom, round2, ZOOM_STEP } from '../doc/zoom';
 
 /** Which worksheet surface the teacher is looking at when rows exist. Cards are the
  *  generation + review step; the document is the artifact once they are happy. */
@@ -91,11 +93,20 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
   // flows through `handleCompiled` (clears it). The hook stays untouched.
   const [documentDirty, setDocumentDirty] = useState(false);
 
-  // A compile write (the four triggers → compileAndPersist → onCompiled). Clearing the
-  // flag here means "reset after a compile completes", for every trigger, in one place.
+  // The reverse flag: true once a card edit has been persisted but its recompile was
+  // DEFERRED (the teacher kept a dirty document), so the compiled document no longer
+  // matches the exercise rows. It is the counterpart to `documentDirty` — "cards
+  // changed since the last compile" — and drives the out-of-date banner on the
+  // document view. Ephemeral (session-only), like `mode`/`zoom`; any compile clears it.
+  const [cardsDirty, setCardsDirty] = useState(false);
+
+  // A compile write (any trigger → compileAndPersist → onCompiled). Clearing BOTH
+  // flags here means "the document now matches the cards again", for every trigger,
+  // in one place.
   const handleCompiled = useCallback(
     (doc: WorksheetV3) => {
       setDocumentDirty(false);
+      setCardsDirty(false);
       onChange(doc);
     },
     [onChange],
@@ -119,6 +130,32 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
     onCompiled: handleCompiled,
   });
   const [confirmAll, setConfirmAll] = useState(false);
+
+  // ── Page zoom (view-only CSS scale on the worksheet page) ─────────────────────
+  // Ephemeral, like `mode`: resets to 100% on reload, applies to whichever surface
+  // is showing, changes nothing persisted/compiled/printed. Buttons + this keyboard
+  // handler drive it; pinch is handled inside ZoomPage.
+  const [zoom, setZoom] = useState(1);
+  const zoomIn = useCallback(() => setZoom((z) => clampZoom(round2(z + ZOOM_STEP))), []);
+  const zoomOut = useCallback(() => setZoom((z) => clampZoom(round2(z - ZOOM_STEP))), []);
+  const resetZoom = useCallback(() => setZoom(1), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomOut();
+      } else if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoomIn, zoomOut, resetZoom]);
 
   const hasRows = gen.exercises.length > 0;
 
@@ -149,6 +186,30 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
     },
     [documentDirty],
   );
+
+  // ── Card edit (Part B: no path silently discards work) ────────────────────────
+  // A teacher's inline card edit ALWAYS persists first (a pure `worksheet_exercise`
+  // row write — nothing is lost regardless of what happens next). Only the RECOMPILE
+  // is conditional:
+  //   • document clean → recompile at once (safe; the document was in sync).
+  //   • document dirty → DEFER the recompile behind an honest dialog, and mark the
+  //     document out-of-date (`cardsDirty`) so the banner appears if kept. Recompiling
+  //     would replace the teacher's document edits, so it is never done silently.
+  const [rebuildAfterEdit, setRebuildAfterEdit] = useState(false);
+  const handleCardEdit = useCallback(
+    async (exerciseId: string, doc: WorksheetDoc) => {
+      const ok = await gen.persistEdit(exerciseId, doc);
+      if (!ok) return;
+      if (documentDirty) {
+        setCardsDirty(true);
+        setRebuildAfterEdit(true);
+      } else {
+        await gen.recompile();
+      }
+    },
+    [gen, documentDirty],
+  );
+
   const anyEdited = gen.exercises.some((e) => e.status === 'edited');
   const bases = useMemo(() => slotBaseIndices(gen.exercises), [gen.exercises]);
 
@@ -181,6 +242,9 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         {totalSlots > 0 ? (
           <span className="text-[12px] text-neutral-500">{t('image.count', { n: readyImages, cap: IMAGE_CAP })}</span>
         ) : null}
+
+        {/* Page zoom — a view control over whichever surface is showing. */}
+        <ZoomControls zoom={zoom} onZoomOut={zoomOut} onZoomIn={zoomIn} onReset={resetZoom} />
 
         <button
           type="button"
@@ -271,9 +335,34 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
           Switching mode never compiles or discards; the document remounts and re-seeds
           from live `value` (cursor/scroll/undo reset, content safe). */}
       {!gen.filling && (!hasRows || mode === 'document') ? (
-        <DocumentWorksheet value={value} onChange={handleDocumentEdit} context={context} vocabulary={vocabulary} saveState={saveState} />
+        <>
+          {/* Cards-dirty signal (Part B): a card edit was saved but its recompile was
+              deferred, so this document no longer matches the exercises. Rebuilding
+              replaces it with the compiled exercises — stated plainly, never silent. */}
+          {cardsDirty ? (
+            <div className="ws-no-print flex shrink-0 items-center gap-3 border-b border-[#ECE0CF] bg-[#FBF6EF] px-[16px] py-[8px] text-[12.5px] text-[#5C544E]">
+              <span className="flex-1">{t('stale.body')}</span>
+              <button
+                type="button"
+                onClick={() => gen.recompile()}
+                className="shrink-0 rounded-[7px] bg-[#B23A2E] px-[11px] py-[5px] text-[12px] font-semibold text-white hover:bg-[#9c3227]"
+              >
+                {t('stale.rebuild')}
+              </button>
+            </div>
+          ) : null}
+          <DocumentWorksheet
+            value={value}
+            onChange={handleDocumentEdit}
+            context={context}
+            vocabulary={vocabulary}
+            saveState={saveState}
+            zoom={zoom}
+            onZoomChange={setZoom}
+          />
+        </>
       ) : (
-        <PageFrame ctx={context}>
+        <PageFrame ctx={context} zoom={zoom} onZoomChange={setZoom}>
           {gen.filling && gen.fillSpecs ? (
             <div className="flex flex-col gap-[26px]">
               {gen.fillSpecs.map((spec) => (
@@ -299,7 +388,7 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
                   onRetry={() => guardCompile(() => gen.retryCard(ex.id))}
                   onRegenerateSlot={(slotId) => guardCompile(() => gen.generateSlot(ex.id, slotId, true))}
                   onRetrySlot={(slotId) => guardCompile(() => gen.generateSlot(ex.id, slotId, false))}
-                  onEdit={(doc) => guardCompile(() => gen.applyEdit(ex.id, doc))}
+                  onEdit={(doc) => handleCardEdit(ex.id, doc)}
                 />
               ))}
             </div>
@@ -324,6 +413,25 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
             action?.();
           }}
           onCancel={() => setPendingCompile(null)}
+        />
+      ) : null}
+
+      {/* The card-edit rebuild choice (Part B). The edit is ALREADY saved by the time
+          this shows, so neither button loses it — the choice is only whether to rebuild
+          the document now (replacing the teacher's document edits) or keep the document
+          and let it fall out of date (the banner then signals that). */}
+      {rebuildAfterEdit ? (
+        <CardConfirm
+          title={t('confirm.rebuildTitle')}
+          body={t('confirm.rebuildBody')}
+          confirmLabel={t('confirm.rebuildConfirm')}
+          cancelLabel={t('confirm.rebuildKeep')}
+          danger
+          onConfirm={() => {
+            setRebuildAfterEdit(false);
+            gen.recompile();
+          }}
+          onCancel={() => setRebuildAfterEdit(false)}
         />
       ) : null}
     </div>

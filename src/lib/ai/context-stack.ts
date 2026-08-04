@@ -1,7 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
-import type { ActiveContextStackRow, AiContextTool } from '@/types/ai-context';
+import type { ActiveContextStackRow, AiContextLayer, AiContextTool } from '@/types/ai-context';
 import { floorForTool } from './floor';
 import type { SubjectResolution } from './subject-access';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
@@ -199,11 +199,23 @@ const readActiveStack = cache(
  * ignored for other tools. `locale` is retained in this shared signature for the
  * non-checker callers that still pass it, but the composer no longer consults it —
  * the checker's language now comes from `contentLanguage`, never the UI locale.
+ *
+ * `layers` restricts which STORED layers (1-4) are composed. It defaults to ALL
+ * layers, so every existing caller is byte-for-byte unchanged. A tool that only
+ * needs a subset passes the layers it wants — the image route asks for `['tool']`
+ * alone, because an image model does not need the org/academic/subject teaching
+ * corpus to draw a bus, and posting the whole stack blew `gpt-image-1`'s 32,000-char
+ * prompt cap. The floor is always appended regardless of the filter. The fail-closed
+ * check runs AFTER the filter: if the requested layer(s) resolve to nothing, the
+ * composer throws exactly as it does for a wholly empty stack — a restricted compose
+ * that silently drops safeguarding (which lives in the layer-4 tool doc) is a
+ * misconfiguration, not an acceptable fallback.
  */
 export async function composeContextStack({
   tool,
   subjectId = null,
   contentLanguage = 'en',
+  layers,
 }: {
   tool: AiContextTool;
   subjectId?: string | null;
@@ -215,17 +227,29 @@ export async function composeContextStack({
    */
   locale?: string;
   contentLanguage?: WorksheetContentLanguage;
+  /**
+   * Which stored layers (1-4) to compose. Omit for all layers (the default, and
+   * what every existing caller does). Pass a subset — e.g. `['tool']` — to compose
+   * only those; the floor is still appended, and an empty result after filtering
+   * fails closed (see the note above).
+   */
+  layers?: readonly AiContextLayer[];
 }): Promise<ComposedContextStack> {
-  const rows = await readActiveStack(tool, subjectId);
+  const allRows = await readActiveStack(tool, subjectId);
+  const rows = layers ? allRows.filter((r) => layers.includes(r.layer)) : allRows;
 
-  // FAIL CLOSED: a completely empty stack means none of the four uploaded layers
-  // resolved — a misconfiguration. Composing role + floor against it would produce
-  // a prompt with no instruction content, so throw instead and let the route
-  // surface a clear message. (`readActiveStack` has already thrown on an RPC error.)
+  // FAIL CLOSED: an empty stack means the requested layers resolved to nothing —
+  // either none of the four uploaded layers exist (a wholly unconfigured stack) or
+  // the `layers` filter matched no active document (e.g. the tool layer is missing
+  // under a restricted compose). Either way, composing role + floor against no
+  // instruction content — dropping safeguarding — is a misconfiguration, so throw
+  // and let the route surface a clear message. (`readActiveStack` has already thrown
+  // on an RPC error.)
   if (rows.length === 0) {
     console.error('[context-stack] empty stack — refusing to compose a partial prompt', {
       tool,
       subjectId,
+      layers: layers ?? null,
     });
     throw new ContextStackError();
   }

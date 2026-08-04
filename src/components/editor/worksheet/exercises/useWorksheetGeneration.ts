@@ -84,6 +84,15 @@ export interface GenerationApi extends GenerationState {
   applyEdit: (exerciseId: string, bodyDoc: WorksheetDoc) => Promise<void>;
 }
 
+/** Condense a route error into a short, safe slot `error`: single line, length-capped,
+ *  with anything key-shaped redacted. Never store a full stack trace or a credential —
+ *  the route's message is a one-line reason (e.g. an OpenAI 400), but redact defensively. */
+function slotErrorText(message: string): string {
+  const oneLine = message.replace(/\s+/g, ' ').trim();
+  const redacted = oneLine.replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g, '[redacted]');
+  return redacted.length > 300 ? `${redacted.slice(0, 299)}…` : redacted;
+}
+
 /** Overwrite one slot on a row (by slot_id), preserving array order (cap-critical). */
 function patchSlot(row: WorksheetExercise, slotId: string, patch: Partial<ImageSlot>): WorksheetExercise {
   const slots = (Array.isArray(row.image_slots) ? row.image_slots : []).map((s) =>
@@ -155,14 +164,14 @@ export function useWorksheetGeneration({
           regenerate: false,
         });
         if (res.ok && res.storage_path) {
-          byId.set(row.id, patchSlot(byId.get(row.id)!, ref.slotId, { status: 'ready', storage_path: res.storage_path }));
+          byId.set(row.id, patchSlot(byId.get(row.id)!, ref.slotId, { status: 'ready', storage_path: res.storage_path, error: undefined }));
         } else if (res.ok) {
           // cap_reached refusal — leave the slot as-is (pending token, no controls).
           continue;
         } else if (res.status === 503) {
           disabled = true; // images disabled this session — stop; remaining stay pending
         } else {
-          byId.set(row.id, patchSlot(byId.get(row.id)!, ref.slotId, { status: 'failed' }));
+          byId.set(row.id, patchSlot(byId.get(row.id)!, ref.slotId, { status: 'failed', error: slotErrorText(res.error) }));
         }
       }
       if (disabled) setImagesDisabled(true);
@@ -250,14 +259,14 @@ export function useWorksheetGeneration({
       });
       let updated = row;
       if (res.ok && res.storage_path) {
-        updated = patchSlot(row, slotId, { status: 'ready', storage_path: res.storage_path });
+        updated = patchSlot(row, slotId, { status: 'ready', storage_path: res.storage_path, error: undefined });
       } else if (res.ok) {
         return; // cap refusal — no change
       } else if (res.status === 503) {
         setImagesDisabled(true);
         return;
       } else {
-        updated = patchSlot(row, slotId, { status: 'failed' });
+        updated = patchSlot(row, slotId, { status: 'failed', error: slotErrorText(res.error) });
       }
       setExercises((cur) => cur.map((e) => (e.id === exerciseId ? updated : e)));
       await saveExerciseImageSlots(exerciseId, updated.image_slots);

@@ -97,12 +97,23 @@ export function ImageSlotView({
           </SlotButton>
         </SlotStrip>
       ) : state === 'failed' ? (
-        <SlotStrip>
-          <SlotButton onClick={onRetry}>{t('image.tryAgain')}</SlotButton>
-          <SlotButton onClick={onReplace} deferredTitle={t('image.replaceDeferred')}>
-            {t('image.replace')}
-          </SlotButton>
-        </SlotStrip>
+        <>
+          <SlotStrip>
+            <SlotButton onClick={onRetry}>{t('image.tryAgain')}</SlotButton>
+            <SlotButton onClick={onReplace} deferredTitle={t('image.replaceDeferred')}>
+              {t('image.replace')}
+            </SlotButton>
+          </SlotStrip>
+          {/* The captured failure reason, so the teacher sees WHY without a SQL query.
+              Editor chrome only (ws-no-print): the printed sheet never carries it. The
+              text is the route's message (redacted/truncated at the write site), not a
+              translated UI string. */}
+          {slot.error ? (
+            <p className="ws-no-print mt-[5px] text-[11px] leading-snug text-neutral-500" dir="auto">
+              {slot.error}
+            </p>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

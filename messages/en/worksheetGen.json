@@ -9,6 +9,10 @@
       "zoomIn": "Zoom in (Ctrl +)",
       "reset": "Reset to 100% (Ctrl 0)"
     },
+    "stale": {
+      "body": "This document is out of date with your exercise edits. Rebuilding replaces it with the exercises — including any changes you made here.",
+      "rebuild": "Rebuild from exercises"
+    },
     "regenerate": "Regenerate",
     "edit": "Edit",
     "doneEditing": "Done",
@@ -43,7 +47,11 @@
       "documentEditedTitle": "Replace your document?",
       "documentEditedBody": "You’ve made changes in the worksheet document. Continuing rebuilds the worksheet from the exercise cards and replaces the whole document — including any formatting or edits you made there. This can’t be undone.",
       "documentEditedConfirm": "Continue and replace",
-      "documentEditedKeep": "Keep my document"
+      "documentEditedKeep": "Keep my document",
+      "rebuildTitle": "Rebuild the document?",
+      "rebuildBody": "Your exercise edit is saved either way. Rebuilding updates the document to match your exercises, but replaces any changes you made in the document itself. Keep your document to leave it untouched — it will be out of date with the exercises until you rebuild.",
+      "rebuildConfirm": "Rebuild the document",
+      "rebuildKeep": "Keep my document"
     },
     "partial": {
       "someReady": "{ready} of {total} exercises ready.",

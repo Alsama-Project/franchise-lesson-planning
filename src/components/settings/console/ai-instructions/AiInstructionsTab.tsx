@@ -9,7 +9,7 @@
 // Colour semantics: teal = tools/actions/chrome, red = destructive (Archive).
 // Pink is the wordmark only (in the shell) and does not appear on this surface.
 
-import { useState, useTransition, type ReactNode } from 'react';
+import { useRef, useState, useTransition, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import {
@@ -21,7 +21,7 @@ import {
   type AiContextTool,
 } from '@/types/ai-context';
 import { ErrorText } from '../ui';
-import { UploadProgressBar, UploadStatusBadge } from '../upload';
+import { UploadProgressBar } from '../upload';
 import { fullDate, shortDate, filenameStem, findDoc } from './helpers';
 import { useDocUpload, useFilePicker } from './useDocUpload';
 import { DocumentPopup } from './DocumentPopup';
@@ -216,9 +216,9 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
         </Column>
       </div>
 
-      {/* Worksheet page frames — a full-width row below the four instruction
-          columns. Not part of the instruction stack: the frame is printed page
-          furniture (HTML), never composed into a prompt. */}
+      {/* Page design — a full-width row below the four instruction columns. Not
+          part of the instruction stack: the page design is printed page furniture
+          (HTML), never composed into a prompt. */}
       <WorksheetFrameRow subjects={board.subjects} frames={board.frames} />
 
       {openDoc ? (
@@ -607,14 +607,17 @@ function ChevronUp({ className }: { className?: string }) {
   );
 }
 
-// ── Worksheet page frames (full-width row below the columns) ───────────────────
+// ── Page design (full-width row below the columns) ─────────────────────────────
 
 /**
- * Full-width "Worksheet page frames" row. One entry per subject: the uploaded
- * frame's filename with a Replace button, or "Using the built-in page" with an
- * Upload button. Upload REPLACES (no history, no preview, no revert, no confirm).
- * The frame is printed page furniture, not an instruction: it never reaches the AI
- * composer.
+ * Full-width "Page design" row. One cell per subject in a two-column grid that
+ * collapses to a single column at ≤900px. Each cell shows the subject's page-design
+ * state and one action: the built-in page + Upload, an uploaded filename + Replace,
+ * an in-flight upload (filename + indeterminate bar + Cancel), or a rejection notice
+ * + Choose file. Subject order is the board's (alphabetical), so a cell never changes
+ * column when its state changes. Upload REPLACES (no history, preview, revert, or
+ * confirm). The page design is printed page furniture, not an instruction: it never
+ * reaches the AI composer.
  */
 function WorksheetFrameRow({
   subjects,
@@ -625,80 +628,275 @@ function WorksheetFrameRow({
 }) {
   const t = useTranslations('settings');
   const frameBySubject = new Map(frames.map((f) => [f.subjectId, f]));
+  const count = subjects.length;
   return (
-    <div className="mt-[16px] rounded-[12px] border border-border [border-top:3px_solid_var(--color-teal)] px-[18px] pt-[16px] pb-[16px]">
-      <div className="mb-[4px] flex items-center gap-[10px]">
-        <span className="flex-1 text-[14.5px] font-semibold text-ink">
-          {t('aiInstructions.worksheetFrame.title')}
-        </span>
-        <span className="text-[11.5px] text-text-faint">{frames.length}</span>
-      </div>
-      <p dir="auto" className="mb-[13px] text-[12px] text-text-faint">
-        {t('aiInstructions.worksheetFrame.subtitle')}
-      </p>
-      <div className="grid grid-cols-1 gap-[9px] md:grid-cols-2 xl:grid-cols-3">
-        {subjects.map((s) => (
-          <FrameCard key={s.subjectId} subject={s} frame={frameBySubject.get(s.subjectId) ?? null} />
+    <section className="mt-[16px] overflow-hidden rounded-[12px] border border-border">
+      <h2 className="px-[16px] pt-[14px] pb-[13px] text-[14px] font-semibold text-ink">
+        {t('aiInstructions.worksheetFrame.title')}
+      </h2>
+      <div className="grid grid-cols-1 border-t border-border-subtle min-[901px]:grid-cols-2">
+        {subjects.map((s, i) => (
+          <FrameCard
+            key={s.subjectId}
+            subject={s}
+            frame={frameBySubject.get(s.subjectId) ?? null}
+            index={i}
+            count={count}
+          />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
+/** A card's ephemeral upload state. `idle` derives its look from the `frame` prop
+ *  (uploaded vs built-in); `uploading`/`rejected`/`error` are local to the attempt. */
+type FrameCardStatus =
+  | { kind: 'idle' }
+  | { kind: 'uploading'; filename: string }
+  | { kind: 'rejected'; filename: string; missingMarker: boolean; scriptLines: number[] }
+  | { kind: 'error'; message: string };
+
 /**
- * One subject's frame slot: filename + Replace when a frame is uploaded, or the
- * built-in-page note + Upload when not. Owns its own upload transition so each card
- * fails independently. `.html` only, posted to the admin-gated upsert route.
+ * One subject's page-design cell. Owns bespoke upload state (not the shared
+ * `useDocUpload`) so it can drive an `AbortController` for Cancel and parse the
+ * route's structured rejection ({@link FrameCardStatus}). `.html` only, posted to the
+ * admin-gated upsert route; on success the server data is refreshed and the cell
+ * settles back to the uploaded look.
  */
 function FrameCard({
   subject,
   frame,
+  index,
+  count,
 }: {
   subject: AiContextSubjectGroup;
   frame: AiContextFrameView | null;
+  index: number;
+  count: number;
 }) {
   const t = useTranslations('settings');
-  const { pending, error, upload } = useDocUpload();
-  const { input, open } = useFilePicker(
-    (file) => upload('/api/admin/worksheet-frame', file, { subject_id: subject.subjectId }),
-    '.html,text/html',
-  );
+  const locale = useLocale();
+  const router = useRouter();
+  const [status, setStatus] = useState<FrameCardStatus>({ kind: 'idle' });
+  const abortRef = useRef<AbortController | null>(null);
+
+  async function startUpload(file: File) {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus({ kind: 'uploading', filename: file.name });
+    const fd = new FormData();
+    fd.set('file', file);
+    fd.set('subject_id', subject.subjectId);
+    try {
+      const res = await fetch('/api/admin/worksheet-frame', {
+        method: 'POST',
+        body: fd,
+        signal: controller.signal,
+      });
+      if (res.ok) {
+        setStatus({ kind: 'idle' });
+        router.refresh();
+        return;
+      }
+      const data = (await res.json().catch(() => null)) as
+        | { filename?: string; missingMarker?: boolean; scriptLines?: number[]; error?: string }
+        | null;
+      // A structured rejection carries the validation verdict; anything else (bad
+      // type, too large, network) surfaces as a single error line.
+      if (data && (typeof data.missingMarker === 'boolean' || Array.isArray(data.scriptLines))) {
+        setStatus({
+          kind: 'rejected',
+          filename: data.filename ?? file.name,
+          missingMarker: data.missingMarker ?? false,
+          scriptLines: Array.isArray(data.scriptLines) ? data.scriptLines : [],
+        });
+      } else {
+        setStatus({ kind: 'error', message: data?.error ?? t('aiInstructions.upload.failed') });
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setStatus({ kind: 'idle' }); // Cancel: no error, back to the prior look.
+        return;
+      }
+      setStatus({ kind: 'error', message: t('aiInstructions.upload.failed') });
+    } finally {
+      abortRef.current = null;
+    }
+  }
+
+  const { input, open } = useFilePicker((file) => void startUpload(file), '.html,text/html');
+
+  const uploading = status.kind === 'uploading' ? status : null;
+  const rejected = status.kind === 'rejected' ? status : null;
+  const genericError = status.kind === 'error' ? status.message : null;
+
+  // Cell ground: warm notice when rejected, warm busy while uploading, else clear.
+  const bg = rejected ? 'bg-frame-notice-surface' : uploading ? 'bg-surface-warm' : 'bg-transparent';
+
+  // Dividers: a bottom rule between rows and a right rule between the two columns
+  // (2-col only, left cells = even index). The last 2-col row drops its bottom rule at
+  // ≥901px; the single last cell drops it at ≤900px. Correct for any subject count.
+  const isLeftCol = index % 2 === 0;
+  const inLastTwoColRow = index >= count - (count % 2 === 0 ? 2 : 1);
+  const isLastCell = index === count - 1;
+  const borders = [
+    'border-b border-border-subtle',
+    isLeftCol ? 'min-[901px]:border-r min-[901px]:border-border-subtle' : '',
+    inLastTwoColRow ? 'min-[901px]:border-b-0' : '',
+    isLastCell ? 'max-[900px]:border-b-0' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className="flex flex-col gap-[8px] rounded-[9px] border border-border bg-surface px-[12px] py-[10px]">
+    <div className={`px-[16px] pt-[12px] ${rejected ? 'pb-[14px]' : 'pb-[12px]'} ${bg} ${borders}`}>
       {input}
-      <div className="flex items-center gap-[9px]">
-        <span dir="auto" className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">
+      <div className="flex items-center gap-[12px]">
+        <span dir="auto" className="w-[116px] shrink-0 text-[13.5px] font-semibold text-ink">
           {subject.name}
         </span>
-        {frame ? (
-          <UploadStatusBadge tone="teal" label={t('aiInstructions.worksheetFrame.uploaded')} />
-        ) : null}
+
+        {uploading ? (
+          <div className="min-w-0 flex-1">
+            <div dir="auto" className="truncate text-[12.5px] font-semibold text-ink">
+              {uploading.filename}
+            </div>
+            <div
+              className="relative mt-[8px] h-[6px] overflow-hidden rounded-[3px] bg-frame-bar-track"
+              role="progressbar"
+              aria-label={t('aiInstructions.worksheetFrame.progressLabel', {
+                filename: uploading.filename,
+              })}
+            >
+              <span className="curriculum-sync-bar" />
+            </div>
+          </div>
+        ) : frame ? (
+          <span
+            dir="auto"
+            title={frame.originalFilename ?? undefined}
+            className="min-w-0 flex-1 truncate text-[12.5px] text-neutral-800"
+          >
+            {frame.originalFilename ?? t('aiInstructions.worksheetFrame.uploaded')}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-text-faint">
+            {t('aiInstructions.worksheetFrame.builtIn')}
+          </span>
+        )}
+
+        {uploading ? (
+          <button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            className="shrink-0 whitespace-nowrap px-[2px] py-[6px] text-[12px] font-medium text-neutral-700 transition-opacity hover:opacity-70"
+          >
+            {t('aiInstructions.worksheetFrame.cancel')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={open}
+            className="shrink-0 whitespace-nowrap rounded-[8px] border border-teal-tint-border bg-white px-[11px] py-[6px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint"
+          >
+            {rejected
+              ? t('aiInstructions.worksheetFrame.chooseFile')
+              : frame
+                ? t('aiInstructions.worksheetFrame.replace')
+                : t('aiInstructions.worksheetFrame.upload')}
+          </button>
+        )}
       </div>
-      <div className="flex items-center gap-[9px]">
-        <span
-          dir="auto"
-          className={`min-w-0 flex-1 truncate text-[11.5px] ${frame ? 'text-neutral-700' : 'text-text-faint'}`}
-          title={frame?.originalFilename ?? undefined}
-        >
-          {frame
-            ? frame.originalFilename ?? t('aiInstructions.worksheetFrame.uploaded')
-            : t('aiInstructions.worksheetFrame.builtIn')}
+
+      {rejected ? (
+        <FrameRejectionNotice
+          filename={rejected.filename}
+          missingMarker={rejected.missingMarker}
+          scriptLines={rejected.scriptLines}
+          locale={locale}
+        />
+      ) : null}
+      {genericError ? <ErrorText>{genericError}</ErrorText> : null}
+    </div>
+  );
+}
+
+/** A small warning circle — the notice heading's icon (mockup's WarnIcon). */
+function WarnIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.3"
+      strokeLinecap="round"
+      className="shrink-0 text-cream-ink-muted"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5M12 16.4v.4" />
+    </svg>
+  );
+}
+
+/**
+ * The rejection notice inside a cell: heading ("{file} was not saved") over a list
+ * that names every reason at once — a missing `{{exercises}}` marker and/or the lines
+ * that run code. The marker and `<script>` are rendered as inline code chips; the line
+ * list is locale-formatted ("12 and 84" / "١٢ و٨٤").
+ */
+function FrameRejectionNotice({
+  filename,
+  missingMarker,
+  scriptLines,
+  locale,
+}: {
+  filename: string;
+  missingMarker: boolean;
+  scriptLines: number[];
+  locale: string;
+}) {
+  const t = useTranslations('settings');
+  const codeClass =
+    'rounded-[4px] border border-frame-code-border bg-frame-code-surface px-[5px] py-[1px] font-mono text-[12px] text-cream-ink';
+  const lines = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    scriptLines.map((n) => String(n)),
+  );
+  return (
+    <div className="mt-[11px] rounded-[10px] border border-cream-border bg-cream px-[14px] py-[12px]">
+      <div className="flex items-center gap-[9px] text-[13px] font-semibold text-cream-ink">
+        <WarnIcon />
+        <span dir="auto">
+          {t('aiInstructions.worksheetFrame.notice.heading', { filename })}
         </span>
-        <button
-          type="button"
-          onClick={open}
-          disabled={pending}
-          className="shrink-0 rounded-[8px] border border-dashed border-teal-dashed bg-surface px-[11px] py-[6px] text-[11.5px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
-        >
-          {pending
-            ? t('aiInstructions.upload.uploading')
-            : frame
-              ? t('aiInstructions.worksheetFrame.replace')
-              : t('aiInstructions.worksheetFrame.upload')}
-        </button>
       </div>
-      {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
-      {error ? <ErrorText>{error}</ErrorText> : null}
+      <ul className="mt-[10px] flex list-none flex-col gap-[9px] ps-[23px]">
+        {missingMarker ? (
+          <li
+            dir="auto"
+            className="text-[12.5px] leading-[1.55] text-frame-notice-ink [text-wrap:pretty]"
+          >
+            {t.rich('aiInstructions.worksheetFrame.notice.missingMarker', {
+              code: () => <code className={codeClass}>{'{{exercises}}'}</code>,
+            })}
+          </li>
+        ) : null}
+        {scriptLines.length > 0 ? (
+          <li
+            dir="auto"
+            className="text-[12.5px] leading-[1.55] text-frame-notice-ink [text-wrap:pretty]"
+          >
+            {t.rich('aiInstructions.worksheetFrame.notice.scriptLines', {
+              code: () => <code className={codeClass}>{'<script>'}</code>,
+              count: scriptLines.length,
+              lines,
+            })}
+          </li>
+        ) : null}
+      </ul>
     </div>
   );
 }

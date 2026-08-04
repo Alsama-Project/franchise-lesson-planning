@@ -426,6 +426,21 @@
         "confirm": "أرشفة المستند",
         "archiving": "جارٍ الأرشفة…"
       },
+      "worksheetFrame": {
+        "title": "تصميم الصفحة",
+        "builtIn": "باستخدام الصفحة المدمجة",
+        "uploaded": "تم الرفع",
+        "upload": "رفع",
+        "replace": "استبدال",
+        "cancel": "إلغاء",
+        "chooseFile": "اختيار ملف",
+        "progressLabel": "جارٍ رفع {filename}",
+        "notice": {
+          "heading": "لم يُحفظ {filename}",
+          "missingMarker": "لا يوجد ما يحدد موضع التمارين. ضع <code></code> في الملف حيث يجب أن تظهر التمارين عند الطباعة.",
+          "scriptLines": "الملف يشغّل شيفرة برمجية. احذف مقاطع <code></code> في {count, plural, one {السطر} other {الأسطر}} {lines}. تصميم الصفحة يقوم بترتيب الصفحة فقط."
+        }
+      },
       "preview": {
         "open": "Preview composed prompts",
         "eyebrow": "Read-only",

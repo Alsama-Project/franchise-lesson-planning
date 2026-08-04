@@ -427,12 +427,19 @@
         "archiving": "Archiving…"
       },
       "worksheetFrame": {
-        "title": "Worksheet page frames",
-        "subtitle": "The printed page furniture around each subject's worksheet — masthead, Name/Date/Class, objective strip, footer. Upload an HTML frame per subject, or leave a subject on the built-in page. Uploading replaces the current frame.",
+        "title": "Page design",
         "builtIn": "Using the built-in page",
         "uploaded": "Uploaded",
         "upload": "Upload",
-        "replace": "Replace"
+        "replace": "Replace",
+        "cancel": "Cancel",
+        "chooseFile": "Choose file",
+        "progressLabel": "Uploading {filename}",
+        "notice": {
+          "heading": "{filename} was not saved",
+          "missingMarker": "Nothing marks where the exercises go. Put <code></code> in the file where the exercises should print.",
+          "scriptLines": "The file runs code. Delete the <code></code> {count, plural, one {block} other {blocks}} on {count, plural, one {line} other {lines}} {lines}. A page design only lays out the page."
+        }
       },
       "preview": {
         "open": "Preview composed prompts",

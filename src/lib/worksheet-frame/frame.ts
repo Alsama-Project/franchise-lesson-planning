@@ -16,12 +16,15 @@
 
 /**
  * The marker an uploaded frame MUST contain, and where the compiled exercises are
- * injected. Single-brace on purpose: it is a distinct token from the double-brace
- * field placeholders below, so the "unknown placeholder → empty" pass never eats
- * it. CD authors against this exact token (they are using `{exercises}` as the
- * placeholder); keep the two in lockstep.
+ * injected. Double-brace, matching the field placeholders below: a coordinator is
+ * told to type `{{exercises}}` into her page design. It is safe for it to share the
+ * `{{…}}` shape because {@link renderWorksheetFrame} injects the exercises at this
+ * marker FIRST and only then runs the field-placeholder pass — so the marker is
+ * consumed before that pass, and the injected exercise content is never scanned (a
+ * `{{…}}` token inside the exercises can never be blanked). Order, not brace style,
+ * is what keeps them separate; keep CD authoring against this exact token.
  */
-export const EXERCISE_SLOT = '{exercises}';
+export const EXERCISE_SLOT = '{{exercises}}';
 
 /**
  * The field placeholders a frame may reference, each written as `{{name}}`. Any
@@ -54,41 +57,57 @@ const KNOWN_PLACEHOLDERS: readonly FramePlaceholder[] = [
 /** A `{{ name }}` token, tolerant of inner whitespace. */
 const PLACEHOLDER_RE = /\{\{\s*([a-z_]+)\s*\}\}/gi;
 
-/** Patterns rejected on upload — the frame is markup we print verbatim, so any
- *  script vector is a hard failure (reject, never silently strip). Each entry is a
- *  [test, human-readable label] pair; the label goes into the rejection message. */
-const FORBIDDEN: readonly (readonly [RegExp, string])[] = [
-  [/<script[\s/>]/i, '<script> tags'],
-  [/<iframe[\s/>]/i, '<iframe> tags'],
-  [/<object[\s/>]/i, '<object> tags'],
-  // Inline event handlers: an on… attribute, e.g. onclick= / onload=. Requires a
-  // whitespace boundary before `on` so hyphenated names (data-on-x) don't trip it.
-  [/\son[a-z]+\s*=/i, 'inline event handler attributes (on…=)'],
-  [/javascript:/i, 'javascript: URLs'],
+/** Active-content vectors rejected on upload — the frame is markup we print
+ *  verbatim, so anything that executes code or embeds external content is a hard
+ *  failure (reject, never silently strip). Global + case-insensitive so every
+ *  occurrence is found and its line reported. Inline `on…=` handlers require a
+ *  whitespace boundary before `on` so hyphenated names (data-on-x) don't trip it. */
+const SCRIPT_VECTORS: readonly RegExp[] = [
+  /<script[\s/>]/gi,
+  /<iframe[\s/>]/gi,
+  /<object[\s/>]/gi,
+  /\son[a-z]+\s*=/gi,
+  /javascript:/gi,
 ];
 
-export type FrameValidation = { ok: true } | { ok: false; error: string };
+/** The 1-based line numbers of every active-content vector, ascending and unique.
+ *  A coordinator reads these straight off her file to find and delete each one. */
+function scriptLineNumbers(html: string): number[] {
+  const lines = new Set<number>();
+  for (const re of SCRIPT_VECTORS) {
+    re.lastIndex = 0;
+    for (let m = re.exec(html); m !== null; m = re.exec(html)) {
+      // newlines before the match, + 1 → the 1-based line the match sits on.
+      lines.add(html.slice(0, m.index).split('\n').length);
+      if (m.index === re.lastIndex) re.lastIndex++; // never spin on a zero-width match
+    }
+  }
+  return [...lines].sort((a, b) => a - b);
+}
+
+/** Why a frame was rejected — EVERY failing check at once (never fail-fast), so the
+ *  upload panel can list them all and the coordinator fixes the file in one pass.
+ *  `scriptLines` is empty when no active content was found. */
+export interface FrameRejection {
+  missingMarker: boolean;
+  scriptLines: number[];
+}
+
+export type FrameValidation = { ok: true } | { ok: false; rejection: FrameRejection };
 
 /**
- * Validate an uploaded frame's HTML. Two hard rejections, each with a clear
- * message: the exercise slot marker must be present, and no script vector may
- * appear. Rejects rather than sanitising — a rejected upload is a better failure
- * than silently altered markup, and the app ships no HTML sanitiser.
+ * Validate an uploaded frame's HTML, COLLECTING every failure. Two independent
+ * checks: the exercise-slot marker must be present, and no active-content vector may
+ * appear (each reported by line number). A file that both lacks the marker and runs a
+ * script fails on both — the panel lists each. Rejects rather than sanitising: a
+ * rejected upload is a better failure than silently altered markup, and the app ships
+ * no HTML sanitiser.
  */
 export function validateFrameHtml(html: string): FrameValidation {
-  if (!html.includes(EXERCISE_SLOT)) {
-    return {
-      ok: false,
-      error: `The frame must contain the exercise slot marker ${EXERCISE_SLOT} — that is where the worksheet's exercises are inserted.`,
-    };
-  }
-  for (const [pattern, label] of FORBIDDEN) {
-    if (pattern.test(html)) {
-      return {
-        ok: false,
-        error: `The frame cannot contain ${label}. Remove them and upload again — the frame is not sanitised, it is rejected.`,
-      };
-    }
+  const missingMarker = !html.includes(EXERCISE_SLOT);
+  const scriptLines = scriptLineNumbers(html);
+  if (missingMarker || scriptLines.length > 0) {
+    return { ok: false, rejection: { missingMarker, scriptLines } };
   }
   return { ok: true };
 }
@@ -98,22 +117,30 @@ function asText(value: string | number | null | undefined): string {
 }
 
 /**
- * Render a frame: substitute every `{{…}}` field placeholder (known → its value,
- * unknown → empty) and inject the compiled exercises HTML at {@link EXERCISE_SLOT}.
- * The exercises are injected LAST so their own content is never re-scanned for
- * placeholders. Assumes `frameHtml` has already passed {@link validateFrameHtml}
- * (so the marker is present); a frame without the marker would drop the exercises,
- * which is exactly why upload rejects one.
+ * Render a frame: inject the compiled exercises at {@link EXERCISE_SLOT} FIRST, then
+ * substitute the `{{…}}` field placeholders across the surrounding frame — and only
+ * the frame, never the injected exercises. Splitting on the marker up front means the
+ * placeholder pass that follows runs on the frame segments alone; a `{{…}}` token that
+ * happens to appear inside generated exercise content can never be chewed by it.
+ * Unknown `{{…}}` tokens render empty (never as literal text). A frame may repeat the
+ * marker (e.g. per column) harmlessly. Assumes `frameHtml` has passed
+ * {@link validateFrameHtml} (marker present); a frame without it would drop the
+ * exercises, which is exactly why upload rejects one.
  */
 export function renderWorksheetFrame(
   frameHtml: string,
   placeholders: FramePlaceholders,
   exercisesHtml: string,
 ): string {
-  const substituted = frameHtml.replace(PLACEHOLDER_RE, (_match, rawName: string) => {
-    const name = rawName.toLowerCase() as FramePlaceholder;
-    return KNOWN_PLACEHOLDERS.includes(name) ? asText(placeholders[name]) : '';
-  });
-  // Global-replace the marker so a frame may repeat it (e.g. per column) harmlessly.
-  return substituted.split(EXERCISE_SLOT).join(exercisesHtml);
+  // Split at the marker first; substitute placeholders on the frame segments only,
+  // then rejoin with the raw (unscanned) exercises between them.
+  return frameHtml
+    .split(EXERCISE_SLOT)
+    .map((segment) =>
+      segment.replace(PLACEHOLDER_RE, (_match, rawName: string) => {
+        const name = rawName.toLowerCase() as FramePlaceholder;
+        return KNOWN_PLACEHOLDERS.includes(name) ? asText(placeholders[name]) : '';
+      }),
+    )
+    .join(exercisesHtml);
 }

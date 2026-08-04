@@ -4,6 +4,11 @@
     "regenerateAll": "إعادة إنشاء الكل",
     "filling": "آية تملأ ورقة عملك",
     "print": "طباعة",
+    "zoom": {
+      "zoomOut": "تصغير (Ctrl −)",
+      "zoomIn": "تكبير (Ctrl +)",
+      "reset": "إعادة إلى ١٠٠٪ (Ctrl 0)"
+    },
     "regenerate": "إعادة الإنشاء",
     "edit": "تعديل",
     "doneEditing": "تم",

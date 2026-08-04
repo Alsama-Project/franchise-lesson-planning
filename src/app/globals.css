@@ -741,6 +741,19 @@ html:lang(ar) body {
    * a fresh sheet; images / tables / resource cards / captions avoid mid-split. */
   .ws-doc-page {
     width: auto !important;
+    /* Zoom is a screen-only view control. The scale lives on `.ws-doc-page` itself
+     * (never an ancestor), so resetting it here keeps the printout at true A4 —
+     * `visibility` alone would NOT undo a transform, and v3 prints the LIVE surface
+     * (v2 printed through a separate preview modal, so it never needed this). */
+    transform: none !important;
+  }
+  /* The scroll sizer only exists to reserve panning space for a zoomed page on
+   * screen. Collapse it and drop its containing-block role so `.ws-print-area`'s
+   * `position:absolute; left:0; top:0` still resolves against the page origin. */
+  .ws-zoom-sizer {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
   }
   .ws-doc .ws-page-break {
     break-before: page;

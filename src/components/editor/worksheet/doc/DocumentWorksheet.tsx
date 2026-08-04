@@ -29,6 +29,7 @@ import { InlinePromptPopover, type Anchor } from './InlinePromptPopover';
 import { insertGeneratedResource, adjustSelectionWithAI } from './aiInsert';
 import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 import { BRAND, PAGE_WIDTH, PAGE_PAD_X, PAGE_PAD_TOP, PAGE_PAD_BOTTOM, type SaveState } from './theme';
+import { ZoomPage } from './ZoomPage';
 
 export type { SaveState } from './theme';
 
@@ -48,6 +49,8 @@ export function DocumentWorksheet({
   vocabulary,
   saveState = 'idle',
   templateMode = false,
+  zoom = 1,
+  onZoomChange,
 }: {
   /** The stored worksheet column (any legacy or v2/v3 shape). */
   value: unknown;
@@ -56,6 +59,11 @@ export function DocumentWorksheet({
   context: WorksheetContext;
   vocabulary: TagsByDimension;
   saveState?: SaveState;
+  /** Page zoom (view-only CSS scale). Defaults to 1; pinch lifts changes via
+   *  `onZoomChange`. When `onZoomChange` is omitted the page renders unzoomed
+   *  (e.g. Template Mode, which has no zoom control). */
+  zoom?: number;
+  onZoomChange?: (next: number | ((z: number) => number)) => void;
   /**
    * Template Mode: the SAME editor authoring a subject's master template. Enables
    * the hint-placeholder slash command, marks the surface with `ws-template-mode`
@@ -186,6 +194,28 @@ export function DocumentWorksheet({
     [editor, prompt, context],
   );
 
+  // Zoom is offered only when the parent wires it (the generating pane) and never in
+  // Template Mode (which has no zoom control and its own enlarged canvas).
+  const zoomable = !!onZoomChange && !templateMode;
+
+  // The `.ws-doc-page` contents, shared by the zoomed and unzoomed layouts so the two
+  // paths can never drift.
+  const pageInner = (
+    <>
+      <DocMasthead ctx={context} templateMode={templateMode} />
+      <div
+        className="ws-doc-body"
+        style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520, ['--ws-hint-badge' as string]: `"${hintBadge.replace(/"/g, '\\"')}"` }}
+      >
+        <EditorContent editor={editor} />
+      </div>
+      <DocFooter ctx={context} className="ws-doc-footer-screen ws-no-print" />
+      {/* Print-only running footer — inside .ws-print-area so it stays visible under
+          the print rules; position:fixed makes it repeat on every sheet. */}
+      <DocFooter ctx={context} className="ws-print-footer" />
+    </>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* Chrome — toolbar (never printed) */}
@@ -214,24 +244,29 @@ export function DocumentWorksheet({
 
       {/* Canvas — soft grey, scrollable; the white page floats on it. Template Mode
           centres + enlarges it and marks editable regions with dashes (globals.css). */}
-      <div
-        className={`ws-doc-canvas${templateMode ? ' ws-template-mode' : ''}`}
-        style={{ flex: 1, minHeight: 0, overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}
-      >
-        <div className="ws-doc-page ws-print-area" style={{ width: PAGE_WIDTH, maxWidth: '100%', margin: '0 auto', background: '#fff', boxShadow: BRAND.pageShadow, borderRadius: 2 }}>
-          <DocMasthead ctx={context} templateMode={templateMode} />
-          <div
-            className="ws-doc-body"
-            style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520, ['--ws-hint-badge' as string]: `"${hintBadge.replace(/"/g, '\\"')}"` }}
-          >
-            <EditorContent editor={editor} />
+      {zoomable ? (
+        // Zoom-enabled surface: ZoomPage owns the canvas + scroll sizer and scales
+        // the `.ws-doc-page` itself (never an ancestor — see ZoomPage / print rules).
+        <ZoomPage
+          zoom={zoom}
+          onZoomChange={onZoomChange!}
+          canvasClassName="ws-doc-canvas"
+          canvasStyle={{ flex: 1, minHeight: 0, overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}
+          pageClassName="ws-doc-page ws-print-area"
+          pageStyle={{ background: '#fff', boxShadow: BRAND.pageShadow, borderRadius: 2 }}
+        >
+          {pageInner}
+        </ZoomPage>
+      ) : (
+        <div
+          className={`ws-doc-canvas${templateMode ? ' ws-template-mode' : ''}`}
+          style={{ flex: 1, minHeight: 0, overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}
+        >
+          <div className="ws-doc-page ws-print-area" style={{ width: PAGE_WIDTH, maxWidth: '100%', margin: '0 auto', background: '#fff', boxShadow: BRAND.pageShadow, borderRadius: 2 }}>
+            {pageInner}
           </div>
-          <DocFooter ctx={context} className="ws-doc-footer-screen ws-no-print" />
-          {/* Print-only running footer — inside .ws-print-area so it stays visible
-              under the print rules; position:fixed makes it repeat on every sheet. */}
-          <DocFooter ctx={context} className="ws-print-footer" />
         </div>
-      </div>
+      )}
 
       <BubbleToolbar editor={editor} onAdjustAI={openAdjust} />
       <TableToolbar editor={editor} />

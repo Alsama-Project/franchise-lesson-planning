@@ -30,6 +30,8 @@ import { ExerciseSkeleton } from './ExerciseSkeleton';
 import { CardConfirm } from './CardConfirm';
 import { IMAGE_CAP, useWorksheetGeneration } from './useWorksheetGeneration';
 import { skeletonHeight } from './heights';
+import { ZoomControls } from '../doc/ZoomControls';
+import { clampZoom, round2, ZOOM_STEP } from '../doc/zoom';
 
 /** Which worksheet surface the teacher is looking at when rows exist. Cards are the
  *  generation + review step; the document is the artifact once they are happy. */
@@ -120,6 +122,32 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
   });
   const [confirmAll, setConfirmAll] = useState(false);
 
+  // ── Page zoom (view-only CSS scale on the worksheet page) ─────────────────────
+  // Ephemeral, like `mode`: resets to 100% on reload, applies to whichever surface
+  // is showing, changes nothing persisted/compiled/printed. Buttons + this keyboard
+  // handler drive it; pinch is handled inside ZoomPage.
+  const [zoom, setZoom] = useState(1);
+  const zoomIn = useCallback(() => setZoom((z) => clampZoom(round2(z + ZOOM_STEP))), []);
+  const zoomOut = useCallback(() => setZoom((z) => clampZoom(round2(z - ZOOM_STEP))), []);
+  const resetZoom = useCallback(() => setZoom(1), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomOut();
+      } else if (e.key === '0') {
+        e.preventDefault();
+        resetZoom();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoomIn, zoomOut, resetZoom]);
+
   const hasRows = gen.exercises.length > 0;
 
   // Surface mode (only meaningful once rows exist). No rows → the document is the only
@@ -181,6 +209,9 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         {totalSlots > 0 ? (
           <span className="text-[12px] text-neutral-500">{t('image.count', { n: readyImages, cap: IMAGE_CAP })}</span>
         ) : null}
+
+        {/* Page zoom — a view control over whichever surface is showing. */}
+        <ZoomControls zoom={zoom} onZoomOut={zoomOut} onZoomIn={zoomIn} onReset={resetZoom} />
 
         <button
           type="button"
@@ -271,9 +302,17 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
           Switching mode never compiles or discards; the document remounts and re-seeds
           from live `value` (cursor/scroll/undo reset, content safe). */}
       {!gen.filling && (!hasRows || mode === 'document') ? (
-        <DocumentWorksheet value={value} onChange={handleDocumentEdit} context={context} vocabulary={vocabulary} saveState={saveState} />
+        <DocumentWorksheet
+          value={value}
+          onChange={handleDocumentEdit}
+          context={context}
+          vocabulary={vocabulary}
+          saveState={saveState}
+          zoom={zoom}
+          onZoomChange={setZoom}
+        />
       ) : (
-        <PageFrame ctx={context}>
+        <PageFrame ctx={context} zoom={zoom} onZoomChange={setZoom}>
           {gen.filling && gen.fillSpecs ? (
             <div className="flex flex-col gap-[26px]">
               {gen.fillSpecs.map((spec) => (

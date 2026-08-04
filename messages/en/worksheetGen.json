@@ -4,6 +4,11 @@
     "regenerateAll": "Regenerate all",
     "filling": "Aya is filling your worksheet",
     "print": "Print",
+    "zoom": {
+      "zoomOut": "Zoom out (Ctrl −)",
+      "zoomIn": "Zoom in (Ctrl +)",
+      "reset": "Reset to 100% (Ctrl 0)"
+    },
     "regenerate": "Regenerate",
     "edit": "Edit",
     "doneEditing": "Done",

@@ -12,16 +12,17 @@
 // this branch cannot collide.
 
 /**
- * The STORED layers of the instruction stack. The four ladder layers
- * (org → academic → subject → tool) ascend in authority and are composed by
- * `get_active_context_stack`. `safeguarding` is NOT a ladder layer: it is the
- * editable half of the code FLOOR (one doc per tool, `tool` set, `subject_id`
- * null), read separately and composed at floor position — never inside the RPC's
- * ordering (see `@/lib/ai/context-stack`). The runtime layers 5 (curriculum
- * context) and 6 (the teacher's lesson plan) are request data, not stored, and so
- * are not part of this enum. Mirrors the `ai_context_layer` Postgres enum.
+ * The STORED layers of the instruction stack, in ascending authority
+ * (org → academic → subject → tool), composed by `get_active_context_stack`. The
+ * runtime layers 5 (curriculum context) and 6 (the teacher's lesson plan) are
+ * request data, not stored, and so are not part of this enum.
+ *
+ * The Postgres `ai_context_layer` enum also carries a now-retired `safeguarding`
+ * value (the enum value is left in place — Postgres makes removing it awkward — but
+ * no row uses it and nothing reads it; safeguarding is now ordinary uploaded doc
+ * content). It is deliberately omitted here so no code paths treat it as live.
  */
-export type AiContextLayer = 'org' | 'academic' | 'subject' | 'tool' | 'safeguarding';
+export type AiContextLayer = 'org' | 'academic' | 'subject' | 'tool';
 
 /**
  * The AI tools a layer-4 (`tool`) document can target. Mirrors the
@@ -164,6 +165,12 @@ export interface AiContextSubjectGroup {
   docs: AiContextDocView[];
 }
 
+/** A layer-4 row: one tool and its documents (may be empty). */
+export interface AiContextToolGroup {
+  tool: AiContextTool;
+  docs: AiContextDocView[];
+}
+
 /**
  * One subject's uploaded worksheet page frame (a row of `worksheet_frame`), as the
  * admin panel's "Worksheet page frames" row renders it. A subject with no uploaded
@@ -179,12 +186,6 @@ export interface AiContextFrameView {
   updatedAt: string;
 }
 
-/** A layer-4 row: one tool and its documents (may be empty). */
-export interface AiContextToolGroup {
-  tool: AiContextTool;
-  docs: AiContextDocView[];
-}
-
 /**
  * The whole board, as one server-assembled payload passed to the client tab.
  * `subjects` lists every active subject (a subject with no documents is a normal
@@ -197,17 +198,10 @@ export interface AiContextBoard {
   subjects: AiContextSubjectGroup[];
   tools: AiContextToolGroup[];
   /**
-   * The editable safeguarding documents (layer = 'safeguarding'), one per tool.
-   * Rendered in the board's full-width "Safeguarding rules" row, edited through the
-   * same `DocumentPopup` as every other document. `smartt_checker` has none.
-   */
-  safeguarding: AiContextDocView[];
-  /**
    * Uploaded worksheet page frames, one entry per subject that HAS one (subjects
    * on the built-in page have no entry). Rendered in the board's full-width
-   * "Worksheet page frames" row, beneath the four instruction columns and the
-   * floor. Not part of the instruction stack — printed markup, never composed
-   * into a prompt.
+   * "Worksheet page frames" row, beneath the four instruction columns. Not part of
+   * the instruction stack — printed markup, never composed into a prompt.
    */
   frames: AiContextFrameView[];
   /** Total non-archived documents across every layer (the header count). */

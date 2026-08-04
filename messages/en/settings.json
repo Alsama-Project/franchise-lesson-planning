@@ -398,8 +398,7 @@
         "org": "Alsama context",
         "academic": "Academic context",
         "subject": "Subject context",
-        "tool": "Tool instructions",
-        "safeguarding": "Safeguarding"
+        "tool": "Tool instructions"
       },
       "tools": {
         "worksheet_builder": "Worksheet builder",
@@ -426,16 +425,6 @@
         "cancel": "Cancel",
         "confirm": "Archive document",
         "archiving": "Archiving…"
-      },
-      "safeguarding": {
-        "title": "Safeguarding rules",
-        "subtitle": "Editable, versioned rules — one per tool, edited like any other document."
-      },
-      "outputContract": {
-        "title": "Output contract",
-        "badge": "Built in · defined in code",
-        "read": "Read",
-        "note": "Defined in the application code and locked. There is nothing here to edit — it is shown so you can see exactly what each tool must always return."
       },
       "worksheetFrame": {
         "title": "Worksheet page frames",

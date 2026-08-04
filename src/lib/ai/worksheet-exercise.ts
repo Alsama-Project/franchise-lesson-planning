@@ -1,7 +1,7 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { getWorksheetClient } from '@/lib/anthropic';
-import { composeContextStack, logAiCompose, type ContextDocUsed } from './context-stack';
+import { composeContextStack, logAiCompose, ContextStackError, type ContextDocUsed } from './context-stack';
 import { anchorLines, promptHash, type CurriculumAnchors } from './worksheet-shared';
 import type { ExerciseSpec } from '@/types/worksheet-exercise';
 
@@ -178,10 +178,15 @@ export async function generateExercise(
     );
   }
 
-  const { system, docsUsed } = await composeContextStack({
-    tool: 'worksheet_builder',
-    subjectId: context.subjectId,
-  });
+  let composed: Awaited<ReturnType<typeof composeContextStack>>;
+  try {
+    composed = await composeContextStack({ tool: 'worksheet_builder', subjectId: context.subjectId });
+  } catch (err) {
+    // Fail closed: surface the composer's "not configured" as a clean 503, not a 500.
+    if (err instanceof ContextStackError) throw new WorksheetExerciseError(err.message, err.status);
+    throw err;
+  }
+  const { system, docsUsed } = composed;
   logAiCompose({
     route: '/api/worksheet/exercise',
     tool: 'worksheet_builder',

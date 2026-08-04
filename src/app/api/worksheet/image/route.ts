@@ -25,7 +25,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { getImagesClient } from '@/lib/openai';
 import { isWorksheetImagesEnabled } from '@/lib/ai/worksheet-images-flag';
-import { composeContextStack } from '@/lib/ai/context-stack';
+import { composeContextStack, ContextStackError } from '@/lib/ai/context-stack';
 import { STYLE_VERSION } from '@/lib/ai/image-floor';
 
 export const runtime = 'nodejs';
@@ -239,7 +239,17 @@ export async function POST(request: NextRequest) {
   // user-message equivalent; the floor's own text declares it overrides the user
   // message, so brief-after-system preserves floor authority (same posture the
   // resource generator uses for its layer-5/6 anchors).
-  const composed = await composeContextStack({ tool: 'worksheet_image', subjectId });
+  // Fail closed: if the context stack errors or is empty, the composer throws
+  // rather than compose a stripped prompt — surface it as a clean 503, not a 500.
+  let composed: Awaited<ReturnType<typeof composeContextStack>>;
+  try {
+    composed = await composeContextStack({ tool: 'worksheet_image', subjectId });
+  } catch (err) {
+    if (err instanceof ContextStackError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
   const promptSent = `${composed.system}\n\n━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}`;
 
   let bytes: Buffer;

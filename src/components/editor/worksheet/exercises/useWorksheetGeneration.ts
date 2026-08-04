@@ -23,14 +23,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExerciseSpec, ImageSlot, WorksheetExercise } from '@/types/worksheet-exercise';
-import type { WorksheetDoc, WorksheetV3 } from '@/types/lesson';
+import type { WorksheetV3 } from '@/types/lesson';
 import {
   loadWorksheetExercises,
-  saveExerciseEdit,
   saveExerciseImageSlots,
 } from '@/lib/actions/worksheet-exercise';
 import { compileWorksheet } from '@/lib/actions/worksheet-compile';
 import { requestExercise, requestImage, requestPlan } from '@/lib/worksheet/generate-client';
+import type { ExerciseRegenPayload } from '../doc/exerciseSplice';
 
 /** The per-slot picture cap. Mirrors the route's `WORKSHEET_IMAGE_CAP` default (8);
  *  the route is authoritative and refuses server-side, so this is only for the
@@ -72,28 +72,17 @@ export interface GenerationState {
 }
 
 export interface GenerationApi extends GenerationState {
-  /** Generate (no rows) or Regenerate all (rows exist). Both call /plan. */
+  /** Generate (no rows) or Regenerate all (rows exist). Both call /plan and, on
+   *  completion, rebuild the WHOLE document into the live editor via `onCompiled`. */
   generateAll: () => Promise<void>;
-  /** Regenerate one card via /exercise (+ its images). Never /plan, never destructive. */
-  regenerateCard: (exerciseId: string) => Promise<void>;
-  /** Retry a failed card (same path as regenerate). */
-  retryCard: (exerciseId: string) => Promise<void>;
-  /** (Re)generate one image slot. `regenerate` bypasses the cache. */
-  generateSlot: (exerciseId: string, slotId: string, regenerate: boolean) => Promise<void>;
   /**
-   * Persist a teacher edit of one card (body_doc + status:'edited') — the pure row
-   * write ONLY, with NO recompile. Returns whether the write succeeded. Decoupled
-   * from `recompile` so a card edit is never lost even when the document is dirty and
-   * the rebuild is deferred (Part B). The caller decides when (or whether) to rebuild.
+   * Regenerate ONE exercise via /exercise (+ its images). Never /plan, never
+   * destructive, and NEVER a full rebuild: it returns the exercise's fresh body for
+   * the caller to splice into the live document in place. Returns null only if the
+   * exercise vanished from state mid-flight; a generation failure returns a payload
+   * with `failed: true` (a visible, retryable placeholder is spliced).
    */
-  persistEdit: (exerciseId: string, bodyDoc: WorksheetDoc) => Promise<boolean>;
-  /**
-   * Rebuild the compiled document from the current exercise rows and persist it. This
-   * is the recompile half of the old `applyEdit`, exposed so the caller can defer it
-   * (and re-run it later — e.g. from the out-of-date banner). Best-effort: a compile
-   * failure never blocks the pane.
-   */
-  recompile: () => Promise<void>;
+  regenerateExercise: (exerciseId: string) => Promise<ExerciseRegenPayload | null>;
 }
 
 /** Condense a route error into a short, safe slot `error`: single line, length-capped,
@@ -224,8 +213,14 @@ export function useWorksheetGeneration({
     await compileAndPersist();
   }, [lessonPlanId, fillImagesFor, compileAndPersist]);
 
-  const regenerateCard = useCallback(
-    async (exerciseId: string) => {
+  // Latest rows for reading a spec anchor without re-binding the callback each edit.
+  const exercisesRef = useRef(exercises);
+  useEffect(() => {
+    exercisesRef.current = exercises;
+  }, [exercises]);
+
+  const regenerateExercise = useCallback(
+    async (exerciseId: string): Promise<ExerciseRegenPayload | null> => {
       setRegenerating((prev) => new Set(prev).add(exerciseId));
       const res = await requestExercise(exerciseId);
       setExercises((cur) => {
@@ -236,67 +231,44 @@ export function useWorksheetGeneration({
         next[idx] = updated;
         return next;
       });
+
+      // The exercise's scaffold anchor — used only if the teacher had deleted its
+      // nodes, so the splice knows where to place the fresh content.
+      const specAnchor =
+        exercisesRef.current.find((e) => e.id === exerciseId)?.generation?.spec?.template_anchor?.trim() || null;
+
+      const clearBusy = () =>
+        setRegenerating((prev) => {
+          const next = new Set(prev);
+          next.delete(exerciseId);
+          return next;
+        });
+
+      if (!res.ok) {
+        clearBusy();
+        return { bodyDoc: null, imageSlots: [], anchor: specAnchor, failed: true };
+      }
+
       // Images for this one row, indexed against the whole current worksheet. Re-read
       // from the DB so the flattened slot indices use the freshly-persisted slots.
+      let merged = res.exercise;
       const current = await loadWorksheetExercises(lessonPlanId);
       const target = current.find((e) => e.id === exerciseId);
       if (target) {
         const withImages = await fillImagesFor([target], current);
-        const merged = withImages[0];
+        merged = withImages[0];
         setExercises((cur) => cur.map((e) => (e.id === exerciseId ? merged : e)));
       }
-      setRegenerating((prev) => {
-        const next = new Set(prev);
-        next.delete(exerciseId);
-        return next;
-      });
-      await compileAndPersist();
-    },
-    [lessonPlanId, fillImagesFor, compileAndPersist],
-  );
+      clearBusy();
 
-  const retryCard = regenerateCard;
-
-  const generateSlot = useCallback(
-    async (exerciseId: string, slotId: string, regenerate: boolean) => {
-      const row = exercises.find((e) => e.id === exerciseId);
-      const slot = row?.image_slots.find((s) => s.slot_id === slotId);
-      if (!row || !slot || !subjectId) return;
-      const res = await requestImage({
-        slot_id: slotId,
-        brief: slot.brief,
-        lesson_plan_id: lessonPlanId,
-        subject_id: subjectId,
-        regenerate,
-      });
-      let updated = row;
-      if (res.ok && res.storage_path) {
-        updated = patchSlot(row, slotId, { status: 'ready', storage_path: res.storage_path, error: undefined });
-      } else if (res.ok) {
-        return; // cap refusal — no change
-      } else if (res.status === 503) {
-        setImagesDisabled(true);
-        return;
-      } else {
-        updated = patchSlot(row, slotId, { status: 'failed', error: slotErrorText(res.error) });
-      }
-      setExercises((cur) => cur.map((e) => (e.id === exerciseId ? updated : e)));
-      await saveExerciseImageSlots(exerciseId, updated.image_slots);
-      await compileAndPersist();
+      return {
+        bodyDoc: merged.body_doc,
+        imageSlots: merged.image_slots ?? [],
+        anchor: merged.generation?.spec?.template_anchor?.trim() || specAnchor,
+        failed: merged.status === 'failed' || !merged.body_doc,
+      };
     },
-    [exercises, lessonPlanId, subjectId, compileAndPersist],
-  );
-
-  const persistEdit = useCallback(
-    async (exerciseId: string, bodyDoc: WorksheetDoc): Promise<boolean> => {
-      const res = await saveExerciseEdit(exerciseId, bodyDoc);
-      if (!res.ok) return false;
-      setExercises((cur) =>
-        cur.map((e) => (e.id === exerciseId ? { ...e, body_doc: bodyDoc, status: 'edited' } : e)),
-      );
-      return true;
-    },
-    [],
+    [lessonPlanId, fillImagesFor],
   );
 
   return {
@@ -307,10 +279,6 @@ export function useWorksheetGeneration({
     error,
     imagesDisabled,
     generateAll,
-    regenerateCard,
-    retryCard,
-    generateSlot,
-    persistEdit,
-    recompile: compileAndPersist,
+    regenerateExercise,
   };
 }

@@ -3,39 +3,33 @@
 // The generating worksheet pane — mounted by WorksheetPane whenever the document
 // editor is live. It loads the plan's exercise rows once, then owns the pane
 // header's primary slot, the buffered generation orchestration
-// (useWorksheetGeneration), and the body, which is one of three things:
+// (useWorksheetGeneration), and the ONE surface: the continuous document editor.
 //
-//   • no rows, idle   → the untouched continuous DocumentWorksheet (the scaffold —
-//     seeded template + its hint placeholders; we do NOT rebuild it here);
-//   • filling         → the A4 page holding skeletons at estimated heights;
-//   • rows exist       → the A4 page of exercise cards.
+// There is no cards/document toggle any more — the document is the only surface, the
+// way a teacher expects a worksheet to behave. Per-exercise regenerate survives as a
+// gutter affordance inside the document (anchored to each exercise's identity), and
+// splices a single exercise's nodes in place rather than rebuilding the document, so
+// the teacher's own edits are never lost.
 //
 // Header primary slot, in order (Submit for approval stays in the editor shell):
 //   Generate worksheet (teal filled) → Aya is filling your worksheet (inline status)
-//   → Regenerate all (teal tinted). Generate has no confirmation; Regenerate all
-//   ALWAYS confirms (red only when an edit is at stake — /plan is destructive).
+//   → Regenerate all (teal tinted). Generate has no confirmation unless the teacher
+//   has edited the document (it rebuilds the whole doc); Regenerate all ALWAYS
+//   confirms (both are destructive — /plan replaces every exercise).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Spinner } from '@/components/ui/Spinner';
-import type { Worksheet, WorksheetDoc, WorksheetV3 } from '@/types/lesson';
+import type { Worksheet, WorksheetV3 } from '@/types/lesson';
 import type { TagsByDimension } from '@/types/resource';
 import type { WorksheetExercise } from '@/types/worksheet-exercise';
 import { loadWorksheetExercises } from '@/lib/actions/worksheet-exercise';
 import type { WorksheetContext } from '../context';
-import { DocumentWorksheet, type SaveState } from '../doc/DocumentWorksheet';
-import { PageFrame } from './PageFrame';
-import { ExerciseCard } from './ExerciseCard';
-import { ExerciseSkeleton } from './ExerciseSkeleton';
+import { DocumentWorksheet, type DocumentWorksheetHandle, type SaveState } from '../doc/DocumentWorksheet';
 import { CardConfirm } from './CardConfirm';
 import { IMAGE_CAP, useWorksheetGeneration } from './useWorksheetGeneration';
-import { skeletonHeight } from './heights';
 import { ZoomControls } from '../doc/ZoomControls';
 import { clampZoom, round2, ZOOM_STEP } from '../doc/zoom';
-
-/** Which worksheet surface the teacher is looking at when rows exist. Cards are the
- *  generation + review step; the document is the artifact once they are happy. */
-type SurfaceMode = 'cards' | 'document';
 
 interface PaneProps {
   value: unknown;
@@ -43,17 +37,6 @@ interface PaneProps {
   context: WorksheetContext;
   vocabulary: TagsByDimension;
   saveState?: SaveState;
-}
-
-/** Whole-worksheet flattened index of each row's first image slot (for the cap). */
-function slotBaseIndices(exercises: WorksheetExercise[]): number[] {
-  const bases: number[] = [];
-  let running = 0;
-  for (const ex of exercises) {
-    bases.push(running);
-    running += Array.isArray(ex.image_slots) ? ex.image_slots.length : 0;
-  }
-  return bases;
 }
 
 export function GeneratingPane(props: PaneProps) {
@@ -70,7 +53,7 @@ export function GeneratingPane(props: PaneProps) {
     };
   }, [context.lessonPlanId]);
 
-  // Hold the mount until rows are known, so the editor never flashes before cards.
+  // Hold the mount until rows are known, so the editor never flashes before content.
   if (loaded === null) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-surface-subtle text-neutral-400">
@@ -86,42 +69,25 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
 }) {
   const t = useTranslations('worksheetGen');
 
-  // The document dirty flag: true once the teacher edits the continuous document and
-  // false again once a compile has run. It lives HERE, not in the generation hook,
-  // because the two writers to `worksheet` are distinguishable at this boundary — a
-  // DOCUMENT edit flows through `handleDocumentEdit` (sets the flag), a COMPILE write
-  // flows through `handleCompiled` (clears it). The hook stays untouched.
+  // The live document editor, written to imperatively for whole-document builds
+  // (initial Generate / Regenerate all). Per-exercise regenerate splices through the
+  // editor internally — see DocumentWorksheet.onRegenerateExercise.
+  const docRef = useRef<DocumentWorksheetHandle>(null);
+
+  // The document dirty flag: true once the teacher edits the document, false again
+  // after a whole-document build. It gates the "your document will be replaced"
+  // confirmation on Generate / Regenerate all (both rebuild the whole doc). A
+  // per-exercise regenerate never sets or clears it — it never rebuilds.
   const [documentDirty, setDocumentDirty] = useState(false);
 
-  // The reverse flag: true once a card edit has been persisted but its recompile was
-  // DEFERRED (the teacher kept a dirty document), so the compiled document no longer
-  // matches the exercise rows. It is the counterpart to `documentDirty` — "cards
-  // changed since the last compile" — and drives the out-of-date banner on the
-  // document view. Ephemeral (session-only), like `mode`/`zoom`; any compile clears it.
-  const [cardsDirty, setCardsDirty] = useState(false);
-
-  // A compile write (any trigger → compileAndPersist → onCompiled). Clearing BOTH
-  // flags here means "the document now matches the cards again", for every trigger,
-  // in one place.
-  const handleCompiled = useCallback(
-    (doc: WorksheetV3) => {
-      setDocumentDirty(false);
-      setCardsDirty(false);
-      onChange(doc);
-    },
-    [onChange],
-  );
-
-  // A teacher edit in the document surface. TipTap does not fire onUpdate for the
-  // initial `content` seed, so mounting / remounting the editor never trips this —
-  // only real edits do.
-  const handleDocumentEdit = useCallback(
-    (ws: Worksheet | WorksheetV3) => {
-      setDocumentDirty(true);
-      onChange(ws);
-    },
-    [onChange],
-  );
+  // A whole-document build result (initial Generate / Regenerate all). It is applied
+  // to the LIVE editor — never round-tripped through `value` (the seed-once editor
+  // would ignore that) — so the editor's own onUpdate persists it through the one
+  // debounce. Clearing the dirty flag here means "the document now matches the rows".
+  const handleCompiled = useCallback((doc: WorksheetV3) => {
+    docRef.current?.applyFullDoc(doc);
+    setDocumentDirty(false);
+  }, []);
 
   const gen = useWorksheetGeneration({
     lessonPlanId: context.lessonPlanId,
@@ -132,9 +98,8 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
   const [confirmAll, setConfirmAll] = useState(false);
 
   // ── Page zoom (view-only CSS scale on the worksheet page) ─────────────────────
-  // Ephemeral, like `mode`: resets to 100% on reload, applies to whichever surface
-  // is showing, changes nothing persisted/compiled/printed. Buttons + this keyboard
-  // handler drive it; pinch is handled inside ZoomPage.
+  // Ephemeral: resets to 100% on reload, changes nothing persisted/compiled/printed.
+  // Buttons + this keyboard handler drive it; pinch is handled inside ZoomPage.
   const [zoom, setZoom] = useState(1);
   const zoomIn = useCallback(() => setZoom((z) => clampZoom(round2(z + ZOOM_STEP))), []);
   const zoomOut = useCallback(() => setZoom((z) => clampZoom(round2(z - ZOOM_STEP))), []);
@@ -159,25 +124,10 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
 
   const hasRows = gen.exercises.length > 0;
 
-  // Surface mode (only meaningful once rows exist). No rows → the document is the only
-  // surface. Rows present → default to cards so the teacher sees generated output
-  // before working on it, then they toggle freely. Mode is ephemeral component state:
-  // a reload returns to this default (documented; not persisted for this branch).
-  const [mode, setMode] = useState<SurfaceMode>(() => (initialExercises.length > 0 ? 'cards' : 'document'));
-  // Land on cards exactly once, when rows first appear (e.g. after the first Generate).
-  // A ref (not a hasRows effect that re-runs) so a later teacher switch to the document
-  // is never overridden.
-  const landedOnCards = useRef(initialExercises.length > 0);
-  useEffect(() => {
-    if (hasRows && !landedOnCards.current) {
-      landedOnCards.current = true;
-      setMode('cards');
-    }
-  }, [hasRows]);
-
   // A pending compile action, deferred behind the "your document will be replaced"
   // confirmation. Set only when the document is dirty; otherwise the action runs at
-  // once. One gate, one string, across every compile trigger.
+  // once. Applies to whole-document builds (Generate); Regenerate all has its own
+  // always-on confirm below.
   const [pendingCompile, setPendingCompile] = useState<null | (() => void)>(null);
   const guardCompile = useCallback(
     (action: () => void) => {
@@ -187,31 +137,10 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
     [documentDirty],
   );
 
-  // ── Card edit (Part B: no path silently discards work) ────────────────────────
-  // A teacher's inline card edit ALWAYS persists first (a pure `worksheet_exercise`
-  // row write — nothing is lost regardless of what happens next). Only the RECOMPILE
-  // is conditional:
-  //   • document clean → recompile at once (safe; the document was in sync).
-  //   • document dirty → DEFER the recompile behind an honest dialog, and mark the
-  //     document out-of-date (`cardsDirty`) so the banner appears if kept. Recompiling
-  //     would replace the teacher's document edits, so it is never done silently.
-  const [rebuildAfterEdit, setRebuildAfterEdit] = useState(false);
-  const handleCardEdit = useCallback(
-    async (exerciseId: string, doc: WorksheetDoc) => {
-      const ok = await gen.persistEdit(exerciseId, doc);
-      if (!ok) return;
-      if (documentDirty) {
-        setCardsDirty(true);
-        setRebuildAfterEdit(true);
-      } else {
-        await gen.recompile();
-      }
-    },
-    [gen, documentDirty],
-  );
-
-  const anyEdited = gen.exercises.some((e) => e.status === 'edited');
-  const bases = useMemo(() => slotBaseIndices(gen.exercises), [gen.exercises]);
+  // A real teacher edit in the document. Marks it dirty so the next whole-document
+  // build warns before replacing it. Programmatic writes (our splice / full build)
+  // never call this — DocumentWorksheet suppresses them.
+  const onTeacherEdit = useCallback(() => setDocumentDirty(true), []);
 
   const readyImages = gen.exercises.reduce(
     (n, e) => n + (e.image_slots?.filter((s) => s.status === 'ready' && s.storage_path).length ?? 0),
@@ -225,25 +154,11 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
     <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Pane header — print control + the single primary slot, right-aligned. */}
       <div className="ws-no-print relative flex shrink-0 items-center justify-end gap-3 border-b border-[#EFE8DD] bg-surface px-[14px] py-[9px]">
-        {/* Card ⇄ document toggle — offered only when rows exist (with none, cards have
-            nothing to show) and not mid-fill. Switching compiles nothing and discards
-            nothing; it only changes which surface renders. */}
-        {hasRows && !gen.filling ? (
-          <div className="me-auto inline-flex rounded-[9px] border border-border bg-surface-subtle p-[3px]">
-            <ViewTab active={mode === 'cards'} onClick={() => setMode('cards')}>
-              {t('view.cards')}
-            </ViewTab>
-            <ViewTab active={mode === 'document'} onClick={() => setMode('document')}>
-              {t('view.document')}
-            </ViewTab>
-          </div>
-        ) : null}
-
         {totalSlots > 0 ? (
-          <span className="text-[12px] text-neutral-500">{t('image.count', { n: readyImages, cap: IMAGE_CAP })}</span>
+          <span className="me-auto text-[12px] text-neutral-500">{t('image.count', { n: readyImages, cap: IMAGE_CAP })}</span>
         ) : null}
 
-        {/* Page zoom — a view control over whichever surface is showing. */}
+        {/* Page zoom — a view control over the document surface. */}
         <ZoomControls zoom={zoom} onZoomOut={zoomOut} onZoomIn={zoomIn} onReset={resetZoom} />
 
         <button
@@ -271,8 +186,8 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
             {t('regenerateAll')}
           </button>
         ) : (
-          // No rows → the document surface is showing; the teacher may have edited the
-          // scaffold, so gate Generate too (destructive /plan → recompile).
+          // No rows → the teacher may have edited the scaffold; gate Generate too
+          // (destructive /plan → whole-document rebuild).
           <button
             type="button"
             onClick={() => guardCompile(() => gen.generateAll())}
@@ -285,11 +200,9 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         {confirmAll ? (
           <div className="absolute end-[14px] top-[calc(100%+6px)] z-30 w-[360px] rounded-[13px] border border-border bg-surface p-[16px] shadow-lg">
             <div className="text-[14px] font-bold text-ink">{t('confirm.allTitle')}</div>
-            <p className="mt-1.5 text-[12.5px] leading-[1.5] text-neutral-600">
-              {anyEdited ? t('confirm.allEditedBody') : t('confirm.allBody')}
-            </p>
-            {/* Regenerate all also recompiles, which replaces the whole document — warn
-                when it carries edits, reusing the shared document-replaced string. */}
+            <p className="mt-1.5 text-[12.5px] leading-[1.5] text-neutral-600">{t('confirm.allBody')}</p>
+            {/* Regenerate all rebuilds the whole document — warn when it carries edits,
+                reusing the shared document-replaced string. */}
             {documentDirty ? (
               <p className="mt-1.5 text-[12.5px] leading-[1.5] text-neutral-600">{t('confirm.documentEditedBody')}</p>
             ) : null}
@@ -308,9 +221,9 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
                   gen.generateAll();
                 }}
                 className="rounded-[8px] px-[13px] py-[7px] text-[12.5px] font-semibold text-white"
-                style={{ background: anyEdited || documentDirty ? '#B23A2E' : '#1F7A6C' }}
+                style={{ background: documentDirty ? '#B23A2E' : '#1F7A6C' }}
               >
-                {anyEdited ? t('confirm.regenerateAnyway') : t('confirm.regenerate')}
+                {t('confirm.regenerate')}
               </button>
             </div>
           </div>
@@ -330,76 +243,24 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         </div>
       ) : null}
 
-      {/* Body. Mid-fill → skeletons. Otherwise: no rows OR document mode → the
-          continuous document editor; cards mode with rows → the A4 page of cards.
-          Switching mode never compiles or discards; the document remounts and re-seeds
-          from live `value` (cursor/scroll/undo reset, content safe). */}
-      {!gen.filling && (!hasRows || mode === 'document') ? (
-        <>
-          {/* Cards-dirty signal (Part B): a card edit was saved but its recompile was
-              deferred, so this document no longer matches the exercises. Rebuilding
-              replaces it with the compiled exercises — stated plainly, never silent. */}
-          {cardsDirty ? (
-            <div className="ws-no-print flex shrink-0 items-center gap-3 border-b border-[#ECE0CF] bg-[#FBF6EF] px-[16px] py-[8px] text-[12.5px] text-[#5C544E]">
-              <span className="flex-1">{t('stale.body')}</span>
-              <button
-                type="button"
-                onClick={() => gen.recompile()}
-                className="shrink-0 rounded-[7px] bg-[#B23A2E] px-[11px] py-[5px] text-[12px] font-semibold text-white hover:bg-[#9c3227]"
-              >
-                {t('stale.rebuild')}
-              </button>
-            </div>
-          ) : null}
-          <DocumentWorksheet
-            value={value}
-            onChange={handleDocumentEdit}
-            context={context}
-            vocabulary={vocabulary}
-            saveState={saveState}
-            zoom={zoom}
-            onZoomChange={setZoom}
-          />
-        </>
-      ) : (
-        <PageFrame ctx={context} zoom={zoom} onZoomChange={setZoom}>
-          {gen.filling && gen.fillSpecs ? (
-            <div className="flex flex-col gap-[26px]">
-              {gen.fillSpecs.map((spec) => (
-                <div key={spec.position}>
-                  <div className="mb-[9px] text-[15px] font-bold text-ink" dir="auto">{spec.title}</div>
-                  <div className="rounded-[16px] bg-[#F7E4EB] p-[10px]">
-                    <ExerciseSkeleton height={skeletonHeight(spec.estimated_height)} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-[26px]">
-              {gen.exercises.map((ex, i) => (
-                <ExerciseCard
-                  key={ex.id}
-                  exercise={ex}
-                  position={i + 1}
-                  contentLanguage={context.contentLanguage}
-                  regenerating={gen.regenerating.has(ex.id)}
-                  slotBaseIndex={bases[i]}
-                  onRegenerate={() => guardCompile(() => gen.regenerateCard(ex.id))}
-                  onRetry={() => guardCompile(() => gen.retryCard(ex.id))}
-                  onRegenerateSlot={(slotId) => guardCompile(() => gen.generateSlot(ex.id, slotId, true))}
-                  onRetrySlot={(slotId) => guardCompile(() => gen.generateSlot(ex.id, slotId, false))}
-                  onEdit={(doc) => handleCardEdit(ex.id, doc)}
-                />
-              ))}
-            </div>
-          )}
-        </PageFrame>
-      )}
+      {/* The one surface: the continuous document editor. Whole-document builds land
+          via docRef.applyFullDoc; per-exercise regenerate splices through the editor. */}
+      <DocumentWorksheet
+        ref={docRef}
+        value={value}
+        onChange={onChange}
+        onTeacherEdit={onTeacherEdit}
+        onRegenerateExercise={gen.regenerateExercise}
+        context={context}
+        vocabulary={vocabulary}
+        saveState={saveState}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
 
-      {/* The document-replaced gate — shown before any compile trigger when the teacher
-          has edited the document since the last compile. One dialog, one string, for
-          every trigger. Confirm runs the deferred action (which recompiles and clears
-          the flag); Keep aborts it and the document is left untouched. */}
+      {/* The document-replaced gate — shown before a whole-document build when the
+          teacher has edited the document since the last build. Confirm runs the
+          deferred action (which rebuilds and clears the flag); Keep aborts it. */}
       {pendingCompile ? (
         <CardConfirm
           title={t('confirm.documentEditedTitle')}
@@ -415,43 +276,6 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
           onCancel={() => setPendingCompile(null)}
         />
       ) : null}
-
-      {/* The card-edit rebuild choice (Part B). The edit is ALREADY saved by the time
-          this shows, so neither button loses it — the choice is only whether to rebuild
-          the document now (replacing the teacher's document edits) or keep the document
-          and let it fall out of date (the banner then signals that). */}
-      {rebuildAfterEdit ? (
-        <CardConfirm
-          title={t('confirm.rebuildTitle')}
-          body={t('confirm.rebuildBody')}
-          confirmLabel={t('confirm.rebuildConfirm')}
-          cancelLabel={t('confirm.rebuildKeep')}
-          danger
-          onConfirm={() => {
-            setRebuildAfterEdit(false);
-            gen.recompile();
-          }}
-          onCancel={() => setRebuildAfterEdit(false)}
-        />
-      ) : null}
     </div>
-  );
-}
-
-/** A segmented-control tab for the card ⇄ document toggle (matches the review pane's
- *  segmented toggle styling). */
-function ViewTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={
-        'rounded-[7px] px-[12px] py-[5px] text-[12.5px] font-semibold transition-colors ' +
-        (active ? 'bg-surface text-ink shadow-sm' : 'text-neutral-500 hover:text-ink')
-      }
-    >
-      {children}
-    </button>
   );
 }

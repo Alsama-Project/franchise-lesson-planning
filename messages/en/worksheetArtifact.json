@@ -10,6 +10,7 @@
   "pageLabel": "Page {i} of {n}",
   "masterBadge": "Master",
   "exerciseHeading": "Exercise {n}",
+  "exerciseFailed": "This exercise didn’t generate. Use Regenerate to try again.",
   "hintBadge": "hint · won’t print",
   "hintPrompt": "Hint text (shown to teachers, never printed)",
   "objectiveTemplateHint": "The objective appears here when a teacher plans a lesson."

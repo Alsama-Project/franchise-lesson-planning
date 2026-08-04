@@ -14,6 +14,7 @@
       "rebuild": "Rebuild from exercises"
     },
     "regenerate": "Regenerate",
+    "regenerateFailed": "Couldn’t place the regenerated exercise.",
     "edit": "Edit",
     "doneEditing": "Done",
     "tryAgain": "Try again",

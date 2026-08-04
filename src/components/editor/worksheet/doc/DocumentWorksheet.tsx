@@ -8,9 +8,10 @@
 // insertion, the slash menu, selection bubble, and the persistent toolbar — and
 // autosaves the v3 envelope through the parent's debounced saveWorksheet.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor, JSONContent } from '@tiptap/core';
+import { useTranslations } from 'next-intl';
 import type { WorksheetV3 } from '@/types/lesson';
 import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import { migrateWorksheetToV3 } from '@/lib/editor/worksheet-migrate';
@@ -30,11 +31,40 @@ import { insertGeneratedResource, adjustSelectionWithAI } from './aiInsert';
 import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 import { BRAND, PAGE_WIDTH, PAGE_PAD_X, PAGE_PAD_TOP, PAGE_PAD_BOTTOM, type SaveState } from './theme';
 import { ZoomPage } from './ZoomPage';
+import { ExerciseGutter, EXERCISE_GUTTER_REDRAW, type ExerciseGutterStorage } from './nodes/ExerciseGutter';
+import { applyExerciseSplice, buildExerciseNodes, type ExerciseRegenPayload } from './exerciseSplice';
 
 export type { SaveState } from './theme';
 
+/** Imperative handle the generating pane uses to write the WHOLE document into the
+ *  live editor — the initial build and Regenerate-all. It must go through the editor
+ *  (not the `value` prop), because the seed-once editor never re-reads `value`. */
+export interface DocumentWorksheetHandle {
+  applyFullDoc: (doc: WorksheetV3) => void;
+}
+
 /** Which inline AI popover is open, and where it is anchored (viewport coords). */
 type PromptState = { mode: 'generate' | 'adjust'; anchor: Anchor } | null;
+
+interface DocumentWorksheetProps {
+  /** The stored worksheet column (any legacy or v2/v3 shape). */
+  value: unknown;
+  /** Persist path: lift the full v3 envelope for the parent's debounced autosave.
+   *  Fires for BOTH teacher edits and programmatic writes (both must persist). */
+  onChange: (worksheet: WorksheetV3) => void;
+  context: WorksheetContext;
+  vocabulary: TagsByDimension;
+  saveState?: SaveState;
+  zoom?: number;
+  onZoomChange?: (next: number | ((z: number) => number)) => void;
+  templateMode?: boolean;
+  /** A real teacher edit (never a programmatic setContent / splice). Drives the
+   *  "document edited since the last full build" gate on Generate / Regenerate-all. */
+  onTeacherEdit?: () => void;
+  /** Regenerate one exercise: returns its fresh body to splice into the live editor,
+   *  or null on abort. Presence installs the gutter affordance + splice path. */
+  onRegenerateExercise?: (exerciseId: string) => Promise<ExerciseRegenPayload | null>;
+}
 
 /** The caret/selection position in viewport coordinates, for anchoring a popover. */
 function anchorAt(editor: Editor, pos: number): Anchor {
@@ -42,37 +72,23 @@ function anchorAt(editor: Editor, pos: number): Anchor {
   return { x: c.left, y: c.bottom + 6 };
 }
 
-export function DocumentWorksheet({
-  value,
-  onChange,
-  context,
-  vocabulary,
-  saveState = 'idle',
-  templateMode = false,
-  zoom = 1,
-  onZoomChange,
-}: {
-  /** The stored worksheet column (any legacy or v2/v3 shape). */
-  value: unknown;
-  /** Lift the full v3 envelope for the parent's debounced autosave. */
-  onChange: (worksheet: WorksheetV3) => void;
-  context: WorksheetContext;
-  vocabulary: TagsByDimension;
-  saveState?: SaveState;
-  /** Page zoom (view-only CSS scale). Defaults to 1; pinch lifts changes via
-   *  `onZoomChange`. When `onZoomChange` is omitted the page renders unzoomed
-   *  (e.g. Template Mode, which has no zoom control). */
-  zoom?: number;
-  onZoomChange?: (next: number | ((z: number) => number)) => void;
-  /**
-   * Template Mode: the SAME editor authoring a subject's master template. Enables
-   * the hint-placeholder slash command, marks the surface with `ws-template-mode`
-   * (dashed editable regions, centred/enlarged canvas — see globals.css), and
-   * autosaves to `worksheet_template.body` via the parent's onChange. There is no
-   * resource rail here (this component never renders one).
-   */
-  templateMode?: boolean;
-}) {
+export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWorksheetProps>(
+  function DocumentWorksheet(
+    {
+      value,
+      onChange,
+      context,
+      vocabulary,
+      saveState = 'idle',
+      templateMode = false,
+      zoom = 1,
+      onZoomChange,
+      onTeacherEdit,
+      onRegenerateExercise,
+    },
+    ref,
+  ) {
+  const t = useTranslations('worksheetGen');
   const initialDoc = useMemo(() => normalizeTableColwidths(migrateWorksheetToV3(value).doc), [value]);
   // Content-language strings for hint placeholders. The badge is exposed to CSS as a
   // quoted string; the prompt label seeds the slash-menu authoring flow. Memoised so
@@ -88,6 +104,22 @@ export function DocumentWorksheet({
   const [promptError, setPromptError] = useState<string | null>(null);
   const [teacherNotes, setTeacherNotes] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [spliceError, setSpliceError] = useState<string | null>(null);
+  // Ids currently regenerating, for the gutter buttons' disabled/spinner state.
+  const [regenBusy, setRegenBusy] = useState<Set<string>>(() => new Set());
+
+  // True only while WE mutate the editor (applyFullDoc / splice), so onUpdate can
+  // tell a programmatic write from a real teacher edit and not trip the edited-gate.
+  const programmatic = useRef(false);
+  const onTeacherEditRef = useRef(onTeacherEdit);
+  onTeacherEditRef.current = onTeacherEdit;
+
+  // Whether the per-exercise gutter + splice path is wired (never in Template Mode).
+  const gutterEnabled = !!onRegenerateExercise && !templateMode;
+  const failedText = useMemo(
+    () => worksheetArtifactText(context.contentLanguage, 'exerciseFailed'),
+    [context.contentLanguage],
+  );
 
   const pickImage = useCallback(() => fileInputRef.current?.click(), []);
 
@@ -109,12 +141,88 @@ export function DocumentWorksheet({
         templateMode,
         hintPromptLabel,
       }),
+      // The per-exercise Regenerate gutter — installed only when the host wires a
+      // regenerate handler (the generating pane). Never in the read-only/print bundle
+      // or Template Mode, so those surfaces keep exactly `worksheetDocExtensions`.
+      ...(gutterEnabled ? [ExerciseGutter] : []),
     ],
     content: initialDoc as JSONContent,
     immediatelyRender: false,
     editorProps: { attributes: { class: 'ws-doc', spellcheck: 'true' } },
-    onUpdate: ({ editor }) => onChange({ version: 3, doc: editor.getJSON() as WorksheetV3['doc'] }),
+    onUpdate: ({ editor }) => {
+      // Persist every change (teacher edit AND our own splice / full-doc write) so the
+      // one debounce is the single writer. Only a REAL teacher edit trips the gate.
+      onChange({ version: 3, doc: editor.getJSON() as WorksheetV3['doc'] });
+      if (!programmatic.current) onTeacherEditRef.current?.();
+    },
   });
+
+  // Write the WHOLE document into the live editor (initial build / Regenerate-all).
+  // `emitUpdate: true` runs onUpdate → onChange → the existing debounce persists it;
+  // `programmatic` keeps it from tripping the teacher-edited gate.
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyFullDoc: (doc: WorksheetV3) => {
+        if (!editor) return;
+        programmatic.current = true;
+        editor.commands.setContent(doc.doc as JSONContent, true);
+        programmatic.current = false;
+      },
+    }),
+    [editor],
+  );
+
+  /** Regenerate one exercise: fetch its fresh body, then splice it into the live
+   *  editor in place (its old range removed, teacher content between it preserved). */
+  const handleGutterRegen = useCallback(
+    async (exerciseId: string) => {
+      if (!editor || !onRegenerateExercise) return;
+      setRegenBusy((prev) => {
+        if (prev.has(exerciseId)) return prev;
+        const next = new Set(prev);
+        next.add(exerciseId);
+        return next;
+      });
+      setSpliceError(null);
+      try {
+        const payload = await onRegenerateExercise(exerciseId);
+        if (payload) {
+          const nodes = buildExerciseNodes(exerciseId, payload, failedText);
+          programmatic.current = true;
+          const ok = applyExerciseSplice(editor, exerciseId, nodes, payload.anchor);
+          programmatic.current = false;
+          if (!ok) setSpliceError(t('regenerateFailed'));
+        }
+      } catch (err) {
+        setSpliceError(err instanceof Error ? err.message : t('regenerateFailed'));
+      } finally {
+        setRegenBusy((prev) => {
+          const next = new Set(prev);
+          next.delete(exerciseId);
+          return next;
+        });
+      }
+    },
+    [editor, onRegenerateExercise, failedText, t],
+  );
+
+  // Bridge React state into the gutter widget's storage, and force a redraw (a
+  // doc-unchanged, meta-only transaction — no autosave) when the busy set changes so
+  // the buttons reflect the disabled/spinner state.
+  const regenTitle = t('regenerate');
+  useEffect(() => {
+    if (!editor) return;
+    const storage = editor.storage.exerciseGutter as ExerciseGutterStorage | undefined;
+    if (!storage) return; // gutter extension not installed
+    storage.onRegenerate = handleGutterRegen;
+    storage.busy = regenBusy;
+    storage.title = regenTitle;
+    // A doc-unchanged transaction so the decorations recompute against the new busy
+    // set. `preventUpdate` + no steps ⇒ tiptap's onUpdate never fires (it gates on
+    // `docChanged`), so this never persists or trips the teacher-edited gate.
+    editor.view.dispatch(editor.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
+  }, [editor, handleGutterRegen, regenBusy, regenTitle]);
 
   /** Open the generate popover anchored at the caret. */
   const openGenerate = useCallback(
@@ -241,6 +349,9 @@ export function DocumentWorksheet({
       {uploadError ? (
         <div className="ws-no-print" style={{ margin: '0 12px 8px', fontSize: 12.5, color: BRAND.pink }}>{uploadError}</div>
       ) : null}
+      {spliceError ? (
+        <div className="ws-no-print" style={{ margin: '0 12px 8px', fontSize: 12.5, color: BRAND.pink }}>{spliceError}</div>
+      ) : null}
 
       {/* Canvas — soft grey, scrollable; the white page floats on it. Template Mode
           centres + enlarges it and marks editable regions with dashes (globals.css). */}
@@ -300,4 +411,5 @@ export function DocumentWorksheet({
       ) : null}
     </div>
   );
-}
+  },
+);

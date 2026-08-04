@@ -8,7 +8,14 @@
 // recover the bare scaffold). Plus the anchor-matching and no-scaffold behaviours.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assembleWorksheetDoc, isCompiled, COMPILED_ATTR } from '../worksheet-assemble';
+import {
+  assembleWorksheetDoc,
+  isCompiled,
+  COMPILED_ATTR,
+  EXERCISE_ID_ATTR,
+  nodeExerciseId,
+  planExerciseSplice,
+} from '../worksheet-assemble';
 import { markdownToDoc } from '../../editor/markdown';
 
 /** A scaffold with two headings, built the same way compile builds its base. */
@@ -16,9 +23,10 @@ function scaffoldContent() {
   return markdownToDoc('# Warm up\n\nDo this first.\n\n# Practice\n\nThen this.').content;
 }
 
-/** A prepared exercise: one paragraph of body text under the given anchor. */
-function exercise(anchor, text) {
-  return { anchor, nodes: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
+/** A prepared exercise: one paragraph of body text under the given anchor. `id` is
+ *  optional so the legacy idempotency tests (no identity) stay byte-identical. */
+function exercise(anchor, text, id) {
+  return { id, anchor, nodes: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
 }
 
 test('two consecutive assembles over identical inputs are byte-identical', () => {
@@ -178,4 +186,70 @@ test('empty-heading drop still converges across two consecutive compiles', () =>
 
   assert.deepEqual(second, first, 'dropping empty headings must not break re-compile convergence');
   assert.deepEqual(headingTexts(first.doc.content), ['One', 'Three'], 'Two and Four dropped, One and Three kept');
+});
+
+// ── Exercise identity (Option A) ─────────────────────────────────────────────
+// Every node of an exercise carries its row id, so a later per-exercise regenerate
+// can find and replace exactly that exercise's range. Idempotency is preserved.
+
+test('assemble stamps each exercise’s id on every one of its nodes', () => {
+  const twoNode = { id: 'ex-A', anchor: 'Practice', nodes: [
+    { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Part A' }] },
+    { type: 'paragraph', content: [{ type: 'text', text: 'Body' }] },
+  ] };
+  const out = assembleWorksheetDoc(scaffoldContent(), [twoNode, exercise('Warm up', 'Hi', 'ex-B')]).doc.content;
+
+  const aNodes = out.filter((n) => nodeExerciseId(n) === 'ex-A');
+  assert.equal(aNodes.length, 2, 'both of exercise A’s nodes carry its id');
+  assert.ok(aNodes.every(isCompiled), 'id-carrying nodes are also wsCompiled');
+  const bNodes = out.filter((n) => nodeExerciseId(n) === 'ex-B');
+  assert.equal(bNodes.length, 1, 'exercise B’s single node carries its own id');
+  // Scaffold headings are never stamped with an exercise id.
+  assert.equal(nodeExerciseId(out.find((n) => n.content?.[0]?.text === 'Warm up')), null);
+});
+
+test('assemble is idempotent WITH ids (re-compile over its own output is byte-identical)', () => {
+  const base = scaffoldContent();
+  const exercises = [exercise('Warm up', 'Say hello', 'ex-1'), exercise('Practice', 'Fill gaps', 'ex-2')];
+  const first = assembleWorksheetDoc(base, exercises);
+  const second = assembleWorksheetDoc(first.doc.content, exercises);
+  assert.deepEqual(second, first, 're-compile must strip prior ids+markers and restamp identically');
+  assert.equal(first.doc.content.find((n) => n.content?.[0]?.text === 'Say hello').attrs[EXERCISE_ID_ATTR], 'ex-1');
+});
+
+// ── planExerciseSplice ───────────────────────────────────────────────────────
+// The range is every top-level node carrying the id (contiguous or not); the insert
+// lands where the first one was; teacher nodes between them are never removed.
+
+const idNode = (id, text) => ({ type: 'paragraph', attrs: { [COMPILED_ATTR]: true, [EXERCISE_ID_ATTR]: id }, content: [{ type: 'text', text }] });
+const plainNode = (text) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+const headingNode = (text) => markdownToDoc(`# ${text}`).content[0];
+
+test('splice plan: a contiguous exercise range removes all its nodes, inserts at the first', () => {
+  const nodes = [headingNode('Warm up'), idNode('ex-1', 'a'), idNode('ex-1', 'b'), idNode('ex-2', 'c')];
+  const plan = planExerciseSplice(nodes, 'ex-1', null);
+  assert.deepEqual(plan.removeIndices, [1, 2]);
+  assert.equal(plan.insertIndex, 1);
+});
+
+test('splice plan: a teacher node interleaved in the range survives (not removed)', () => {
+  // Teacher wrote a paragraph (index 2) between the exercise’s two nodes.
+  const nodes = [idNode('ex-1', 'a'), idNode('ex-1', 'b'), plainNode('teacher note'), idNode('ex-1', 'c')];
+  const plan = planExerciseSplice(nodes, 'ex-1', null);
+  assert.deepEqual(plan.removeIndices, [0, 1, 3], 'only id-carrying nodes are removed');
+  assert.ok(!plan.removeIndices.includes(2), 'the teacher node at index 2 is preserved');
+  assert.equal(plan.insertIndex, 0, 'new content lands where the exercise began');
+});
+
+test('splice plan: a deleted exercise inserts just after its scaffold anchor', () => {
+  const nodes = [headingNode('Warm up'), plainNode('intro'), headingNode('Practice'), plainNode('other')];
+  const plan = planExerciseSplice(nodes, 'ex-gone', 'Practice');
+  assert.deepEqual(plan.removeIndices, []);
+  assert.equal(plan.insertIndex, 3, 'insert right after the "Practice" heading (index 2)');
+});
+
+test('splice plan: a deleted exercise with no anchor match appends at the end', () => {
+  const nodes = [headingNode('Warm up'), plainNode('intro')];
+  assert.deepEqual(planExerciseSplice(nodes, 'ex-gone', 'No Such Heading'), { removeIndices: [], insertIndex: 2 });
+  assert.deepEqual(planExerciseSplice(nodes, 'ex-gone', null), { removeIndices: [], insertIndex: 2 });
 });

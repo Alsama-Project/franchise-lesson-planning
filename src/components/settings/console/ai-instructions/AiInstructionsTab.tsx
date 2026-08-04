@@ -26,6 +26,7 @@ import { fullDate, shortDate, filenameStem, findDoc } from './helpers';
 import { useDocUpload, useFilePicker } from './useDocUpload';
 import { DocumentPopup } from './DocumentPopup';
 import { ArchiveConfirmDialog } from './ArchiveConfirmDialog';
+import { ComposedPromptPreview } from './ComposedPromptPreview';
 
 export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
   const t = useTranslations('settings');
@@ -38,6 +39,7 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [archiveDocId, setArchiveDocId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const openDoc = openDocId ? findDoc(board, openDocId) : null;
   const archiveDoc = archiveDocId ? findDoc(board, archiveDocId) : null;
@@ -107,12 +109,20 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
         <span dir="auto" className="text-[12.5px] text-text-faint">
           {summary}
         </span>
+        {/* Read-only: preview the fully composed system prompt each tool receives. */}
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          className="ml-auto rounded-[10px] border border-teal-tint-border bg-surface px-[14px] py-[10px] text-[13px] font-semibold text-teal transition-colors hover:bg-teal-tint"
+        >
+          {t('aiInstructions.preview.open')}
+        </button>
         {/* Archived view is not drawn in the mockup — rendered as drawn but left
             inert (like the floor "Read"), pending a specified archived screen. */}
         <button
           type="button"
           title={t('aiInstructions.archivedTodo')}
-          className="ml-auto cursor-not-allowed rounded-[10px] border border-border-strong bg-surface px-[14px] py-[10px] text-[13px] font-semibold text-neutral-700 opacity-60"
+          className="cursor-not-allowed rounded-[10px] border border-border-strong bg-surface px-[14px] py-[10px] text-[13px] font-semibold text-neutral-700 opacity-60"
           aria-disabled="true"
         >
           {t('aiInstructions.archived')}
@@ -231,6 +241,13 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
             setArchiveDocId(null);
             setArchiveError(null);
           }}
+        />
+      ) : null}
+
+      {previewOpen ? (
+        <ComposedPromptPreview
+          subjects={board.subjects.map((s) => ({ subjectId: s.subjectId, name: s.name }))}
+          onClose={() => setPreviewOpen(false)}
         />
       ) : null}
     </div>

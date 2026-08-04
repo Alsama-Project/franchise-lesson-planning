@@ -235,10 +235,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Compose the prompt: role → layers 1-4 → IMAGE FLOOR (the floor is appended last
-  // by the composer, single-sourced from image-floor.ts). The brief follows as the
-  // user-message equivalent; the floor's own text declares it overrides the user
-  // message, so brief-after-system preserves floor authority (same posture the
-  // resource generator uses for its layer-5/6 anchors).
+  // by the composer, single-sourced from image-floor.ts).
   // Fail closed: if the context stack errors or is empty, the composer throws
   // rather than compose a stripped prompt — surface it as a clean 503, not a 500.
   let composed: Awaited<ReturnType<typeof composeContextStack>>;
@@ -250,7 +247,14 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
-  const promptSent = `${composed.system}\n\n━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}`;
+  // Ordering: the image API has no system/user split, so both halves land in one
+  // flat prompt. Put the user-supplied BRIEF FIRST, under a clear header that keeps
+  // it legible as a distinct input, then the composed stack second — so the guidance
+  // (safeguarding included, which now lives mid-stack in Connie's layer-4 doc rather
+  // than in a code floor) is the last thing the model reads before it draws.
+  // `worksheet_image` has no output contract, so its floor section is empty; nothing
+  // followed the brief to anchor the guidance when the brief came last.
+  const promptSent = `━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}\n\n${composed.system}`;
 
   let bytes: Buffer;
   try {

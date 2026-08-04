@@ -440,6 +440,23 @@
           "missingMarker": "لا يوجد ما يحدد موضع التمارين. ضع <code></code> في الملف حيث يجب أن تظهر التمارين عند الطباعة.",
           "scriptLines": "الملف يشغّل شيفرة برمجية. احذف مقاطع <code></code> في {count, plural, one {السطر} other {الأسطر}} {lines}. تصميم الصفحة يقوم بترتيب الصفحة فقط."
         }
+      },
+      "preview": {
+        "open": "Preview composed prompts",
+        "eyebrow": "Read-only",
+        "title": "Composed prompt preview",
+        "subtitle": "Exactly what each tool's system prompt composes to, from the live instruction stack. Read-only — nothing here is editable.",
+        "subjectLabel": "Subject",
+        "noSubject": "No subject (global only)",
+        "showingSubject": "Composed for {subject} · content language {lang}",
+        "showingGlobal": "Composed with no subject — global layers only (layer 3 is empty).",
+        "docCount": "{count, plural, one {# document} other {# documents}}",
+        "codeSideNote": "Role, precedence and the response-contract floor are code-side, not uploaded documents.",
+        "failClosedBadge": "Fails closed",
+        "failClosedTitle": "Fails closed — no prompt composed",
+        "failClosedHint": "This tool refuses to run until its instruction documents are configured.",
+        "loading": "Composing…",
+        "loadError": "Could not compose the preview. Refresh to try again."
       }
     }
   }

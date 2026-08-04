@@ -50,6 +50,55 @@ export function headingText(node: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/** The heading level (1–3) of an UNTAGGED (scaffold) heading node, or null for any
+ *  non-heading node and for a tagged (`wsCompiled`) node. A tagged node is exercise
+ *  content — even a heading the model emitted inside an exercise body — so it is
+ *  never treated as a scaffold heading here: it neither bounds a scaffold heading's
+ *  span nor is a drop candidate; it simply counts as content. Levels default to 1
+ *  (matching `markdownToDoc`, which always stamps `attrs.level`). */
+function scaffoldHeadingLevel(node: unknown): number | null {
+  if (isCompiled(node)) return null;
+  const n = node as { type?: unknown; attrs?: { level?: unknown } };
+  if (n?.type !== 'heading') return null;
+  const lvl = Number(n.attrs?.level);
+  return Number.isFinite(lvl) && lvl >= 1 ? lvl : 1;
+}
+
+/**
+ * Drop scaffold headings that a student would be handed with nothing under them.
+ *
+ * A scaffold heading is KEPT iff its span — from just after it up to the next
+ * scaffold heading of level ≤ its own (or end of document) — contains at least one
+ * node that is NOT a scaffold heading. That single node may be a spliced exercise
+ * (tagged), coordinator-written prose the template carries (untagged, non-heading),
+ * or the content of a nested child heading — any of the three keeps the heading.
+ *
+ * This one invariant handles nesting: a `##` parent whose span holds only `###`
+ * children is kept only if some child's span holds content; if every child is empty
+ * the parent's span is all-headings too, so parent and children drop together in
+ * this single pass. Tagged exercise nodes are never dropped and never bound a span,
+ * so a heading the model emitted inside an exercise body is left untouched.
+ */
+export function dropEmptyScaffoldHeadings(content: unknown[]): unknown[] {
+  const drop = new Array(content.length).fill(false);
+  for (let i = 0; i < content.length; i++) {
+    const level = scaffoldHeadingLevel(content[i]);
+    if (level === null) continue; // not a scaffold heading — never a drop candidate
+    let hasContent = false;
+    for (let j = i + 1; j < content.length; j++) {
+      const jl = scaffoldHeadingLevel(content[j]);
+      if (jl !== null && jl <= level) break; // span ends at the next same-or-shallower heading
+      if (jl === null) {
+        hasContent = true; // a non-scaffold-heading node lives under this heading
+        break;
+      }
+      // jl > level: a deeper scaffold heading — not itself content; keep scanning its span.
+    }
+    if (!hasContent) drop[i] = true;
+  }
+  return content.filter((_, i) => !drop[i]);
+}
+
 /** One exercise ready to place: its `template_anchor` (or null) and its flowing
  *  top-level nodes (image slots already resolved by the caller). */
 export interface PreparedExercise {
@@ -64,11 +113,19 @@ export interface PreparedExercise {
  * the last node. `baseContent` is the scaffold's nodes (empty when the subject has
  * no scaffold → exercises alone, in order).
  *
+ * Finally, any scaffold heading left with nothing under it — no spliced exercise and
+ * no coordinator-written prose — is dropped (`dropEmptyScaffoldHeadings`), so a
+ * four-section template with three exercises never prints a bare heading over blank
+ * space. An empty parent heading falls together with its empty children.
+ *
  * IDEMPOTENCY: the base is `stripCompiled`ed first (recovering the bare scaffold
  * even if a previously-compiled doc is passed in) and every inserted node is
  * `tagCompiled`. So this is a pure function of (scaffold, exercises): re-running it
  * — even feeding a prior run's output back as the base — yields byte-identical
- * output. Inputs are deep-cloned, so callers' arrays are never mutated.
+ * output. The empty-heading drop preserves this: a dropped heading had no exercise
+ * anchored to it, so on a re-compile that heading's exercise (if any) appends
+ * exactly as before, and the drop reproduces identically. Inputs are deep-cloned,
+ * so callers' arrays are never mutated.
  */
 export function assembleWorksheetDoc(
   baseContent: unknown[],
@@ -112,8 +169,16 @@ export function assembleWorksheetDoc(
     }
   }
 
-  // Append the unmatched / anchorless exercises in position order after the last node.
-  for (const group of appended) out.push(...group);
+  // A scaffold heading that nothing landed under — no spliced exercise and no
+  // coordinator prose — would print as a bare heading over blank space on a
+  // student's sheet. Drop those (empty parents fall with their empty children).
+  // This runs BEFORE the append below: the anchorless / unmatched exercises belong
+  // to no section, so they must not be "adopted" by (and thus rescue) a trailing
+  // empty scaffold heading.
+  const pruned = dropEmptyScaffoldHeadings(out);
 
-  return { version: 3, doc: { type: 'doc', content: out } };
+  // Append the unmatched / anchorless exercises in position order after the last node.
+  for (const group of appended) pruned.push(...group);
+
+  return { version: 3, doc: { type: 'doc', content: pruned } };
 }

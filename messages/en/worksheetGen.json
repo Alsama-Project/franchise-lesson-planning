@@ -10,6 +10,10 @@
     "tryAgain": "Try again",
     "failed": "This exercise didn’t come back.",
     "editedByYou": "Edited by you",
+    "view": {
+      "cards": "Cards",
+      "document": "Document"
+    },
     "origin": {
       "generated": "New",
       "reused": "Reused from bank",
@@ -30,7 +34,11 @@
       "allBody": "This plans a fresh set of exercises and replaces every one on the sheet.",
       "allEditedBody": "Some exercises carry your edits. Regenerating plans a fresh set and replaces the whole sheet — your edits will be lost.",
       "cardTitle": "Regenerate this exercise?",
-      "cardEditedBody": "This exercise carries your edits. Regenerating replaces its content — your edits will be lost."
+      "cardEditedBody": "This exercise carries your edits. Regenerating replaces its content — your edits will be lost.",
+      "documentEditedTitle": "Replace your document?",
+      "documentEditedBody": "You’ve made changes in the worksheet document. Continuing rebuilds the worksheet from the exercise cards and replaces the whole document — including any formatting or edits you made there. This can’t be undone.",
+      "documentEditedConfirm": "Continue and replace",
+      "documentEditedKeep": "Keep my document"
     },
     "partial": {
       "someReady": "{ready} of {total} exercises ready.",

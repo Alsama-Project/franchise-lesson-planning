@@ -71,6 +71,14 @@ export interface ImageSlot {
   status: 'pending' | 'ready' | 'failed';
   /** Storage object path once generated, or null while pending. */
   storage_path: string | null;
+  /**
+   * Short, human-readable reason the last generation attempt failed — set alongside
+   * `status: 'failed'` so the failure is legible in the pane without a SQL query.
+   * Absent on any non-failed slot. Truncated and credential-redacted at the write
+   * site; never a full stack trace or an API key. (`image_slots` is JSONB, so this
+   * needs no migration.)
+   */
+  error?: string;
 }
 
 /**

@@ -38,6 +38,12 @@ export const maxDuration = 300;
 const STORAGE_BUCKET = 'resources';
 const STORAGE_PREFIX = 'worksheet-images';
 const IMAGE_MODEL = 'gpt-image-1';
+// `gpt-image-1` hard-rejects a prompt over 32,000 characters with a 400. Guard well
+// under it: a composed image prompt should be the brief plus the tool-layer guidance
+// only (low thousands). If it ever exceeds this, refuse before calling the model and
+// name the length — a bloated layer-4 doc is the cause, and one refusal names it
+// instead of a day of diagnosis.
+const PROMPT_CEILING_CHARS = 30_000;
 
 /** Shape accepted on the wire (validated before use). */
 interface WorksheetImageBody {
@@ -234,13 +240,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Compose the prompt: role → layers 1-4 → IMAGE FLOOR (the floor is appended last
-  // by the composer, single-sourced from image-floor.ts).
-  // Fail closed: if the context stack errors or is empty, the composer throws
-  // rather than compose a stripped prompt — surface it as a clean 503, not a 500.
+  // Compose the prompt: role → the TOOL layer (layer 4) → IMAGE FLOOR. An image
+  // model does not need the org, academic, or subject teaching corpus to draw a
+  // picture — those layers exist for lesson authoring, and posting the whole stack
+  // to `gpt-image-1` pushed the prompt past its 32,000-char cap and stopped image
+  // generation dead. So restrict to `['tool']`: the layer-4 worksheet_image doc holds
+  // the safeguarding + style guidance the illustrator actually needs.
+  // Fail closed: if that layer is missing/empty (or the stack errors), the composer
+  // throws rather than compose a prompt with no safeguarding — surfaced as a clean
+  // 503, not a 500. An image request that reaches the model with no safeguarding
+  // guidance is worse than a failed one.
   let composed: Awaited<ReturnType<typeof composeContextStack>>;
   try {
-    composed = await composeContextStack({ tool: 'worksheet_image', subjectId });
+    composed = await composeContextStack({ tool: 'worksheet_image', subjectId, layers: ['tool'] });
   } catch (err) {
     if (err instanceof ContextStackError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -255,6 +267,19 @@ export async function POST(request: NextRequest) {
   // `worksheet_image` has no output contract, so its floor section is empty; nothing
   // followed the brief to anchor the guidance when the brief came last.
   const promptSent = `━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}\n\n${composed.system}`;
+
+  // Length guard + observability. Log the composed length every call so a future
+  // regression is a single named log line, not a silent 400 from the model. Post-fix
+  // this is low thousands; if it ever climbs, refuse before spending a generation.
+  console.info('[worksheet-image] prompt composed', { slotId, promptLength: promptSent.length });
+  if (promptSent.length > PROMPT_CEILING_CHARS) {
+    return NextResponse.json(
+      {
+        error: `Composed image prompt is ${promptSent.length} characters, over the ${PROMPT_CEILING_CHARS} ceiling (model hard limit 32000). Trim the worksheet_image layer-4 instruction document.`,
+      },
+      { status: 502 },
+    );
+  }
 
   let bytes: Buffer;
   try {

@@ -164,6 +164,21 @@ export interface AiContextSubjectGroup {
   docs: AiContextDocView[];
 }
 
+/**
+ * One subject's uploaded worksheet page frame (a row of `worksheet_frame`), as the
+ * admin panel's "Worksheet page frames" row renders it. A subject with no uploaded
+ * frame has NO entry here — it uses the built-in default page. Distinct from the
+ * instruction stack (`ai_context_doc`): the frame is printed markup, never fed to
+ * the model.
+ */
+export interface AiContextFrameView {
+  subjectId: string;
+  /** The uploaded file's name, or null when the row predates capture. */
+  originalFilename: string | null;
+  /** When the frame was last uploaded (`updated_at`). */
+  updatedAt: string;
+}
+
 /** A layer-4 row: one tool and its documents (may be empty). */
 export interface AiContextToolGroup {
   tool: AiContextTool;
@@ -187,6 +202,14 @@ export interface AiContextBoard {
    * same `DocumentPopup` as every other document. `smartt_checker` has none.
    */
   safeguarding: AiContextDocView[];
+  /**
+   * Uploaded worksheet page frames, one entry per subject that HAS one (subjects
+   * on the built-in page have no entry). Rendered in the board's full-width
+   * "Worksheet page frames" row, beneath the four instruction columns and the
+   * floor. Not part of the instruction stack — printed markup, never composed
+   * into a prompt.
+   */
+  frames: AiContextFrameView[];
   /** Total non-archived documents across every layer (the header count). */
   totalDocs: number;
   /** Most recent change across the board, for the header line; null when empty. */

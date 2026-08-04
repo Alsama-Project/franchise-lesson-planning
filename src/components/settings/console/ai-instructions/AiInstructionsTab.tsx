@@ -19,11 +19,13 @@ import {
   AI_CONTEXT_TOOLS,
   type AiContextBoard,
   type AiContextDocView,
+  type AiContextFrameView,
   type AiContextLayer,
+  type AiContextSubjectGroup,
   type AiContextTool,
 } from '@/types/ai-context';
 import { ErrorText } from '../ui';
-import { UploadProgressBar } from '../upload';
+import { UploadProgressBar, UploadStatusBadge } from '../upload';
 import { fullDate, shortDate, filenameStem, findDoc } from './helpers';
 import { useDocUpload, useFilePicker } from './useDocUpload';
 import { DocumentPopup } from './DocumentPopup';
@@ -214,6 +216,11 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
           the code-locked output-contract half. */}
       <SafeguardingRow docs={board.safeguarding} onOpen={setOpenDocId} />
       <OutputContractRow onRead={setContractTool} />
+
+      {/* Worksheet page frames — a full-width row BELOW the four instruction
+          columns and the floor. Not part of the instruction stack: the frame is
+          printed page furniture (HTML), never composed into a prompt. */}
+      <WorksheetFrameRow subjects={board.subjects} frames={board.frames} />
 
       {openDoc ? (
         <DocumentPopup
@@ -674,6 +681,100 @@ function OutputContractRow({ onRead }: { onRead: (tool: AiContextTool) => void }
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Worksheet page frames (full-width row below the floor) ─────────────────────
+
+/**
+ * Full-width "Worksheet page frames" row. One entry per subject: the uploaded
+ * frame's filename with a Replace button, or "Using the built-in page" with an
+ * Upload button. Upload REPLACES (no history, no preview, no revert, no confirm) —
+ * the whole point of this branch's cut-down scope. The frame is printed page
+ * furniture, not an instruction: it never reaches the AI composer.
+ */
+function WorksheetFrameRow({
+  subjects,
+  frames,
+}: {
+  subjects: AiContextSubjectGroup[];
+  frames: AiContextFrameView[];
+}) {
+  const t = useTranslations('settings');
+  const frameBySubject = new Map(frames.map((f) => [f.subjectId, f]));
+  return (
+    <div className="mt-[16px] rounded-[12px] border border-border [border-top:3px_solid_var(--color-teal)] px-[18px] pt-[16px] pb-[16px]">
+      <div className="mb-[4px] flex items-center gap-[10px]">
+        <span className="flex-1 text-[14.5px] font-semibold text-ink">
+          {t('aiInstructions.worksheetFrame.title')}
+        </span>
+        <span className="text-[11.5px] text-text-faint">{frames.length}</span>
+      </div>
+      <p dir="auto" className="mb-[13px] text-[12px] text-text-faint">
+        {t('aiInstructions.worksheetFrame.subtitle')}
+      </p>
+      <div className="grid grid-cols-1 gap-[9px] md:grid-cols-2 xl:grid-cols-3">
+        {subjects.map((s) => (
+          <FrameCard key={s.subjectId} subject={s} frame={frameBySubject.get(s.subjectId) ?? null} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One subject's frame slot: filename + Replace when a frame is uploaded, or the
+ * built-in-page note + Upload when not. Owns its own upload transition so each card
+ * fails independently. `.html` only, posted to the admin-gated upsert route.
+ */
+function FrameCard({
+  subject,
+  frame,
+}: {
+  subject: AiContextSubjectGroup;
+  frame: AiContextFrameView | null;
+}) {
+  const t = useTranslations('settings');
+  const { pending, error, upload } = useDocUpload();
+  const { input, open } = useFilePicker(
+    (file) => upload('/api/admin/worksheet-frame', file, { subject_id: subject.subjectId }),
+    '.html,text/html',
+  );
+  return (
+    <div className="flex flex-col gap-[8px] rounded-[9px] border border-border bg-surface px-[12px] py-[10px]">
+      {input}
+      <div className="flex items-center gap-[9px]">
+        <span dir="auto" className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">
+          {subject.name}
+        </span>
+        {frame ? (
+          <UploadStatusBadge tone="teal" label={t('aiInstructions.worksheetFrame.uploaded')} />
+        ) : null}
+      </div>
+      <div className="flex items-center gap-[9px]">
+        <span
+          dir="auto"
+          className={`min-w-0 flex-1 truncate text-[11.5px] ${frame ? 'text-neutral-700' : 'text-text-faint'}`}
+          title={frame?.originalFilename ?? undefined}
+        >
+          {frame ? frame.originalFilename ?? t('aiInstructions.worksheetFrame.uploaded') : t('aiInstructions.worksheetFrame.builtIn')}
+        </span>
+        <button
+          type="button"
+          onClick={open}
+          disabled={pending}
+          className="shrink-0 rounded-[8px] border border-dashed border-teal-dashed bg-surface px-[11px] py-[6px] text-[11.5px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
+        >
+          {pending
+            ? t('aiInstructions.upload.uploading')
+            : frame
+              ? t('aiInstructions.worksheetFrame.replace')
+              : t('aiInstructions.worksheetFrame.upload')}
+        </button>
+      </div>
+      {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
+      {error ? <ErrorText>{error}</ErrorText> : null}
     </div>
   );
 }

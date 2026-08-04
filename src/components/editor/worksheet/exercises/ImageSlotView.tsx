@@ -9,8 +9,9 @@
 // signed URL). The picture is contained within the reserved box — same height in
 // every state — with its aspect ratio kept and no cropping. Every OTHER state, and
 // a `ready` slot whose object turns out unreachable (`onError`), falls back to the
-// `[Picture: …]` token in monospace on the paper: exactly the images-off print
-// form, so it reads as deliberate, not as missing work.
+// `[Picture: …]` token in monospace — ON SCREEN ONLY. The token is `ws-no-print`, so
+// the printed student sheet shows just the empty framed box (the image's footprint):
+// an image-generation brief must never reach a worksheet's reader.
 //
 // State → controls beneath the box (a teal strip, never a menu):
 //   • ready    → Regenerate image · Replace image
@@ -83,7 +84,10 @@ export function ImageSlotView({
             style={{ maxHeight: '100%', maxWidth: '100%', display: 'block' }}
           />
         ) : (
-          <span className="font-mono text-[12.5px] text-neutral-500" dir="auto">
+          // The brief token is EDITOR CHROME (ws-no-print): the teacher sees what the
+          // image will be, but the printed student sheet shows only the empty framed
+          // box — an image-generation brief must never reach a worksheet's reader.
+          <span className="ws-no-print font-mono text-[12.5px] text-neutral-500" dir="auto">
             [Picture: {slot.brief}]
           </span>
         )}

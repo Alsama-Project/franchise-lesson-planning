@@ -19,17 +19,20 @@
 import { Fragment, type ReactNode } from 'react';
 import type { WorksheetExercise } from '@/types/worksheet-exercise';
 import type { WorksheetDoc } from '@/types/lesson';
+import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 import { IMAGE_CAP } from './useWorksheetGeneration';
 import { ImageSlotView } from './ImageSlotView';
 
 const PICTURE_RE = /\[Picture:\s*([^\]]+)\]/g;
-const PICTURE_ONLY_RE = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
+// Marker-alone detection is single-sourced with the converter and the compile path
+// (`PICTURE_MARKER_LINE`), so the three never drift on what counts as a marker box.
+const PICTURE_ONLY_RE = PICTURE_MARKER_LINE;
 
 interface JNode {
   type?: string;
   text?: string;
   marks?: { type?: string }[];
-  attrs?: { level?: number };
+  attrs?: { level?: number; start?: number };
   content?: JNode[];
 }
 
@@ -135,8 +138,12 @@ function renderBlock(node: JNode, cursor: number): { node: ReactNode; cursor: nu
         c = r.cursor;
         items.push(<li key={i}>{r.node}</li>);
       });
+      // Honour the list's `start` (markdownToDoc stamps the first item's own number),
+      // so a list closed out of a longer sequence by intervening prose still renders
+      // from its real number — `<ol start={2}>` shows "2." not "1.".
+      const start = node.type === 'orderedList' && typeof node.attrs?.start === 'number' ? node.attrs.start : undefined;
       return {
-        node: node.type === 'orderedList' ? <ol>{items}</ol> : <ul>{items}</ul>,
+        node: node.type === 'orderedList' ? <ol start={start}>{items}</ol> : <ul>{items}</ul>,
         cursor: c,
       };
     }

@@ -43,6 +43,7 @@
 // to read-only/print/PDF output.
 
 import { createClient } from '@/lib/supabase/server';
+import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 import { readWorksheetScaffoldMarkdown, scaffoldDocContent } from '@/lib/ai/worksheet-shared';
 import { assembleWorksheetDoc, type PreparedExercise } from '@/lib/ai/worksheet-assemble';
 import type { WorksheetDoc, WorksheetV3 } from '@/types/lesson';
@@ -77,13 +78,13 @@ function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
 // left exactly as it is — the pre-image fallback the teacher already sees, which
 // must not regress.
 
-const PICTURE_MARKER = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
-
 /**
  * If `node` is a marker paragraph — a `paragraph` whose entire content is text
  * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
  * return the trimmed marker text; otherwise null. A paragraph carrying a marker
- * plus any other text (or any non-text inline node) is NOT a marker paragraph.
+ * plus any other text (or any non-text inline node) is NOT a marker paragraph. The
+ * marker pattern (`PICTURE_MARKER_LINE`) is shared with `markdownToDoc` and the
+ * pane so the three can never drift on what counts as a marker paragraph.
  */
 function markerParagraphText(node: unknown): string | null {
   const n = node as { type?: unknown; content?: unknown };
@@ -94,7 +95,7 @@ function markerParagraphText(node: unknown): string | null {
     if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
     text += c.text;
   }
-  return PICTURE_MARKER.test(text) ? text.trim() : null;
+  return PICTURE_MARKER_LINE.test(text) ? text.trim() : null;
 }
 
 /** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`

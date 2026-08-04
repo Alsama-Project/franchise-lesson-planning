@@ -1,7 +1,7 @@
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import { getSmarttClient } from '@/lib/anthropic';
-import { composeContextStack, logAiCompose } from '@/lib/ai/context-stack';
+import { composeContextStack, logAiCompose, ContextStackError } from '@/lib/ai/context-stack';
 import type { SubjectResolution } from '@/lib/ai/subject-access';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 import { OBJECTIVE_STEM } from '@/lib/editor/objective';
@@ -309,11 +309,16 @@ export async function openObjectiveCheckStream(
   // the route falls back to English and records it (see `languageResolution`).
   const subjectId = subject?.subjectId ?? null;
   const contentLanguage = subject?.contentLanguage ?? 'en';
-  const { system: systemPrompt, docsUsed } = await composeContextStack({
-    tool: 'smartt_checker',
-    subjectId,
-    contentLanguage,
-  });
+  let composed: Awaited<ReturnType<typeof composeContextStack>>;
+  try {
+    composed = await composeContextStack({ tool: 'smartt_checker', subjectId, contentLanguage });
+  } catch (err) {
+    // Fail closed: surface the composer's "not configured" as the same clean status
+    // the route already maps, never a 500.
+    if (err instanceof ContextStackError) throw new ObjectiveCheckError(err.message, err.status);
+    throw err;
+  }
+  const { system: systemPrompt, docsUsed } = composed;
   // Observability: docsUsed + how the subject AND the feedback language were
   // resolved, on one record — so a fallback to English is queryable, not silent.
   logAiCompose({

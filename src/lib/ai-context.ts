@@ -150,14 +150,6 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
   const org = docViews.filter((d) => d.layer === 'org');
   const academic = docViews.filter((d) => d.layer === 'academic');
 
-  // Safeguarding docs (the editable half of the floor), ordered by tool so the row
-  // is stable and matches the tool-row order. `smartt_checker` has none.
-  const toolRank = (tool: AiContextTool | null): number =>
-    tool ? AI_CONTEXT_TOOLS.indexOf(tool) : AI_CONTEXT_TOOLS.length;
-  const safeguarding = docViews
-    .filter((d) => d.layer === 'safeguarding')
-    .sort((a, b) => toolRank(a.tool) - toolRank(b.tool));
-
   const subjects: AiContextSubjectGroup[] = subjectRows.map((s) => ({
     subjectId: s.id,
     name: s.name,
@@ -174,7 +166,6 @@ export async function getAiContextBoard(): Promise<AiContextBoard | null> {
     academic,
     subjects,
     tools,
-    safeguarding,
     totalDocs: docViews.length,
     lastChange,
   };

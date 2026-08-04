@@ -82,7 +82,16 @@ export async function POST(request: NextRequest) {
 
   const valid = validateFrameHtml(html);
   if (!valid.ok) {
-    return NextResponse.json({ error: valid.error }, { status: 400 });
+    // Structured rejection: the upload panel lists every reason at once and names the
+    // script lines. Distinct from the flat `{ error }` shape of the checks above.
+    return NextResponse.json(
+      {
+        filename: file.name,
+        missingMarker: valid.rejection.missingMarker,
+        scriptLines: valid.rejection.scriptLines,
+      },
+      { status: 400 },
+    );
   }
 
   const supabase = await createClient();

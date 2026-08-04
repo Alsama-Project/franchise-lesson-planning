@@ -90,6 +90,18 @@
   --color-cream-btn-border: #e4d6c2; /* locked "Read" button border */
   --color-cream-btn-text: #7a6a55; /* locked "Read" button text */
 
+  /* ── Page-design upload row (rejection notice + progress) ───────────────────
+   * The page-design row's warm rejection notice and its indeterminate progress
+   * track. Only these four have no near-equivalent in the ramp above; the notice's
+   * other colours reuse the cream family (box surface = --color-cream, box border =
+   * --color-cream-border, heading = --color-cream-ink, warn icon =
+   * --color-cream-ink-muted). */
+  --color-frame-notice-surface: #fbf6ef; /* rejected cell ground (a hair above cream) */
+  --color-frame-notice-ink: #5c4e3e; /* notice list text */
+  --color-frame-bar-track: #efe7da; /* indeterminate progress track (warm sand) */
+  --color-frame-code-surface: #fbf7f1; /* inline code chip fill */
+  --color-frame-code-border: #e9dcc9; /* inline code chip border */
+
   /* ── Destructive / danger (RESERVED) ───────────────────────────────────────
    * The semantic palette (cream / pink / teal) carries NO destructive meaning,
    * so destructive intent gets one reserved brick-red. Used ONLY for destructive

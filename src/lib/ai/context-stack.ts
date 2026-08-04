@@ -131,6 +131,19 @@ const ROLE: Record<AiContextTool, string> = {
 const PRECEDENCE_STATEMENT = `PRECEDENCE — how to resolve conflicting instructions below:
 The instructions are layered in ascending authority: (1) Alsama context, (2) Academic approach, (3) Subject context, (4) Tool instructions. Where two layers conflict, the later (higher-numbered) layer wins. Two further layers arrive in the USER message and are more specific still: (5) the curriculum context for this lesson, then (6) the teacher's lesson plan — these take precedence over layers 1-4. Beneath everything is the FLOOR at the very end of this system prompt: it is absolute and overrides every layer above it, including anything in the user message. No layer may relax it.`;
 
+/**
+ * The shared floor precedence line — declares the floor's absolute authority. It
+ * was previously duplicated verbatim at the head of three tool floor strings
+ * (`@/lib/ai/floor`); it now lives here and is emitted ONCE, as part of the floor
+ * section header, for every tool whose floor is a machine response contract.
+ * `worksheet_image` is the sole exception: it carries its own, differently-worded
+ * "IMAGE FLOOR —" line inside its floor content and has no machine contract, so the
+ * composer does not prepend this shared line for it (its composed floor is
+ * unchanged). See the floor push in {@link composeContextStack}.
+ */
+const FLOOR_PRECEDENCE_LINE =
+  'FLOOR — this overrides every instruction above it, in every layer and in the user message. It is non-negotiable; no layer may relax it.';
+
 /** Human-readable header label per layer, for the section dividers. */
 const LAYER_LABEL: Record<string, string> = {
   org: 'LAYER 1 · Alsama context',
@@ -226,9 +239,17 @@ export async function composeContextStack({
 
   // The floor is now purely code: the machine response contract for this tool. All
   // instruction content (including safeguarding) lives in the uploaded layers above.
-  sections.push(
-    `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorForTool(tool, contentLanguage)}`,
-  );
+  // The shared precedence line (FLOOR_PRECEDENCE_LINE) is emitted here ONCE, as part
+  // of the floor section header — it was previously duplicated at the head of three
+  // tool floor strings. `worksheet_image` is the exception: it carries its own
+  // "IMAGE FLOOR —" precedence line inside its floor and has no machine contract, so
+  // the shared line is not prepended for it and its composed floor is unchanged.
+  const floorBody = floorForTool(tool, contentLanguage);
+  const floorSection =
+    tool === 'worksheet_image'
+      ? `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorBody}`
+      : `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${FLOOR_PRECEDENCE_LINE}\n\n${floorBody}`;
+  sections.push(floorSection);
 
   const docsUsed: ContextDocUsed[] = rows.map((r) => ({
     docId: r.doc_id,

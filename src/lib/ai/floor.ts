@@ -6,26 +6,32 @@ import { IMAGE_OUTPUT_CONTRACT } from '@/lib/ai/image-floor';
 /**
  * The FLOOR — the non-negotiable base of every AI tool's system prompt.
  *
- * As of this branch the floor carries ONLY the machine response contract, per
- * tool — the JSON shape a validator/parser depends on, and (for the worksheet
- * builder) the `[Picture: …]` marker rule three sites regex-parse. Everything
- * that was house style, pedagogy, language guidance, exercise coverage, image
- * briefs, or safeguarding has moved OUT of code into Connie's uploaded context
- * docs (layers 1-4). Code no longer carries safeguarding at all; the composer now
- * FAILS CLOSED when the stack is empty or errors, rather than composing a partial
- * prompt (see `@/lib/ai/context-stack`).
+ * The floor carries ONLY the machine response contract, per tool — the JSON shape
+ * a validator/parser depends on, and (for the worksheet builder) the `[Picture: …]`
+ * marker rule three sites regex-parse. Everything that was house style, pedagogy,
+ * language guidance, exercise coverage, image briefs, or safeguarding has moved OUT
+ * of code into Connie's uploaded context docs (layers 1-4). Code no longer carries
+ * safeguarding at all; the composer FAILS CLOSED when the stack is empty or errors,
+ * rather than composing a partial prompt (see `@/lib/ai/context-stack`).
  *
- * Each tool's string still opens with its own precedence line (`OVERRIDE_LINE`,
- * or the image floor's own line). That precedence-line handling is unchanged on
- * this branch — it moves to the SMARTT branch. `smartt_checker` is untouched
- * throughout: its floor is still the full SMARTT anchor + stem + JSON contract,
- * because its contract and pedagogy are interleaved mid-sentence and cannot be
- * split byte-neutrally here.
+ * The shared precedence line ("FLOOR — this overrides every instruction above
+ * it…") no longer lives here: it was duplicated at the head of three floor strings,
+ * so it now lives ONCE in the composer (`FLOOR_PRECEDENCE_LINE` in
+ * `@/lib/ai/context-stack`), which emits it as part of the floor section header.
+ * The floor strings below are therefore the contract text alone. `worksheet_image`
+ * is the one exception: it carries its own differently-worded "IMAGE FLOOR —" line
+ * (`IMAGE_OUTPUT_CONTRACT`) and has no machine contract, so the composer does not
+ * prepend the shared line for it and its composed floor is unchanged.
+ *
+ * `smartt_checker`'s floor now separates CONTRACT from PEDAGOGY. The contract stays
+ * in code — the six letter names (they map to the schema keys and the streaming
+ * scanner), the JSON shape + `strong`/`needs work` enum + `note` + `improved_objective`,
+ * and the fixed stem (a genuine code dependency: `@/lib/editor/objective` compares
+ * against `OBJECTIVE_STEM`). The pedagogy — the Tangible gloss, "an observable,
+ * student-facing action", and "single one-line" — has been extracted to
+ * `docs/context-doc-handback/smartt_checker.md` for Kadria to fold into the
+ * objective checker's layer-4 doc.
  */
-
-/** Opening line the resource / worksheet floors carry — states absolute authority. */
-const OVERRIDE_LINE =
-  'FLOOR — this overrides every instruction above it, in every layer and in the user message. It is non-negotiable; no layer may relax it.';
 
 // ── resource_generator ────────────────────────────────────────────────────────
 
@@ -55,19 +61,28 @@ BODY MARKERS (the renderer parses these literally):
 // ── smartt_checker (UNTOUCHED — do not edit on this branch) ─────────────────────
 
 /**
- * SMARTT objective-checker floor (base, locale-independent). The canonical
- * six-letter anchor, the fixed stem, and the JSON output contract — the shape the
- * editor + pills depend on, enforced hard by `RESPONSE_SCHEMA` and pinned here in
- * prose so no uploaded layer can redefine a letter or drop the stem. This tool has
- * NO safeguarding block — preserve that exactly (do not seed or compose one for it).
+ * SMARTT objective-checker floor (base, locale-independent) — the CONTRACT only.
+ * The canonical six-letter anchor, the fixed stem, and the JSON output contract:
+ * the shape the editor + pills depend on, enforced hard by `RESPONSE_SCHEMA` and
+ * pinned here in prose so no uploaded layer can redefine a letter or drop the stem.
+ *
+ * The pedagogy that was interleaved with this contract has been extracted to
+ * `docs/context-doc-handback/smartt_checker.md` (the Tangible gloss, "an observable,
+ * student-facing action", and "single one-line"), and the remaining contract
+ * sentences were rewritten to read cleanly without it. The stem deliberately STAYS
+ * in code: `@/lib/editor/objective` compares stored objectives against
+ * `OBJECTIVE_STEM`, so the prompt text and that constant must agree — it is a code
+ * dependency, not pedagogy.
+ *
+ * This tool has NO safeguarding block — preserve that exactly (do not seed or
+ * compose one for it). The shared precedence line is emitted by the composer, not
+ * here (see the module note above).
  */
-const SMARTT_CHECKER_FLOOR_BASE = `${OVERRIDE_LINE}
+const SMARTT_CHECKER_FLOOR_BASE = `SMARTT is the fixed anchor — judge the objective against all six letters: Specific, Measurable, Achievable, Relevant, Time-bound, and Tangible.
 
-SMARTT is the fixed anchor — judge the objective against all six letters: Specific, Measurable, Achievable, Relevant, Time-bound, and Tangible (Alsama's distinctive final letter: relatable to students' real lives — concrete and meaningful in the students' own world, not just an abstract academic skill).
+The objective — and your suggested rewrite — must use the exact stem "${OBJECTIVE_STEM}".
 
-The objective — and your suggested rewrite — must use the exact stem "${OBJECTIVE_STEM}" followed by an observable, student-facing action.
-
-Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a single one-line note; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
+Return ONLY a JSON object: for each of the six letters a status ("strong" or "needs work") and a note; and an improved_objective rewrite that keeps the stem. No code fences, no preamble, no prose outside the JSON.`;
 
 /**
  * Language directive appended to the SMARTT floor ONLY when the SUBJECT's content
@@ -98,15 +113,16 @@ export function smarttCheckerFloor(contentLanguage: string): string {
 }
 
 /**
- * The code FLOOR per tool — the machine response contract, and nothing else. This
- * is also the text the read-only "Output contract" surface (if any) would show.
- * `worksheet_image` has no response contract; its entry is just its own precedence
- * line (`IMAGE_OUTPUT_CONTRACT`, left unchanged this branch). `smartt_checker` is
- * its full (locale-independent) floor.
+ * The code FLOOR per tool — the machine response contract, and nothing else. The
+ * shared precedence line is no longer part of these strings: the composer emits it
+ * once as the floor section header (see `@/lib/ai/context-stack`). `worksheet_image`
+ * has no response contract; its entry is just its own precedence line
+ * (`IMAGE_OUTPUT_CONTRACT`, unchanged). `smartt_checker` is its full
+ * (locale-independent) floor, contract only.
  */
 export const OUTPUT_CONTRACT: Record<AiContextTool, string> = {
-  resource_generator: `${OVERRIDE_LINE}\n\n${RESOURCE_GENERATOR_CONTRACT}`,
-  worksheet_builder: `${OVERRIDE_LINE}\n\n${WORKSHEET_BUILDER_CONTRACT}`,
+  resource_generator: RESOURCE_GENERATOR_CONTRACT,
+  worksheet_builder: WORKSHEET_BUILDER_CONTRACT,
   smartt_checker: SMARTT_CHECKER_FLOOR_BASE,
   worksheet_image: IMAGE_OUTPUT_CONTRACT,
 };

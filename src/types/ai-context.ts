@@ -209,3 +209,40 @@ export interface AiContextBoard {
   /** Most recent change across the board, for the header line; null when empty. */
   lastChange: { at: string; uploaderName: string | null } | null;
 }
+
+// ── Composed-prompt preview ────────────────────────────────────────────────────
+// The read-only preview of what each tool's system prompt actually composes to,
+// straight from the real `composeContextStack`. Assembled by
+// `GET /api/admin/context-docs/preview` (admin-only) and rendered on the board.
+
+/** One document that fed a composed prompt — mirrors `ContextDocUsed` from the
+ *  composer, carried through so the preview can list each layer's source doc. */
+export interface AiContextPreviewDoc {
+  name: string;
+  layer: AiContextLayer;
+  version: number;
+}
+
+/**
+ * One tool's preview outcome. `ok` = the composer produced a prompt; the full
+ * `system` string (role → precedence → layers 1-4 → floor) is carried verbatim
+ * along with the layer docs that fed it. `!ok` = the composer FAILED CLOSED (an
+ * empty or errored stack) and threw `ContextStackError`; the preview surfaces the
+ * thrown `error` + `status` as a first-class state, never a blank panel.
+ */
+export type AiContextPreviewTool =
+  | { tool: AiContextTool; ok: true; system: string; docsUsed: AiContextPreviewDoc[] }
+  | { tool: AiContextTool; ok: false; error: string; status: number };
+
+/**
+ * The preview payload for one subject selection. `contentLanguage` is the language
+ * fed to the composer (the subject's `content_language`, or `en` when no subject is
+ * selected) — only `smartt_checker`'s floor consults it, surfaced here so the
+ * preview can note it. `tools` covers all four in {@link AI_CONTEXT_TOOLS} order.
+ */
+export interface AiContextPreviewPayload {
+  subjectId: string | null;
+  subjectName: string | null;
+  contentLanguage: 'en' | 'ar';
+  tools: AiContextPreviewTool[];
+}

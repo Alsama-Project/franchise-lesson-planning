@@ -34,6 +34,14 @@ import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { WeekPicker } from '@/components/common/WeekPicker';
 import { SKILL_PILL, SKILL_TEXT } from '@/components/curriculum/skill';
+import {
+  COL_ORDER,
+  PERIOD_COL_CLASS,
+  WEIGHTED_MIN_WIDTH_CLASS,
+  poolWidth,
+  weightedWidths,
+  type ColKey,
+} from '@/components/curriculum/table-widths';
 import type {
   BrowseCoordinate,
   BrowseMonthWeek,
@@ -896,26 +904,6 @@ interface TopicCell {
   rowSpan: number;
 }
 
-/** The period table's columns, in display order. */
-type ColKey = 'period' | 'outcome' | 'skill' | 'topic' | 'resources';
-const COL_ORDER: ColKey[] = ['period', 'outcome', 'skill', 'topic', 'resources'];
-/** Fixed column widths; the chosen flexible column is overridden to `w-auto`. Topic is
- *  wide enough that curriculum content (Arabic themes especially) reads across a readable
- *  width instead of wrapping one word per line; Resources is capped so a long label / raw
- *  URL wraps inside its column rather than sprawling across the row. */
-const COL_WIDTH: Record<ColKey, string> = {
-  period: 'w-[80px]',
-  outcome: 'w-auto',
-  skill: 'w-[76px]',
-  topic: 'w-[150px]',
-  resources: 'w-[112px]',
-};
-/** Which surviving column absorbs the slack — the longest prose column present. Topic
- *  precedes Resources: on a weekly-grain subject with no Learning-outcome column (Awareness)
- *  the slack goes to Topic (so Arabic reads wide) while Resources stays capped and wraps,
- *  rather than Resources sprawling and squeezing Topic to one word per line. */
-const FLEX_PRIORITY: ColKey[] = ['outcome', 'topic', 'resources', 'skill', 'period'];
-
 /**
  * Whether a column has ANYTHING to show for a given row. `outcome` is empty when the
  * daily text merely repeats the Weekly panel (composed weekly-grain subjects), so a
@@ -1070,8 +1058,16 @@ function WeekTable({
   }
 
   const firstCol = visible[0];
-  const flexCol = FLEX_PRIORITY.find((k) => visible.includes(k));
-  const widthFor = (k: ColKey) => (k === flexCol ? 'w-auto' : COL_WIDTH[k]);
+  // Proportional widths (Part A): the visible weighted columns split the non-period pool
+  // by weight, each clamped to the ceiling; `period` stays a fixed px column. A lone
+  // capped column leaves a trailing spacer so it hits the ceiling instead of sprawling.
+  const { fraction, spacerFraction } = weightedWidths(visible);
+  const widthStyle = (k: ColKey): React.CSSProperties | undefined =>
+    k === 'period' || fraction[k] == null ? undefined : { width: poolWidth(fraction[k]!) };
+  // Period keeps its fixed px width; every weighted column carries the shared min-width
+  // floor so a too-narrow table scrolls (in the overflow-x-auto shell) rather than
+  // collapsing a column to an unreadable sliver.
+  const widthClass = (k: ColKey) => (k === 'period' ? PERIOD_COL_CLASS : WEIGHTED_MIN_WIDTH_CLASS);
   const headLabel: Record<ColKey, string> = {
     period: t('table.period'),
     outcome: t('table.learningOutcome'),
@@ -1081,19 +1077,28 @@ function WeekTable({
   };
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border">
-      {/* `table-fixed` so the column-width hints below actually BIND — under the default
-          auto layout an unbreakable resource URL widened its column and starved the
-          outcome column (and forced Arabic to one word per line). The flexible column is
-          `w-auto`, so it takes all width the fixed columns don't. */}
+    // `overflow-x-auto` (not `-hidden`) so the weighted columns' min-width floors scroll a
+    // cramped table rather than being clipped; the rounded border still clips the corners.
+    <div className="overflow-x-auto rounded-[14px] border border-border">
+      {/* `table-fixed` so the width hints below BIND — under auto layout an unbreakable
+          resource URL widened its column and starved the rest. Each weighted column gets a
+          `calc((100% - period) * fraction)` width, so they tile the pool exactly. */}
       <table className="w-full table-fixed border-collapse text-left">
         <thead>
           <tr className="bg-surface-cream">
             {visible.map((k) => (
-              <Th key={k} className={cn(widthFor(k), k !== firstCol && 'border-s border-border')}>
+              <Th
+                key={k}
+                style={widthStyle(k)}
+                className={cn(widthClass(k), k !== firstCol && 'border-s border-border')}
+              >
                 {headLabel[k]}
               </Th>
             ))}
+            {/* Inert spacer that absorbs the ceiling's remainder for a lone weighted column. */}
+            {spacerFraction > 0 ? (
+              <th aria-hidden style={{ width: poolWidth(spacerFraction) }} className="border-s border-border" />
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -1158,6 +1163,8 @@ function WeekTable({
                     </td>
                   );
                 })}
+                {/* Spacer body cell, paired with the header spacer above. */}
+                {spacerFraction > 0 ? <td aria-hidden className={cn('border-s border-border', tint)} /> : null}
               </tr>
             );
           })}
@@ -1167,9 +1174,18 @@ function WeekTable({
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function Th({
+  children,
+  className,
+  style,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
     <th
+      style={style}
       className={cn(
         'px-[16px] py-[11px] text-[11px] font-semibold uppercase tracking-[0.04em] text-neutral-600',
         className,

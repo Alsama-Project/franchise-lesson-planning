@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/server';
 import { recordUsage } from '@/lib/resources/usage';
 import { appendBlock, parseWorksheet } from '@/lib/editor/worksheet';
 import { isWorksheetV3 } from '@/lib/editor/worksheet-migrate';
+import { findDegradedImage } from '@/lib/editor/worksheet-guard';
 import type { PlanScope, PlanStatus, WorksheetFreeBlock, WorksheetV3 } from '@/types/lesson';
 
 /** Enough to identify a draft lesson in the picker. */
@@ -152,6 +153,19 @@ export async function appendResourceBlocksToLessonAction(
     let v2 = parseWorksheet(row.worksheet);
     for (const block of blocks) v2 = appendBlock(v2, block);
     worksheet = v2;
+  }
+
+  // Same write-boundary guard as saveWorksheet: this action writes the tiptap doc
+  // column DIRECTLY (server-side, never through the editor schema), so a degraded
+  // image node in the existing doc or the appended blocks would be persisted verbatim.
+  // Refuse rather than silently write a worksheet whose image renders nothing.
+  const degraded = findDegradedImage(worksheet);
+  if (degraded) {
+    console.error(
+      `appendResourceBlocksToLessonAction: refused to persist a degraded worksheet for plan ` +
+        `${lessonPlanId} — image node has ${degraded.reason}. Sample: ${degraded.sample}`,
+    );
+    return { ok: false, error: 'Could not add to the lesson: an image lost its data.' };
   }
 
   const { error: updateError } = await supabase

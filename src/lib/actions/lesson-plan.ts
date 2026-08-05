@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { hasObjectiveContent } from '@/lib/editor/objective';
+import { findDegradedImage } from '@/lib/editor/worksheet-guard';
 import { isAdmin, isCoordinatorOf } from '@/lib/auth';
 import type { Block, PlanStatus } from '@/types/lesson';
 
@@ -90,6 +91,23 @@ export async function saveWorksheet(
   planId: string,
   worksheet: unknown,
 ): Promise<ActionResult> {
+  // Guard: never let a degraded worksheet silently overwrite a good one. An image
+  // node with no `attrs` (the wholesale `{ type:'image' }` corruption) or with
+  // neither a `src` nor a `storagePath` renders nothing — once written, the image is
+  // gone. `editor.getJSON()` cannot produce this, so a degraded doc reaching here
+  // came in on a non-editor path (a raw write, or a serialisation step between
+  // getJSON and this write). Refuse the write, log the offending node so the culprit
+  // is identifiable, and surface the failure (the pane shows "Couldn't save") rather
+  // than quietly persisting a worksheet that has lost its images.
+  const degraded = findDegradedImage(worksheet);
+  if (degraded) {
+    console.error(
+      `saveWorksheet: refused to persist a degraded worksheet for plan ${planId} — ` +
+        `image node has ${degraded.reason}. Sample: ${degraded.sample}`,
+    );
+    return { ok: false, error: 'Worksheet not saved: an image lost its data. Try Regenerate all.' };
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase

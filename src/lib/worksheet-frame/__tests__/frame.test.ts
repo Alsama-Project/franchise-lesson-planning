@@ -70,6 +70,38 @@ test('other active-content vectors (iframe, object, on…=, javascript:) are cau
   }
 });
 
+test('a CSS comment containing "once =" is NOT rejected (prose is not an on… handler)', () => {
+  // The `on…=` vector used to match the middle of ordinary words. A coordinator's page
+  // is mostly prose; "prints once ====" in a comment must not read as an event handler.
+  const html = [
+    '<style>',
+    '/* HEADER TABLE — prints once ============ */',
+    '.masthead { border: 0; }',
+    '/* skills only ============ */',
+    '</style>',
+    '<main>{{exercises}}</main>',
+  ].join('\n');
+  assert.deepEqual(validateFrameHtml(html), { ok: true });
+});
+
+test('a real inline handler inside a tag is STILL rejected, by line', () => {
+  const html = '<main>{{exercises}}\n<button onclick="steal()">x</button></main>\n';
+  const result = validateFrameHtml(html);
+  assert.ok(!result.ok);
+  if (!result.ok) assert.deepEqual(result.rejection.scriptLines, [2]);
+});
+
+test('the word "javascript:" in a comment/sentence is NOT rejected; a URL still is', () => {
+  // Prose mention — not a URL position — passes.
+  const prose = '<style>/* avoid javascript: URLs in links */</style><main>{{exercises}}</main>';
+  assert.deepEqual(validateFrameHtml(prose), { ok: true });
+  // Real URL positions (attribute value, url()) are still caught.
+  const href = '<main>{{exercises}}<a href="javascript:go()">x</a></main>';
+  assert.ok(!validateFrameHtml(href).ok, 'href javascript: rejected');
+  const css = '<style>.x { background: url(javascript:go()); }</style><main>{{exercises}}</main>';
+  assert.ok(!validateFrameHtml(css).ok, 'url(javascript:) rejected');
+});
+
 test('render substitutes known placeholders and blanks unknown ones', () => {
   const html = '<h1>{{subject}} · {{year}}</h1><p>{{unknown}}</p>{{exercises}}';
   const out = renderWorksheetFrame(html, { subject: 'English', year: 2026 }, '<ol></ol>');

@@ -27,6 +27,44 @@
 export const EXERCISE_SLOT = '{{exercises}}';
 
 /**
+ * The single container the pane owns and scopes an uploaded frame's CSS to. Every
+ * frame selector is rewritten to live under this class (see `parse.ts`), so a frame's
+ * styles can never touch the app chrome around it. Shared verbatim between the scoping
+ * transform (server) and the live renderer (client) — they must agree on this token.
+ */
+export const FRAME_ROOT_CLASS = 'ws-frame-root';
+export const FRAME_ROOT_SELECTOR = `.${FRAME_ROOT_CLASS}`;
+
+/** The sentinel element the LIVE renderer substitutes for {@link EXERCISE_SLOT}: the
+ *  editor is portalled into it (there is no exercises HTML string on the live pane —
+ *  the contenteditable IS the content). The print/PDF renderer passes serialized
+ *  exercises HTML at the same slot instead. `data-ws-exercises` is how the pane finds
+ *  the mount point after the frame body is set. */
+export const EXERCISE_SENTINEL_ATTR = 'data-ws-exercises';
+export const EXERCISE_SENTINEL_HTML = `<div ${EXERCISE_SENTINEL_ATTR}></div>`;
+
+/**
+ * A frame parsed and scoped ONCE (see `parse.ts`), the shared representation both
+ * renderers sit over:
+ *   - live pane: `bodyHtml` → sentinel substitution → mounted with `css` injected;
+ *   - print/PDF: `bodyHtml` → {@link renderWorksheetFrame} string injection, `css` inlined.
+ * One parse, one scope — never two implementations of the same frame.
+ */
+export interface ParsedFrame {
+  /** The frame's `<body>` inner HTML, scrubbed of active content, `{{…}}` intact. */
+  bodyHtml: string;
+  /** The frame's CSS, scoped to {@link FRAME_ROOT_SELECTOR}, `@page` hoisted, fonts
+   *  mapped to the app's self-hosted families. Inject verbatim into a `<style>`. */
+  css: string;
+  /** The document's `dir` (from `<html>`/`<body>`), applied to the root container so
+   *  an Arabic frame stays RTL after its `<body>` is extracted. Absent → inherit. */
+  dir?: string;
+  /** The document's `lang`, applied to the root container (drives the app's
+   *  `:lang(ar)` Arabic font rule). Absent → inherit. */
+  lang?: string;
+}
+
+/**
  * The field placeholders a frame may reference, each written as `{{name}}`. Any
  * `{{…}}` token NOT in this set renders as empty (never as literal text). Values
  * are supplied by the caller from the plan context at render time.
@@ -60,14 +98,27 @@ const PLACEHOLDER_RE = /\{\{\s*([a-z_]+)\s*\}\}/gi;
 /** Active-content vectors rejected on upload — the frame is markup we print
  *  verbatim, so anything that executes code or embeds external content is a hard
  *  failure (reject, never silently strip). Global + case-insensitive so every
- *  occurrence is found and its line reported. Inline `on…=` handlers require a
- *  whitespace boundary before `on` so hyphenated names (data-on-x) don't trip it. */
+ *  occurrence is found and its line reported.
+ *
+ *  Each vector is anchored to REAL markup, not prose, so ordinary words in a CSS
+ *  comment or string are never mistaken for active content (a coordinator's page is
+ *  mostly prose):
+ *    · `<script`/`<iframe`/`<object` + a tag delimiter — a substring no ordinary word
+ *      contains, so these match only an actual element open tag.
+ *    · inline `on…=` handlers — anchored to inside a start tag (`<…on…=`); the bare
+ *      `\son[a-z]+=` it replaced matched the middle of ordinary words ("prints once =",
+ *      "only ="), rejecting innocent files. A real handler is always an attribute in a
+ *      tag, so this keeps every true positive and drops the prose false positives.
+ *    · `javascript:` URLs — anchored to a URL position (after `=`, a quote, or `(`), so
+ *      the word "javascript:" in a comment or sentence is not flagged, while every real
+ *      `href="javascript:…"` / `url(javascript:…)` still is. A `\s*` after the anchor
+ *      catches the leading-whitespace evasion (browsers trim it) — ` javascript:`. */
 const SCRIPT_VECTORS: readonly RegExp[] = [
   /<script[\s/>]/gi,
   /<iframe[\s/>]/gi,
   /<object[\s/>]/gi,
-  /\son[a-z]+\s*=/gi,
-  /javascript:/gi,
+  /<[^>]*\son[a-z]+\s*=/gi,
+  /["'(=]\s*javascript:/gi,
 ];
 
 /** The 1-based line numbers of every active-content vector, ascending and unique.

@@ -578,6 +578,9 @@ export function LessonPlanEditor({
       grammarVocab: curriculum?.grammarVocab ?? '',
       lessonPlanId: plan.id,
       subjectId: classContext.subjectId,
+      // The subject's parsed page frame (uploaded row, else the built-in default). The
+      // live worksheet pane renders the Alsama page around the editor from it.
+      worksheetFrame: classContext.worksheetFrame,
     }),
     [classContext, curriculum, linkIt, techniqueLabels, remainder, plan.id, plan.curriculum_lesson_id, plan.year],
   );

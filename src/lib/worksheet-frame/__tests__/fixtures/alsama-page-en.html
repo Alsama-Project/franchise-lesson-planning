@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alsama worksheet — page design (English)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Alsama student worksheet — English page scaffold
+   A4 portrait. Follows the Word template: two-row header table
+   (logo | centre block), objective line, centred lesson title,
+   then the generated exercises. Footer repeats per page.
+   ============================================================ */
+
+@page {
+  size: A4 portrait;
+  margin: 20mm 20mm 18mm 20mm;
+
+  @bottom-center {
+    content: counter(page);
+    font-family: Sora, sans-serif;
+    font-size: 10pt;
+    color: #1E1B19;
+    padding-bottom: 4mm;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { background: #E8E2DA; }
+
+body {
+  margin: 0;
+  font-family: Sora, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #1E1B19;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+a { color: #B62A5C; }
+a:hover { color: #8E1F47; }
+
+/* screen-only paper simulation */
+.sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 12mm auto;
+  padding: 20mm 20mm 18mm 20mm;
+  background: #fff;
+  box-shadow: 0 2px 14px rgba(40, 30, 20, 0.14);
+}
+
+/* ============ HEADER TABLE — prints once ============ */
+.masthead {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  break-inside: avoid;
+}
+
+.masthead td {
+  border: 1pt solid #1E1B19;
+  padding: 5mm 6mm;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.masthead td.logo-cell { width: 42%; padding: 4mm; }
+
+.masthead td.logo-cell img {
+  display: block;
+  width: 100%;
+  max-width: 66mm;
+  height: auto;
+  margin: 0 auto;
+}
+
+.org {
+  font-size: 15pt;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.dept {
+  font-size: 15pt;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.centre-line { margin-top: 4mm; }
+
+/* labelled field with a dotted leader */
+.f {
+  font-size: 13pt;
+  white-space: nowrap;
+}
+
+.f b { font-weight: 700; }
+
+.f .dots {
+  display: inline-block;
+  border-bottom: 1pt dotted #1E1B19;
+  vertical-align: bottom;
+  height: 6mm;
+  margin-left: 1.5mm;
+}
+
+.f .dots.w-centre { width: 42mm; }
+.f .dots.w-name   { width: 72mm; }
+.f .dots.w-date   { width: 58mm; }
+.f .dots.w-year   { width: 42mm; }
+
+.f .val {
+  display: inline-block;
+  border-bottom: 1pt dotted #1E1B19;
+  vertical-align: bottom;
+  min-height: 6mm;
+  margin-left: 1.5mm;
+  padding: 0 2mm;
+}
+
+.fields {
+  margin-top: 4mm;
+  padding-top: 4mm;
+  border-top: 0.5pt solid #1E1B19;
+  text-align: left;
+}
+
+.fields .f + .f { margin-top: 2.5mm; }
+
+/* ============ OBJECTIVE + TITLE ============ */
+.objective {
+  margin-top: 5mm;
+  font-size: 13pt;
+  line-height: 1.5;
+  break-inside: avoid;
+}
+
+.objective b {
+  font-weight: 700;
+  color: #B62A5C;
+}
+
+.lesson-title {
+  margin-top: 4mm;
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 700;
+  font-style: italic;
+  color: #B62A5C;
+}
+
+.lesson-key {
+  margin-top: 2mm;
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9pt;
+  letter-spacing: 0.06em;
+  color: #6E6052;
+}
+
+/* ============ EXERCISES — the app writes them here ============ */
+.body {
+  padding-top: 8mm;
+  min-height: 150mm;
+}
+
+.slot {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9pt;
+  color: #9A8F82;
+}
+
+/* footer shown on screen only; print uses the @page counter */
+.screen-footer {
+  margin-top: 10mm;
+  text-align: center;
+  font-size: 10pt;
+}
+
+@media print {
+  html, body { background: #fff; }
+
+  .sheet {
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .body { min-height: 0; }
+  .screen-footer { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="sheet">
+
+  <table class="masthead">
+    <tr>
+      <td class="logo-cell"><img src="/alsama-logo.png" alt="Alsama"></td>
+      <td>
+        <div class="org">Alsama Centers</div>
+        <div class="dept">{{subject}}</div>
+        <div class="centre-line f"><b>Center:</b><span class="val">{{centre}}</span> &nbsp; <b>Year:</b><span class="val">{{year}}</span></div>
+        <div class="fields">
+          <div class="f"><b>Name:</b><span class="dots w-name"></span></div>
+          <div class="f"><b>Date:</b><span class="dots w-date"></span></div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="objective">
+    <b>Objective:</b> By the end of this session, I will be able to {{objective}}
+  </div>
+
+  <!-- the template's centred title line. No lesson-title placeholder exists yet,
+       so the lesson code sits here; swap in {{lesson_title}} if one is added. -->
+  <div class="lesson-key">{{lesson_key}}</div>
+
+  <main class="body">
+    <div class="slot">{{exercises}}</div>
+  </main>
+
+  <div class="screen-footer">1</div>
+
+</div>
+
+</body>
+</html>

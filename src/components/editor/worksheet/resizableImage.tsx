@@ -200,13 +200,22 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
         ...wrapperLayout(align, float),
       }}
     >
+      {/* The image is the drag handle for snap-into-flow reorder. A tiptap React
+          NodeView is NOT draggable from `draggable: true` alone — its `onDragStart`
+          bails unless the drag starts inside a `[data-drag-handle]` element. Putting
+          the handle on the <img> (not the wrapper) makes the image the natural grab
+          point while leaving the resize corners — siblings of the <img>, outside the
+          handle — and adjacent text selection untouched. `draggable` is left at the
+          img default (true) so the browser starts the native drag on the img itself,
+          so `dragstart.target` is the img and the handle is found; ProseMirror then
+          moves the node and Dropcursor shows where it lands. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
         src={resolveImageSrc(src, storagePath)}
         alt={alt}
         title={title}
-        draggable={false}
+        data-drag-handle=""
         style={{
           display: 'block',
           width: displayWidth ? '100%' : 'auto',

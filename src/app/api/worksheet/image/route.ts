@@ -26,6 +26,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getImagesClient } from '@/lib/openai';
 import { isWorksheetImagesEnabled } from '@/lib/ai/worksheet-images-flag';
 import { composeContextStack, ContextStackError } from '@/lib/ai/context-stack';
+import { assembleImagePrompt } from '@/lib/ai/image-prompt';
 import { STYLE_VERSION } from '@/lib/ai/image-floor';
 
 export const runtime = 'nodejs';
@@ -259,14 +260,35 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
+  // Tell the model which subject it is illustrating. Resolve the canonical (English)
+  // name server-side from the subject_id already on the request — never a name from
+  // the body (a client-supplied string in a model prompt is an injection surface; the
+  // body carries no name field anyway). RLS-scoped read: `subjects` is
+  // authenticated-readable (subjects_select_authenticated), so the teacher's own
+  // client resolves it; the service-role key is never used. A missing/blocked row
+  // degrades the illustration, it does NOT fail the generation — the sentence is
+  // simply omitted. This is deliberately not the fail-closed posture the floor and
+  // tool documents get.
+  const { data: subjectRow } = await supabase
+    .from('subjects')
+    .select('name')
+    .eq('id', subjectId)
+    .maybeSingle();
+  const subjectName = (subjectRow as { name: string } | null)?.name ?? null;
+
   // Ordering: the image API has no system/user split, so both halves land in one
-  // flat prompt. Put the user-supplied BRIEF FIRST, under a clear header that keeps
-  // it legible as a distinct input, then the composed stack second — so the guidance
-  // (safeguarding included, which now lives mid-stack in Connie's layer-4 doc rather
-  // than in a code floor) is the last thing the model reads before it draws.
-  // `worksheet_image` has no output contract, so its floor section is empty; nothing
-  // followed the brief to anchor the guidance when the brief came last.
-  const promptSent = `━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}\n\n${composed.system}`;
+  // flat prompt. Put the subject fact + user-supplied BRIEF FIRST, under a clear
+  // header that keeps them legible as a distinct input, then the composed stack
+  // second — so the guidance (safeguarding included, which now lives mid-stack in
+  // Connie's layer-4 doc rather than in a code floor) is the last thing the model
+  // reads before it draws. `worksheet_image` has no output contract, so its floor
+  // section is empty; nothing followed the brief to anchor the guidance when the
+  // brief came last.
+  const promptSent = assembleImagePrompt({
+    brief,
+    composedSystem: composed.system,
+    subjectName,
+  });
 
   // Length guard + observability. Log the composed length every call so a future
   // regression is a single named log line, not a silent 400 from the model. Post-fix

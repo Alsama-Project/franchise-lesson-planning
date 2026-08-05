@@ -144,6 +144,14 @@ export interface CurriculumSyncResult {
    * active for the subject. Absent on a normal (reconcile) sync.
    */
   newVersionNo?: number;
+  /**
+   * Count of rows whose monthly cell carried BOTH Knowledge and Skills labels but did
+   * NOT split (`ImportReport.monthlySplitFailures.length`). Aggregated per subject
+   * (one workbook = one subject) so the operator sees a count, not one line per row —
+   * 248 identical warnings would be noise. Purely diagnostic: the ingest still writes
+   * the same rows. Absent (undefined) when zero.
+   */
+  monthlySplitFailures?: number;
 }
 
 /**
@@ -218,6 +226,25 @@ export interface CurriculumRecord {
   sourceRow: number; // 1-based sheet row, for debugging
 }
 
+/** The written column a monthly-split failure lands in (its verbatim blob). */
+export type MonthlySplitColumn = 'monthly_lo' | 'monthly_knowledge_lo' | 'monthly_skills_lo';
+
+/**
+ * One monthly cell that carried BOTH a Knowledge and a Skills label yet failed to
+ * split — the silent-null signature shared by all four monthly-split defects
+ * (professionalism/science/Arabic/Awareness). Diagnostic only: the combined value is
+ * still written verbatim (nothing dropped or changed), but the failure is now recorded
+ * with enough coordinates to locate the offending source row.
+ */
+export interface MonthlySplitFailure {
+  subjectCode: string;
+  year: number;
+  month: string;
+  week: number;
+  lessonKey: string;
+  column: MonthlySplitColumn;
+}
+
 /** One resolved (header → column) mapping, with the matcher's confidence. */
 export interface ColumnMapping {
   canonicalField: string;
@@ -244,6 +271,12 @@ export interface ImportReport {
   droppedBlankWeekRows: number[];
   /** Genuine lesson_key collisions dropped (not written): the key + its colliding rows. */
   droppedCollisions: { key: string; rows: number[] }[];
+  /**
+   * Monthly cells that looked splittable (both Knowledge + Skills labels present) but
+   * did not split — the silent-null diagnostic. Full per-row list here (the dry-run
+   * report is the detailed surface); the operator ingest result carries only the count.
+   */
+  monthlySplitFailures: MonthlySplitFailure[];
 }
 
 /**

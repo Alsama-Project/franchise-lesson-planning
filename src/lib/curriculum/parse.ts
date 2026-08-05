@@ -6,6 +6,8 @@ import {
   type CurriculumResource,
   type Grain,
   type ImportReport,
+  type MonthlySplitColumn,
+  type MonthlySplitFailure,
   type ParsedCurriculumRow,
   type ParseResult,
 } from './types';
@@ -248,6 +250,61 @@ export function resolveMonthlySplit(
   const sFilled = skills != null && skills.trim() !== '';
   if (kFilled === sFilled) return null; // both populated (already split) or neither
   return splitInlineMonthly(subjectCode, kFilled ? knowledge : skills);
+}
+
+// ── Diagnostic: a monthly split that SHOULD have happened but silently didn't ──────
+//
+// The four monthly-split defects (professionalism 110, science 32, Arabic 15,
+// Awareness 248) were ALL silent: `resolveMonthlySplit` returned null, the write path
+// kept the combined value, and the browser rendered the labelled blob as if it were
+// content — no error, no log, no count. The only detection method was a person noticing
+// a screen looked wrong. This detector turns that invisible class of bug into a visible
+// one: it fires exactly when the splitter's INPUT carried BOTH a Knowledge and a Skills
+// label yet the splitter returned null ("looked splittable, wasn't" — the signature all
+// four share). It is DIAGNOSTIC ONLY — it changes nothing that is parsed or written.
+//
+// The label detection here is deliberately LOOSER than the strict split labels above:
+// it must catch the very shapes the strict splitter rejects (labels sharing one line,
+// an empty section, a "learning outcome" phrasing the terminator missed). It stays
+// strict enough — a colon or the explicit "learning outcome(s)" phrase is REQUIRED —
+// that bare-keyword prose ("Knowledge is power and drives learning.") and label-free
+// cells never trip it.
+const KNOWLEDGE_LABEL_HINT = /(?:monthly\s+)?knowledge(?:\s+learning\s+outcomes?|\s*:)/i;
+const SKILLS_LABEL_HINT = /(?:monthly\s+)?skills?(?:\s+learning\s+outcomes?|\s*:)/i;
+const AR_KNOWLEDGE_HINT = /(?:ال)?معرفة\s*:/;
+const AR_SKILLS_HINT = /(?:ال)?مهارات\s*:/;
+
+/** True when `text` carries BOTH a Knowledge and a Skills monthly label (English or Arabic). */
+export function hasBothMonthlyLabels(text: string | null): boolean {
+  if (!text) return false;
+  const hasKnowledge = KNOWLEDGE_LABEL_HINT.test(text) || AR_KNOWLEDGE_HINT.test(text);
+  const hasSkills = SKILLS_LABEL_HINT.test(text) || AR_SKILLS_HINT.test(text);
+  return hasKnowledge && hasSkills;
+}
+
+/**
+ * When `resolveMonthlySplit` returns null, decide whether that null is a SILENT FAILURE
+ * (the splitter's input carried both labels) rather than a legitimate no-op, and if so
+ * name the written column the un-split blob lands in. Mirrors `resolveMonthlySplit`'s
+ * input choice exactly — the combined column first, then the single populated split
+ * column (Awareness's shape) — so a warning fires precisely when the splitter had a
+ * both-labels input and produced null. Returns null when the null is legitimate (no
+ * both-label input to split), so no warning is raised.
+ */
+export function detectMonthlySplitFailure(
+  subjectCode: string,
+  combined: string | null,
+  knowledge: string | null,
+  skills: string | null,
+): MonthlySplitColumn | null {
+  if (!MONTHLY_SPLIT_SUBJECTS.has(subjectCode)) return null;
+  if (hasBothMonthlyLabels(combined)) return 'monthly_lo';
+  const kFilled = knowledge != null && knowledge.trim() !== '';
+  const sFilled = skills != null && skills.trim() !== '';
+  if (kFilled !== sFilled && hasBothMonthlyLabels(kFilled ? knowledge : skills)) {
+    return kFilled ? 'monthly_knowledge_lo' : 'monthly_skills_lo';
+  }
+  return null;
 }
 
 /** First non-empty cell of these rows marks a header-block meta row, not data. */
@@ -685,6 +742,10 @@ export function parseCurriculumWorkbook(
   // Exact-duplicate source rows (same key AND same content) — a harmless copy-paste, kept
   // once (no data lost, so NOT dropped), counted for a hygiene note.
   let duplicateRows = 0;
+  // Rows whose monthly cell looked splittable (both Knowledge + Skills labels) but did
+  // NOT split — the silent-null diagnostic (Part A). Recorded, never fatal; the row is
+  // written byte-identically regardless.
+  const monthlySplitFailures: MonthlySplitFailure[] = [];
 
   for (let r = headerRow + 1; r < nRows; r++) {
     // Skip header-block meta rows (the "Description"/"الوصف" row sits just below the
@@ -808,6 +869,28 @@ export function parseCurriculumWorkbook(
         value('monthlyKnowledgeLearningOutcome'),
         value('monthlySkillLearningOutcome'),
       );
+      // Diagnostic (Part A): a null split whose input carried BOTH labels is a SILENT
+      // FAILURE — the combined blob is written verbatim below and renders as one
+      // undifferentiated block. Record it (subject/year/month/week/lesson_key/column) so
+      // the invisible bug becomes visible. This never alters what is written.
+      if (!monthlySplit) {
+        const failColumn = detectMonthlySplitFailure(
+          subjectCode,
+          value('monthlyLearningOutcome'),
+          value('monthlyKnowledgeLearningOutcome'),
+          value('monthlySkillLearningOutcome'),
+        );
+        if (failColumn) {
+          monthlySplitFailures.push({
+            subjectCode,
+            year: yearIndex,
+            month,
+            week,
+            lessonKey,
+            column: failColumn,
+          });
+        }
+      }
       // Resolve the weekly outcome columns once — reused verbatim for the weekly_* fields
       // and (for weekly-shape sheets with no Daily-LO column) as the per-lesson daily_outcome.
       const weeklySkillsResolved = cleanWeeklySkills(
@@ -932,6 +1015,7 @@ export function parseCurriculumWorkbook(
     droppedCollisions: [...collisionKeyRows.entries()].map(([key, rows]) => ({ key, rows })),
     benignMarkerCollisions,
     duplicateRows,
+    monthlySplitFailures,
   });
 
   return { records: recordList, report, lessonRows: [...lessonRows.values()], skippedLessonRows };
@@ -956,6 +1040,7 @@ interface ReportArgs {
   droppedCollisions: { key: string; rows: number[] }[];
   benignMarkerCollisions: number;
   duplicateRows: number;
+  monthlySplitFailures: MonthlySplitFailure[];
 }
 
 /** Canonical fields we generally expect to find; absence is reported. */
@@ -1045,6 +1130,19 @@ function buildReport(a: ReportArgs): ImportReport {
         `a copy-paste in the source) kept once; no data lost. Consider removing the duplicates.`,
     );
   }
+  if (a.monthlySplitFailures.length > 0) {
+    const n = a.monthlySplitFailures.length;
+    const sample = a.monthlySplitFailures
+      .slice(0, 5)
+      .map((fw) => `${fw.lessonKey} [${fw.column}]`)
+      .join('; ');
+    warnings.push(
+      `${n} monthly cell(s) carried BOTH a Knowledge and a Skills label but did NOT split — ` +
+        `the combined blob is written verbatim and renders as one undifferentiated block. This is ` +
+        `a SOURCE-DATA formatting issue to fix in the workbook; the ingest changed nothing (same ` +
+        `rows in, same rows out). e.g. ${sample}${n > 5 ? ` …(+${n - 5} more)` : ''}`,
+    );
+  }
   for (const cf of criticalFields) {
     const m = f.get(cf);
     if (m != null && m.confidence < 0.9) {
@@ -1067,5 +1165,6 @@ function buildReport(a: ReportArgs): ImportReport {
     sampleRecords: a.records.slice(0, 5),
     droppedBlankWeekRows: a.droppedBlankWeekRows,
     droppedCollisions: a.droppedCollisions,
+    monthlySplitFailures: a.monthlySplitFailures,
   };
 }

@@ -111,8 +111,23 @@ export async function importCurriculumAction(
     ok: true,
     message:
       `Synced ${result.rowsUpserted} lessons for "${subjectCode}" · ` +
-      `${result.unresolved} without a daily outcome · ${result.rowsDeactivated} deactivated.`,
+      `${result.unresolved} without a daily outcome · ${result.rowsDeactivated} deactivated.` +
+      monthlySplitNote(result.monthlySplitFailures),
   };
+}
+
+/**
+ * A diagnostic tail for the operator's success message when monthly cells looked
+ * splittable (both Knowledge + Skills labels) but did not split. Aggregated per subject
+ * (a count, not one line per row); the run's warnings hold a sample. Empty string when
+ * there were none, so the common case reads exactly as before.
+ */
+function monthlySplitNote(count: number | undefined): string {
+  if (!count) return '';
+  return (
+    ` · ⚠ ${count} monthly cell${count === 1 ? '' : 's'} did not split ` +
+    `(source formatting — the labelled blob renders as one block; see the run warnings).`
+  );
 }
 
 /**
@@ -166,6 +181,7 @@ export async function publishCurriculumVersionAction(
     message:
       `Published version ${result.newVersionNo ?? '?'} for "${subjectCode}" · ` +
       `${result.rowsUpserted} lessons · ${result.unresolved} without a daily outcome. ` +
-      `Existing plans stay on their previous version.`,
+      `Existing plans stay on their previous version.` +
+      monthlySplitNote(result.monthlySplitFailures),
   };
 }

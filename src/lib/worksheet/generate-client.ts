@@ -61,10 +61,19 @@ export async function requestPlan(lessonPlanId: string): Promise<PlanResult> {
 export type ExerciseResult = { ok: true; exercise: WorksheetExercise } | GenerateError;
 
 /** Generate (or regenerate) one exercise's content into its existing row. The row
- *  MUST already be persisted (a skeleton from /plan) — the route reads its spec. */
-export async function requestExercise(exerciseId: string): Promise<ExerciseResult> {
+ *  MUST already be persisted (a skeleton from /plan) — the route reads its spec. An
+ *  optional `instruction` steers the regeneration against the current body (the adjust
+ *  pattern); omitted/empty regenerates plainly, exactly as before. */
+export async function requestExercise(
+  exerciseId: string,
+  instruction?: string,
+): Promise<ExerciseResult> {
   try {
-    const res = await postJson('/api/worksheet/exercise', { exercise_id: exerciseId });
+    const trimmed = instruction?.trim();
+    const res = await postJson('/api/worksheet/exercise', {
+      exercise_id: exerciseId,
+      ...(trimmed ? { instruction: trimmed } : {}),
+    });
     if (!res.ok) return errorFrom(res);
     const data = (await res.json()) as { exercise?: WorksheetExercise };
     if (!data.exercise) return { ok: false, status: res.status, error: 'No exercise returned.' };
@@ -87,6 +96,8 @@ export interface ImageRequest {
   lesson_plan_id: string;
   subject_id: string;
   regenerate?: boolean;
+  /** Optional teacher steer for a regeneration (e.g. "simpler"); omitted regenerates plainly. */
+  instruction?: string;
 }
 
 /** Generate (or reuse) one slot's image. Returns a `storage_path` (a path, never a

@@ -17,24 +17,35 @@ const BRIEF_HEADER = '━━━ IMAGE BRIEF (what to draw) ━━━';
 
 /**
  * Assemble the flat image prompt: brief header → (optional subject sentence) →
- * the trimmed brief → the composed system stack.
+ * the trimmed brief → (optional teacher adjustment) → the composed system stack.
  *
  * `subjectName` is the subject's canonical (English) name, resolved server-side.
  * Null/undefined/blank drops the sentence cleanly — no placeholder, no partial
  * sentence — leaving the exact string a brief-only assembly produces.
+ *
+ * `instruction` is an optional teacher steer for a regeneration (e.g. "make it
+ * simpler"). It sits right under the brief — what to draw, then how the teacher wants
+ * it changed — before the composed guidance. Null/undefined/blank drops it cleanly, so
+ * a no-instruction assembly is byte-identical to before this parameter existed.
  */
 export function assembleImagePrompt({
   brief,
   composedSystem,
   subjectName,
+  instruction,
 }: {
   brief: string;
   composedSystem: string;
   subjectName?: string | null;
+  instruction?: string | null;
 }): string {
   const subjectSentence =
     subjectName && subjectName.trim()
       ? `This illustration will appear on a ${subjectName.trim()} worksheet.\n\n`
       : '';
-  return `${BRIEF_HEADER}\n${subjectSentence}${brief.trim()}\n\n${composedSystem}`;
+  const adjust =
+    instruction && instruction.trim()
+      ? `\n\n━━━ TEACHER ADJUSTMENT (apply to this image) ━━━\n${instruction.trim()}`
+      : '';
+  return `${BRIEF_HEADER}\n${subjectSentence}${brief.trim()}${adjust}\n\n${composedSystem}`;
 }

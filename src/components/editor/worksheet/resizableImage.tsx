@@ -28,9 +28,9 @@ import {
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import { ImageCropModal } from './ImageCropModal';
+import { worksheetImageAttributes, type ImageAlign, type ImageFloat } from './resizableImageAttrs';
 
-export type ImageAlign = 'left' | 'center' | 'right';
-export type ImageFloat = 'none' | 'left' | 'right';
+export type { ImageAlign, ImageFloat } from './resizableImageAttrs';
 
 /** Payload passed up when an inline image is converted to a free floating one. */
 export interface FloatImageInfo {
@@ -39,6 +39,18 @@ export interface FloatImageInfo {
   w: number;
   h: number;
 }
+
+/** What the control-bar "Regenerate image" action asks the host to do: generate a
+ *  FRESH image for this slot (optionally steered by a teacher comment) and hand back
+ *  the new storage path, or null on failure/refusal. The exercise text is never
+ *  touched — only this node's `storagePath` is swapped. `lesson_plan_id` / `subject_id`
+ *  come from the host's context, never the node. */
+export interface RegenerateImageArgs {
+  slotId: string;
+  brief: string | null;
+  instruction: string;
+}
+export type RegenerateImageFn = (args: RegenerateImageArgs) => Promise<string | null>;
 
 const MIN_WIDTH = 60;
 const TEAL = '#1F7A6C';
@@ -89,14 +101,50 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
   const width = (node.attrs.width as number | null) ?? null;
   const align = ((node.attrs.align as ImageAlign | null) ?? 'center') as ImageAlign;
   const float = ((node.attrs.float as ImageFloat | null) ?? 'none') as ImageFloat;
+  const slotId = (node.attrs.slotId as string | null) ?? null;
+  const brief = (node.attrs.brief as string | null) ?? null;
 
   const onFloat = (extension.options as { onFloatImage?: (info: FloatImageInfo) => void }).onFloatImage;
+  const onRegenerateImage = (extension.options as { onRegenerateImage?: RegenerateImageFn }).onRegenerateImage;
+  // A generated image (has a slot + a brief to regenerate from) can be regenerated in
+  // place when the host wires it. A pre-`brief` node (older compile) hides the control
+  // rather than 400 on a missing brief — that image regenerates via its exercise.
+  const canRegen = !!onRegenerateImage && !!slotId && !!brief;
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const latestWidth = useRef<number | null>(null);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
+  // Per-image regenerate (control-bar): an optional comment steers a FRESH generation
+  // for this one slot; on success only this node's storagePath swaps — the exercise
+  // text and every other node are untouched.
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [regenErr, setRegenErr] = useState<string | null>(null);
+  const [comment, setComment] = useState('');
+
+  const runRegen = async () => {
+    if (!onRegenerateImage || !slotId || regenBusy) return;
+    setRegenBusy(true);
+    setRegenErr(null);
+    try {
+      const path = await onRegenerateImage({ slotId, brief, instruction: comment.trim() });
+      if (path) {
+        // Swap only this node's source (src cleared so resolveImageSrc re-signs from the
+        // new path). One editor edit → the existing debounce persists it.
+        updateAttributes({ storagePath: path, src: null });
+        setRegenOpen(false);
+        setComment('');
+      } else {
+        setRegenErr(t('image.regenFailed'));
+      }
+    } catch (e) {
+      setRegenErr(e instanceof Error ? e.message : t('image.regenFailed'));
+    } finally {
+      setRegenBusy(false);
+    }
+  };
 
   const displayWidth = liveWidth ?? width ?? null;
 
@@ -240,6 +288,30 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" /></svg>
             </button>
+            {/* Regenerate this image — a FRESH generation for this slot, optionally
+                steered by a comment. Replaces only this image; the exercise is untouched. */}
+            {canRegen ? (
+              <>
+                <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
+                <button
+                  type="button"
+                  title={t('image.regenerate')}
+                  aria-label={t('image.regenerate')}
+                  onMouseDown={(ev) => ev.preventDefault()}
+                  onClick={() => {
+                    setRegenErr(null);
+                    setRegenOpen((o) => !o);
+                  }}
+                  style={ctrlBtn(regenOpen)}
+                >
+                  {regenBusy ? (
+                    <svg className="ws-ex-regen-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" /></svg>
+                  )}
+                </button>
+              </>
+            ) : null}
             {onFloat ? (
               <>
                 <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
@@ -262,6 +334,85 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
               </>
             ) : null}
           </div>
+
+          {/* Regenerate comment field — optional. Empty comment regenerates plainly. */}
+          {regenOpen && canRegen ? (
+            <div
+              contentEditable={false}
+              onMouseDown={(ev) => ev.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 40,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 5,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                width: 280,
+                maxWidth: '90%',
+                padding: 10,
+                background: '#fff',
+                border: '1px solid #CFE6E0',
+                borderRadius: 10,
+                boxShadow: '0 10px 28px -12px rgba(40,30,20,0.45)',
+              }}
+            >
+              <input
+                type="text"
+                value={comment}
+                autoFocus
+                disabled={regenBusy}
+                placeholder={t('image.regenComment')}
+                onChange={(e) => setComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void runRegen();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setRegenOpen(false);
+                  }
+                }}
+                style={{
+                  fontSize: 13,
+                  padding: '7px 9px',
+                  borderRadius: 8,
+                  border: '1px solid var(--color-neutral-200)',
+                  outline: 'none',
+                  color: 'var(--color-ink)',
+                }}
+              />
+              {regenErr ? <span style={{ fontSize: 12, color: '#B23A2E' }}>{regenErr}</span> : null}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <button
+                  type="button"
+                  disabled={regenBusy}
+                  onMouseDown={(ev) => ev.preventDefault()}
+                  onClick={() => void runRegen()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: '#1F7A6C',
+                    color: '#fff',
+                    cursor: regenBusy ? 'default' : 'pointer',
+                    opacity: regenBusy ? 0.7 : 1,
+                  }}
+                >
+                  {regenBusy ? (
+                    <svg className="ws-ex-regen-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
+                  ) : null}
+                  {t('image.regenSubmit')}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Resize handles (bottom corners) */}
           <ResizeHandle corner="left" onPointerDown={(ev) => startResize(ev, 'left')} />
@@ -393,58 +544,23 @@ export const ResizableImage = Image.extend<{
   allowBase64: boolean;
   HTMLAttributes: Record<string, unknown>;
   onFloatImage?: (info: FloatImageInfo) => void;
+  onRegenerateImage?: RegenerateImageFn;
 }>({
   addOptions() {
     return {
       ...this.parent?.(),
       onFloatImage: undefined,
+      onRegenerateImage: undefined,
     };
   },
 
   addAttributes() {
+    // The extra worksheet attributes (width/align/float/storagePath/slotId/brief) live
+    // in the DOM-free `resizableImageAttrs` module so the round-trip test can build the
+    // SAME schema and prove storagePath/slotId/brief survive getJSON.
     return {
       ...this.parent?.(),
-      width: {
-        default: null,
-        // width is folded into `style` by the node's renderHTML, so this
-        // attribute does not emit its own HTML.
-        parseHTML: (el) => {
-          const raw = el.getAttribute('width') || (el as HTMLElement).style.width;
-          const n = raw ? parseInt(raw, 10) : NaN;
-          return Number.isFinite(n) ? n : null;
-        },
-        renderHTML: () => ({}),
-      },
-      align: {
-        default: 'center',
-        parseHTML: (el) => (el as HTMLElement).getAttribute('data-align') || 'center',
-        renderHTML: () => ({}),
-      },
-      float: {
-        default: 'none',
-        // Folded into `style` by renderHTML (like width/align); round-trips via the
-        // data-float attribute so the print/preview HTML wraps text identically.
-        parseHTML: (el) => (el as HTMLElement).getAttribute('data-float') || 'none',
-        renderHTML: () => ({}),
-      },
-      // The object path of a GENERATED image in the private bucket. When set, both
-      // render paths serve through /api/worksheet-image (see resolveImageSrc) instead
-      // of the node's `src`. Round-trips via data-storage-path. Null for uploads.
-      storagePath: {
-        default: null,
-        parseHTML: (el) => (el as HTMLElement).getAttribute('data-storage-path') || null,
-        renderHTML: (attrs) =>
-          attrs.storagePath ? { 'data-storage-path': attrs.storagePath as string } : {},
-      },
-      // The image slot this node is bound to. NOT read anywhere in this branch — it
-      // exists so the UI workstream can wire a Regenerate control to a slot without
-      // reopening this file. Round-trips via data-slot-id.
-      slotId: {
-        default: null,
-        parseHTML: (el) => (el as HTMLElement).getAttribute('data-slot-id') || null,
-        renderHTML: (attrs) =>
-          attrs.slotId ? { 'data-slot-id': attrs.slotId as string } : {},
-      },
+      ...worksheetImageAttributes(),
     };
   },
 

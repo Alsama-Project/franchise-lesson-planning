@@ -32,7 +32,11 @@ import { worksheetArtifactText } from '@/lib/editor/worksheet-content-locale';
 import { BRAND, PAGE_WIDTH, PAGE_PAD_X, PAGE_PAD_TOP, PAGE_PAD_BOTTOM, type SaveState } from './theme';
 import { ZoomPage } from './ZoomPage';
 import { ExerciseGutter, EXERCISE_GUTTER_REDRAW, type ExerciseGutterStorage } from './nodes/ExerciseGutter';
+import { SCAFFOLD_LOCK_BYPASS } from './nodes/ScaffoldHeadingLock';
 import { applyExerciseSplice, buildExerciseNodes, type ExerciseRegenPayload } from './exerciseSplice';
+import { nodeExerciseId } from '@/lib/ai/worksheet-assemble';
+import { requestImage } from '@/lib/worksheet/generate-client';
+import type { RegenerateImageArgs } from '../resizableImage';
 import { WorksheetFramePage } from './WorksheetFramePage';
 import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
 
@@ -64,8 +68,12 @@ interface DocumentWorksheetProps {
    *  "document edited since the last full build" gate on Generate / Regenerate-all. */
   onTeacherEdit?: () => void;
   /** Regenerate one exercise: returns its fresh body to splice into the live editor,
-   *  or null on abort. Presence installs the gutter affordance + splice path. */
-  onRegenerateExercise?: (exerciseId: string) => Promise<ExerciseRegenPayload | null>;
+   *  or null on abort. An optional teacher `instruction` steers the regeneration (the
+   *  adjust pattern). Presence installs the gutter affordance + splice path. */
+  onRegenerateExercise?: (
+    exerciseId: string,
+    instruction?: string,
+  ) => Promise<ExerciseRegenPayload | null>;
 }
 
 /** The caret/selection position in viewport coordinates, for anchoring a popover. */
@@ -109,6 +117,8 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
   const [spliceError, setSpliceError] = useState<string | null>(null);
   // Ids currently regenerating, for the gutter buttons' disabled/spinner state.
   const [regenBusy, setRegenBusy] = useState<Set<string>>(() => new Set());
+  // The open "regenerate this exercise" comment popover (optional comment → adjust).
+  const [regenPrompt, setRegenPrompt] = useState<{ exerciseId: string; anchor: Anchor } | null>(null);
 
   // True only while WE mutate the editor (applyFullDoc / splice), so onUpdate can
   // tell a programmatic write from a real teacher edit and not trip the edited-gate.
@@ -123,11 +133,34 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     [context.contentLanguage],
   );
 
+  // Per-image regenerate is offered only on the editable generating surface (needs a
+  // subject to steer the illustrator, and never in Template Mode). The handler swaps a
+  // single slot's image; the exercise text is never touched.
+  const imageRegenEnabled = !templateMode && !!onRegenerateExercise && !!context.subjectId;
+  const handleRegenerateImage = useCallback(
+    async ({ slotId, brief, instruction }: RegenerateImageArgs): Promise<string | null> => {
+      if (!context.subjectId || !brief) return null;
+      const res = await requestImage({
+        slot_id: slotId,
+        brief,
+        lesson_plan_id: context.lessonPlanId,
+        subject_id: context.subjectId,
+        regenerate: true,
+        ...(instruction ? { instruction } : {}),
+      });
+      if (res.ok) return res.storage_path; // null when the slot is at/over the image cap
+      throw new Error(res.error);
+    },
+    [context.subjectId, context.lessonPlanId],
+  );
+
   const pickImage = useCallback(() => fileInputRef.current?.click(), []);
 
   const editor = useEditor({
     extensions: [
-      ...worksheetDocExtensions(context.contentLanguage),
+      ...worksheetDocExtensions(context.contentLanguage, {
+        onRegenerateImage: imageRegenEnabled ? handleRegenerateImage : undefined,
+      }),
       // These callbacks fire only from a slash-menu selection (a user event), never
       // during render, so reading the file-input ref inside pickImage is safe.
       // eslint-disable-next-line react-hooks/refs
@@ -168,17 +201,45 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
       applyFullDoc: (doc: WorksheetV3) => {
         if (!editor) return;
         programmatic.current = true;
-        editor.commands.setContent(doc.doc as JSONContent, true);
+        // A single chained transaction: the bypass meta first (so the scaffold-heading
+        // lock never rejects a rebuild — the template itself may have changed), then the
+        // whole-document replace. Still one writer, through editor.commands.
+        editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setMeta(SCAFFOLD_LOCK_BYPASS, true);
+            return true;
+          })
+          .setContent(doc.doc as JSONContent, true)
+          .run();
         programmatic.current = false;
       },
     }),
     [editor],
   );
 
-  /** Regenerate one exercise: fetch its fresh body, then splice it into the live
-   *  editor in place (its old range removed, teacher content between it preserved). */
+  /** Open the "regenerate this exercise" comment popover, anchored at the exercise's
+   *  first node. The comment is OPTIONAL — submitting empty regenerates plainly. */
+  const openRegenPrompt = useCallback(
+    (exerciseId: string) => {
+      if (!editor) return;
+      let found: number | null = null;
+      let pos = 0;
+      editor.state.doc.forEach((node) => {
+        if (found === null && nodeExerciseId(node) === exerciseId) found = pos;
+        pos += node.nodeSize;
+      });
+      setSpliceError(null);
+      setRegenPrompt({ exerciseId, anchor: anchorAt(editor, found ?? editor.state.selection.head) });
+    },
+    [editor],
+  );
+
+  /** Regenerate one exercise: fetch its fresh body (optionally steered by the teacher's
+   *  comment), then splice it into the live editor in place (its old range removed,
+   *  teacher content between it preserved). */
   const handleGutterRegen = useCallback(
-    async (exerciseId: string) => {
+    async (exerciseId: string, instruction?: string) => {
       if (!editor || !onRegenerateExercise) return;
       setRegenBusy((prev) => {
         if (prev.has(exerciseId)) return prev;
@@ -188,7 +249,7 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
       });
       setSpliceError(null);
       try {
-        const payload = await onRegenerateExercise(exerciseId);
+        const payload = await onRegenerateExercise(exerciseId, instruction);
         if (payload) {
           const nodes = buildExerciseNodes(exerciseId, payload, failedText);
           programmatic.current = true;
@@ -217,25 +278,15 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     if (!editor) return;
     const storage = editor.storage.exerciseGutter as ExerciseGutterStorage | undefined;
     if (!storage) return; // gutter extension not installed
-    storage.onRegenerate = handleGutterRegen;
+    // The gutter button opens the comment popover; submitting it runs the regenerate.
+    storage.onRegenerate = openRegenPrompt;
     storage.busy = regenBusy;
     storage.title = regenTitle;
     // A doc-unchanged transaction so the decorations recompute against the new busy
     // set. `preventUpdate` + no steps ⇒ tiptap's onUpdate never fires (it gates on
     // `docChanged`), so this never persists or trips the teacher-edited gate.
     editor.view.dispatch(editor.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
-  }, [editor, handleGutterRegen, regenBusy, regenTitle]);
-
-  /** Open the generate popover anchored at the caret. */
-  const openGenerate = useCallback(
-    (ed?: Editor) => {
-      const e = ed ?? editor;
-      if (!e) return;
-      setPromptError(null);
-      setPrompt({ mode: 'generate', anchor: anchorAt(e, e.state.selection.head) });
-    },
-    [editor],
-  );
+  }, [editor, openRegenPrompt, regenBusy, regenTitle]);
 
   /** Open the adjust popover anchored at the end of the current selection. */
   const openAdjust = useCallback(() => {
@@ -363,7 +414,6 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
           editor={editor}
           onInsertImage={pickImage}
           onInsertResource={() => setBankOpen(true)}
-          onGenerateAI={() => openGenerate()}
           saveState={saveState}
         />
       </div>
@@ -438,6 +488,26 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
           error={promptError}
           onSubmit={runPrompt}
           onCancel={() => (busy ? null : setPrompt(null))}
+        />
+      ) : null}
+
+      {/* Regenerate-this-exercise comment (optional). Submitting runs the gutter
+          regenerate with the comment; the gutter button then shows its spinner. */}
+      {regenPrompt ? (
+        <InlinePromptPopover
+          anchor={regenPrompt.anchor}
+          title={t('regenerateExerciseTitle')}
+          placeholder={t('regenerateCommentPlaceholder')}
+          submitLabel={t('regenerate')}
+          allowEmpty
+          busy={false}
+          error={null}
+          onSubmit={(text) => {
+            const { exerciseId } = regenPrompt;
+            setRegenPrompt(null);
+            void handleGutterRegen(exerciseId, text.trim() || undefined);
+          }}
+          onCancel={() => setRegenPrompt(null)}
         />
       ) : null}
     </div>

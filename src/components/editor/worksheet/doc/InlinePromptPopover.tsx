@@ -25,6 +25,7 @@ export function InlinePromptPopover({
   error,
   onSubmit,
   onCancel,
+  allowEmpty = false,
 }: {
   anchor: Anchor;
   title: string;
@@ -34,6 +35,9 @@ export function InlinePromptPopover({
   error: string | null;
   onSubmit: (text: string) => void;
   onCancel: () => void;
+  /** When true, submitting with an empty field is allowed (e.g. regenerate with no
+   *  comment). Default false — generate/adjust require a prompt. */
+  allowEmpty?: boolean;
 }) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -58,8 +62,9 @@ export function InlinePromptPopover({
     setPos({ x, y });
   }, [anchor]);
 
+  const canSubmit = !busy && (allowEmpty || text.trim().length > 0);
   const submit = () => {
-    if (!busy && text.trim()) onSubmit(text);
+    if (canSubmit) onSubmit(text);
   };
 
   return createPortal(
@@ -131,7 +136,7 @@ export function InlinePromptPopover({
           <button
             type="button"
             onClick={submit}
-            disabled={busy || text.trim().length === 0}
+            disabled={!canSubmit}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -144,8 +149,8 @@ export function InlinePromptPopover({
               border: 'none',
               padding: '8px 14px',
               borderRadius: 8,
-              cursor: busy || !text.trim() ? 'default' : 'pointer',
-              opacity: busy || !text.trim() ? 0.6 : 1,
+              cursor: canSubmit ? 'pointer' : 'default',
+              opacity: canSubmit ? 1 : 0.6,
             }}
           >
             <Sparkles size={13} />

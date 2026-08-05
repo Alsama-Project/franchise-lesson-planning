@@ -19,6 +19,7 @@ import {
   getCurriculumNav,
   getCurriculumSubjectCodes,
   getCurriculumWeekRows,
+  subjectHasPeriodRows,
 } from '@/lib/curriculumUtils';
 import { skillKeyOf } from '@/components/curriculum/skill';
 import { cleanResourceList, type CurriculumLessonRow } from '@/lib/curriculum/types';
@@ -260,14 +261,27 @@ export async function getCurriculumBrowseData(input: {
     r.period != null && r.period >= 1 && r.period <= 5;
 
   // Period-table rows for the selected week. PER-WEEK RULE (not a global widen): prefer
-  // the week's period-numbered rows; fall back to whatever remains only when the week has
-  // none. A period-numbered subject (English/Science/Arabic carry a handful of NULL-period
-  // Baseline/Orientation marker rows) therefore never shows those phantom rows — its weeks
-  // always have period rows — while a purely weekly-grain subject (Awareness, every row
-  // period-NULL) still surfaces its single weekly row instead of an empty "no lessons"
-  // table. Value-based and per-week; no subject name or code involved.
+  // the week's period-numbered rows. When the week has NONE, the only rows available are
+  // `|wk` weekly carriers — and whether those are lesson content depends on the subject's
+  // GRAIN (derived from data, never a subject name):
+  //   • Genuinely weekly-grain (no period rows anywhere — Awareness): the carrier IS the
+  //     week's lesson, so surface it (the table would otherwise be empty).
+  //   • Period-grain (has period rows somewhere — English/Science/Arabic/Yoga): the carrier
+  //     is scaffolding. Its daily fields are forward-fill junk (English Y1 W1's carrier
+  //     literally reads `daily_outcome: "Period 5"`), so a week with only a carrier is a
+  //     gap — render the empty state, never the carrier. The Weekly/Monthly outcome panels
+  //     still read the carrier's legitimate weekly_*/monthly_* fields off `weekRows` below.
+  // The grain probe runs ONLY on a carrier-only week (the rare case), so the common
+  // period-numbered week pays nothing.
   const dailyRows = weekRows.filter(isDailyRow);
-  const rows: BrowseRow[] = (dailyRows.length > 0 ? dailyRows : weekRows).map(toBrowseRow);
+  let rows: BrowseRow[];
+  if (dailyRows.length > 0) {
+    rows = dailyRows.map(toBrowseRow);
+  } else if (await subjectHasPeriodRows(subject.code)) {
+    rows = []; // period-grain subject, carrier-only week ⇒ empty table state
+  } else {
+    rows = weekRows.map(toBrowseRow); // genuinely weekly-grain ⇒ the carrier is the lesson
+  }
 
   // Monthly calendar grid: every week of the selected month × periods 1–5. Each
   // cell is a full BrowseRow (null where a period has no lesson) so the shared

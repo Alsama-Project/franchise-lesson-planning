@@ -417,6 +417,35 @@ export async function getCurriculumMonthRows(
   return rows.sort((a, b) => a.week - b.week || (a.period ?? 0) - (b.period ?? 0));
 }
 
+/**
+ * Whether a subject has ANY period-numbered row anywhere in its active curriculum —
+ * the "grain" signal for the browse table's carrier-row gate. A subject with period
+ * rows is period-grain: its `|wk` weekly carrier rows are scaffolding (they hold
+ * weekly/monthly outcomes but their daily-shaped fields are forward-fill junk) and must
+ * never surface as a lesson. A subject with NO period rows is genuinely weekly-grain
+ * (Awareness — every row period-NULL), and its carrier IS the week's lesson.
+ *
+ * WHY NOT the `curriculum_subject_shape` view (0063): that view was DROPPED in migration
+ * 0066 — the live schema no longer has it — and it answered a different question
+ * (COUNT(DISTINCT period) for the old `<= 1` single-period collapse, which grouped Yoga
+ * with Awareness). The grain boundary here is `>= 1` period row vs none, so a plain
+ * existence count is the right signal. It's an exact-count HEAD probe (no rows fetched),
+ * so the PostgREST 1000-row cap can't apply — the same truncation-proof pattern
+ * `getCurriculumSubjectCapabilities` already uses.
+ */
+export async function subjectHasPeriodRows(subjectCode: string): Promise<boolean> {
+  if (!subjectCode) return false;
+  const supabase = createAdminClient();
+  const { count, error } = await supabase
+    .from('curriculum_lesson_active')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_active', true)
+    .eq('subject_code', subjectCode)
+    .not('period', 'is', null);
+  if (error) throw new Error(`Curriculum grain read failed: ${error.message}`);
+  return (count ?? 0) > 0;
+}
+
 /** A curriculum row's natural coordinates, resolved from its `lesson_key`. */
 export interface CurriculumKeyCoords {
   subjectCode: string;

@@ -114,10 +114,12 @@ export interface CurriculumBrowseData {
   weekly: WeeklyOutcome;
   monthly: MonthlyOutcome;
   /**
-   * The selected week's rows for the period table. Normally one row per period (1–5);
-   * for a weekly-grain subject (Awareness — all period-NULL) the week's single NULL row
-   * is surfaced instead, so the table is never empty. See the per-week fallback in
-   * `getCurriculumBrowseData`.
+   * The selected week's rows for the period table. Normally one row per period (1–5).
+   * When a week has no period rows, only a `|wk` weekly carrier remains: for a genuinely
+   * weekly-grain subject (Awareness — all period-NULL) that carrier is surfaced as the
+   * week's lesson; for a period-grain subject (has period rows elsewhere) the carrier is
+   * scaffolding and is dropped, leaving this empty so the table renders its empty state.
+   * See the grain gate in `getCurriculumBrowseData`.
    */
   rows: BrowseRow[];
   /** The selected month's calendar grid — one entry per week, each with its five

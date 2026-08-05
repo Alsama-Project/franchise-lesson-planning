@@ -36,7 +36,11 @@
       "replace": "Replace image",
       "replaceDeferred": "Replacing an image with your own arrives with image rendering, in the next update.",
       "tryAgain": "Try again",
-      "count": "{n} of {cap} images"
+      "count": "{done} of {total} images",
+      "failedInline": "{n} failed",
+      "capNote": "{over} more not generated — this worksheet is capped at {cap} images",
+      "disabledNotice": "Image generation is turned off or not configured, so the worksheet was filled without pictures. Each [Picture: …] marker shows where an image would go — turn generation on, then Regenerate to add them.",
+      "failedNotice": "{n} of {total} images couldn’t be generated. Each is left as a [Picture: …] placeholder where the image would go; regenerate the exercise to try again."
     },
     "confirm": {
       "keep": "Keep",

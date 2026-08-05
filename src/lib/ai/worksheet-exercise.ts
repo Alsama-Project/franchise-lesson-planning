@@ -50,13 +50,15 @@ export interface WorksheetExerciseContext {
 
 /**
  * One image slot the MODEL authors, per `[Picture: …]` marker, in marker order.
- * The model authors only the `brief`; the brief's content contract lives in the
- * WORKSHEET_BUILDER_FLOOR (IMAGE BRIEFS) — not here and not in the user prompt.
- * The slot's `subject` is the marker text (set server-side, not by the model),
- * and the mechanical fields (`slot_id`, `status`, `storage_path`) are added by
- * the route.
+ * The model authors TWO fields:
+ *   • `subject` — the plain literal thing depicted (1-4 words), the deduplication
+ *     key the image route hashes on. Its contract lives in the worksheet-builder
+ *     FLOOR (IMAGE SLOTS) so it can never be edited away into a layer doc.
+ *   • `brief` — the rich visual description that becomes the image prompt.
+ * The mechanical fields (`slot_id`, `status`, `storage_path`) are added by the route.
  */
 export interface AuthoredImageSlot {
+  subject: string;
   brief: string;
 }
 
@@ -86,9 +88,10 @@ const RESPONSE_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         properties: {
+          subject: { type: 'string' },
           brief: { type: 'string' },
         },
-        required: ['brief'],
+        required: ['subject', 'brief'],
       },
     },
   },
@@ -142,7 +145,7 @@ function buildUserPrompt(context: WorksheetExerciseContext): string {
     '',
     'Write only the exercise itself — a heading is optional; no teacher notes, no answer key, no commentary.',
     '',
-    'IMAGES — "image_slots": return one entry per [Picture: …] marker in body_md, in the SAME order the markers appear (an empty array if there are none). Each entry has a single field, "brief".',
+    'IMAGES — "image_slots": return one entry per [Picture: …] marker in body_md, in the SAME order the markers appear (an empty array if there are none). Each entry has two fields, "subject" and "brief" — follow the IMAGE SLOTS contract above.',
     '',
     'Return ONLY the JSON object with keys "body_md" and "image_slots". No prose, no markdown fence.',
   );
@@ -177,7 +180,10 @@ function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSl
   const imageSlots: AuthoredImageSlot[] = Array.isArray(obj.image_slots)
     ? obj.image_slots.map((s) => {
         const o = (s ?? {}) as Record<string, unknown>;
-        return { brief: typeof o.brief === 'string' ? o.brief.trim() : '' };
+        return {
+          subject: typeof o.subject === 'string' ? o.subject.trim() : '',
+          brief: typeof o.brief === 'string' ? o.brief.trim() : '',
+        };
       })
     : [];
   return { bodyMd: obj.body_md, imageSlots };

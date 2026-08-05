@@ -57,13 +57,18 @@ export interface ImageSlot {
   /** Stable id for this slot within the exercise. */
   slot_id: string;
   /**
-   * The marker text, unexpanded (e.g. "a cow") — a human-readable UI label set
-   * from the `[Picture: …]` marker server-side; nothing on the server consumes it.
+   * The model-authored deduplication key — the plain literal thing depicted, 1-4
+   * words (e.g. "a cow"). The image route hashes on THIS (not the brief) so the
+   * same subject reuses an already-generated image regardless of how the brief is
+   * worded. Its contract lives in `WORKSHEET_BUILDER_FLOOR` (IMAGE SLOTS). Falls
+   * back to the `[Picture: …]` marker text when the model leaves it blank; nullable
+   * only for legacy rows written before the field existed.
    */
   subject: string | null;
   /**
-   * The model-authored visual brief for this slot's image. Its content contract
-   * (what a brief may and may not contain) is the single copy in
+   * The model-authored visual brief for this slot's image — what the image model is
+   * actually prompted with. Rich and free to vary; it no longer affects the cache
+   * key (that is `subject`). Its content contract is the single copy in
    * `WORKSHEET_BUILDER_FLOOR` — not restated here.
    */
   brief: string;

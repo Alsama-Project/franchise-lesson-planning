@@ -28,6 +28,8 @@ import type { WorksheetContext } from '../context';
 import { DocumentWorksheet, type DocumentWorksheetHandle, type SaveState } from '../doc/DocumentWorksheet';
 import { CardConfirm } from './CardConfirm';
 import { IMAGE_CAP, useWorksheetGeneration } from './useWorksheetGeneration';
+import { WorksheetSkeleton } from './WorksheetSkeleton';
+import { summariseWorksheetImages } from '@/lib/worksheet/image-summary';
 import { ZoomControls } from '../doc/ZoomControls';
 import { clampZoom, round2, ZOOM_STEP } from '../doc/zoom';
 
@@ -142,11 +144,15 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
   // never call this — DocumentWorksheet suppresses them.
   const onTeacherEdit = useCallback(() => setDocumentDirty(true), []);
 
-  const readyImages = gen.exercises.reduce(
-    (n, e) => n + (e.image_slots?.filter((s) => s.status === 'ready' && s.storage_path).length ?? 0),
-    0,
-  );
-  const totalSlots = gen.exercises.reduce((n, e) => n + (e.image_slots?.length ?? 0), 0);
+  // The TRUE per-worksheet image tally: requested/completed for THIS sheet, failures
+  // counted, and the cap surfaced only when it is actually exceeded (see image-summary).
+  const {
+    total: totalSlots,
+    requested: requestedImages,
+    ready: readyImages,
+    failed: failedImages,
+    capped: cappedImages,
+  } = summariseWorksheetImages(gen.exercises, IMAGE_CAP);
   const readyCount = gen.exercises.filter((e) => e.status !== 'failed' && e.status !== 'generating').length;
   const failedAny = !gen.filling && gen.exercises.some((e) => e.status === 'failed');
 
@@ -154,8 +160,14 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
     <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Pane header — print control + the single primary slot, right-aligned. */}
       <div className="ws-no-print relative flex shrink-0 items-center justify-end gap-3 border-b border-[#EFE8DD] bg-surface px-[14px] py-[9px]">
-        {totalSlots > 0 ? (
-          <span className="me-auto text-[12px] text-neutral-500">{t('image.count', { n: readyImages, cap: IMAGE_CAP })}</span>
+        {/* True per-worksheet counter: completed of requested (not the raw cap).
+            Hidden while filling — the hook only settles the slot state at the atomic
+            reveal, so a mid-run count would be stale. */}
+        {!gen.filling && totalSlots > 0 ? (
+          <span className="me-auto text-[12px] text-neutral-500">
+            {t('image.count', { done: readyImages, total: requestedImages })}
+            {failedImages > 0 ? <span className="text-pink"> · {t('image.failedInline', { n: failedImages })}</span> : null}
+          </span>
         ) : null}
 
         {/* Page zoom — a view control over the document surface. */}
@@ -243,20 +255,51 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         </div>
       ) : null}
 
+      {/* Images turned off / not configured — the 503 short-circuit is now SAID once,
+          clearly, instead of silently leaving raw [Picture: …] markers unexplained. */}
+      {!gen.filling && gen.imagesDisabled ? (
+        <div className="ws-no-print shrink-0 border-b border-[#ECE0CF] bg-[#FBF6EF] px-[16px] py-[8px] text-[12.5px] text-[#5C544E]">
+          {t('image.disabledNotice')}
+        </div>
+      ) : null}
+
+      {/* A slot that was requested and FAILED — a distinct, actionable trace, never
+          confused with an exercise that simply has no picture (which shows nothing). */}
+      {!gen.filling && !gen.imagesDisabled && failedImages > 0 ? (
+        <div className="ws-no-print shrink-0 border-b border-[#ECE0CF] bg-[#FBF6EF] px-[16px] py-[8px] text-[12.5px] text-[#5C544E]">
+          {t('image.failedNotice', { n: failedImages, total: requestedImages })}
+        </div>
+      ) : null}
+
+      {/* The cap only becomes the teacher's business when it is actually reached. */}
+      {!gen.filling && cappedImages > 0 ? (
+        <div className="ws-no-print shrink-0 border-b border-[#ECE0CF] bg-[#FBF6EF] px-[16px] py-[8px] text-[12.5px] text-[#5C544E]">
+          {t('image.capNote', { over: cappedImages, cap: IMAGE_CAP })}
+        </div>
+      ) : null}
+
       {/* The one surface: the continuous document editor. Whole-document builds land
-          via docRef.applyFullDoc; per-exercise regenerate splices through the editor. */}
-      <DocumentWorksheet
-        ref={docRef}
-        value={value}
-        onChange={onChange}
-        onTeacherEdit={onTeacherEdit}
-        onRegenerateExercise={gen.regenerateExercise}
-        context={context}
-        vocabulary={vocabulary}
-        saveState={saveState}
-        zoom={zoom}
-        onZoomChange={setZoom}
-      />
+          via docRef.applyFullDoc; per-exercise regenerate splices through the editor.
+          While a full generation is filling, the skeleton overlay sits on top at the
+          estimated heights (from the plan's specs) and is lifted at the atomic reveal —
+          the page fills with structure, then content lands in one pass. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <DocumentWorksheet
+          ref={docRef}
+          value={value}
+          onChange={onChange}
+          onTeacherEdit={onTeacherEdit}
+          onRegenerateExercise={gen.regenerateExercise}
+          context={context}
+          vocabulary={vocabulary}
+          saveState={saveState}
+          zoom={zoom}
+          onZoomChange={setZoom}
+        />
+        {gen.filling && gen.fillSpecs && gen.fillSpecs.length > 0 ? (
+          <WorksheetSkeleton specs={gen.fillSpecs} />
+        ) : null}
+      </div>
 
       {/* The document-replaced gate — shown before a whole-document build when the
           teacher has edited the document since the last build. Confirm runs the

@@ -216,6 +216,10 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
         </Column>
       </div>
 
+      {/* A structural break marking the Page design section as a different kind of
+          thing from the instruction board above — not a fifth layer of the stack. */}
+      <hr className="my-[32px] border-t border-border-subtle" />
+
       {/* Page design — a full-width row below the four instruction columns. Not
           part of the instruction stack: the page design is printed page furniture
           (HTML), never composed into a prompt. */}
@@ -382,7 +386,11 @@ function DocCard({
       }`}
     >
       <div className="flex items-start gap-[7px]">
-        <div dir="auto" className="min-w-0 flex-1 text-[12.5px] font-semibold leading-[1.35] text-ink">
+        <div
+          dir="auto"
+          title={doc.name}
+          className="min-w-0 flex-1 text-[12.5px] font-semibold leading-[1.35] text-ink [overflow-wrap:anywhere] line-clamp-2"
+        >
           {doc.name}
         </div>
         {subjectName ? (
@@ -631,9 +639,12 @@ function WorksheetFrameRow({
   const count = subjects.length;
   return (
     <section className="mt-[16px] overflow-hidden rounded-[12px] border border-border">
-      <h2 className="px-[16px] pt-[14px] pb-[13px] text-[14px] font-semibold text-ink">
+      <h2 className="px-[16px] pt-[14px] pb-[5px] text-[14px] font-semibold text-ink">
         {t('aiInstructions.worksheetFrame.title')}
       </h2>
+      <p dir="auto" className="px-[16px] pb-[13px] text-[12.5px] leading-[1.45] text-text-faint">
+        {t('aiInstructions.worksheetFrame.lead')}
+      </p>
       <div className="grid grid-cols-1 border-t border-border-subtle min-[901px]:grid-cols-2">
         {subjects.map((s, i) => (
           <FrameCard

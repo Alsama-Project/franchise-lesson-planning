@@ -7,7 +7,9 @@
 // It is intentionally NOT `server-only`: it carries no privileged data and is
 // imported by tests directly. `compileWorksheet` (a server action) composes it.
 
-import type { WorksheetV3 } from '@/types/lesson';
+import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
+import type { ImageSlot } from '@/types/worksheet-exercise';
+import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -16,12 +18,37 @@ import type { WorksheetV3 } from '@/types/lesson';
  *  in sync with that extension's attribute name by hand. */
 export const COMPILED_ATTR = 'wsCompiled';
 
-/** Tag one top-level node as compile-inserted (idempotency marker). */
-export function tagCompiled(node: unknown): unknown {
+/** The identity attr stamped alongside `wsCompiled` on every node of an exercise, so
+ *  a later per-exercise regenerate can find that exercise's nodes and splice new ones
+ *  in their place. Like `wsCompiled` it is a plain JSON attribute declared by the
+ *  `WsCompiledMarker` extension (default `null`, `renderHTML` → `{}`, `keepOnSplit:
+ *  false`) — it round-trips through `getJSON()` yet never reaches printed HTML / PDF,
+ *  and a teacher who splits a node inside an exercise gets an id-less (hers) sibling. */
+export const EXERCISE_ID_ATTR = 'exerciseId';
+
+/**
+ * Tag one top-level node as compile-inserted (idempotency marker), and — when an
+ * `exerciseId` is given — stamp that identity so the node's exercise is recoverable.
+ * The id is omitted (not stamped as `null`) when absent, so callers with no identity
+ * (and the assembly idempotency tests) produce output byte-identical to the old
+ * marker-only tag.
+ */
+export function tagCompiled(node: unknown, exerciseId?: string | null): unknown {
   if (!node || typeof node !== 'object') return node;
   const n = node as Record<string, unknown>;
   const attrs = n.attrs && typeof n.attrs === 'object' ? (n.attrs as Record<string, unknown>) : {};
-  return { ...n, attrs: { ...attrs, [COMPILED_ATTR]: true } };
+  const tagged: Record<string, unknown> = { ...attrs, [COMPILED_ATTR]: true };
+  if (exerciseId != null) tagged[EXERCISE_ID_ATTR] = exerciseId;
+  return { ...n, attrs: tagged };
+}
+
+/** The `exerciseId` a node carries (compile identity), or null for any node that
+ *  carries none — teacher-authored content, scaffold, or an untagged node. */
+export function nodeExerciseId(node: unknown): string | null {
+  const attrs = (node as { attrs?: unknown })?.attrs;
+  if (!attrs || typeof attrs !== 'object') return null;
+  const id = (attrs as Record<string, unknown>)[EXERCISE_ID_ATTR];
+  return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
 /** True when a node was inserted by a previous compile run. */
@@ -99,9 +126,11 @@ export function dropEmptyScaffoldHeadings(content: unknown[]): unknown[] {
   return content.filter((_, i) => !drop[i]);
 }
 
-/** One exercise ready to place: its `template_anchor` (or null) and its flowing
- *  top-level nodes (image slots already resolved by the caller). */
+/** One exercise ready to place: its row `id` (stamped onto every node so a later
+ *  per-exercise regenerate can find them), its `template_anchor` (or null), and its
+ *  flowing top-level nodes (image slots already resolved by the caller). */
 export interface PreparedExercise {
+  id: string;
   anchor: string | null;
   nodes: unknown[];
 }
@@ -145,8 +174,9 @@ export function assembleWorksheetDoc(
   const byAnchor = new Map<string, unknown[][]>();
   const appended: unknown[][] = [];
   for (const ex of exercises) {
-    // Tag every inserted node so a later run can strip it back out (idempotency).
-    const nodes = structuredClone(ex.nodes).map(tagCompiled);
+    // Tag every inserted node so a later run can strip it back out (idempotency) and
+    // stamp its exercise identity so a per-exercise regenerate can find them again.
+    const nodes = structuredClone(ex.nodes).map((n) => tagCompiled(n, ex.id));
     if (ex.anchor && headingTexts.has(ex.anchor)) {
       const list = byAnchor.get(ex.anchor) ?? [];
       list.push(nodes);
@@ -181,4 +211,135 @@ export function assembleWorksheetDoc(
   for (const group of appended) pruned.push(...group);
 
   return { version: 3, doc: { type: 'doc', content: pruned } };
+}
+
+// ── Image slots → image nodes ────────────────────────────────────────────────
+//
+// A generated image is authored as a `[Picture: …]` marker, which `markdownToDoc`
+// passes through as literal text, so in body_doc it is a top-level `paragraph`
+// whose only content is that one marker. The exercise route builds `image_slots`
+// one-per-marker in the SAME order the markers appear, so within a row the k-th
+// marker paragraph pairs with `image_slots[k]`. Where that slot has a non-null
+// `storage_path`, the marker is replaced by a `ResizableImage` node (type `image`)
+// carrying `storagePath` + `slotId`; `src` is left null so `resolveImageSrc`
+// re-signs from the path (never a persisted, expiring URL). Where there is no paired
+// slot, or its `storage_path` is null, the text marker is left exactly as it is —
+// the pre-image fallback the teacher already sees, which must not regress.
+//
+// This lives in the pure module (not the server action) because BOTH writers need
+// it identically: `compileWorksheet` on the initial build, and the client-side
+// per-exercise splice when a single exercise is regenerated in the live document.
+
+/** The flowing nodes of an exercise's body_doc, or [] when it carries none. */
+export function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
+  if (!bodyDoc || typeof bodyDoc !== 'object') return [];
+  const content = (bodyDoc as { content?: unknown }).content;
+  return Array.isArray(content) ? content : [];
+}
+
+/**
+ * If `node` is a marker paragraph — a `paragraph` whose entire content is text
+ * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
+ * return the trimmed marker text; otherwise null. A paragraph carrying a marker
+ * plus any other text (or any non-text inline node) is NOT a marker paragraph. The
+ * marker pattern (`PICTURE_MARKER_LINE`) is shared with `markdownToDoc` and the pane
+ * so the three can never drift on what counts as a marker paragraph.
+ */
+function markerParagraphText(node: unknown): string | null {
+  const n = node as { type?: unknown; content?: unknown };
+  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
+  let text = '';
+  for (const child of n.content) {
+    const c = child as { type?: unknown; text?: unknown };
+    if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
+    text += c.text;
+  }
+  return PICTURE_MARKER_LINE.test(text) ? text.trim() : null;
+}
+
+/** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
+ *  serves from `storagePath` through the re-signing route. */
+function slotImageNode(slot: ImageSlot): unknown {
+  return {
+    type: 'image',
+    attrs: {
+      src: null,
+      alt: slot.subject ?? null,
+      storagePath: slot.storage_path,
+      slotId: slot.slot_id,
+    },
+  };
+}
+
+/**
+ * Replace each marker paragraph in one exercise's top-level nodes with its slot's
+ * image node, where that slot's image is ready. The marker index resets per call
+ * (per exercise row) and advances on EVERY marker paragraph — resolved or not — so
+ * a null-storage marker never shifts the pairing of a later one. Returns a new
+ * array of the same length; non-marker nodes and unresolved markers pass through
+ * unchanged.
+ */
+export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] {
+  let i = 0;
+  return nodes.map((node) => {
+    if (markerParagraphText(node) === null) return node;
+    const slot = slots[i++]; // advance per marker, before the resolved-check
+    return slot && slot.storage_path ? slotImageNode(slot) : node;
+  });
+}
+
+/**
+ * The placeholder nodes for an exercise whose generation FAILED (null body_doc).
+ * Compile emits nothing for such a row, which would leave a failed exercise
+ * invisible in the document; instead we emit one visible paragraph so the teacher
+ * sees it failed and can regenerate it from the same gutter affordance. The nodes
+ * are UNtagged here — `assembleWorksheetDoc` / the splice tags them with the
+ * exercise's `wsCompiled` + `exerciseId` like any other exercise node. `text` is the
+ * content-language string the caller resolves (server: subject language; client:
+ * `context.contentLanguage`), so this module stays dependency-free.
+ */
+export function failedExercisePlaceholder(text: string): unknown[] {
+  return [{ type: 'paragraph', content: [{ type: 'text', text }] }];
+}
+
+/** Where a per-exercise splice removes and inserts, as ARRAY INDICES into a doc's
+ *  top-level node list (the caller maps them to ProseMirror positions). */
+export interface SplicePlan {
+  /** Indices of every top-level node carrying the exercise's id (may be non-contiguous). */
+  removeIndices: number[];
+  /** Index at which to insert the new nodes (the first removed node's slot; or, when
+   *  none carry the id, just after the scaffold anchor heading, else the end). */
+  insertIndex: number;
+}
+
+/**
+ * Plan a per-exercise splice over a doc's top-level nodes.
+ *
+ * The range is EVERY top-level node carrying `exerciseId`, contiguous or not: the
+ * new content replaces all of them and lands at the position the FIRST one held.
+ * Teacher-authored nodes interleaved between them carry no id, are not in
+ * `removeIndices`, and so survive untouched — ending up adjacent to the regenerated
+ * content. Predictable and lossless over positional elegance.
+ *
+ * When NO node carries the id (the teacher deleted the exercise), insert just after
+ * the exercise's scaffold `anchor` heading if one exists, otherwise append at the end.
+ */
+export function planExerciseSplice(
+  topNodes: unknown[],
+  exerciseId: string,
+  anchor: string | null,
+): SplicePlan {
+  const removeIndices: number[] = [];
+  topNodes.forEach((n, i) => {
+    if (nodeExerciseId(n) === exerciseId) removeIndices.push(i);
+  });
+  if (removeIndices.length > 0) {
+    return { removeIndices, insertIndex: removeIndices[0] };
+  }
+  if (anchor) {
+    for (let i = 0; i < topNodes.length; i++) {
+      if (headingText(topNodes[i]) === anchor) return { removeIndices: [], insertIndex: i + 1 };
+    }
+  }
+  return { removeIndices: [], insertIndex: topNodes.length };
 }

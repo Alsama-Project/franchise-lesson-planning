@@ -73,6 +73,17 @@ export const WsCompiledMarker = Extension.create({
             // `generateHTML` output is byte-identical to an undeclared attribute.
             renderHTML: () => ({}),
           },
+          // The exercise-identity marker (see EXERCISE_ID_ATTR in worksheet-assemble).
+          // Declared exactly like `wsCompiled` so a per-exercise regenerate can find an
+          // exercise's nodes after any number of `getJSON()` round trips. keepOnSplit
+          // is false BY DESIGN: a teacher splitting a paragraph inside an exercise
+          // produces an id-less second half — her content, outside the exercise range,
+          // never replaced by a later regenerate.
+          exerciseId: {
+            default: null,
+            keepOnSplit: false,
+            renderHTML: () => ({}),
+          },
         },
       },
     ];

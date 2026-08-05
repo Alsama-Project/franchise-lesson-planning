@@ -442,6 +442,52 @@ html:lang(ar) body {
   color: var(--color-ink);
   outline: none;
 }
+
+/* Per-exercise Regenerate affordance (ExerciseGutter widget decoration). An overlay
+ * in the left gutter of each exercise range — teal, screen-only (also ws-no-print),
+ * revealed on hover, following the image control bar's model. Zero-height so it never
+ * pushes document content; the button is absolutely placed into the page's left pad. */
+.ws-ex-gutter {
+  position: relative;
+  height: 0;
+}
+.ws-ex-regen {
+  position: absolute;
+  left: -42px;
+  top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #cfe6e0;
+  border-radius: 8px;
+  background: #e4f0ed;
+  color: #186155;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ws-doc-page:hover .ws-ex-regen,
+.ws-ex-regen:focus-visible {
+  opacity: 1;
+}
+.ws-ex-regen:hover {
+  background: #d6ebe0;
+}
+.ws-ex-regen:disabled {
+  cursor: default;
+  opacity: 1;
+  color: #9bb8b1;
+}
+.ws-ex-regen-spin {
+  animation: ws-ex-regen-spin 0.8s linear infinite;
+}
+@keyframes ws-ex-regen-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .ws-doc:focus {
   outline: none;
 }

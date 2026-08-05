@@ -183,6 +183,37 @@ test('proof 1: wsCompiled survives an edit + getJSON on every compiled node type
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────
+// Proof 1b — the exercise IDENTITY marker survives the SAME round trip (load-bearing:
+// per-exercise regenerate finds a range by this id after any number of keystrokes).
+// ─────────────────────────────────────────────────────────────────────────────────
+test('proof 1b: exerciseId survives an edit + getJSON, and never reaches the DOM', () => {
+  const schema = docSchema(true);
+  const tagId = (node, id) => ({ ...node, attrs: { ...(node.attrs ?? {}), wsCompiled: true, exerciseId: id } });
+  const compiled = {
+    type: 'doc',
+    content: [
+      heading('Exercise heading'),
+      tagId(para('exercise one, node A'), 'ex-1'),
+      tagId(para('exercise one, node B'), 'ex-1'),
+      tagId(image(), 'ex-2'),
+    ],
+  };
+  const out = roundTripWithEdit(schema, compiled);
+  const ids = out.content.map((n) => n.attrs?.exerciseId ?? null);
+  assert.deepEqual(ids, [null, 'ex-1', 'ex-1', 'ex-2'], 'every exercise id round-trips; the teacher heading has none');
+
+  // Static DOM output (the DOMOutputSpec print / generateHTML serialises) must never
+  // carry the id — an id-carrying node and a plain one render byte-identical DOM.
+  const domOf = (nodeJSON) => {
+    const pmNode = PMNode.fromJSON(schema, { type: 'doc', content: [nodeJSON] }).firstChild;
+    return JSON.stringify(schema.nodes[pmNode.type.name].spec.toDOM(pmNode));
+  };
+  const withId = domOf({ ...para('p'), attrs: { wsCompiled: true, exerciseId: 'ex-1' } });
+  assert.equal(withId, domOf(para('p')), 'an id-carrying node renders identical DOM to a plain one');
+  assert.ok(!/exerciseid|exercise-id/i.test(withId), 'exerciseId never leaks into the DOM');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────
 // Proof 2 — a second compile over the round-tripped doc keeps the exercise count,
 // not doubled. Modelled on compileWorksheet's fill-not-replace (strip its own tagged
 // output via the === true predicate, then append fresh exercises), which cannot run

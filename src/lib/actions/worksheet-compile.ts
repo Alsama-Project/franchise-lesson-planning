@@ -43,90 +43,32 @@
 // to read-only/print/PDF output.
 
 import { createClient } from '@/lib/supabase/server';
-import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 import { readWorksheetScaffoldMarkdown, scaffoldDocContent } from '@/lib/ai/worksheet-shared';
-import { assembleWorksheetDoc, type PreparedExercise } from '@/lib/ai/worksheet-assemble';
+import {
+  assembleWorksheetDoc,
+  exerciseNodes,
+  fillImageSlots,
+  failedExercisePlaceholder,
+  type PreparedExercise,
+} from '@/lib/ai/worksheet-assemble';
+import {
+  toContentLanguage,
+  worksheetArtifactText,
+} from '@/lib/editor/worksheet-content-locale';
 import type { WorksheetDoc, WorksheetV3 } from '@/types/lesson';
-import type { ImageSlot, WorksheetExerciseGeneration } from '@/types/worksheet-exercise';
+import type { ImageSlot, WorksheetExerciseGeneration, WorksheetExerciseStatus } from '@/types/worksheet-exercise';
+
+// The `[Picture: …]` marker → image-node resolution now lives in the pure assembly
+// module (`fillImageSlots`), because the per-exercise splice in the live document
+// needs the identical transform. This action composes it.
 
 interface ExerciseRow {
+  id: string;
   position: number;
+  status: WorksheetExerciseStatus;
   body_doc: WorksheetDoc | null;
   image_slots: ImageSlot[] | null;
   generation: WorksheetExerciseGeneration | null;
-}
-
-/** The flowing nodes of an exercise's body_doc, or [] when it carries none. */
-function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
-  if (!bodyDoc || typeof bodyDoc !== 'object') return [];
-  const content = (bodyDoc as { content?: unknown }).content;
-  return Array.isArray(content) ? content : [];
-}
-
-// ── Image slots → image nodes ────────────────────────────────────────────────
-//
-// A generated image is authored as a `[Picture: …]` marker, which `markdownToDoc`
-// passes through as literal text, so in body_doc it is a top-level `paragraph`
-// whose only content is that one marker (the floor requires each marker alone on
-// its own line). The exercise route builds `image_slots` one-per-marker in the
-// SAME order the markers appear in body_md (and thus body_doc), so within a row
-// the k-th marker paragraph pairs with `image_slots[k]`. Where that slot has a
-// non-null `storage_path`, the marker is replaced by a `ResizableImage` node
-// (tiptap node type `image`) carrying `storagePath` + `slotId`; `src` is left null
-// so `resolveImageSrc` re-signs from the path (never a persisted, expiring URL).
-// Where there is no paired slot, or its `storage_path` is null, the text marker is
-// left exactly as it is — the pre-image fallback the teacher already sees, which
-// must not regress.
-
-/**
- * If `node` is a marker paragraph — a `paragraph` whose entire content is text
- * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
- * return the trimmed marker text; otherwise null. A paragraph carrying a marker
- * plus any other text (or any non-text inline node) is NOT a marker paragraph. The
- * marker pattern (`PICTURE_MARKER_LINE`) is shared with `markdownToDoc` and the
- * pane so the three can never drift on what counts as a marker paragraph.
- */
-function markerParagraphText(node: unknown): string | null {
-  const n = node as { type?: unknown; content?: unknown };
-  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
-  let text = '';
-  for (const child of n.content) {
-    const c = child as { type?: unknown; text?: unknown };
-    if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
-    text += c.text;
-  }
-  return PICTURE_MARKER_LINE.test(text) ? text.trim() : null;
-}
-
-/** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
- *  serves from `storagePath` through the re-signing route. */
-function slotImageNode(slot: ImageSlot): unknown {
-  return {
-    type: 'image',
-    attrs: {
-      src: null,
-      alt: slot.subject ?? null,
-      storagePath: slot.storage_path,
-      slotId: slot.slot_id,
-    },
-  };
-}
-
-/**
- * Replace each marker paragraph in one exercise's top-level nodes with its slot's
- * image node, where that slot's image is ready. The marker index resets per call
- * (per exercise row) and advances on EVERY marker paragraph — resolved or not — so
- * a null-storage marker never shifts the pairing of a later one. Returns a new
- * array of the same length; non-marker nodes and unresolved markers pass through
- * unchanged.
- */
-function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] {
-  let i = 0;
-  return nodes.map((node) => {
-    if (markerParagraphText(node) === null) return node;
-    const slot = slots[i++]; // advance per marker, before the resolved-check
-    return slot && slot.storage_path ? slotImageNode(slot) : node;
-  });
 }
 
 /**
@@ -150,21 +92,36 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   // order (no scaffold), which is fine.
   const scaffoldMarkdown = await readWorksheetScaffoldMarkdown(supabase, subjectId);
 
+  // The subject's content language steers the failed-exercise placeholder text (the
+  // worksheet artifact follows the subject's language, not the UI locale). Defaults
+  // to English for a null subject / unknown value — mirrors the DB default.
+  const { data: subjectRow } = subjectId
+    ? await supabase.from('subjects').select('content_language').eq('id', subjectId).maybeSingle()
+    : { data: null };
+  const contentLanguage = toContentLanguage(
+    (subjectRow as { content_language?: string | null } | null)?.content_language,
+  );
+  const failedText = worksheetArtifactText(contentLanguage, 'exerciseFailed');
+
   const { data: exRows } = await supabase
     .from('worksheet_exercise')
-    .select('position, body_doc, image_slots, generation')
+    .select('id, position, status, body_doc, image_slots, generation')
     .eq('lesson_plan_id', lessonPlanId)
     .order('position', { ascending: true });
   const exercises: PreparedExercise[] = ((exRows ?? []) as ExerciseRow[])
-    .map((row) => ({
-      anchor: row.generation?.spec?.template_anchor?.trim() || null,
+    .map((row): PreparedExercise | null => {
+      const anchor = row.generation?.spec?.template_anchor?.trim() || null;
       // Pair markers ↔ slots per row (fresh index), against THIS row's own
-      // body_doc + image_slots, before the empty-body filter below.
-      nodes: fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []),
-    }))
-    // Only exercises that actually carry content participate; a skeleton /
-    // failed / still-generating row (null body_doc) is skipped.
-    .filter((e) => e.nodes.length > 0);
+      // body_doc + image_slots.
+      const nodes = fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []);
+      if (nodes.length > 0) return { id: row.id, anchor, nodes };
+      // A failed row carries no body — emit a visible, retryable placeholder rather
+      // than dropping it (an invisible gap the teacher can't act on). A skeleton /
+      // still-generating row (also null body) is skipped as before.
+      if (row.status === 'failed') return { id: row.id, anchor, nodes: failedExercisePlaceholder(failedText) };
+      return null;
+    })
+    .filter((e): e is PreparedExercise => e !== null);
 
   // Base content: the scaffold's nodes, built fresh from its markdown, or empty when
   // the subject has no scaffold document. Assembly (strip → anchor-match → fill →

@@ -24,6 +24,7 @@ import {
   planExerciseSplice,
   tagCompiled,
 } from '@/lib/ai/worksheet-assemble';
+import { SCAFFOLD_LOCK_BYPASS } from './nodes/ScaffoldHeadingLock';
 
 /** What a regenerate produced for one exercise, ready to splice. */
 export interface ExerciseRegenPayload {
@@ -70,6 +71,9 @@ export function applyExerciseSplice(
   return editor
     .chain()
     .command(({ tr, state, dispatch }) => {
+      // A programmatic write — never the teacher editing a scaffold heading — so the
+      // heading lock must never reject it.
+      tr.setMeta(SCAFFOLD_LOCK_BYPASS, true);
       // Top-level node boundaries: positions[i] is the doc position just before the
       // i-th top-level child; positions[i+1] just after it.
       const positions: number[] = [0];

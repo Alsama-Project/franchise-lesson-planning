@@ -40,6 +40,12 @@ export interface WorksheetExerciseContext {
   spec: ExerciseSpec;
   /** The lesson's curriculum anchors (gated). */
   anchors: CurriculumAnchors | null;
+  /** The exercise's CURRENT body markdown — the base a teacher-steered regenerate
+   *  revises (the adjust pattern). Null/absent for a plain regenerate. */
+  currentBodyMd?: string | null;
+  /** An optional teacher instruction to apply when regenerating (e.g. "make it
+   *  simpler", "use market vocabulary"). Absent/empty regenerates plainly. */
+  instruction?: string | null;
 }
 
 /**
@@ -113,6 +119,23 @@ function buildUserPrompt(context: WorksheetExerciseContext): string {
   const anchors = anchorLines(context.anchors);
   if (anchors.length > 0) {
     lines.push('', 'Curriculum context (anchors to respect):', ...anchors);
+  }
+
+  // Adjust mode: when the teacher gave an instruction, revise the CURRENT body rather
+  // than starting over — so "make it simpler" has something to be simpler than. Mirrors
+  // the /api/generate-resource current_content + refinement pattern.
+  const instruction = context.instruction?.trim();
+  if (instruction) {
+    const current = context.currentBodyMd?.trim();
+    lines.push(
+      '',
+      'REVISE THE CURRENT VERSION below rather than starting over: keep everything that works and change only what the teacher asks. Keep the same [Picture: …] markers unless the change requires otherwise.',
+      '',
+      'Current version:',
+      current && current.length > 0 ? current : '(the current version is empty)',
+      '',
+      `Teacher’s change: ${instruction}`,
+    );
   }
 
   lines.push(

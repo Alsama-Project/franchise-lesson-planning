@@ -28,7 +28,8 @@ import {
   worksheetArtifactText,
   type WorksheetContentLanguage,
 } from '@/lib/editor/worksheet-content-locale';
-import { ResizableImage } from '../resizableImage';
+import { ResizableImage, type RegenerateImageFn } from '../resizableImage';
+import { ScaffoldHeadingLock } from './nodes/ScaffoldHeadingLock';
 import { FontSize } from '../fontSize';
 import { Caption } from './nodes/Caption';
 import { PageBreak } from './nodes/PageBreak';
@@ -86,12 +87,24 @@ function placeholderFor(
  * `contentLanguage` drives the "Exercise N" placeholder — worksheet content follows
  * the subject's language, not the UI locale. Defaults to English.
  */
+export interface WorksheetDocOptions {
+  /** When set, generated images get a control-bar "Regenerate image" action wired to
+   *  this handler. Omitted (read-only / template) → no per-image regenerate control. */
+  onRegenerateImage?: RegenerateImageFn;
+}
+
 export function worksheetDocExtensions(
   contentLanguage: WorksheetContentLanguage = 'en',
+  options: WorksheetDocOptions = {},
 ): AnyExtension[] {
   return [
     StarterKit.configure({
       heading: { levels: [2, 3] },
+      // The drop indicator shown while dragging an image (or any block) to reorder it —
+      // teal, so "where it will land" is legible against the cream/pink document. This
+      // is the snap-into-flow drag target; free/absolute positioning is not offered
+      // because it cannot survive print repagination.
+      dropcursor: { color: '#1F7A6C', width: 2 },
     }),
     Underline,
     TextStyle,
@@ -124,10 +137,19 @@ export function worksheetDocExtensions(
     TableRow,
     TableHeader,
     TableCell,
-    ResizableImage.configure({ inline: false, allowBase64: false }),
+    ResizableImage.configure({
+      inline: false,
+      allowBase64: false,
+      onRegenerateImage: options.onRegenerateImage,
+    }),
     Caption,
     PageBreak,
     ResourceRef,
+    // Makes scaffold section headings (template-anchored, `wsCompiled !== true`) read-
+    // only: a filterTransaction rejects edits landing INSIDE such a heading's text, so
+    // retyping one can't silently break `template_anchor` matching. Everything around it
+    // — including inserting a paragraph directly above or below — stays fully editable.
+    ScaffoldHeadingLock,
     // Declares the compile idempotency marker (`wsCompiled`) so it survives
     // `getJSON()`; without it a single edit strips the tag and the next compile
     // duplicates every exercise. Declare-only, no DOM output. See the extension file.

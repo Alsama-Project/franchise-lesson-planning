@@ -13,11 +13,11 @@
 // both pull in `resizableImage.tsx` and `ResourceRef.tsx`. And tiptap's
 // `generateHTML` needs a DOM (`window`), which this headless runner has not. So the
 // test reconstructs a schema faithful to `worksheetDocExtensions` from importable
-// pieces, with TWO documented stand-ins that do not affect the marker's behaviour
-// (which depends only on a node's NAME being in the marker's `types` list and the
-// node existing in the schema — never on its NodeView or render path):
-//   • base `@tiptap/extension-image` stands in for `ResizableImage` — same node
-//     name `image`;
+// pieces:
+//   • base `@tiptap/extension-image` EXTENDED with the REAL worksheet image attribute
+//     specs (`worksheetImageAttributes`, the same DOM-free module `resizableImage.tsx`
+//     spreads) — so this round-trip actually exercises `storagePath` / `slotId` /
+//     `brief` survival, the thing the plain base-Image stand-in could never fail on;
 //   • a minimal `resourceRef` node (same name/group/atom) stands in for the `.tsx`
 //     `ResourceRef`.
 // The REAL `WsCompiledMarker` is imported and exercised. Whatever attribute survival
@@ -46,8 +46,19 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
 import TableCell from '@tiptap/extension-table-cell';
-import Image from '@tiptap/extension-image';
+import BaseImage from '@tiptap/extension-image';
+import { worksheetImageAttributes } from '../../resizableImageAttrs';
 import { FontSize } from '../../fontSize';
+
+// The REAL worksheet image node's serialisation surface: base Image + the actual extra
+// attribute specs resizableImage.tsx uses. Building the schema from this (not plain base
+// Image) is what makes the round-trip below able to FAIL if storagePath/slotId/brief are
+// dropped from the declarations.
+const Image = BaseImage.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...worksheetImageAttributes() };
+  },
+});
 import { Caption } from '../nodes/Caption';
 import { PageBreak } from '../nodes/PageBreak';
 import { Indent } from '../nodes/Indent';
@@ -108,7 +119,10 @@ const heading = (t) => ({ type: 'heading', attrs: { level: 2 }, content: [text(t
 const listItem = (t) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [text(t)] }] });
 const bulletList = (...items) => ({ type: 'bulletList', content: items.map(listItem) });
 const orderedList = (...items) => ({ type: 'orderedList', content: items.map(listItem) });
-const image = () => ({ type: 'image', attrs: { src: null, alt: 'a cat', storagePath: 'x/y.png', slotId: 's1' } });
+const image = () => ({
+  type: 'image',
+  attrs: { src: null, alt: 'a cat', storagePath: 'x/y.png', slotId: 's1', brief: 'a cartoon cat on a mat' },
+});
 const taskListNode = () => ({
   type: 'taskList',
   content: [{ type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph', content: [text('do it')] }] }],
@@ -211,6 +225,38 @@ test('proof 1b: exerciseId survives an edit + getJSON, and never reaches the DOM
   const withId = domOf({ ...para('p'), attrs: { wsCompiled: true, exerciseId: 'ex-1' } });
   assert.equal(withId, domOf(para('p')), 'an id-carrying node renders identical DOM to a plain one');
   assert.ok(!/exerciseid|exercise-id/i.test(withId), 'exerciseId never leaks into the DOM');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// Proof 1c — the IMAGE payload attributes (storagePath / slotId / brief) survive the
+// same round trip. This is the regression guard the earlier base-Image stand-in could
+// never provide: the schema here declares the REAL worksheet image attributes, so
+// dropping any of them from `worksheetImageAttributes` fails this test.
+// ─────────────────────────────────────────────────────────────────────────────────
+test('proof 1c: storagePath / slotId / brief survive an edit + getJSON', () => {
+  const schema = docSchema(true);
+  const compiled = { type: 'doc', content: [heading('lead'), tag(image())] };
+  const out = roundTripWithEdit(schema, compiled);
+  const img = out.content.find((n) => n.type === 'image');
+  assert.ok(img, 'image node present after round trip');
+  assert.equal(img.attrs?.storagePath, 'x/y.png', 'storagePath survived getJSON');
+  assert.equal(img.attrs?.slotId, 's1', 'slotId survived getJSON');
+  assert.equal(img.attrs?.brief, 'a cartoon cat on a mat', 'brief survived getJSON');
+  assert.equal(img.attrs?.wsCompiled, true, 'wsCompiled still survives alongside them');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// Proof 1d — the SCAFFOLD-heading marker survives the round trip (load-bearing: the
+// editor's ScaffoldHeadingLock keys off `wsScaffold` to keep a template section heading
+// read-only after any number of keystrokes).
+// ─────────────────────────────────────────────────────────────────────────────────
+test('proof 1d: wsScaffold survives an edit + getJSON on a scaffold heading', () => {
+  const schema = docSchema(true);
+  const scaffold = (node) => ({ ...node, attrs: { ...(node.attrs ?? {}), wsScaffold: true } });
+  const doc = { type: 'doc', content: [scaffold(heading('New Content')), para('body')] };
+  const out = roundTripWithEdit(schema, doc);
+  const h = out.content.find((n) => n.type === 'heading');
+  assert.equal(h.attrs?.wsScaffold, true, 'wsScaffold survived the round trip');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────

@@ -78,11 +78,13 @@ export interface GenerationApi extends GenerationState {
   /**
    * Regenerate ONE exercise via /exercise (+ its images). Never /plan, never
    * destructive, and NEVER a full rebuild: it returns the exercise's fresh body for
-   * the caller to splice into the live document in place. Returns null only if the
-   * exercise vanished from state mid-flight; a generation failure returns a payload
-   * with `failed: true` (a visible, retryable placeholder is spliced).
+   * the caller to splice into the live document in place. An optional `instruction`
+   * steers the regeneration against the current body (the adjust pattern); omitted
+   * regenerates plainly. Returns null only if the exercise vanished from state
+   * mid-flight; a generation failure returns a payload with `failed: true` (a visible,
+   * retryable placeholder is spliced).
    */
-  regenerateExercise: (exerciseId: string) => Promise<ExerciseRegenPayload | null>;
+  regenerateExercise: (exerciseId: string, instruction?: string) => Promise<ExerciseRegenPayload | null>;
 }
 
 /** Condense a route error into a short, safe slot `error`: single line, length-capped,
@@ -220,9 +222,9 @@ export function useWorksheetGeneration({
   }, [exercises]);
 
   const regenerateExercise = useCallback(
-    async (exerciseId: string): Promise<ExerciseRegenPayload | null> => {
+    async (exerciseId: string, instruction?: string): Promise<ExerciseRegenPayload | null> => {
       setRegenerating((prev) => new Set(prev).add(exerciseId));
-      const res = await requestExercise(exerciseId);
+      const res = await requestExercise(exerciseId, instruction);
       setExercises((cur) => {
         const idx = cur.findIndex((e) => e.id === exerciseId);
         if (idx === -1) return cur;

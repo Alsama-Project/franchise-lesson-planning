@@ -39,6 +39,9 @@ export const maxDuration = 60;
 
 interface ExerciseBody {
   exercise_id?: unknown;
+  /** Optional teacher steer for a regeneration (the adjust pattern). Omitted/empty
+   *  regenerates plainly, exactly as before. */
+  instruction?: unknown;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -95,7 +98,14 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  if (body.instruction !== undefined && typeof body.instruction !== 'string') {
+    return NextResponse.json(
+      { error: 'Field "instruction" must be a string when provided.' },
+      { status: 400 },
+    );
+  }
   const exerciseId = body.exercise_id.trim();
+  const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
 
   const supabase = await createClient();
   const {
@@ -106,7 +116,7 @@ export async function POST(request: NextRequest) {
   // Read the exercise row (RLS delegates to the parent plan's visibility).
   const { data: exRow, error: exErr } = await supabase
     .from('worksheet_exercise')
-    .select('id, lesson_plan_id, generation')
+    .select('id, lesson_plan_id, generation, body_md')
     .eq('id', exerciseId)
     .maybeSingle();
   if (exErr) {
@@ -116,6 +126,7 @@ export async function POST(request: NextRequest) {
     id: string;
     lesson_plan_id: string;
     generation: WorksheetExerciseGeneration | null;
+    body_md: string | null;
   } | null;
   if (!exercise) {
     return NextResponse.json({ error: 'Exercise not found.' }, { status: 404 });
@@ -147,7 +158,15 @@ export async function POST(request: NextRequest) {
     plan?.curriculum_version_id,
   );
 
-  const context: WorksheetExerciseContext = { subjectId, spec, anchors };
+  const context: WorksheetExerciseContext = {
+    subjectId,
+    spec,
+    anchors,
+    // Adjust mode: when the teacher gave an instruction, the generator revises the
+    // current body instead of starting over. No instruction → both are inert.
+    currentBodyMd: instruction ? exercise.body_md : null,
+    instruction: instruction || null,
+  };
 
   let result;
   try {

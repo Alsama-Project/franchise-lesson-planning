@@ -92,7 +92,11 @@
       "bringForward": "Bring forward",
       "sendBackward": "Send backward",
       "delete": "Delete",
-      "makeInline": "Make inline (wrap with text)"
+      "makeInline": "Make inline (wrap with text)",
+      "regenerate": "Regenerate image",
+      "regenComment": "Optional — e.g. simpler, more colourful",
+      "regenSubmit": "Regenerate",
+      "regenFailed": "Couldn’t regenerate the image."
     },
     "crop": {
       "title": "Crop image",

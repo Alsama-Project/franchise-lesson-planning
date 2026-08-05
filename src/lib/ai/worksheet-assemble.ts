@@ -26,6 +26,21 @@ export const COMPILED_ATTR = 'wsCompiled';
  *  and a teacher who splits a node inside an exercise gets an id-less (hers) sibling. */
 export const EXERCISE_ID_ATTR = 'exerciseId';
 
+/** The marker stamped on every heading compile takes from the subject's template
+ *  scaffold, so the editor's `ScaffoldHeadingLock` can positively identify a section
+ *  heading (and leave exercise + teacher-authored headings freely editable). Declared,
+ *  like the others, by `WsCompiledMarker` (default false, `renderHTML` → {}). */
+export const SCAFFOLD_ATTR = 'wsScaffold';
+
+/** Tag a base (scaffold) node: stamp `wsScaffold: true` on a heading so the editor can
+ *  lock it, and pass every other node through unchanged. */
+function markScaffoldHeading(node: unknown): unknown {
+  if (!node || typeof node !== 'object' || (node as { type?: unknown }).type !== 'heading') return node;
+  const n = node as Record<string, unknown>;
+  const attrs = n.attrs && typeof n.attrs === 'object' ? (n.attrs as Record<string, unknown>) : {};
+  return { ...n, attrs: { ...attrs, [SCAFFOLD_ATTR]: true } };
+}
+
 /**
  * Tag one top-level node as compile-inserted (idempotency marker), and — when an
  * `exerciseId` is given — stamp that identity so the node's exercise is recoverable.
@@ -160,8 +175,10 @@ export function assembleWorksheetDoc(
   baseContent: unknown[],
   exercises: PreparedExercise[],
 ): WorksheetV3 {
-  // Recover the bare scaffold and isolate from caller state.
-  const base = stripCompiled(structuredClone(baseContent));
+  // Recover the bare scaffold and isolate from caller state. Every scaffold heading is
+  // stamped `wsScaffold` so the editor can lock it (see ScaffoldHeadingLock). Marking
+  // the CLONE, never the caller's array. Idempotent: a re-compile marks the same set.
+  const base = stripCompiled(structuredClone(baseContent)).map(markScaffoldHeading);
 
   // Which anchors correspond to a real heading in the scaffold.
   const headingTexts = new Set<string>();
@@ -258,7 +275,9 @@ function markerParagraphText(node: unknown): string | null {
 }
 
 /** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
- *  serves from `storagePath` through the re-signing route. */
+ *  serves from `storagePath` through the re-signing route. `brief` is stamped on so a
+ *  per-image regenerate can re-send it (it round-trips via getJSON yet never prints —
+ *  see `worksheetImageAttributes`). */
 function slotImageNode(slot: ImageSlot): unknown {
   return {
     type: 'image',
@@ -267,6 +286,7 @@ function slotImageNode(slot: ImageSlot): unknown {
       alt: slot.subject ?? null,
       storagePath: slot.storage_path,
       slotId: slot.slot_id,
+      brief: slot.brief ?? null,
     },
   };
 }

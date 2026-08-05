@@ -443,41 +443,53 @@ html:lang(ar) body {
   outline: none;
 }
 
-/* Per-exercise Regenerate affordance (ExerciseGutter widget decoration). An overlay
- * in the left gutter of each exercise range — teal, screen-only (also ws-no-print),
- * revealed on hover, following the image control bar's model. Zero-height so it never
- * pushes document content; the button is absolutely placed into the page's left pad. */
+/* Per-exercise Regenerate affordance (ExerciseGutter widget decoration). A LABELLED
+ * teal chip pinned to the top-right of each exercise's first block — INSIDE the page and
+ * screen-only (also ws-no-print), following the image control bar's model. Hidden at
+ * rest; revealed when the pointer is over THAT exercise (`.is-active`, set by hover
+ * tracking) or while it regenerates (`.is-busy`). Zero-height wrapper so it never pushes
+ * document content. */
 .ws-ex-gutter {
   position: relative;
   height: 0;
 }
 .ws-ex-regen {
   position: absolute;
-  left: -42px;
-  top: 2px;
+  inset-inline-end: 0;
+  top: 4px;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid #cfe6e0;
-  border-radius: 8px;
-  background: #e4f0ed;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
   color: #186155;
+  background: #e4f0ed;
+  border: 1px solid #cfe6e0;
+  border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
 }
-.ws-doc-page:hover .ws-ex-regen,
+.ws-ex-gutter.is-active .ws-ex-regen,
+.ws-ex-gutter.is-busy .ws-ex-regen,
 .ws-ex-regen:focus-visible {
   opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 .ws-ex-regen:hover {
   background: #d6ebe0;
 }
 .ws-ex-regen:disabled {
   cursor: default;
-  opacity: 1;
   color: #9bb8b1;
 }
 .ws-ex-regen-spin {
@@ -487,6 +499,45 @@ html:lang(ar) body {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Scaffold SECTION headings are fixed (ScaffoldHeadingLock rejects edits to them).
+ * Styled as system-provided (cream) with a lock glyph and no text caret, so a keystroke
+ * that does not land reads as "this is fixed", not "this is broken". The text stays
+ * selectable; everything around the heading — including inserting a paragraph directly
+ * above or below — stays fully editable. */
+.ws-doc .ws-scaffold-heading {
+  position: relative;
+  background: #fbf6ef;
+  border-inline-start: 3px solid #e7decb;
+  border-radius: 4px;
+  padding-inline: 10px 28px;
+  padding-block: 2px;
+  cursor: default;
+  caret-color: transparent;
+}
+.ws-doc .ws-scaffold-heading::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 9px;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  transform: translateY(-50%);
+  opacity: 0.45;
+  pointer-events: none;
+  background: center / contain no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C544E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4.5' y='11' width='15' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+}
+
+/* Images snap into the document flow (no free/absolute positioning — it cannot survive
+ * print). A grab cursor signals the image can be dragged to reorder it; the teal drop
+ * indicator (Dropcursor, configured teal in extensions.ts) shows where it will land. */
+.ws-doc .ws-img-nv img {
+  cursor: grab;
+}
+.ws-doc .ws-img-nv img:active {
+  cursor: grabbing;
 }
 .ws-doc:focus {
   outline: none;

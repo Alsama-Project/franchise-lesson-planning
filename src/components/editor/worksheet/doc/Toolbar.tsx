@@ -30,7 +30,6 @@ import {
   ImagePlus,
   Table as TableIcon,
   Library,
-  Sparkles,
   MoreHorizontal,
 } from 'lucide-react';
 import { useEditorTick } from './useEditorTick';
@@ -160,13 +159,11 @@ export function Toolbar({
   editor,
   onInsertImage,
   onInsertResource,
-  onGenerateAI,
   saveState = 'idle',
 }: {
   editor: Editor | null;
   onInsertImage: () => void;
   onInsertResource: () => void;
-  onGenerateAI: () => void;
   saveState?: SaveState;
 }) {
   useEditorTick(editor);
@@ -297,10 +294,12 @@ export function Toolbar({
           </>
         );
       case 'insert':
-        // The Word-style insert group: teal-tinted pills. The two right-most pills
-        // reinstate the resource-bank + AI generate entry points here (they call the
-        // existing services — no new wiring). Link lives on Ctrl/Cmd-K + the selection
-        // bubble, so it is not duplicated on the bar.
+        // The Word-style insert group: teal-tinted pills. The Add-resource pill
+        // reinstates the resource-bank entry point here. Link lives on Ctrl/Cmd-K + the
+        // selection bubble, so it is not duplicated on the bar. The old single-resource
+        // "Generate resource" (Aya, /api/generate-resource) has been REMOVED from this
+        // toolbar — it confuses the new worksheet generator; it lives on the Resources
+        // tab. (The slash menu still offers inline AI generation for a quick insert.)
         return (
           <>
             <button type="button" title="Insert image" onMouseDown={(ev) => ev.preventDefault()} onClick={onInsertImage} style={tealPillIcon}>
@@ -318,10 +317,6 @@ export function Toolbar({
             <button type="button" title="Insert a shared resource from the bank" onMouseDown={(ev) => ev.preventDefault()} onClick={onInsertResource} style={tealPill}>
               <Library size={15} />
               Add resource
-            </button>
-            <button type="button" title="Generate a resource with AI" onMouseDown={(ev) => ev.preventDefault()} onClick={onGenerateAI} style={tealPill}>
-              <Sparkles size={15} />
-              Generate resource
             </button>
           </>
         );

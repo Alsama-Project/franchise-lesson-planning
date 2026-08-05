@@ -52,6 +52,9 @@ interface WorksheetImageBody {
   lesson_plan_id?: unknown;
   subject_id?: unknown;
   regenerate?: unknown;
+  /** Optional free-text steer for a regeneration (e.g. "simpler", "more colourful").
+   *  Folded into the prompt after the brief; absent/empty behaves exactly as before. */
+  instruction?: unknown;
 }
 
 /** Returns true for a present, non-empty string. */
@@ -153,12 +156,19 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  if (body.instruction !== undefined && typeof body.instruction !== 'string') {
+    return NextResponse.json(
+      { error: 'Field "instruction" must be a string when provided.' },
+      { status: 400 },
+    );
+  }
 
   const slotId = body.slot_id as string;
   const brief = body.brief as string;
   const lessonPlanId = body.lesson_plan_id as string;
   const subjectId = body.subject_id as string;
   const regenerate = body.regenerate === true;
+  const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
 
   const supabase = await createClient();
   const {
@@ -199,12 +209,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // (c) Content-addressed cache key.
-  const hash = promptHash(brief);
+  // (c) Content-addressed cache key. A teacher instruction changes the desired output,
+  // so it MUST be part of the key — otherwise an instruction-adjusted image would be
+  // stored under the plain brief's hash and later served for a plain brief (cache
+  // poisoning). With no instruction the key is exactly the brief hash, as before.
+  const hash = promptHash(instruction ? `${brief} :: ${instruction}` : brief);
 
-  // (d) Cache lookup — skipped entirely for a regenerate. Newest non-blocked row for
-  // the hash wins. Hit → record the binding and return the cached path, no generation.
-  if (!regenerate) {
+  // (d) Cache lookup — skipped for a regenerate AND for any instruction (the teacher
+  // asked for something new, not the cached image). Newest non-blocked row for the hash
+  // wins. Hit → record the binding and return the cached path, no generation.
+  if (!regenerate && !instruction) {
     const { data: cached } = await supabase
       .from('worksheet_image')
       .select('id, storage_path')
@@ -266,7 +280,12 @@ export async function POST(request: NextRequest) {
   // than in a code floor) is the last thing the model reads before it draws.
   // `worksheet_image` has no output contract, so its floor section is empty; nothing
   // followed the brief to anchor the guidance when the brief came last.
-  const promptSent = `━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}\n\n${composed.system}`;
+  // A teacher adjustment sits right under the brief, so the model reads what to draw
+  // and then how the teacher wants it changed, before the composed guidance.
+  const adjust = instruction
+    ? `\n\n━━━ TEACHER ADJUSTMENT (apply to this image) ━━━\n${instruction}`
+    : '';
+  const promptSent = `━━━ IMAGE BRIEF (what to draw) ━━━\n${brief.trim()}${adjust}\n\n${composed.system}`;
 
   // Length guard + observability. Log the composed length every call so a future
   // regression is a single named log line, not a silent 400 from the model. Post-fix

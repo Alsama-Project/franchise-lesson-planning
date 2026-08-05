@@ -84,6 +84,20 @@ export const WsCompiledMarker = Extension.create({
             keepOnSplit: false,
             renderHTML: () => ({}),
           },
+          // The scaffold-heading marker: compile stamps `wsScaffold: true` on every
+          // heading it takes from the subject's template scaffold (see
+          // `assembleWorksheetDoc`). It POSITIVELY distinguishes a template section
+          // heading — which `ScaffoldHeadingLock` makes read-only so retyping it can't
+          // silently break `template_anchor` matching — from an EXERCISE heading
+          // (`wsCompiled`) and a TEACHER-authored heading (neither marker), both of
+          // which stay freely editable. Declared like the others: round-trips through
+          // getJSON, emits nothing to the DOM. keepOnSplit false so splitting off a new
+          // block below a heading does not inherit the lock.
+          wsScaffold: {
+            default: false,
+            keepOnSplit: false,
+            renderHTML: () => ({}),
+          },
         },
       },
     ];

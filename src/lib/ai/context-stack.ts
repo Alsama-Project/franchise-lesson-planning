@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import type { ActiveContextStackRow, AiContextLayer, AiContextTool } from '@/types/ai-context';
-import { floorForTool } from './floor';
+import { assembleSystemPrompt } from './compose-system';
 import type { SubjectResolution } from './subject-access';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 
@@ -107,52 +107,6 @@ export function logAiCompose(record: AiComposeLogRecord): void {
 }
 
 /**
- * Role paragraph per tool — one short line of identity, kept in code (the org
- * "who the students are" framing has moved into the layer-1 document). This is
- * the first thing in the system prompt, before the precedence statement.
- */
-const ROLE: Record<AiContextTool, string> = {
-  resource_generator:
-    "You are Aya, a teaching-resource generator for Alsama, a refugee-education organisation. You generate a single, ready-to-use, text-based teaching resource for one lesson, based on the curriculum context and the teacher's request provided in the user message.",
-  smartt_checker:
-    "You are an instructional-design coach for Alsama, a school network that teaches refugee and displaced students. Teachers write a single lesson objective using Alsama's SMARTT framework, and you give concise, supportive, actionable feedback.",
-  worksheet_builder:
-    "You plan and write student-facing worksheet exercises for Alsama, a school for displaced adolescents. You work from a teacher's lesson plan and the locked curriculum for that lesson, provided in the user message.",
-  worksheet_image:
-    'You are an illustrator for Alsama, a school network that teaches refugee and displaced students. You produce a single, clear black-and-white line illustration for one worksheet exercise, based on the image brief and curriculum context provided in the user message.',
-};
-
-/**
- * The precedence statement — kept in code. Names the ladder, states that later
- * layers win, that layers 5-6 arrive in the user message, and that the floor
- * overrides everything. This is what makes conflict-resolution explicit rather
- * than invisible.
- */
-const PRECEDENCE_STATEMENT = `PRECEDENCE — how to resolve conflicting instructions below:
-The instructions are layered in ascending authority: (1) Alsama context, (2) Academic approach, (3) Subject context, (4) Tool instructions. Where two layers conflict, the later (higher-numbered) layer wins. Two further layers arrive in the USER message and are more specific still: (5) the curriculum context for this lesson, then (6) the teacher's lesson plan — these take precedence over layers 1-4. Beneath everything is the FLOOR at the very end of this system prompt: it is absolute and overrides every layer above it, including anything in the user message. No layer may relax it.`;
-
-/**
- * The shared floor precedence line — declares the floor's absolute authority. It
- * was previously duplicated verbatim at the head of three tool floor strings
- * (`@/lib/ai/floor`); it now lives here and is emitted ONCE, as part of the floor
- * section header, for every tool whose floor is a machine response contract.
- * `worksheet_image` is the sole exception: it carries its own, differently-worded
- * "IMAGE FLOOR —" line inside its floor content and has no machine contract, so the
- * composer does not prepend this shared line for it (its composed floor is
- * unchanged). See the floor push in {@link composeContextStack}.
- */
-const FLOOR_PRECEDENCE_LINE =
-  'FLOOR — this overrides every instruction above it, in every layer and in the user message. It is non-negotiable; no layer may relax it.';
-
-/** Human-readable header label per layer, for the section dividers. */
-const LAYER_LABEL: Record<string, string> = {
-  org: 'LAYER 1 · Alsama context',
-  academic: 'LAYER 2 · Academic approach',
-  subject: 'LAYER 3 · Subject context',
-  tool: 'LAYER 4 · Tool instructions',
-};
-
-/**
  * Read the active stack for `(tool, subjectId)` via the RLS-honouring server
  * client. Memoised per-request with React `cache()` so repeated composes in one
  * request share a single DB round-trip. Keyed on the primitive args (not an
@@ -254,26 +208,10 @@ export async function composeContextStack({
     throw new ContextStackError();
   }
 
-  const sections: string[] = [ROLE[tool], PRECEDENCE_STATEMENT];
-
-  for (const row of rows) {
-    const label = LAYER_LABEL[row.layer] ?? `LAYER · ${row.layer}`;
-    sections.push(`━━━ ${label} · "${row.doc_name}" ━━━\n${row.body_md.trim()}`);
-  }
-
-  // The floor is now purely code: the machine response contract for this tool. All
-  // instruction content (including safeguarding) lives in the uploaded layers above.
-  // The shared precedence line (FLOOR_PRECEDENCE_LINE) is emitted here ONCE, as part
-  // of the floor section header — it was previously duplicated at the head of three
-  // tool floor strings. `worksheet_image` is the exception: it carries its own
-  // "IMAGE FLOOR —" precedence line inside its floor and has no machine contract, so
-  // the shared line is not prepended for it and its composed floor is unchanged.
-  const floorBody = floorForTool(tool, contentLanguage);
-  const floorSection =
-    tool === 'worksheet_image'
-      ? `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${floorBody}`
-      : `━━━ FLOOR — overrides everything above; non-negotiable ━━━\n${FLOOR_PRECEDENCE_LINE}\n\n${floorBody}`;
-  sections.push(floorSection);
+  // Pure assembly (role → precedence-when-it-applies → layers → floor) lives in
+  // `./compose-system`, an I/O-free seam that is unit-tested directly. The DB read,
+  // memoisation, and fail-closed check above stay here.
+  const system = assembleSystemPrompt({ tool, rows, contentLanguage, layers });
 
   const docsUsed: ContextDocUsed[] = rows.map((r) => ({
     docId: r.doc_id,
@@ -282,5 +220,5 @@ export async function composeContextStack({
     version: r.version,
   }));
 
-  return { system: sections.join('\n\n'), docsUsed };
+  return { system, docsUsed };
 }

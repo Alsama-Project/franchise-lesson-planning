@@ -428,6 +428,7 @@
       },
       "worksheetFrame": {
         "title": "Page design",
+        "lead": "Not part of the instructions above. This controls how worksheets print, and is never sent to the AI.",
         "builtIn": "Using the built-in page",
         "uploaded": "Uploaded",
         "upload": "Upload",

@@ -427,8 +427,8 @@
         "archiving": "Archiving…"
       },
       "worksheetFrame": {
-        "title": "Page design",
-        "lead": "Not part of the instructions above. This controls how worksheets print, and is never sent to the AI.",
+        "title": "Student worksheet template",
+        "lead": "Not part of the instructions above and never sent to the AI. Upload an HTML page designed in Claude Design — it sets how that subject's worksheets print.",
         "builtIn": "Using the built-in page",
         "uploaded": "Uploaded",
         "upload": "Upload",

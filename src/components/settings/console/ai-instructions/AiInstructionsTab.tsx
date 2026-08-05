@@ -568,12 +568,15 @@ function AddSubjectDocument({
   return (
     <div className="flex flex-col gap-[8px]">
       {input}
-      <div className="flex items-center gap-[7px]">
+      {/* Stacked, not a shared row: inside the layer-4 column the row is too narrow
+          to hold the select and the button side by side (the select collapsed to
+          ~40px, rendering "Ch…"). Full-width select on its own line, button beneath. */}
+      <div className="flex flex-col gap-[7px]">
         <select
           value={subjectId}
           onChange={(e) => setSubjectId(e.target.value)}
           aria-label={t('aiInstructions.addForSubject.choose')}
-          className="min-w-0 flex-1 rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
+          className="w-full min-w-0 truncate rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
         >
           <option value="">{t('aiInstructions.addForSubject.choose')}</option>
           {subjects.map((s) => (
@@ -586,7 +589,7 @@ function AddSubjectDocument({
           type="button"
           onClick={open}
           disabled={pending || !subjectId}
-          className="shrink-0 rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
+          className="w-full rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
         >
           {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addForSubject.label')}`}
         </button>

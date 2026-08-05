@@ -216,6 +216,10 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
         </Column>
       </div>
 
+      {/* A structural break marking the Page design section as a different kind of
+          thing from the instruction board above — not a fifth layer of the stack. */}
+      <hr className="my-[32px] border-t border-border-subtle" />
+
       {/* Page design — a full-width row below the four instruction columns. Not
           part of the instruction stack: the page design is printed page furniture
           (HTML), never composed into a prompt. */}
@@ -382,7 +386,11 @@ function DocCard({
       }`}
     >
       <div className="flex items-start gap-[7px]">
-        <div dir="auto" className="min-w-0 flex-1 text-[12.5px] font-semibold leading-[1.35] text-ink">
+        <div
+          dir="auto"
+          title={doc.name}
+          className="min-w-0 flex-1 text-[12.5px] font-semibold leading-[1.35] text-ink [overflow-wrap:anywhere] line-clamp-2"
+        >
           {doc.name}
         </div>
         {subjectName ? (
@@ -560,12 +568,15 @@ function AddSubjectDocument({
   return (
     <div className="flex flex-col gap-[8px]">
       {input}
-      <div className="flex items-center gap-[7px]">
+      {/* Stacked, not a shared row: inside the layer-4 column the row is too narrow
+          to hold the select and the button side by side (the select collapsed to
+          ~40px, rendering "Ch…"). Full-width select on its own line, button beneath. */}
+      <div className="flex flex-col gap-[7px]">
         <select
           value={subjectId}
           onChange={(e) => setSubjectId(e.target.value)}
           aria-label={t('aiInstructions.addForSubject.choose')}
-          className="min-w-0 flex-1 rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
+          className="w-full min-w-0 truncate rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
         >
           <option value="">{t('aiInstructions.addForSubject.choose')}</option>
           {subjects.map((s) => (
@@ -578,7 +589,7 @@ function AddSubjectDocument({
           type="button"
           onClick={open}
           disabled={pending || !subjectId}
-          className="shrink-0 rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
+          className="w-full rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
         >
           {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addForSubject.label')}`}
         </button>
@@ -631,9 +642,12 @@ function WorksheetFrameRow({
   const count = subjects.length;
   return (
     <section className="mt-[16px] overflow-hidden rounded-[12px] border border-border">
-      <h2 className="px-[16px] pt-[14px] pb-[13px] text-[14px] font-semibold text-ink">
+      <h2 className="px-[16px] pt-[14px] pb-[5px] text-[14px] font-semibold text-ink">
         {t('aiInstructions.worksheetFrame.title')}
       </h2>
+      <p dir="auto" className="px-[16px] pb-[13px] text-[12.5px] leading-[1.45] text-text-faint">
+        {t('aiInstructions.worksheetFrame.lead')}
+      </p>
       <div className="grid grid-cols-1 border-t border-border-subtle min-[901px]:grid-cols-2">
         {subjects.map((s, i) => (
           <FrameCard

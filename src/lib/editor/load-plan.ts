@@ -8,6 +8,8 @@ import {
   toContentLanguage,
   type WorksheetContentLanguage,
 } from '@/lib/editor/worksheet-content-locale';
+import { resolveParsedFrame } from '@/lib/worksheet-frame/resolve';
+import type { ParsedFrame } from '@/lib/worksheet-frame/frame';
 
 /** Block types that have a pre-approved activity bank today. */
 export const ACTIVITY_BLOCK_TYPES: LessonBlockType[] = ['cfu', 'exit_ticket'];
@@ -43,6 +45,13 @@ export interface EditorClassContext {
    * worksheet artifact scaffold language. Defaults to 'en' when the row is absent.
    */
   subjectContentLanguage: WorksheetContentLanguage;
+  /**
+   * The subject's printed worksheet page frame, PARSED and scoped: the subject's
+   * uploaded `worksheet_frame`, else the built-in default for its content language.
+   * The live worksheet pane renders the Alsama page around the editor from this; the
+   * default guarantees every subject a proper page with no upload.
+   */
+  worksheetFrame: ParsedFrame;
   /** Plan scope, so the header/wizard can label centre/org plans. */
   scope: PlanScope;
 }
@@ -208,11 +217,11 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
   // Class-scope plans take their context from the joined class. Centre/org-scope
   // plans have no single class, so resolve year/subject/centre from the plan's own
   // scope columns (literacy defaults to `mixed`, no group label).
-  let classContext: EditorClassContext;
+  let base: Omit<EditorClassContext, 'worksheetFrame'>;
   if (rawClass) {
     const school = one(rawClass.school);
     const subject = one(rawClass.subject);
-    classContext = {
+    base = {
       id: rawClass.id,
       year: rawClass.year,
       literacy: rawClass.literacy,
@@ -235,7 +244,7 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
     ]);
     const subject = subjectRow as { id: string; name: string; content_language: string | null } | null;
     const school = schoolRes.data as { name: string } | null;
-    classContext = {
+    base = {
       id: '',
       year: row.year ?? 0,
       literacy: 'mixed',
@@ -246,6 +255,16 @@ export async function loadPlanForEditor(id: string): Promise<EditorPlanData | nu
       scope: row.scope,
     };
   }
+
+  // The subject's page frame, parsed and scoped once (uploaded row, else the built-in
+  // default for its content language). Threaded to the worksheet pane, which renders
+  // the Alsama page around the editor from it.
+  const worksheetFrame = await resolveParsedFrame(
+    supabase,
+    base.subjectId,
+    base.subjectContentLanguage,
+  );
+  const classContext: EditorClassContext = { ...base, worksheetFrame };
 
   // Resolve the locked curriculum context from the Supabase-backed curriculum.
   // `getLessonById` now resolves to a single row on full identity (or null when a

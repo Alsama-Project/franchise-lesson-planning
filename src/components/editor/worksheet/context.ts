@@ -7,6 +7,7 @@
 // modal, and usage tracking.
 
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
+import type { ParsedFrame } from '@/lib/worksheet-frame/frame';
 
 export interface WorksheetContext {
   // ── Master frame (locked, read-only) ──────────────────────────────────────
@@ -51,4 +52,14 @@ export interface WorksheetContext {
   lessonPlanId: string;
   /** The subject id — scopes the resource bank modal. */
   subjectId: string | null;
+
+  // ── Page frame (the printed Alsama page around the worksheet) ──────────────
+  /**
+   * The subject's page frame, parsed and scoped (uploaded `worksheet_frame`, else the
+   * built-in default for `contentLanguage`). The LIVE worksheet pane renders this
+   * Alsama page around the editor, mounting the exercises at the frame's `{{exercises}}`
+   * marker. Optional: absent on the read-only / template surfaces, which keep the
+   * hand-built DocMasthead/DocFooter (a separate branch unifies those).
+   */
+  worksheetFrame?: ParsedFrame | null;
 }

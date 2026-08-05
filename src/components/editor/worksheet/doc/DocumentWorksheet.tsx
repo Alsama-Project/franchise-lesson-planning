@@ -37,6 +37,8 @@ import { applyExerciseSplice, buildExerciseNodes, type ExerciseRegenPayload } fr
 import { nodeExerciseId } from '@/lib/ai/worksheet-assemble';
 import { requestImage } from '@/lib/worksheet/generate-client';
 import type { RegenerateImageArgs } from '../resizableImage';
+import { WorksheetFramePage } from './WorksheetFramePage';
+import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
 
 export type { SaveState } from './theme';
 
@@ -357,14 +359,43 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
   // Template Mode (which has no zoom control and its own enlarged canvas).
   const zoomable = !!onZoomChange && !templateMode;
 
+  // The subject's page frame renders the Alsama page around the editor on the live
+  // pane. Off in Template Mode (which authors the doc body, not the page furniture) —
+  // there the hand-built DocMasthead/DocFooter scaffold stays. When a frame is active,
+  // DocMasthead/DocFooter are DEAD on this surface (the frame supplies that furniture);
+  // they are retained, not deleted, because the read-only/template paths still use them.
+  const frame = !templateMode ? context.worksheetFrame : null;
+  const framePlaceholders = useMemo<FramePlaceholders>(
+    () => ({
+      subject: context.subjectName,
+      year: context.year ?? '',
+      theme: context.theme,
+      centre: context.centreName,
+      objective: context.smarttObjective,
+      lesson_key: context.lessonCode,
+    }),
+    [context.subjectName, context.year, context.theme, context.centreName, context.smarttObjective, context.lessonCode],
+  );
+
+  // The editor surface, wrapped only in the hint-badge CSS var (the frame's `.body`
+  // supplies padding/min-height; without a frame the `.ws-doc-body` wrapper does).
+  const hintBadgeStyle = { ['--ws-hint-badge' as string]: `"${hintBadge.replace(/"/g, '\\"')}"` };
+
   // The `.ws-doc-page` contents, shared by the zoomed and unzoomed layouts so the two
-  // paths can never drift.
-  const pageInner = (
+  // paths can never drift. With a frame: the parsed Alsama page, the editor portalled
+  // at its `{{exercises}}` marker. Without: the hand-built masthead/body/footer.
+  const pageInner = frame ? (
+    <WorksheetFramePage frame={frame} placeholders={framePlaceholders}>
+      <div style={hintBadgeStyle}>
+        <EditorContent editor={editor} />
+      </div>
+    </WorksheetFramePage>
+  ) : (
     <>
       <DocMasthead ctx={context} templateMode={templateMode} />
       <div
         className="ws-doc-body"
-        style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520, ['--ws-hint-badge' as string]: `"${hintBadge.replace(/"/g, '\\"')}"` }}
+        style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520, ...hintBadgeStyle }}
       >
         <EditorContent editor={editor} />
       </div>

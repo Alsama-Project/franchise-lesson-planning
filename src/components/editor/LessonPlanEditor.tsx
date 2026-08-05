@@ -216,14 +216,20 @@ export function LessonPlanEditor({
         setSaveState('idle');
         return;
       }
-      const res = await saveLessonPlan({
-        id: plan.id,
-        smartt_objective: composeObjective(remainder),
-        blocks,
-        required_materials: materials,
-        smartt_check: checkResult ?? undefined,
-      });
-      setSaveState(res.ok ? 'saved' : 'error');
+      try {
+        const res = await saveLessonPlan({
+          id: plan.id,
+          smartt_objective: composeObjective(remainder),
+          blocks,
+          required_materials: materials,
+          smartt_check: checkResult ?? undefined,
+        });
+        setSaveState(res.ok ? 'saved' : 'error');
+      } catch {
+        // A thrown action (size limit, network) must surface as a failed save, not an
+        // unhandled rejection that leaves the indicator stuck on "saving".
+        setSaveState('error');
+      }
     }, AUTOSAVE_DELAY_MS);
 
     return () => {
@@ -238,22 +244,75 @@ export function LessonPlanEditor({
   // `locked`. This is the one behaviour that differs from the plan-field lock.
   const wsFirstRender = useRef(true);
   const wsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The latest worksheet still awaiting persistence. Set when a change is debounced,
+  // read-and-cleared when a save actually starts — so an unmount / navigation can
+  // flush a write the debounce hasn't fired yet, and `beforeunload` knows one is due.
+  const wsPending = useRef<{ planId: string; worksheet: unknown } | null>(null);
+
+  const flushWorksheetSave = useCallback(async () => {
+    const pending = wsPending.current;
+    if (!pending) return;
+    wsPending.current = null;
+    if (wsTimer.current) {
+      clearTimeout(wsTimer.current);
+      wsTimer.current = null;
+    }
+    setSaveState('saving');
+    try {
+      const res = await saveWorksheet(pending.planId, pending.worksheet);
+      setSaveState(res.ok ? 'saved' : 'error');
+    } catch {
+      // A THROWN action — the request body exceeding the Server Action size limit, a
+      // network drop — must never vanish silently. Without this catch the rejection
+      // is unhandled and `saveState` stays stuck on "saving" forever: the teacher is
+      // told nothing while her worksheet is not, in fact, saved. Surface it as a
+      // failed save like any other.
+      setSaveState('error');
+    }
+  }, []);
+
   useEffect(() => {
     if (wsFirstRender.current) {
       wsFirstRender.current = false;
       return;
     }
+    wsPending.current = { planId: plan.id, worksheet };
     setSaveState('saving');
     if (wsTimer.current) clearTimeout(wsTimer.current);
-    wsTimer.current = setTimeout(async () => {
-      const res = await saveWorksheet(plan.id, worksheet);
-      setSaveState(res.ok ? 'saved' : 'error');
+    wsTimer.current = setTimeout(() => {
+      void flushWorksheetSave();
     }, AUTOSAVE_DELAY_MS);
 
     return () => {
       if (wsTimer.current) clearTimeout(wsTimer.current);
     };
-  }, [worksheet, plan.id]);
+  }, [worksheet, plan.id, flushWorksheetSave]);
+
+  // Persist a still-pending worksheet edit when this editor UNMOUNTS (in-app
+  // navigation away) instead of dropping it. The 1.5s debounce window would otherwise
+  // silently lose the last write — the exact failure behind a Regenerate-all's images
+  // rendering live but being gone on the next load. The request is fired synchronously
+  // on cleanup; the browser completes it after unmount.
+  useEffect(() => {
+    return () => {
+      void flushWorksheetSave();
+    };
+  }, [flushWorksheetSave]);
+
+  // A full-page navigation / reload / tab close can't await an in-flight autosave, so
+  // warn before leaving while a worksheet write is still queued (standard "unsaved
+  // changes" guard). Active only while a write is actually pending, so it never nags
+  // once everything is saved.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (wsPending.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
 
   // ── Apply an ACCEPTED coordinator suggestion to the local buffer ─────────────
   // Accepting a suggestion (in the Review step's embedded pane) applies the change

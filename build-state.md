@@ -2,7 +2,56 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Slot-scoped visibility + coordinator authoring + retire impersonation ✅ (this phase)
+## Worksheet markdown render floor ✅ (this phase)
+
+Hardened `markdownToDoc` (`src/lib/editor/markdown.ts`) — the server-side `body_md` →
+`body_doc` converter — so the model's stray markdown never reaches a student sheet as junk.
+Converter-only; no schema/migration/SQL. PR only, never merged.
+
+- **Ordered-list numbering (Fix 1).** The ordered regex now captures the first item's own
+  number and stamps it as `attrs.start` on the emitted `orderedList` (stateless — a contiguous
+  `1. 2. 3.` still emits ONE list, `start: 1`; a `2.` closed out of a longer run by intervening
+  prose emits its own list, `start: 2`). `start` reaches the page in all four places: the
+  `ExerciseBody` walker renders `<ol start={…}>`; StarterKit's `orderedList` keeps `start` and
+  `generateHTML`/`toDOM` emit it for a non-1 start (confirmed, no extension change); no
+  `counter-reset` on `ol` in the print CSS; `docToMarkdown` serialises `start + i` (round trip
+  verified for its `FreeBlock` / `aiInsert` callers).
+- **Thematic breaks (Fix 2).** A `---`/`***`/`___` line flushes the open paragraph + list and
+  emits nothing (no `horizontalRule` node in the schema — dropping loses nothing a student sees).
+- **Pipe tables flatten (Fix 3).** A contiguous run of ≥2 `| … |` rows → the separator dropped,
+  the header row a bold paragraph (cells em-dash-joined), every other row a `listItem` in one
+  `bulletList`; each cell through `inlineToNodes` so inline `**bold**` survives. Never rebuilds a
+  table. A lone pipe line is left as literal prose.
+- **Escape scrub (Fix 4, defensive).** Backslash-escaped markdown punctuation is unescaped at the
+  line level BEFORE block classification, so a hypothetical `0\. text` becomes `0. text` and then
+  numbers. `|` is deliberately excluded (unescaping pipes could manufacture table syntax).
+- **Markers are block-level (Fix 5).** A `[Picture: …]` marker alone on its line becomes its OWN
+  pure-text paragraph and does not absorb the following line — so both image-substitution sites
+  (compile's `markerParagraphText`, the pane's `PICTURE_ONLY_RE`) match it. The marker regex is now
+  single-sourced (`PICTURE_MARKER_LINE`, exported from `markdown.ts`, imported by the compile path
+  and the pane) so the three can never drift.
+- **A marker never prints as bracket text (Fix 6).** On the exercise pane — the print surface the
+  acceptance targets and where the image affordance/`#250` error chrome live — a non-`ready` slot's
+  `[Picture: …]` token is now `ws-no-print`: on screen the teacher still sees the token, the slot
+  status and the failure reason; the printed student sheet shows only the empty framed box (the
+  image's footprint). The `#250` failed-slot error chrome is untouched.
+  - **Deferred / reported.** The equivalent empty-box render for a non-`ready` marker on the
+    COMPILED-DOCUMENT surface (`DocumentWorksheet`/read-only, rendered live through the tiptap
+    schema, not the pane's hand-walker) can only be drawn as a placeholder node or a `ResizableImage`
+    no-source branch — i.e. **reconfiguring the extension set**, which the task's house rule says to
+    stop-and-report rather than proceed. Not done here. Newly-generated worksheets are reviewed in the
+    pane (box + retry) before compile, and ready slots become image nodes at compile, so the exposure
+    is a coordinator/print view of a still-failed slot.
+
+**Not backfilled:** existing `body_doc` rows keep their old (bad) conversion until the exercise is
+regenerated — no re-convert utility built (out of scope).
+
+### Status
+`npx tsc --noEmit` ✅ · `next build` ✅ · ESLint ✅ on changed source. Tests: **185 passed / 0
+failed / 19 skipped** (`npm test`, +14 new converter regression guards in
+`src/lib/editor/__tests__/markdown.test.ts`). No new user-facing UI strings (nothing for Kadria).
+
+## Slot-scoped visibility + coordinator authoring + retire impersonation ✅ (prior phase)
 
 Three coupled changes on `claude/slot-scoped-and-unify`. **The two SQL migrations are
 PRINTED, NOT APPLIED — George runs them by hand** (Supabase SQL editor), like every prior

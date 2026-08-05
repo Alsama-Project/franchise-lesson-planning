@@ -9,6 +9,7 @@
 
 import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
 import type { ImageSlot } from '@/types/worksheet-exercise';
+import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -229,8 +230,6 @@ export function assembleWorksheetDoc(
 // it identically: `compileWorksheet` on the initial build, and the client-side
 // per-exercise splice when a single exercise is regenerated in the live document.
 
-const PICTURE_MARKER = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
-
 /** The flowing nodes of an exercise's body_doc, or [] when it carries none. */
 export function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
   if (!bodyDoc || typeof bodyDoc !== 'object') return [];
@@ -242,7 +241,9 @@ export function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
  * If `node` is a marker paragraph — a `paragraph` whose entire content is text
  * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
  * return the trimmed marker text; otherwise null. A paragraph carrying a marker
- * plus any other text (or any non-text inline node) is NOT a marker paragraph.
+ * plus any other text (or any non-text inline node) is NOT a marker paragraph. The
+ * marker pattern (`PICTURE_MARKER_LINE`) is shared with `markdownToDoc` and the pane
+ * so the three can never drift on what counts as a marker paragraph.
  */
 function markerParagraphText(node: unknown): string | null {
   const n = node as { type?: unknown; content?: unknown };
@@ -253,7 +254,7 @@ function markerParagraphText(node: unknown): string | null {
     if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
     text += c.text;
   }
-  return PICTURE_MARKER.test(text) ? text.trim() : null;
+  return PICTURE_MARKER_LINE.test(text) ? text.trim() : null;
 }
 
 /** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`

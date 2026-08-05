@@ -52,7 +52,7 @@ export function markdownToHtml(markdown: string): string {
   const out: string[] = [];
 
   let para: string[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
+  let list: { ordered: boolean; items: string[]; start?: number } | null = null;
 
   const flushPara = () => {
     if (para.length) {
@@ -62,9 +62,16 @@ export function markdownToHtml(markdown: string): string {
   };
   const flushList = () => {
     if (list) {
-      const tag = list.ordered ? 'ol' : 'ul';
       const items = list.items.map((i) => `<li>${inline(escapeHtml(i))}</li>`).join('');
-      out.push(`<${tag}>${items}</${tag}>`);
+      if (list.ordered) {
+        // Honour the first item's own number as the list's `start` (a `3. 4.` run
+        // starts at 3), so a doc→markdown→html round trip keeps its numbering. `1`
+        // is the default and is left implicit, matching tiptap's OrderedList.
+        const attr = list.start && list.start !== 1 ? ` start="${list.start}"` : '';
+        out.push(`<ol${attr}>${items}</ol>`);
+      } else {
+        out.push(`<ul>${items}</ul>`);
+      }
       list = null;
     }
   };
@@ -91,14 +98,14 @@ export function markdownToHtml(markdown: string): string {
       continue;
     }
 
-    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
     if (ordered) {
       flushPara();
       if (!list || !list.ordered) {
         flushList();
-        list = { ordered: true, items: [] };
+        list = { ordered: true, items: [], start: parseInt(ordered[1], 10) };
       }
-      list.items.push(ordered[1].trim());
+      list.items.push(ordered[2].trim());
       continue;
     }
 
@@ -157,8 +164,12 @@ function blockToMarkdown(node: JSONContent): string {
       return inlineToMarkdown(node.content);
     case 'bulletList':
       return (node.content ?? []).map((li) => `- ${listItemInline(li)}`).join('\n');
-    case 'orderedList':
-      return (node.content ?? []).map((li, i) => `${i + 1}. ${listItemInline(li)}`).join('\n');
+    case 'orderedList': {
+      // Emit the list's own `start` (a list beginning at 3 serialises `3. 4. …`),
+      // so the numbering survives a doc→markdown→doc/html round trip. Defaults to 1.
+      const start = Number(node.attrs?.start) || 1;
+      return (node.content ?? []).map((li, i) => `${start + i}. ${listItemInline(li)}`).join('\n');
+    }
     case 'image':
       // Images don't round-trip into the generator's markdown; the adjust prompt
       // works on text. The teacher's image stays in the editor regardless.
@@ -244,19 +255,116 @@ function listItemNode(text: string): JSONContent {
 }
 
 /**
+ * A line — or a paragraph's whole text — that is EXACTLY one `[Picture: …]` marker
+ * and nothing else. The single source of truth for marker-alone detection, reused
+ * by the two image-substitution sites (compile's `markerParagraphText`, the pane's
+ * `PICTURE_ONLY_RE`) so the converter and its consumers can never drift on what
+ * counts as a marker paragraph.
+ */
+export const PICTURE_MARKER_LINE = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
+
+/** A CommonMark thematic break: a whole (trimmed) line of 3+ of the same `-`/`*`/`_`.
+ *  There is no `horizontalRule` node in the worksheet schema, so a match is dropped. */
+const THEMATIC_BREAK = /^([-*_])\1{2,}$/;
+
+/** A markdown table-row line: its trim starts AND ends with a pipe. */
+function isTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.length >= 2 && t.startsWith('|') && t.endsWith('|');
+}
+
+/** The non-empty, trimmed cells of one `| a | b |` row (leading/trailing pipes and
+ *  any empty cells discarded), or [] for a row with no content cells. */
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .split('|')
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+}
+
+/** True when a row is a table separator (`---`, `:--`, `--:`, `:-:` in every cell). */
+function isSeparatorRow(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+}
+
+/** Bold every text node in an inline run — used for a flattened table's header cells. */
+function boldInline(nodes: JSONContent[]): JSONContent[] {
+  return nodes.map((n) => {
+    if (n.type !== 'text') return n;
+    const marks = n.marks ?? [];
+    return marks.some((m) => m.type === 'bold') ? n : { ...n, marks: [...marks, { type: 'bold' }] };
+  });
+}
+
+/** One row's cells → inline nodes, each cell parsed through `inlineToNodes` (so a
+ *  `**bold**` inside a cell survives) and joined by an em-dash. Header cells bold. */
+function rowToInline(cells: string[], bold: boolean): JSONContent[] {
+  const out: JSONContent[] = [];
+  cells.forEach((cell, i) => {
+    if (i > 0) out.push({ type: 'text', text: ' — ' });
+    const nodes = inlineToNodes(cell);
+    out.push(...(bold ? boldInline(nodes) : nodes));
+  });
+  return out;
+}
+
+/**
+ * Flatten a contiguous run of pipe-table rows to legible text — there is no `table`
+ * node in the worksheet schema, and a raw `| … |` grid printed on a student sheet is
+ * junk. The separator row is dropped; the header row (the one before it) becomes one
+ * paragraph of bold cells; every other row becomes a `listItem` in one `bulletList`.
+ * Cells are joined by an em-dash. Never rebuilds a table. Returns the nodes to emit.
+ */
+function tableToNodes(rows: string[]): JSONContent[] {
+  const parsed = rows.map(tableCells);
+  const sepIndex = parsed.findIndex(isSeparatorRow);
+  const headerIndex = sepIndex >= 1 ? sepIndex - 1 : -1;
+  const out: JSONContent[] = [];
+  if (headerIndex >= 0 && parsed[headerIndex].length > 0) {
+    out.push({ type: 'paragraph', content: rowToInline(parsed[headerIndex], true) });
+  }
+  const items: JSONContent[] = [];
+  parsed.forEach((cells, i) => {
+    if (i === headerIndex || isSeparatorRow(cells) || cells.length === 0) return;
+    items.push({ type: 'listItem', content: [{ type: 'paragraph', content: rowToInline(cells, false) }] });
+  });
+  if (items.length) out.push({ type: 'bulletList', content: items });
+  return out;
+}
+
+/** Unescape backslash-escaped markdown punctuation at the LINE level, BEFORE block
+ *  classification, so a stray `0\. text` becomes `0. text` and then matches the
+ *  ordered regex (unescaping inside `inlineToNodes` would be too late). `|` is
+ *  deliberately EXCLUDED — unescaping pipes could manufacture table syntax out of
+ *  prose, so an escaped pipe keeps its backslash. */
+function unescapePunctuation(line: string): string {
+  return line.replace(/\\([\\`*_{}[\]()#+.!>~-])/g, '$1');
+}
+
+/**
  * Convert a simple-markdown string into a tiptap/ProseMirror `doc` — the
  * server-safe counterpart of {@link markdownToHtml}. Supports `#`/`##`/`###`
- * headings, `-`/`*`/`+` bullet lists, `1.` ordered lists, blank-line-separated
- * paragraphs (multi-line paragraphs joined with hard breaks), and
- * `**bold**` / `*italic*` inline marks. Everything else — including
- * `[Picture: …]` markers and `______` blanks — passes through as literal text.
+ * headings, `-`/`*`/`+` bullet lists, `1.` ordered lists (honouring the first
+ * item's number as the list `start`), blank-line-separated paragraphs (multi-line
+ * paragraphs joined with hard breaks), and `**bold**` / `*italic*` inline marks.
+ * Thematic breaks (`---`) are dropped, pipe tables are flattened to a bold header
+ * paragraph + a bullet list, and a `[Picture: …]` marker alone on its line is kept
+ * as its OWN paragraph (so the image-substitution sites can find it). Everything
+ * else — including inline `[Picture: …]` markers and `______` blanks — passes
+ * through as literal text.
  */
 export function markdownToDoc(markdown: string): JSONContent {
-  const lines = (markdown ?? '').replace(/\r\n/g, '\n').split('\n');
+  // Right-trim and unescape every line up front, so block classification (and the
+  // table run scan below) sees the same, punctuation-normalised text.
+  const lines = (markdown ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => unescapePunctuation(l.replace(/\s+$/, '')));
   const content: JSONContent[] = [];
 
   let para: string[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
+  let list: { ordered: boolean; items: string[]; start?: number } | null = null;
 
   const flushPara = () => {
     if (para.length) {
@@ -266,21 +374,42 @@ export function markdownToDoc(markdown: string): JSONContent {
   };
   const flushList = () => {
     if (list) {
-      content.push({
+      const node: JSONContent = {
         type: list.ordered ? 'orderedList' : 'bulletList',
         content: list.items.map(listItemNode),
-      });
+      };
+      // A faithful `start` (the first item's own number) so a `2. 3.` run — closed
+      // out of a longer sequence by intervening prose — still renders `2. 3.`.
+      if (list.ordered && typeof list.start === 'number') node.attrs = { start: list.start };
+      content.push(node);
       list = null;
     }
   };
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+$/, '');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
     if (line.trim() === '') {
       // A blank line ends a paragraph but NOT a list — AI markdown routinely puts
       // blank lines between numbered items (mirrors `markdownToHtml`).
       flushPara();
+      continue;
+    }
+
+    // A thematic break: drop it (no schema node), closing any open paragraph/list.
+    if (THEMATIC_BREAK.test(line.trim())) {
+      flushPara();
+      flushList();
+      continue;
+    }
+
+    // A `[Picture: …]` marker alone on its line becomes its OWN paragraph and does
+    // NOT absorb the following line — the substitution sites (compile / pane) only
+    // match a marker that is the paragraph's entire content.
+    if (PICTURE_MARKER_LINE.test(line)) {
+      flushPara();
+      flushList();
+      content.push(paragraphNode([line]));
       continue;
     }
 
@@ -296,14 +425,28 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    // A contiguous run of >=2 pipe-table rows flattens to legible text. A lone pipe
+    // line is not a table — it falls through to the plain-text branch verbatim.
+    if (isTableRow(line)) {
+      let j = i;
+      while (j + 1 < lines.length && isTableRow(lines[j + 1])) j++;
+      if (j > i) {
+        flushPara();
+        flushList();
+        content.push(...tableToNodes(lines.slice(i, j + 1)));
+        i = j;
+        continue;
+      }
+    }
+
+    const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
     if (ordered) {
       flushPara();
       if (!list || !list.ordered) {
         flushList();
-        list = { ordered: true, items: [] };
+        list = { ordered: true, items: [], start: parseInt(ordered[1], 10) };
       }
-      list.items.push(ordered[1].trim());
+      list.items.push(ordered[2].trim());
       continue;
     }
 

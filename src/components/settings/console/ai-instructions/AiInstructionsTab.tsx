@@ -18,7 +18,6 @@ import {
   type AiContextFrameView,
   type AiContextLayer,
   type AiContextSubjectGroup,
-  type AiContextTool,
 } from '@/types/ai-context';
 import { ErrorText } from '../ui';
 import { UploadProgressBar } from '../upload';
@@ -209,7 +208,6 @@ export function AiInstructionsTab({ board }: { board: AiContextBoard }) {
               tone="tool"
               addFields={{ layer: 'tool', tool: g.tool }}
               subjects={board.subjects.map((s) => ({ subjectId: s.subjectId, name: s.name }))}
-              tool={g.tool}
               onOpen={setOpenDocId}
             />
           ))}
@@ -421,7 +419,6 @@ function GroupRow({
   tone,
   addFields,
   subjects,
-  tool,
   onOpen,
 }: {
   label: string;
@@ -431,10 +428,8 @@ function GroupRow({
   onToggle: () => void;
   tone: 'subject' | 'tool';
   addFields: Record<string, string>;
-  /** Subjects available for a per-subject override (tool column only). */
+  /** Subjects for resolving an existing tool doc's subject badge (tool column only). */
   subjects?: { subjectId: string; name: string }[];
-  /** The tool this row is for (tool column only) — drives the per-subject add path. */
-  tool?: AiContextTool;
   onOpen: (id: string) => void;
 }) {
   const t = useTranslations('settings');
@@ -471,10 +466,6 @@ function GroupRow({
             />
           ))}
           <AddDocument fields={addFields} />
-          {/* Tool column only: a per-subject override of this tool's instructions. */}
-          {tone === 'tool' && tool && subjects && subjects.length > 0 ? (
-            <AddSubjectDocument tool={tool} subjects={subjects} />
-          ) : null}
         </div>
       </div>
     );
@@ -535,65 +526,6 @@ function AddDocument({ fields }: { fields: Record<string, string> }) {
       >
         {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addDocument')}`}
       </button>
-      {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
-      {error ? <ErrorText>{error}</ErrorText> : null}
-    </div>
-  );
-}
-
-/**
- * Add a PER-SUBJECT override of a tool's instructions: pick a subject, then a file,
- * and the document is created with `layer='tool'`, this `tool`, and the chosen
- * `subject_id` (validated by the same route + DB scope check as the global add). The
- * scaffold document `compileWorksheet` reads for worksheet_builder is created here.
- */
-function AddSubjectDocument({
-  tool,
-  subjects,
-}: {
-  tool: AiContextTool;
-  subjects: { subjectId: string; name: string }[];
-}) {
-  const t = useTranslations('settings');
-  const [subjectId, setSubjectId] = useState('');
-  const { pending, error, upload } = useDocUpload();
-  const { input, open } = useFilePicker((file) =>
-    upload('/api/admin/context-docs', file, {
-      layer: 'tool',
-      tool,
-      subject_id: subjectId,
-      name: filenameStem(file.name),
-    }),
-  );
-  return (
-    <div className="flex flex-col gap-[8px]">
-      {input}
-      {/* Stacked, not a shared row: inside the layer-4 column the row is too narrow
-          to hold the select and the button side by side (the select collapsed to
-          ~40px, rendering "Ch…"). Full-width select on its own line, button beneath. */}
-      <div className="flex flex-col gap-[7px]">
-        <select
-          value={subjectId}
-          onChange={(e) => setSubjectId(e.target.value)}
-          aria-label={t('aiInstructions.addForSubject.choose')}
-          className="w-full min-w-0 truncate rounded-[9px] border border-teal-tint-border bg-surface px-[10px] py-[8px] text-[12px] text-ink"
-        >
-          <option value="">{t('aiInstructions.addForSubject.choose')}</option>
-          {subjects.map((s) => (
-            <option key={s.subjectId} value={s.subjectId}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={open}
-          disabled={pending || !subjectId}
-          className="w-full rounded-[9px] border border-dashed border-teal-dashed bg-surface px-[12px] py-[8px] text-[12px] font-semibold text-teal transition-colors hover:bg-teal-tint disabled:opacity-50"
-        >
-          {pending ? t('aiInstructions.upload.uploading') : `＋ ${t('aiInstructions.addForSubject.label')}`}
-        </button>
-      </div>
       {pending ? <UploadProgressBar label={t('aiInstructions.upload.uploading')} /> : null}
       {error ? <ErrorText>{error}</ErrorText> : null}
     </div>

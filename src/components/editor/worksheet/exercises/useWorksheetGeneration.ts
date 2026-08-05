@@ -208,11 +208,13 @@ export function useWorksheetGeneration({
     }
     // Then all images, in flattened order, still buffered.
     const withImages = await fillImagesFor(generated, generated);
-    // ONE atomic reveal.
+    // ONE atomic reveal. Write the real document into the editor while the skeleton
+    // overlay is STILL up (filling stays true), then drop the overlay — so the page
+    // goes skeleton → finished content in one pass, never flashing empty in between.
     setExercises(withImages);
+    await compileAndPersist();
     setFilling(false);
     setFillSpecs(null);
-    await compileAndPersist();
   }, [lessonPlanId, fillImagesFor, compileAndPersist]);
 
   // Latest rows for reading a spec anchor without re-binding the callback each edit.

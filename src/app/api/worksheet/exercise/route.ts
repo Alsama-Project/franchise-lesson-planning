@@ -52,14 +52,15 @@ function isNonEmptyString(value: unknown): value is string {
  * Reconcile the `[Picture: …]` markers in `body_md` with the model-authored
  * briefs into the persisted slots, and return the (possibly trimmed) `body_md`.
  *
- * The markers are walked in order and paired with the model's briefs. A slot
- * whose brief is empty or whitespace-only is DROPPED, and its marker is removed
- * from `body_md` in the same pass — so the count of persisted slots always
+ * The markers are walked in order and paired with the model's authored slots. A
+ * slot whose brief is empty or whitespace-only is DROPPED, and its marker is
+ * removed from `body_md` in the same pass — so the count of persisted slots always
  * equals the count of markers that remain in the persisted `body_md`. `subject`
- * is set to the marker text, unexpanded (a human-readable label; nothing on the
- * server consumes it); the model does not author it. The mechanical fields
- * (`slot_id`, `status`, `storage_path`) are added here. The brief's content
- * contract lives solely in the worksheet-builder floor.
+ * is the model-authored deduplication key (1-4 words; the image route hashes on
+ * it), falling back to the marker text when the model left it blank so the key is
+ * never empty. The mechanical fields (`slot_id`, `status`, `storage_path`) are
+ * added here. The subject and brief content contracts live in the worksheet-builder
+ * floor.
  */
 function reconcileImageSlots(
   bodyMd: string,
@@ -68,11 +69,15 @@ function reconcileImageSlots(
   const slots: ImageSlot[] = [];
   let i = 0;
   const cleaned = bodyMd.replace(/\[Picture:\s*([^\]]+)\]/g, (full, inner: string) => {
-    const brief = authored[i++]?.brief?.trim() ?? '';
+    const slot = authored[i++];
+    const brief = slot?.brief?.trim() ?? '';
     if (!brief) return ''; // empty/whitespace brief → drop the marker and the slot
+    // Subject is the dedupe key; fall back to the marker text if the model left it
+    // blank, so the hash key is never empty (which would collide every blank slot).
+    const subject = slot?.subject?.trim() || inner.trim();
     slots.push({
       slot_id: randomUUID(),
-      subject: inner.trim(),
+      subject,
       brief,
       status: 'pending',
       storage_path: null,

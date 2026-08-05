@@ -21,13 +21,14 @@
 // kill-switch returns a clean 503.
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { getImagesClient } from '@/lib/openai';
 import { isWorksheetImagesEnabled } from '@/lib/ai/worksheet-images-flag';
 import { composeContextStack, ContextStackError } from '@/lib/ai/context-stack';
 import { assembleImagePrompt } from '@/lib/ai/image-prompt';
 import { STYLE_VERSION } from '@/lib/ai/image-floor';
+import { imageCacheKey } from '@/lib/ai/image-cache-key';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,9 +67,12 @@ function isNonEmptyString(value: unknown): value is string {
 // Minimal LOCAL reader shapes for worksheet_exercise. The canonical image-slot
 // contract (slot_id, subject, brief, status, storage_path) is owned by the exercise
 // workstream, not this slice — we deliberately do NOT export a type or add one to
-// src/types/, to avoid two workstreams racing to own it. All we read is `slot_id`.
+// src/types/, to avoid two workstreams racing to own it. We read `slot_id` (to locate
+// the slot) and `subject` (the persisted dedupe key we hash on — never the wire brief,
+// which is prose and varies every generation).
 interface SlotEntry {
   slot_id?: unknown;
+  subject?: unknown;
 }
 interface ExerciseRow {
   id: string;
@@ -77,10 +81,12 @@ interface ExerciseRow {
 }
 
 /** One flattened slot in whole-worksheet order (exercises by position, each row's
- *  image_slots in array order). `index` is the slot's global position. */
+ *  image_slots in array order). `index` is the slot's global position. `subject` is
+ *  the persisted deduplication key (may be null on legacy rows). */
 interface FlatSlot {
   slotId: string;
   exerciseId: string;
+  subject: string | null;
 }
 
 /** Flatten a plan's exercises into the ordered slot list. Rows must already be
@@ -92,32 +98,12 @@ function flattenSlots(rows: ExerciseRow[]): FlatSlot[] {
     for (const entry of row.image_slots as SlotEntry[]) {
       const slotId = entry?.slot_id;
       if (typeof slotId === 'string' && slotId.length > 0) {
-        flat.push({ slotId, exerciseId: row.id });
+        const subject = typeof entry?.subject === 'string' ? entry.subject : null;
+        flat.push({ slotId, exerciseId: row.id, subject });
       }
     }
   }
   return flat;
-}
-
-/**
- * Normalise a brief for the cache key: lowercase, strip punctuation (keep letters,
- * numbers, whitespace — Unicode-aware so Arabic briefs survive), collapse
- * whitespace, then drop any leading article(s). No stemming, no synonyms, no
- * embeddings — a deliberately literal fold so only trivially-equivalent briefs
- * collide.
- */
-function normaliseBrief(brief: string): string {
-  return brief
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^(?:(?:the|a|an)\s+)+/u, '');
-}
-
-/** Content-addressed key: sha256(normalise(brief) + ':' + STYLE_VERSION). */
-function promptHash(brief: string): string {
-  return createHash('sha256').update(`${normaliseBrief(brief)}:${STYLE_VERSION}`).digest('hex');
 }
 
 export async function POST(request: NextRequest) {
@@ -198,6 +184,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Slot not found for this lesson plan.' }, { status: 404 });
   }
   const worksheetExerciseId = slots[slotIndex].exerciseId;
+  // The dedupe key is the persisted, model-authored SUBJECT (1-4 literal words),
+  // read from the row we just loaded — never the wire `brief`, which is prose that
+  // varies every generation and would defeat the cache. Legacy rows (no subject)
+  // fall back to the brief so they still key on something stable, though they will
+  // not hit images stored under the old brief-based hashes (accepted; no migration).
+  const slotSubject = slots[slotIndex].subject?.trim() || brief;
 
   // (b) Per-slot cap — a slot whose position in the whole-worksheet order is at or
   // beyond the cap is refused (it keeps its [Picture: …] marker). Only THIS slot is
@@ -210,11 +202,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // (c) Content-addressed cache key. A teacher instruction changes the desired output,
-  // so it MUST be part of the key — otherwise an instruction-adjusted image would be
-  // stored under the plain brief's hash and later served for a plain brief (cache
-  // poisoning). With no instruction the key is exactly the brief hash, as before.
-  const hash = promptHash(instruction ? `${brief} :: ${instruction}` : brief);
+  // (c) Content-addressed cache key, on the SUBJECT (not the brief). A teacher
+  // instruction changes the desired output, so it MUST be part of the key — otherwise
+  // an instruction-adjusted image would be stored under the plain subject's hash and
+  // later served for a plain request (cache poisoning). With no instruction the key is
+  // exactly the subject hash, so two runs whose briefs differ but whose subject matches
+  // reuse the same image.
+  const hash = imageCacheKey(slotSubject, instruction);
 
   // (d) Cache lookup — skipped for a regenerate AND for any instruction (the teacher
   // asked for something new, not the cached image). Newest non-blocked row for the hash

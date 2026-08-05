@@ -56,7 +56,12 @@ const WORKSHEET_BUILDER_CONTRACT = `OUTPUT CONTRACT:
 - Never add fields. Never omit a required field — if you cannot produce a value return an empty string or an empty array, never a placeholder such as "TODO" or "N/A".
 
 BODY MARKERS (the renderer parses these literally):
-- An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.`;
+- An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.
+
+IMAGE SLOTS (one "image_slots" entry per [Picture: …] marker, in the order the markers appear):
+- Each entry has two fields, "subject" and "brief".
+- "subject" is a deduplication key, NOT art direction: the plain literal thing depicted, 1-4 words, lowercase, no styling, no mood, no colour, no count, no scene detail — e.g. "a bus", "a busy street scene". The SAME thing must always yield the SAME subject regardless of year group, wording, or the exercise around it. This field is machine-hashed to reuse an image already generated for that subject; varying it needlessly forces a fresh generation and wastes the shared image bank.
+- "brief" is the full visual description of what to draw. Write it as richly as you like — it does not affect deduplication.`;
 
 // ── smartt_checker (UNTOUCHED — do not edit on this branch) ─────────────────────
 

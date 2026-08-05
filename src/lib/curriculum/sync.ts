@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseCurriculumWorkbook } from './parse';
-import type { CurriculumSyncResult, CurriculumSyncSource } from './types';
+import type { CurriculumSyncResult, CurriculumSyncSource, ImportReport } from './types';
 
 // ── Curriculum sync core (parse → diff-gate → upsert → reconcile → record run) ───
 //
@@ -134,8 +134,11 @@ export async function syncCurriculumWorkbook(
   };
 
   let lessonRows;
+  let monthlySplitFailures: ImportReport['monthlySplitFailures'] = [];
   try {
-    ({ lessonRows } = parseCurriculumWorkbook(buffer, subjectCode, { sheet }));
+    const parsed = parseCurriculumWorkbook(buffer, subjectCode, { sheet });
+    lessonRows = parsed.lessonRows;
+    monthlySplitFailures = parsed.report.monthlySplitFailures;
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'Failed to parse workbook.');
   }
@@ -145,6 +148,22 @@ export async function syncCurriculumWorkbook(
   }
 
   const unresolved = lessonRows.filter((r) => !r.daily_outcome).length;
+
+  // Diagnostic (Part A) — surface the silent monthly-split failures. Aggregated by
+  // subject (one workbook = one subject) so 248 identical warnings never reach the
+  // operator as noise: a count on the returned result + the run warnings, plus one
+  // structured log line. Purely informational — it never fails or alters the ingest.
+  const monthlySplitFailureCount = monthlySplitFailures.length;
+  const monthlySplitSample = monthlySplitFailures
+    .slice(0, 5)
+    .map((f) => `${f.lessonKey} [${f.column}]`);
+  if (monthlySplitFailureCount > 0) {
+    console.warn(
+      `[curriculum-ingest] ${subjectCode}: ${monthlySplitFailureCount} monthly cell(s) carried ` +
+        `both Knowledge and Skills labels but did not split (written verbatim — source formatting ` +
+        `to fix). e.g. ${monthlySplitSample.join('; ')}`,
+    );
+  }
 
   // Resolve the subject's current active version (null for a brand-new subject).
   const { data: activeVersionRow, error: versionReadError } = await supabase
@@ -167,6 +186,22 @@ export async function syncCurriculumWorkbook(
     newVersionNo?: number;
   }): Promise<CurriculumSyncResult> => {
     const skipped = opts.skippedReferencedKeys ?? [];
+    const warnings =
+      skipped.length > 0 || monthlySplitFailureCount > 0
+        ? {
+            ...(skipped.length > 0
+              ? { skippedReferencedKeys: skipped, skippedReferencedCount: skipped.length }
+              : {}),
+            ...(monthlySplitFailureCount > 0
+              ? {
+                  monthlySplitFailures: {
+                    count: monthlySplitFailureCount,
+                    sample: monthlySplitSample,
+                  },
+                }
+              : {}),
+          }
+        : null;
     if (runId) {
       await supabase
         .from('curriculum_sync_run')
@@ -175,10 +210,7 @@ export async function syncCurriculumWorkbook(
           rows_upserted: opts.rowsUpserted,
           rows_deactivated: opts.rowsDeactivated,
           unresolved,
-          warnings:
-            skipped.length > 0
-              ? { skippedReferencedKeys: skipped, skippedReferencedCount: skipped.length }
-              : null,
+          warnings,
           finished_at: new Date().toISOString(),
         })
         .eq('id', runId);
@@ -192,6 +224,7 @@ export async function syncCurriculumWorkbook(
       status: 'success',
       ...(skipped.length > 0 ? { skippedReferencedKeys: skipped } : {}),
       ...(opts.newVersionNo != null ? { newVersionNo: opts.newVersionNo } : {}),
+      ...(monthlySplitFailureCount > 0 ? { monthlySplitFailures: monthlySplitFailureCount } : {}),
     };
   };
 

@@ -2,7 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseCurriculumWorkbook, splitInlineMonthly, resolveMonthlySplit } from '../parse';
+import {
+  parseCurriculumWorkbook,
+  splitInlineMonthly,
+  resolveMonthlySplit,
+  hasBothMonthlyLabels,
+  detectMonthlySplitFailure,
+} from '../parse';
 import { cleanResourceList, isNoResource } from '../types';
 import { makeWorkbook, headerBlock, type CellSpec } from './fixtures';
 
@@ -832,4 +838,98 @@ test('Awareness monthly blob in monthly_skills_lo is split + overwritten end-to-
   }
   assert.equal(lessonRows[0].weekly_skills_lo, 'Skill one');
   assert.equal(lessonRows[0].weekly_knowledge_lo, 'Know one');
+});
+
+// ── Monthly-split silent-failure diagnostic (Part A) ──────────────────────────────
+//
+// The four monthly-split defects (professionalism/science/Arabic/Awareness) were all
+// SILENT: resolveMonthlySplit returned null, the combined blob was written verbatim,
+// and it rendered as one undifferentiated block. These tests pin the detector that
+// makes that invisible failure visible — WITHOUT changing what is parsed or written.
+
+test('hasBothMonthlyLabels: recognises both labels (LO phrase, colon, Arabic); rejects prose/single', () => {
+  // Both present, various shapes.
+  assert.equal(
+    hasBothMonthlyLabels('Knowledge Learning Outcome: X\nSkills Learning Outcome: Y'),
+    true,
+  );
+  assert.equal(hasBothMonthlyLabels('Monthly Knowledge: X\nMonthly Skills: Y'), true);
+  assert.equal(hasBothMonthlyLabels('Knowledge: X Skills: Y'), true); // same line
+  assert.equal(hasBothMonthlyLabels('المعرفة : فهم\nالمهارات : تطبيق'), true);
+  // The over-match guard: bare-keyword PROSE is not a label (no colon, no LO phrase).
+  assert.equal(
+    hasBothMonthlyLabels('Knowledge is power and drives learning.\nSkills are built over time.'),
+    false,
+  );
+  // Single section only, and a genuinely label-free cell → both false.
+  assert.equal(hasBothMonthlyLabels('Knowledge Learning Outcome: only knowledge here.'), false);
+  assert.equal(hasBothMonthlyLabels('Just plain prose about place value.'), false);
+  assert.equal(hasBothMonthlyLabels(null), false);
+});
+
+test('detectMonthlySplitFailure: gated to split subjects; names the column the blob was in', () => {
+  const bothLabels = 'Knowledge: understand X. Skills: apply Y.'; // same-line → will not split
+  // Non-split subject (English) never warns, even with both labels.
+  assert.equal(detectMonthlySplitFailure('english', bothLabels, null, null), null);
+  // Combined column carried the blob.
+  assert.equal(detectMonthlySplitFailure('science', bothLabels, null, null), 'monthly_lo');
+  // Awareness's shape: the blob is routed to a single split column (skills), combined empty.
+  assert.equal(detectMonthlySplitFailure('awareness', null, null, bothLabels), 'monthly_skills_lo');
+  assert.equal(detectMonthlySplitFailure('awareness', null, bothLabels, null), 'monthly_knowledge_lo');
+  // A legitimate null (no both-label input) never warns.
+  assert.equal(detectMonthlySplitFailure('science', 'plain prose', null, null), null);
+  assert.equal(detectMonthlySplitFailure('science', 'Knowledge: only knowledge.', null, null), null);
+  // Both split columns populated = genuinely pre-split, not a failure.
+  assert.equal(detectMonthlySplitFailure('awareness', null, bothLabels, bothLabels), null);
+});
+
+// End-to-end through the parser: one workbook exercising all three of item-5's cases —
+// a both-labels blob that SPLITS (no warning), one that FAILS (exactly one warning with
+// correct coordinates), and a label-free blob (no warning) — while the written rows are
+// byte-identical to the pre-diagnostic behaviour.
+test('parse: monthly-split failures are recorded with coordinates, parser output unchanged', () => {
+  const headers: CellSpec[] = [
+    '', 'Year', 'Month', 'Monthly Learning Outcome', 'Week', 'Period #', 'Daily Learning Outcome',
+  ];
+  // Splits cleanly → NO warning.
+  const splits = 'Monthly Knowledge:\n. Understand place value.\nMonthly Skills:\n. Compare numbers.';
+  // Both labels present but on ONE line → the strict splitter consumes "Skills:" as
+  // content and returns null: the silent-failure signature. → exactly one warning.
+  const fails = 'Knowledge: understand ecosystems. Skills: classify organisms.';
+  // No labels at all → NO warning.
+  const plain = 'Describe the water cycle in your own words.';
+  const rowA: CellSpec[] = ['', 'Year 3', 'September', splits, 1, 'Period 1', 'Daily A'];
+  const rowB: CellSpec[] = ['', 'Year 3', 'October', fails, 5, 'Period 1', 'Daily B'];
+  const rowC: CellSpec[] = ['', 'Year 3', 'November', plain, 9, 'Period 1', 'Daily C'];
+  const wb = makeWorkbook({ 'Science Curriculum': [...headerBlock(headers), rowA, rowB, rowC] });
+
+  const { lessonRows, report } = parseCurriculumWorkbook(wb, 'science');
+
+  // Exactly one failure, at rowB's coordinates, naming the combined column.
+  assert.equal(report.monthlySplitFailures.length, 1);
+  assert.deepEqual(report.monthlySplitFailures[0], {
+    subjectCode: 'science',
+    year: 3,
+    month: 'October',
+    week: 5,
+    lessonKey: 'science|Y3|October|W5|P1',
+    column: 'monthly_lo',
+  });
+  // A single aggregated operator warning line mentions the count + a coordinate sample.
+  assert.ok(report.warnings.some((w) => /1 monthly cell\(s\) carried BOTH/.test(w)));
+
+  // Parser output is UNCHANGED: all three rows written; the failing row keeps its
+  // combined blob verbatim with null split columns; the splitting row is split as before.
+  assert.equal(lessonRows.length, 3);
+  const byWeek = new Map(lessonRows.map((r) => [r.week, r]));
+  const failRow = byWeek.get(5)!;
+  assert.equal(failRow.monthly_lo, fails);
+  assert.equal(failRow.monthly_knowledge_lo, null);
+  assert.equal(failRow.monthly_skills_lo, null);
+  const splitRow = byWeek.get(1)!;
+  assert.equal(splitRow.monthly_knowledge_lo, '. Understand place value.');
+  assert.equal(splitRow.monthly_skills_lo, '. Compare numbers.');
+  const plainRow = byWeek.get(9)!;
+  assert.equal(plainRow.monthly_lo, plain);
+  assert.equal(plainRow.monthly_knowledge_lo, null);
 });

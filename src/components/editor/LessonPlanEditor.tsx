@@ -30,7 +30,6 @@ import {
   submitLessonPlan,
   unsubmitLessonPlan,
 } from '@/lib/actions/lesson-plan';
-import { findDegradedImage } from '@/lib/editor/worksheet-guard';
 import { recordUsageAction } from '@/lib/actions/resources';
 import { EditorSubHeader } from '@/components/editor/EditorSubHeader';
 import {
@@ -257,18 +256,6 @@ export function LessonPlanEditor({
     if (wsTimer.current) {
       clearTimeout(wsTimer.current);
       wsTimer.current = null;
-    }
-    // TRIPWIRE (client, immediately before the server action): if a degraded image is
-    // here but was NOT flagged at DocumentWorksheet.onUpdate, the corruption happened
-    // BETWEEN the editor's getJSON and this write — a transform in the onChange →
-    // setWorksheet → autosave chain. If it fired at both, the editor's getJSON is the
-    // source. Either way the browser console now says exactly where, in one run.
-    const clientDegraded = findDegradedImage(pending.worksheet);
-    if (clientDegraded) {
-      console.warn(
-        `[worksheet] degraded image AT autosave (before saveWorksheet) — ` +
-          `${clientDegraded.reason}. node=${clientDegraded.sample}`,
-      );
     }
     setSaveState('saving');
     try {

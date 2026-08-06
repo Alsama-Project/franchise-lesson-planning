@@ -28,6 +28,7 @@ import {
   type DraftLessonSummary,
 } from '@/lib/actions/lesson-drafts';
 import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
+import { toPlainJSON } from '@/lib/editor/plain-json';
 import type { ActiveView, ResourceBankProps } from '@/components/resources/types';
 import { SearchHeader, type FilterChip } from '@/components/resources/SearchHeader';
 import { Sidebar } from '@/components/resources/Sidebar';
@@ -316,7 +317,11 @@ export function ResourceBank({
       } catch {
         return { ok: false, error: t('bank.prepareError') };
       }
-      const res = await appendResourceBlocksToLessonAction(lesson.id, resource.id, blocks);
+      // Normalise before the Server Action: `buildBlocksFromResource` uses `generateJSON`
+      // for text resources, whose node `attrs` have a null prototype that React's
+      // Server Actions format silently drops (see `toPlainJSON`). Without this the
+      // appended blocks would reach the DB with their attrs stripped.
+      const res = await appendResourceBlocksToLessonAction(lesson.id, resource.id, toPlainJSON(blocks));
       if (!res.ok) return { ok: false, error: res.error };
       setAddingTo(null);
       setToast(t('bank.addedToast', { title: resource.title, lesson: res.lessonLabel ?? lesson.title }));

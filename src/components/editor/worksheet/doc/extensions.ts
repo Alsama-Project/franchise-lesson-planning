@@ -37,6 +37,7 @@ import { ResourceRef } from './nodes/ResourceRef';
 import { Indent } from './nodes/Indent';
 import { HintPlaceholder } from './nodes/HintPlaceholder';
 import { WsCompiledMarker } from './nodes/WsCompiledMarker';
+import { ExerciseHeadingStyle } from './nodes/ExerciseHeadingStyle';
 
 /** Cmd/Ctrl-K → link (Docs/Word parity): prompt for a URL on the current selection.
  *  Bold/italic/underline (Mod-b/i/u), undo/redo (Mod-z / Mod-Shift-z), and Docs-style
@@ -154,5 +155,8 @@ export function worksheetDocExtensions(
     // `getJSON()`; without it a single edit strips the tag and the next compile
     // duplicates every exercise. Declare-only, no DOM output. See the extension file.
     WsCompiledMarker,
+    // Tints model-written EXERCISE headings (wsCompiled, not wsScaffold) pink, on
+    // screen and in print — reads the markers above, emits a class through the schema.
+    ExerciseHeadingStyle,
   ];
 }

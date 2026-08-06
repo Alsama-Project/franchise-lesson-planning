@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import type { WorksheetV3 } from '@/types/lesson';
 import type { ResourceWithTags, TagsByDimension } from '@/types/resource';
 import { migrateWorksheetToV3 } from '@/lib/editor/worksheet-migrate';
-import { findDegradedImage } from '@/lib/editor/worksheet-guard';
+import { toPlainJSON } from '@/lib/editor/plain-json';
 import { normalizeTableColwidths } from './normalizeTables';
 import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
 import { uploadWorksheetImageAction } from '@/lib/actions/worksheet';
@@ -188,21 +188,14 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     onUpdate: ({ editor }) => {
       // Persist every change (teacher edit AND our own splice / full-doc write) so the
       // one debounce is the single writer. Only a REAL teacher edit trips the gate.
-      const doc = editor.getJSON() as WorksheetV3['doc'];
-      // TRIPWIRE: fires ONLY when this getJSON has already lost an image's attrs — i.e.
-      // the editor's own serialisation, IN THE LIVE PAGE, produced the `{type:'image'}`
-      // corruption the guard later refuses. Logs the offending node AND the live image
-      // schema's declared attrs (empty ⇒ the schema was built without ResizableImage's
-      // attributes) so a single run says whether the editor or something downstream is
-      // the source. Costs a walk only on the update; no flag to remember.
-      const degraded = findDegradedImage({ version: 3, doc });
-      if (degraded) {
-        console.warn(
-          `[worksheet] degraded image AT onUpdate (editor.getJSON, frame=${!!context.worksheetFrame}) — ` +
-            `${degraded.reason}. node=${degraded.sample} imageSchemaAttrs=` +
-            JSON.stringify(Object.keys(editor.schema.nodes.image?.spec.attrs ?? {})),
-        );
-      }
+      //
+      // `toPlainJSON` is load-bearing, not cosmetic: `getJSON()`'s `attrs` objects have a
+      // NULL prototype, which React's Server Actions wire format silently drops as it
+      // crosses to `saveWorksheet` (→ `{type:'image'}`, losing storagePath/exerciseId).
+      // Normalising to Object.prototype here — at the single point worksheet JSON leaves
+      // the editor — is what actually persists images and per-exercise ids. See
+      // `toPlainJSON`.
+      const doc = toPlainJSON(editor.getJSON()) as WorksheetV3['doc'];
       onChange({ version: 3, doc });
       if (!programmatic.current) onTeacherEditRef.current?.();
     },
@@ -216,17 +209,6 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     () => ({
       applyFullDoc: (doc: WorksheetV3) => {
         if (!editor) return;
-        // TRIPWIRE: is the compiled doc ALREADY degraded as it arrives from the server
-        // action (compileWorksheet's return)? If this fires, the corruption is upstream
-        // of the editor entirely (compile / server-action serialisation); if it does
-        // NOT fire but onUpdate does, the editor's setContent+getJSON is where it goes.
-        const incoming = findDegradedImage(doc);
-        if (incoming) {
-          console.warn(
-            `[worksheet] degraded image AT applyFullDoc (incoming compiled doc) — ` +
-              `${incoming.reason}. node=${incoming.sample}`,
-          );
-        }
         programmatic.current = true;
         // A single chained transaction: the bypass meta first (so the scaffold-heading
         // lock never rejects a rebuild — the template itself may have changed), then the

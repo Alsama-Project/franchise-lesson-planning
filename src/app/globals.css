@@ -558,6 +558,14 @@ html:lang(ar) body {
   color: var(--color-ink);
   margin-top: 18px;
 }
+/* Model-written EXERCISE titles (headings compile tagged `wsCompiled`, NOT the locked
+ * `wsScaffold` section headings) print pink so the page breaks up visually. The class is
+ * emitted by ExerciseHeadingStyle through the schema, so it is present in the live editor
+ * AND in the print/PDF generateHTML output — this one rule covers screen and paper
+ * (print-color-adjust is already set on the page). Two classes beat `.ws-doc h2/h3`. */
+.ws-doc .ws-ex-heading {
+  color: #b62a5c;
+}
 .ws-doc p {
   margin: 0;
 }

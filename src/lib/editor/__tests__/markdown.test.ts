@@ -227,3 +227,64 @@ test('Fix 5: the marker regex is exported for the substitution sites to share', 
   assert.ok(PICTURE_MARKER_LINE.test('  [Picture: a cat]  '));
   assert.ok(!PICTURE_MARKER_LINE.test('see [Picture: a cat] here'), 'an inline marker is not marker-alone');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// HTML entities — the model spaces/punctuates options with `&nbsp;`, `&amp;`, `&mdash;`
+// (and numeric forms); decoded at the line level so none prints as literal text.
+// ─────────────────────────────────────────────────────────────────────────────────
+test('entities: &nbsp; decodes to an ordinary space in an option run', () => {
+  const { content } = markdownToDoc('by bus &nbsp;/&nbsp; by car');
+  const text = plain(content[0].content);
+  assert.ok(!text.includes('&nbsp;'), 'the entity does not print literally');
+  // A normal space (U+0020), never a non-breaking one (U+00A0).
+  assert.ok(!text.includes('\u00A0'), 'no non-breaking space survives');
+  assert.ok(/by bus\s+\/\s+by car/.test(text), 'the option run reads normally');
+});
+
+test('entities: named forms (&amp; &lt; &gt; &mdash; &hellip;) decode', () => {
+  const { content } = markdownToDoc('salt &amp; pepper &mdash; 1 &lt; 2 &gt; 0 &hellip;');
+  assert.equal(plain(content[0].content), 'salt & pepper — 1 < 2 > 0 …');
+});
+
+test('entities: numeric decimal and hex forms decode', () => {
+  const { content } = markdownToDoc('caf&#233; then &#x2014; end');
+  assert.equal(plain(content[0].content), 'café then — end');
+});
+
+test('entities: numeric nbsp (&#160; / &#xA0;) also decodes to a normal space', () => {
+  const { content } = markdownToDoc('a&#160;b&#xA0;c');
+  const text = plain(content[0].content);
+  assert.ok(!text.includes('\u00A0'), 'no non-breaking space survives');
+  assert.equal(text, 'a b c');
+});
+
+
+test('entities: an unknown named entity is left untouched, never blanked', () => {
+  const { content } = markdownToDoc('a &frobnicate; b');
+  assert.equal(plain(content[0].content), 'a &frobnicate; b');
+});
+
+test('entities: decoding is a single pass — &amp;lt; becomes literal &lt;, not <', () => {
+  const { content } = markdownToDoc('&amp;lt;');
+  assert.equal(plain(content[0].content), '&lt;');
+});
+
+// The markup-manufacturing guard: a pipe-producing entity is NOT decoded, so two lines
+// of encoded pipes can never be read as a table (the same reason `\|` keeps its slash).
+test('entities: &#124; / &#x7C; do NOT decode to a pipe (no table is manufactured)', () => {
+  const { content } = markdownToDoc('a &#124; b\nc &#x7C; d');
+  assert.ok(content.every((n) => n.type !== 'bulletList'), 'no table is built from encoded pipes');
+  // The entity is left as its literal text rather than becoming a `|`.
+  const text = content.map((n) => plain(n.content)).join('\n');
+  assert.ok(text.includes('&#124;') && text.includes('&#x7C;'), 'pipe entities left verbatim');
+  assert.ok(!text.includes('|'), 'no bare pipe was produced');
+});
+
+// A decoded `#` at line start still classifies as a heading — consistent with how
+// `unescapePunctuation` already activates a backslash-escaped `\#`.
+test('entities: a decoded &#35; at line start heads a heading (parity with \\#)', () => {
+  const { content } = markdownToDoc('&#35; Heading');
+  assert.equal(content[0].type, 'heading');
+  assert.equal(content[0].attrs.level, 1);
+  assert.equal(plain(content[0].content), 'Heading');
+});

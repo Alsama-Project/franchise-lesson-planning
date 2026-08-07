@@ -354,6 +354,64 @@ function unescapePunctuation(line: string): string {
 }
 
 /**
+ * The named HTML entities a model plausibly emits into worksheet prose — the five
+ * escapes plus the typography it reaches for when spacing multiple-choice options or
+ * writing money/measure vocabulary. `nbsp` (and the other spaces) decode to an
+ * ORDINARY space, never U+00A0: the sheet wants a normal gap, not a non-breaking one.
+ * Deliberately absent: `vert` / `VerticalLine` (both `|`) — see {@link decodeEntities}.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  nbsp: ' ', ensp: ' ', emsp: ' ', thinsp: ' ', hairsp: ' ',
+  mdash: '—', ndash: '–', hellip: '…', middot: '·', bull: '•',
+  ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', laquo: '«', raquo: '»',
+  times: '×', divide: '÷', deg: '°', plusmn: '±', frac12: '½', frac14: '¼', frac34: '¾',
+  copy: '©', reg: '®', trade: '™', sect: '§', para: '¶',
+  pound: '£', euro: '€', cent: '¢',
+};
+
+/** Matches one named entity (`&nbsp;`), decimal (`&#160;`) or hex (`&#xA0;`) form. */
+const ENTITY_RE = /&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/g;
+
+/**
+ * Decode HTML entities at the LINE level, in the same place — and for the same reason —
+ * as {@link unescapePunctuation}: the model emits `&nbsp;`/`&amp;`/`&mdash;` (and numeric
+ * `&#124;`-style forms) to space out or punctuate options, and passed through verbatim
+ * they print as literal `&nbsp;` on a student's sheet. Named entities in {@link
+ * NAMED_ENTITIES} and both numeric forms are decoded; an unknown named entity is left
+ * untouched (never blanked). One left-to-right pass — replaced output is NOT re-scanned —
+ * so `&amp;lt;` decodes to the literal text `&lt;`, not to `<`.
+ *
+ * Markup-manufacturing guard: decoding `&#124;` / `&#x7C;` (and the omitted `&vert;` /
+ * `&VerticalLine;`) would yield a `|`, which the table-run scan ({@link isTableRow}) could
+ * then read as a pipe table built out of prose — the exact hazard the `|` exclusion in
+ * `unescapePunctuation` guards. So a codepoint of U+007C is left as its literal entity, not
+ * decoded. Other markup-significant characters (`#`, `*`, `-`, digits + `.`) are decoded:
+ * `unescapePunctuation` already activates those from backslash escapes by design, and the
+ * established policy treats the pipe/table case as the only one to suppress.
+ */
+function decodeEntities(line: string): string {
+  if (line.indexOf('&') === -1) return line;
+  return line.replace(ENTITY_RE, (whole, body: string) => {
+    if (body.charCodeAt(0) === 35 /* '#' */) {
+      const hex = body.charCodeAt(1) === 120 || body.charCodeAt(1) === 88; /* 'x' | 'X' */
+      const cp = parseInt(hex ? body.slice(2) : body.slice(1), hex ? 16 : 10);
+      if (!Number.isInteger(cp) || cp < 1 || cp > 0x10ffff) return whole;
+      if (cp >= 0xd800 && cp <= 0xdfff) return whole; // lone surrogate — invalid
+      if (cp === 0x7c) return whole; // '|' — mirror the pipe exclusion above
+      if (cp === 0xa0) return ' '; // numeric nbsp → an ordinary space, as `&nbsp;` above
+      try {
+        return String.fromCodePoint(cp);
+      } catch {
+        return whole;
+      }
+    }
+    const mapped = NAMED_ENTITIES[body];
+    return mapped === undefined ? whole : mapped;
+  });
+}
+
+/**
  * Convert a simple-markdown string into a tiptap/ProseMirror `doc` — the
  * server-safe counterpart of {@link markdownToHtml}. Supports `#`/`##`/`###`
  * headings, `-`/`*`/`+` bullet lists, `1.` ordered lists (honouring the first
@@ -361,17 +419,19 @@ function unescapePunctuation(line: string): string {
  * paragraphs joined with hard breaks), and `**bold**` / `*italic*` inline marks.
  * Thematic breaks (`---`) are dropped, pipe tables are flattened to a bold header
  * paragraph + a bullet list, and a `[Picture: …]` marker alone on its line is kept
- * as its OWN paragraph (so the image-substitution sites can find it). Everything
- * else — including inline `[Picture: …]` markers and `______` blanks — passes
- * through as literal text.
+ * as its OWN paragraph (so the image-substitution sites can find it). HTML entities
+ * (`&nbsp;`, `&amp;`, `&mdash;`, numeric `&#160;`/`&#xA0;`) are decoded so they never
+ * print as literal text (see {@link decodeEntities}). Everything else — including
+ * inline `[Picture: …]` markers and `______` blanks — passes through as literal text.
  */
 export function markdownToDoc(markdown: string): JSONContent {
-  // Right-trim and unescape every line up front, so block classification (and the
-  // table run scan below) sees the same, punctuation-normalised text.
+  // Right-trim, unescape, then decode HTML entities on every line up front, so block
+  // classification (and the table run scan below) sees the same, normalised text.
+  // Unescape runs BEFORE decode so a decoded backslash is never re-consumed as an escape.
   const lines = (markdown ?? '')
     .replace(/\r\n/g, '\n')
     .split('\n')
-    .map((l) => unescapePunctuation(l.replace(/\s+$/, '')));
+    .map((l) => decodeEntities(unescapePunctuation(l.replace(/\s+$/, ''))));
   const content: JSONContent[] = [];
 
   let para: string[] = [];

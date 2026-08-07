@@ -3,6 +3,14 @@
     "generate": "Generate worksheet",
     "regenerateAll": "Regenerate all",
     "filling": "Aya is filling your worksheet",
+    "progress": {
+      "planning": "Reading the curriculum. All of it.",
+      "exercises": "Writing exercise {n} of {total}",
+      "images": "Drawing picture {n} of {total}. Slowest bit.",
+      "compiling": "Putting it on the page",
+      "regenExercise": "Having another go",
+      "regenImage": "Drawing it again"
+    },
     "print": "Print",
     "zoom": {
       "zoomOut": "Zoom out (Ctrl −)",

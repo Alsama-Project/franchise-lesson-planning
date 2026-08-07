@@ -668,8 +668,13 @@ html:lang(ar) body {
   padding: 6px 8px;
   text-align: center;
 }
-.ws-doc td.ws-flashcard-cell > p {
+/* The word under the picture — a paragraph (older **bold** form) or a level-3 heading
+ * (the `### word` the heading contract now produces). Normalise both to one compact,
+ * centred, bold word so a heading label never reads as a big section title in a cell. */
+.ws-doc td.ws-flashcard-cell > p,
+.ws-doc td.ws-flashcard-cell > h3 {
   margin: 4px 0 0;
+  font-size: 15px;
   font-weight: 700;
 }
 .ws-doc td.ws-flashcard-cell .ws-img-nv,

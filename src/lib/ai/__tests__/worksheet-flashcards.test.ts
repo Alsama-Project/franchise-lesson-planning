@@ -4,6 +4,8 @@ import { layoutExerciseImages } from '../worksheet-assemble';
 
 const img = (slotId: string) => ({ type: 'image', attrs: { src: null, storagePath: `u/${slotId}.png`, slotId } });
 const label = (word: string) => ({ type: 'paragraph', content: [{ type: 'text', text: word, marks: [{ type: 'bold' }] }] });
+const hlabel = (word: string) => ({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: word }] });
+const title = (word: string) => ({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: word }] });
 const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
 
 /** Every cell in every row of a table (flattened). */
@@ -42,6 +44,25 @@ test('flashcards carry image + label together in each cell', () => {
   assert.equal(c[0].content[0].type, 'image');
   assert.equal(c[0].content[1].type, 'paragraph');
   assert.equal(c[0].content[1].content[0].text, 'bus');
+});
+
+test('the label may be a level-3 HEADING (### word) — the form the heading contract produces', () => {
+  // Regression: the contract made the model write `### bus` instead of `**bus**`, and a
+  // paragraph-only detector stopped matching. Heading labels must grid too.
+  const out = layoutExerciseImages([img('a'), hlabel('bus'), img('b'), hlabel('car')]);
+  assert.equal(out.length, 1);
+  const table: any = out[0];
+  assert.equal(table.type, 'table');
+  assert.deepEqual(rowLengths(table), [2]);
+  const c = cells(table);
+  assert.equal(c[0].content[0].type, 'image');
+  assert.equal(c[0].content[1].type, 'heading');
+  assert.equal(c[0].content[1].content[0].text, 'bus');
+});
+
+test('a level-2 TITLE after an image is NOT a label (breaks the run, image stays large)', () => {
+  const out = layoutExerciseImages([img('a'), title('Fruits'), img('b')]);
+  assert.deepEqual(out.map((n: any) => n.type), ['image', 'heading', 'image']);
 });
 
 test('FIVE images grid to 3 per row and pad the last row rectangular', () => {

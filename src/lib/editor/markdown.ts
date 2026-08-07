@@ -284,64 +284,83 @@ function isTableRow(line: string): boolean {
   return t.length >= 2 && t.startsWith('|') && t.endsWith('|');
 }
 
-/** The non-empty, trimmed cells of one `| a | b |` row (leading/trailing pipes and
- *  any empty cells discarded), or [] for a row with no content cells. */
+/** The trimmed cells of one `| a | b |` row, PRESERVING internal empty cells — only the
+ *  leading/trailing pipe artifacts are stripped. `| bus | | car |` → `['bus', '', 'car']`,
+ *  so a deliberately-empty column (a matching sheet's draw-a-line gap) keeps its position
+ *  and every row aligns to the same columns. Callers drop columns that are empty in EVERY
+ *  row (see {@link tableToNodes}), so a spurious gap still disappears. */
 function tableCells(line: string): string[] {
-  return line
-    .trim()
-    .split('|')
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0);
+  const t = line.trim();
+  return t.slice(1, -1).split('|').map((c) => c.trim());
 }
 
-/** True when a row is a table separator (`---`, `:--`, `--:`, `:-:` in every cell). */
+/** True when a row is a table separator (`---`, `:--`, `--:`, `:-:` in every NON-EMPTY
+ *  cell), i.e. the `|---|---|` line under a header. Empty cells are ignored so a padded
+ *  separator still reads as one. */
 function isSeparatorRow(cells: string[]): boolean {
-  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+  const filled = cells.filter((c) => c.length > 0);
+  return filled.length > 0 && filled.every((c) => /^:?-+:?$/.test(c));
 }
 
-/** Bold every text node in an inline run — used for a flattened table's header cells. */
-function boldInline(nodes: JSONContent[]): JSONContent[] {
-  return nodes.map((n) => {
-    if (n.type !== 'text') return n;
-    const marks = n.marks ?? [];
-    return marks.some((m) => m.type === 'bold') ? n : { ...n, marks: [...marks, { type: 'bold' }] };
-  });
-}
+/** Leading decorative bullet glyphs the model prepends to a matching option (`✦ bicycle`).
+ *  Pure decoration inside a table cell, stripped at the boundary — restricted to unambiguous
+ *  symbol glyphs so real content (a `-` sign, an `*`) is never touched. */
+const CELL_BULLET = /^[✦•◆★●○▪▸►·»]\s+/;
 
-/** One row's cells → inline nodes, each cell parsed through `inlineToNodes` (so a
- *  `**bold**` inside a cell survives) and joined by an em-dash. Header cells bold. */
-function rowToInline(cells: string[], bold: boolean): JSONContent[] {
-  const out: JSONContent[] = [];
-  cells.forEach((cell, i) => {
-    if (i > 0) out.push({ type: 'text', text: ' — ' });
-    const nodes = inlineToNodes(cell);
-    out.push(...(bold ? boldInline(nodes) : nodes));
-  });
-  return out;
+/** One cell's markdown → the block content of a `tableCell`/`tableHeader`: a single
+ *  paragraph of inline nodes (so a `**bold**` word survives), or a bare empty paragraph
+ *  for an empty cell. A leading decorative bullet ({@link CELL_BULLET}) is stripped. */
+function cellContent(text: string): JSONContent[] {
+  const inline = inlineToNodes(text.replace(CELL_BULLET, '').trim());
+  return [inline.length ? { type: 'paragraph', content: inline } : { type: 'paragraph' }];
 }
 
 /**
- * Flatten a contiguous run of pipe-table rows to legible text — there is no `table`
- * node in the worksheet schema, and a raw `| … |` grid printed on a student sheet is
- * junk. The separator row is dropped; the header row (the one before it) becomes one
- * paragraph of bold cells; every other row becomes a `listItem` in one `bulletList`.
- * Cells are joined by an em-dash. Never rebuilds a table. Returns the nodes to emit.
+ * Build a real `table` node from a contiguous run of pipe-table rows. The worksheet v3
+ * schema supports tables (the flashcard grid is one), so the model's two-column matching
+ * structure — `| Word | | Picture |` — is honoured as an actual bordered table rather than
+ * flattened to a bullet-list mess. The separator row (`|---|---|`) is dropped; the row
+ * before it becomes `tableHeader` cells, every other row `tableCell`. Rows are padded to a
+ * common width, then any column empty in EVERY row (the model's spurious draw-a-line gap)
+ * is dropped, so `| Word | | Picture |` renders as a clean two-column table. Returns [] for
+ * a run that holds only a separator / only empties.
  */
 function tableToNodes(rows: string[]): JSONContent[] {
   const parsed = rows.map(tableCells);
   const sepIndex = parsed.findIndex(isSeparatorRow);
   const headerIndex = sepIndex >= 1 ? sepIndex - 1 : -1;
-  const out: JSONContent[] = [];
-  if (headerIndex >= 0 && parsed[headerIndex].length > 0) {
-    out.push({ type: 'paragraph', content: rowToInline(parsed[headerIndex], true) });
-  }
-  const items: JSONContent[] = [];
+
+  // Keep the content rows (drop the separator), remembering which one is the header.
+  const bodyRows: { cells: string[]; header: boolean }[] = [];
   parsed.forEach((cells, i) => {
-    if (i === headerIndex || isSeparatorRow(cells) || cells.length === 0) return;
-    items.push({ type: 'listItem', content: [{ type: 'paragraph', content: rowToInline(cells, false) }] });
+    if (isSeparatorRow(cells)) return;
+    bodyRows.push({ cells, header: i === headerIndex });
   });
-  if (items.length) out.push({ type: 'bulletList', content: items });
-  return out;
+  if (bodyRows.length === 0) return [];
+
+  // Pad every row to the widest, then keep only columns with content SOMEWHERE — a
+  // column empty in every row is the model's gap artifact and carries no information.
+  const cols = Math.max(...bodyRows.map((r) => r.cells.length));
+  const matrix = bodyRows.map((r) => {
+    const padded = r.cells.slice(0, cols);
+    while (padded.length < cols) padded.push('');
+    return padded;
+  });
+  const keep: number[] = [];
+  for (let c = 0; c < cols; c++) {
+    if (matrix.some((row) => row[c].length > 0)) keep.push(c);
+  }
+  if (keep.length === 0) return [];
+
+  const tableRows: JSONContent[] = bodyRows.map((r, ri) => ({
+    type: 'tableRow',
+    content: keep.map((c) => ({
+      type: r.header ? 'tableHeader' : 'tableCell',
+      attrs: { colspan: 1, rowspan: 1, colwidth: null },
+      content: cellContent(matrix[ri][c]),
+    })),
+  }));
+  return [{ type: 'table', content: tableRows }];
 }
 
 /** Unescape backslash-escaped markdown punctuation at the LINE level, BEFORE block
@@ -417,9 +436,10 @@ function decodeEntities(line: string): string {
  * headings, `-`/`*`/`+` bullet lists, `1.` ordered lists (honouring the first
  * item's number as the list `start`), blank-line-separated paragraphs (multi-line
  * paragraphs joined with hard breaks), and `**bold**` / `*italic*` inline marks.
- * Thematic breaks (`---`) are dropped, pipe tables are flattened to a bold header
- * paragraph + a bullet list, and a `[Picture: …]` marker alone on its line is kept
- * as its OWN paragraph (so the image-substitution sites can find it). HTML entities
+ * Thematic breaks (`---`) are dropped, a contiguous run of pipe-table rows becomes a
+ * real `table` node (the v3 schema supports tables — the model's two-column matching
+ * grid is honoured, not flattened), and a `[Picture: …]` marker alone on its line is
+ * kept as its OWN paragraph (so the image-substitution sites can find it). HTML entities
  * (`&nbsp;`, `&amp;`, `&mdash;`, numeric `&#160;`/`&#xA0;`) are decoded so they never
  * print as literal text (see {@link decodeEntities}). Everything else — including
  * inline `[Picture: …]` markers and `______` blanks — passes through as literal text.

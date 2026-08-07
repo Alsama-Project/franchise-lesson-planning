@@ -20,7 +20,7 @@ import type { ImageSlot } from '@/types/worksheet-exercise';
 import {
   exerciseNodes,
   fillImageSlots,
-  layoutExerciseImages,
+  layoutFlashcards,
   failedExercisePlaceholder,
   planExerciseSplice,
   tagCompiled,
@@ -53,7 +53,7 @@ export function buildExerciseNodes(
   const raw =
     payload.failed || !payload.bodyDoc
       ? failedExercisePlaceholder(failedText)
-      : layoutExerciseImages(fillImageSlots(exerciseNodes(payload.bodyDoc), payload.imageSlots));
+      : fillImageSlots(layoutFlashcards(exerciseNodes(payload.bodyDoc)), payload.imageSlots);
   return raw.map((n) => tagCompiled(n, exerciseId)) as JSONContent[];
 }
 

@@ -1,9 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { layoutExerciseImages } from '../worksheet-assemble';
+import { layoutFlashcards } from '../worksheet-assemble';
 
-const img = (slotId: string) => ({ type: 'image', attrs: { src: null, storagePath: `u/${slotId}.png`, slotId } });
-const label = (word: string) => ({ type: 'paragraph', content: [{ type: 'text', text: word, marks: [{ type: 'bold' }] }] });
+// `layoutFlashcards` runs BEFORE `fillImageSlots`, on the OUTPUT of `markdownToDoc` — so
+// a card's picture is still a `[Picture: …]` MARKER paragraph, not a resolved image node.
+// It keys on STRUCTURE (consecutive marker paragraphs, each with at most one short line
+// between), never on the label's content, because the label form keeps changing: a
+// **bold** word, a `### word` heading, or NOTHING (the model's `______` writing blanks are
+// dropped by markdownToDoc's thematic-break rule, so a blank card arrives label-less and
+// the layout synthesises the writing line).
+
+const marker = (subject: string) => ({ type: 'paragraph', content: [{ type: 'text', text: `[Picture: ${subject}]` }] });
+const blabel = (word: string) => ({ type: 'paragraph', content: [{ type: 'text', text: word, marks: [{ type: 'bold' }] }] });
 const hlabel = (word: string) => ({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: word }] });
 const title = (word: string) => ({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: word }] });
 const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
@@ -15,19 +23,23 @@ function cells(table: any): any[] {
 function rowLengths(table: any): number[] {
   return (table.content ?? []).map((row: any) => (row.content ?? []).length);
 }
+/** The text of a cell's synthesised writing line, if it carries one. */
+function isWritingLine(node: any): boolean {
+  return node?.type === 'paragraph' && node.content?.[0]?.text === '__________';
+}
 
-test('a LONE image stays inline and large (no table)', () => {
-  const out = layoutExerciseImages([para('intro'), img('a'), para('after')]);
-  assert.deepEqual(out.map((n: any) => n.type), ['paragraph', 'image', 'paragraph']);
+test('a LONE marker stays inline (single flashcard is large, no table)', () => {
+  const out = layoutFlashcards([para('intro'), marker('a bus'), para('after')]);
+  assert.deepEqual(out.map((n: any) => n.type), ['paragraph', 'paragraph', 'paragraph']);
 });
 
-test('a lone image + its label stay inline (single flashcard is large)', () => {
-  const out = layoutExerciseImages([img('a'), label('bus')]);
-  assert.deepEqual(out.map((n: any) => n.type), ['image', 'paragraph']);
+test('a lone marker + its label stay inline', () => {
+  const out = layoutFlashcards([marker('a bus'), blabel('bus')]);
+  assert.deepEqual(out.map((n: any) => n.type), ['paragraph', 'paragraph']);
 });
 
-test('TWO images become one side-by-side row (a wsFlashcards table)', () => {
-  const out = layoutExerciseImages([img('a'), img('b')]);
+test('TWO markers become one side-by-side row (a wsFlashcards table)', () => {
+  const out = layoutFlashcards([marker('a'), marker('b')]);
   assert.equal(out.length, 1);
   const table: any = out[0];
   assert.equal(table.type, 'table');
@@ -37,57 +49,59 @@ test('TWO images become one side-by-side row (a wsFlashcards table)', () => {
   assert.ok(cells(table).every((c: any) => c.attrs.wsFlashcardCell === true));
 });
 
-test('flashcards carry image + label together in each cell', () => {
-  const out = layoutExerciseImages([img('a'), label('bus'), img('b'), label('car')]);
-  const table: any = out[0];
-  const c = cells(table);
-  assert.equal(c[0].content[0].type, 'image');
-  assert.equal(c[0].content[1].type, 'paragraph');
+test('each cell carries its marker paragraph over its word', () => {
+  const out = layoutFlashcards([marker('a bus'), blabel('bus'), marker('a car'), blabel('car')]);
+  const c = cells(out[0]);
+  // Cell content = [ marker paragraph, label ].
+  assert.equal(c[0].content[0].content[0].text, '[Picture: a bus]');
   assert.equal(c[0].content[1].content[0].text, 'bus');
 });
 
-test('the label may be a level-3 HEADING (### word) — the form the heading contract produces', () => {
-  // Regression: the contract made the model write `### bus` instead of `**bus**`, and a
-  // paragraph-only detector stopped matching. Heading labels must grid too.
-  const out = layoutExerciseImages([img('a'), hlabel('bus'), img('b'), hlabel('car')]);
-  assert.equal(out.length, 1);
+test('a card the model left BLANK gets a synthesised writing line (the real case)', () => {
+  // "say the word aloud, then write it on the line" — only the worked example carries a
+  // word; the blank cards must still show a writing line, not an empty cell.
+  const out = layoutFlashcards([marker('a bus'), blabel('bus'), marker('a car'), marker('a taxi')]);
+  const c = cells(out[0]);
+  assert.equal(c[0].content[1].content[0].text, 'bus'); // labelled example
+  assert.ok(isWritingLine(c[1].content[1])); // blank → writing line
+  assert.ok(isWritingLine(c[2].content[1]));
+});
+
+test('the label may be a level-3 HEADING (### word), not only **bold**', () => {
+  const out = layoutFlashcards([marker('a'), hlabel('bus'), marker('b'), hlabel('car')]);
   const table: any = out[0];
   assert.equal(table.type, 'table');
-  assert.deepEqual(rowLengths(table), [2]);
   const c = cells(table);
-  assert.equal(c[0].content[0].type, 'image');
   assert.equal(c[0].content[1].type, 'heading');
   assert.equal(c[0].content[1].content[0].text, 'bus');
 });
 
-test('a level-2 TITLE after an image is NOT a label (breaks the run, image stays large)', () => {
-  const out = layoutExerciseImages([img('a'), title('Fruits'), img('b')]);
-  assert.deepEqual(out.map((n: any) => n.type), ['image', 'heading', 'image']);
+test('a level-2 TITLE between markers is NOT a label — it breaks the run', () => {
+  const out = layoutFlashcards([marker('a'), title('Fruits'), marker('b')]);
+  assert.deepEqual(out.map((n: any) => n.type), ['paragraph', 'heading', 'paragraph']);
 });
 
-test('FIVE images grid to 3 per row and pad the last row rectangular', () => {
-  const out = layoutExerciseImages(['a', 'b', 'c', 'd', 'e'].map(img));
+test('a full-sentence paragraph between markers breaks the run', () => {
+  const out = layoutFlashcards([marker('a'), para('a full sentence of real exercise text here'), marker('b')]);
+  assert.deepEqual(out.map((n: any) => n.type), ['paragraph', 'paragraph', 'paragraph']);
+});
+
+test('FIVE markers grid to 3 per row and pad the last row rectangular', () => {
+  const out = layoutFlashcards(['a', 'b', 'c', 'd', 'e'].map(marker));
   const table: any = out[0];
-  // perRowFor(5) === 3 → rows of 3 and 3 (last padded from 2 → 3 with an empty cell).
-  assert.deepEqual(rowLengths(table), [3, 3]);
-  // Exactly 5 cells hold an image; the 6th (pad) holds only an empty paragraph.
-  const withImage = cells(table).filter((cell: any) => cell.content.some((n: any) => n.type === 'image'));
-  assert.equal(withImage.length, 5);
-  const empties = cells(table).filter((cell: any) => cell.content.every((n: any) => n.type === 'paragraph' && !(n.content?.length)));
-  assert.equal(empties.length, 1);
+  assert.deepEqual(rowLengths(table), [3, 3]); // 3 + 3, last padded from 2
+  const withMarker = cells(table).filter((cell: any) =>
+    cell.content.some((n: any) => n.content?.[0]?.text?.startsWith('[Picture:')),
+  );
+  assert.equal(withMarker.length, 5);
 });
 
-test('FOUR images grid to 4 per row (small)', () => {
-  const out = layoutExerciseImages(['a', 'b', 'c', 'd'].map(img));
+test('FOUR markers grid to 4 per row', () => {
+  const out = layoutFlashcards(['a', 'b', 'c', 'd'].map(marker));
   assert.deepEqual(rowLengths(out[0] as any), [4]);
 });
 
-test('a non-label paragraph between images breaks the run (both stay large)', () => {
-  const out = layoutExerciseImages([img('a'), para('a full sentence of real exercise text here'), img('b')]);
-  assert.deepEqual(out.map((n: any) => n.type), ['image', 'paragraph', 'image']);
-});
-
-test('images are left untouched when there are none to group', () => {
-  const nodes = [para('one'), { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'T' }] }];
-  assert.deepEqual(layoutExerciseImages(nodes), nodes);
+test('nodes with no markers pass through untouched', () => {
+  const nodes = [para('one'), title('T')];
+  assert.deepEqual(layoutFlashcards(nodes), nodes);
 });

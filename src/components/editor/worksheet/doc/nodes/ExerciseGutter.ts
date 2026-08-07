@@ -31,6 +31,9 @@ export interface ExerciseGutterStorage {
   busy: Set<string>;
   /** Localised chip label / aria-label (teacher UI locale). */
   title: string;
+  /** Per-id live stage copy while regenerating (e.g. "Having another go"). When an id has
+   *  an entry AND is busy, its chip shows this instead of the default title. */
+  stageById: Record<string, string>;
   /** The exercise currently under the pointer, so only its chip is revealed. */
   hoveredId: string | null;
 }
@@ -66,7 +69,7 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
   name: 'exerciseGutter',
 
   addStorage() {
-    return { onRegenerate: null, busy: new Set<string>(), title: 'Regenerate', hoveredId: null };
+    return { onRegenerate: null, busy: new Set<string>(), title: 'Regenerate', stageById: {}, hoveredId: null };
   },
 
   addProseMirrorPlugins() {
@@ -116,6 +119,10 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                 seen.add(id);
                 const busy = storage.busy.has(id);
                 const active = storage.hoveredId === id;
+                // While regenerating, the chip SAYS the real stage ("Having another go" /
+                // "Drawing it again") if the host has set one; otherwise the default title.
+                const stageLabel = busy ? storage.stageById[id] : undefined;
+                const chipLabel = stageLabel ?? storage.title;
                 decos.push(
                   Decoration.widget(
                     pos,
@@ -127,14 +134,14 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                       const btn = document.createElement('button');
                       btn.type = 'button';
                       btn.className = 'ws-ex-regen';
-                      btn.title = storage.title;
-                      btn.setAttribute('aria-label', storage.title);
+                      btn.title = chipLabel;
+                      btn.setAttribute('aria-label', chipLabel);
                       btn.setAttribute('data-exercise-id', id);
                       btn.disabled = busy;
                       btn.innerHTML = busy ? SPINNER_SVG : REGEN_SVG;
                       const label = document.createElement('span');
                       label.className = 'ws-ex-regen-label';
-                      label.textContent = storage.title;
+                      label.textContent = chipLabel;
                       btn.appendChild(label);
                       btn.addEventListener('mousedown', (e) => e.preventDefault());
                       btn.addEventListener('click', (e) => {
@@ -145,10 +152,15 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                       return wrap;
                     },
                     // `side: -1` associates the widget before the node so typing at the
-                    // node's start lands after it; the busy + active flags in `key` swap
-                    // the DOM when state changes; `ignoreSelection` keeps caret logic
-                    // untouched.
-                    { side: -1, key: `exg:${id}:${busy ? 1 : 0}:${active ? 1 : 0}`, ignoreSelection: true },
+                    // node's start lands after it; the busy + active flags AND the stage
+                    // label in `key` swap the DOM when any of them change (so the chip's
+                    // text updates as the regenerate advances); `ignoreSelection` keeps
+                    // caret logic untouched.
+                    {
+                      side: -1,
+                      key: `exg:${id}:${busy ? 1 : 0}:${active ? 1 : 0}:${stageLabel ?? ''}`,
+                      ignoreSelection: true,
+                    },
                   ),
                 );
               }

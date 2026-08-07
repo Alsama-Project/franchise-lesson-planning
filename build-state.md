@@ -2,7 +2,48 @@
 
 Living record of what each phase delivered and what comes next. Update as you go.
 
-## Worksheet markdown render floor ✅ (this phase)
+## Worksheet progress stages + HTML-entity decoding ✅ (this phase)
+
+Two teacher-facing fixes on the worksheet generator. UI/converter only; no schema/migration/SQL.
+PR only, never merged.
+
+- **HTML entities decode in `markdownToDoc`** (`src/lib/editor/markdown.ts`). The model emits
+  `&nbsp;` (and friends) to space out multiple-choice options; passed through, they printed as
+  literal text on the student sheet. A new `decodeEntities` runs at the LINE level — the same
+  place, and for the same reason, as `unescapePunctuation` — decoding the named entities a model
+  plausibly emits (`NAMED_ENTITIES`: the five escapes + common typography/money glyphs; `&nbsp;`
+  and the other spaces → an ORDINARY space, never U+00A0) and both numeric forms (`&#160;` /
+  `&#xA0;`). One left-to-right pass, so `&amp;lt;` decodes to literal `&lt;`, not `<`.
+  - **Markup-manufacturing guard (reported).** Decoding a pipe entity (`&#124;` / `&#x7C;`, and the
+    deliberately-omitted `&vert;` / `&VerticalLine;`) would yield a `|` that the table-run scan
+    (`isTableRow`) could read as a pipe table built out of prose — the exact hazard the `|`
+    exclusion in `unescapePunctuation` guards. So codepoint U+007C is left as its literal entity,
+    never decoded. Other markup chars (`#`, `*`, `-`, digits + `.`) ARE decoded: `unescapePunctuation`
+    already activates those from backslash escapes by design, and the established policy treats the
+    pipe/table case as the only one to suppress. Unescape runs before decode so a decoded backslash
+    is never re-consumed as an escape. Eight regression tests in `markdown.test.ts`.
+- **Real progress copy, not a spinner** (`useWorksheetGeneration` → `ExerciseSurface` header +
+  `ExerciseGutter` chip). The header said a static "Aya is filling your worksheet" for minutes; it
+  now shows the ACTUAL stage, driven by real state (never a timer): `planning` (the one opaque /plan
+  call — no count), `exercises` and `images` ticking a genuine `index` of `total` as their
+  sequential loops advance, then `compiling`. The images stage appears ONLY if a picture is actually
+  drawn. Per-exercise regenerate has its own shorter set on the gutter chip ("Having another go" →
+  "Drawing it again", the latter only when a picture will really be redrawn), driven by an `onStage`
+  callback through the same real transitions. `drawableSlots` (new pure `slots.ts`) is the single
+  source of truth for the image count denominator AND the regenerate "will a picture draw?" test, so
+  the count can't drift from the loop; six unit tests in `drawableSlots.test.ts`.
+  - **Copy is provisional.** English shipped; every new string is under `worksheetGen.progress.*` in
+    `messages/en/worksheetGen.json` (the `ar` catalog falls back to `en` per-key, so nothing breaks
+    until translated). Connie to review wording; Kadria owns the Arabic. New strings: `progress.planning`,
+    `progress.exercises`, `progress.images`, `progress.compiling`, `progress.regenExercise`,
+    `progress.regenImage`.
+  - **Not wired (reported).** The brief listed two more `planning` lines ("Seeing what you had in
+    mind", "Working out what goes where"). The /plan call is a SINGLE opaque server request from the
+    client, so rotating three planning lines would need a timer (forbidden) or plan-endpoint streaming
+    (a larger change) — only one honest planning line is wired. Exercises/images (the bulk of the wait)
+    tick real counts. Streaming the planning sub-steps is the follow-up if the extra lines are wanted.
+
+## Worksheet markdown render floor ✅ (earlier phase)
 
 Hardened `markdownToDoc` (`src/lib/editor/markdown.ts`) — the server-side `body_md` →
 `body_doc` converter — so the model's stray markdown never reaches a student sheet as junk.

@@ -48,6 +48,7 @@ import {
   assembleWorksheetDoc,
   exerciseNodes,
   fillImageSlots,
+  layoutExerciseImages,
   failedExercisePlaceholder,
   type PreparedExercise,
 } from '@/lib/ai/worksheet-assemble';
@@ -112,8 +113,11 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
     .map((row): PreparedExercise | null => {
       const anchor = row.generation?.spec?.template_anchor?.trim() || null;
       // Pair markers ↔ slots per row (fresh index), against THIS row's own
-      // body_doc + image_slots.
-      const nodes = fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []);
+      // body_doc + image_slots, then lay a run of adjacent images out as a grid
+      // (flashcards) sized by count — a lone image stays large; 2+ become a table.
+      const nodes = layoutExerciseImages(
+        fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []),
+      );
       if (nodes.length > 0) return { id: row.id, anchor, nodes };
       // A failed row carries no body — emit a visible, retryable placeholder rather
       // than dropping it (an invisible gap the teacher can't act on). A skeleton /

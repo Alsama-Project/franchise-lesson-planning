@@ -63,6 +63,19 @@ test('D: contiguous list stays one orderedList, start 1, three items', () => {
   );
 });
 
+// The heading contract (now in the floor): `## Title` → level-2 heading, `### Label` →
+// level-3 heading. The schema declares [2,3], and compile/CSS key exercise layout + the
+// pink title off these — so the conversion must hold.
+test('heading contract: ## → h2 and ### → h3', () => {
+  const { content } = markdownToDoc('## Transport Words\n\nsome text\n\n### Word Bank');
+  const headings = content.filter((n) => n.type === 'heading');
+  assert.equal(headings.length, 2);
+  assert.equal(headings[0].attrs?.level, 2, '## is a level-2 heading');
+  assert.equal(plain(headings[0].content), 'Transport Words');
+  assert.equal(headings[1].attrs?.level, 3, '### is a level-3 heading');
+  assert.equal(plain(headings[1].content), 'Word Bank');
+});
+
 // A list whose first marker is not 1 carries that number as `start`.
 test('Fix 1: a list beginning at 3 emits start: 3', () => {
   const { content } = markdownToDoc('3. third\n4. fourth');

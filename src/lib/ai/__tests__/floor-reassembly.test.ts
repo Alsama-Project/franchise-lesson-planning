@@ -57,6 +57,19 @@ test('worksheet_builder floor is the JSON contract plus the [Picture:] rule only
   }
 });
 
+test('worksheet_builder floor carries the mechanical HEADING contract', () => {
+  const floor = floorForTool('worksheet_builder', 'en');
+  // Exercise title = ## (h2), label = ### (h3): the renderer keys layout + the pink title.
+  assert.match(floor, /level-2 heading on its own line: ## Title/);
+  assert.match(floor, /LABEL inside an exercise .* is a level-3 heading: ### Label/);
+  // Bold is emphasis only — never a title or a label.
+  assert.match(floor, /Bold\*\* is emphasis WITHIN a sentence only/);
+  // Refer to exercises by title, never by number (moved from layer 4 to the floor).
+  assert.match(floor, /Refer to an exercise ONLY by its title, never by a number/);
+  // The model must not write pipe-table markdown; compile owns any grid layout.
+  assert.match(floor, /Do NOT write pipe-table markdown/);
+});
+
 test('worksheet_image floor is only its precedence line (no style/context/safeguarding)', () => {
   const floor = floorForTool('worksheet_image', 'en');
   assert.equal(floor, OUTPUT_CONTRACT.worksheet_image);

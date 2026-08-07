@@ -655,6 +655,27 @@ html:lang(ar) body {
 .ws-doc th > p {
   margin: 0;
 }
+/* A compile-built FLASHCARD GRID (FlashcardTableStyle / layoutExerciseImages): the cells
+ * carry `ws-flashcard-cell`, so the grid reads as borderless picture-and-word cards, not
+ * a data table. Columns are even (`table-layout: fixed`, width 100%), so each image is
+ * sized purely by the column count — 2–3 per row read medium, 4 per row small — while a
+ * lone image stays large and un-tabled. The bold word sits centred under its picture.
+ * On the CELL (not the table): the live editor renders the table via a NodeView that
+ * drops a table-level class, but the cells are ordinary nodes. Screen + print alike. */
+.ws-doc td.ws-flashcard-cell {
+  border: none;
+  height: auto;
+  padding: 6px 8px;
+  text-align: center;
+}
+.ws-doc td.ws-flashcard-cell > p {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+.ws-doc td.ws-flashcard-cell .ws-img-nv,
+.ws-doc td.ws-flashcard-cell img {
+  margin-inline: auto;
+}
 .ws-doc .selectedCell::after {
   content: '';
   position: absolute;

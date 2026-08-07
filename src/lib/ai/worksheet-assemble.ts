@@ -9,7 +9,7 @@
 
 import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
 import type { ImageSlot } from '@/types/worksheet-exercise';
-import { PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
+import { PICTURE_MARKER } from '@/lib/editor/markdown';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -230,22 +230,26 @@ export function assembleWorksheetDoc(
   return { version: 3, doc: { type: 'doc', content: pruned } };
 }
 
-// ── Image slots → image nodes ────────────────────────────────────────────────
+// ── Image slots → inline image nodes ─────────────────────────────────────────
 //
 // A generated image is authored as a `[Picture: …]` marker, which `markdownToDoc`
-// passes through as literal text, so in body_doc it is a top-level `paragraph`
-// whose only content is that one marker. The exercise route builds `image_slots`
-// one-per-marker in the SAME order the markers appear, so within a row the k-th
-// marker paragraph pairs with `image_slots[k]`. Where that slot has a non-null
-// `storage_path`, the marker is replaced by a `ResizableImage` node (type `image`)
-// carrying `storagePath` + `slotId`; `src` is left null so `resolveImageSrc`
-// re-signs from the path (never a persisted, expiring URL). Where there is no paired
-// slot, or its `storage_path` is null, the text marker is left exactly as it is —
-// the pre-image fallback the teacher already sees, which must not regress.
+// passes through as literal text. The exercise route builds `image_slots` one-per-
+// marker in the SAME order the markers appear, so the k-th marker (in document order)
+// pairs with `image_slots[k]`. Where that slot has a non-null `storage_path`, the
+// marker RUN inside its text node is replaced IN PLACE by an inline `ResizableImage`
+// node (type `image`, `inline: true`) carrying `storagePath` + `slotId`; `src` is left
+// null so `resolveImageSrc` re-signs from the path (never a persisted, expiring URL).
 //
-// This lives in the pure module (not the server action) because BOTH writers need
-// it identically: `compileWorksheet` on the initial build, and the client-side
-// per-exercise splice when a single exercise is regenerated in the live document.
+// Because the image is inline, the surrounding text stays put: a marker alone in its
+// paragraph becomes a paragraph holding just the image (the legal inline form of the
+// old top-level block image), and a marker embedded in a sentence ("… the [Picture: a
+// fox] jumped …") becomes an image sitting BETWEEN the words. Where there is no paired
+// slot, or its `storage_path` is null, the marker text is left exactly as it is — the
+// pre-image fallback the teacher already sees, which must not regress.
+//
+// This lives in the pure module (not the server action) because BOTH writers need it
+// identically: `compileWorksheet` on the initial build, and the client-side per-
+// exercise splice when a single exercise is regenerated in the live document.
 
 /** The flowing nodes of an exercise's body_doc, or [] when it carries none. */
 export function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
@@ -254,27 +258,7 @@ export function exerciseNodes(bodyDoc: WorksheetDoc | null): unknown[] {
   return Array.isArray(content) ? content : [];
 }
 
-/**
- * If `node` is a marker paragraph — a `paragraph` whose entire content is text
- * nodes concatenating to exactly one `[Picture: …]` marker and nothing else —
- * return the trimmed marker text; otherwise null. A paragraph carrying a marker
- * plus any other text (or any non-text inline node) is NOT a marker paragraph. The
- * marker pattern (`PICTURE_MARKER_LINE`) is shared with `markdownToDoc` and the pane
- * so the three can never drift on what counts as a marker paragraph.
- */
-function markerParagraphText(node: unknown): string | null {
-  const n = node as { type?: unknown; content?: unknown };
-  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
-  let text = '';
-  for (const child of n.content) {
-    const c = child as { type?: unknown; text?: unknown };
-    if (c?.type !== 'text' || typeof c.text !== 'string') return null; // hardBreak / non-text → not pure
-    text += c.text;
-  }
-  return PICTURE_MARKER_LINE.test(text) ? text.trim() : null;
-}
-
-/** The `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
+/** The inline `image` node for a resolved slot. `src` stays null — `resolveImageSrc`
  *  serves from `storagePath` through the re-signing route. `brief` is stamped on so a
  *  per-image regenerate can re-send it (it round-trips via getJSON yet never prints —
  *  see `worksheetImageAttributes`). */
@@ -291,21 +275,75 @@ function slotImageNode(slot: ImageSlot): unknown {
   };
 }
 
+/** A loose text/inline node as it appears in body_doc JSON. */
+type InlineNode = { type?: unknown; text?: unknown; marks?: unknown };
+
 /**
- * Replace each marker paragraph in one exercise's top-level nodes with its slot's
- * image node, where that slot's image is ready. The marker index resets per call
- * (per exercise row) and advances on EVERY marker paragraph — resolved or not — so
- * a null-storage marker never shifts the pairing of a later one. Returns a new
- * array of the same length; non-marker nodes and unresolved markers pass through
- * unchanged.
+ * Split one text node on its `[Picture: …]` markers, resolving each against the next
+ * slot from `take`. Returns the replacement inline nodes: the text before/after each
+ * marker (with its marks preserved), and either an inline image node (slot ready) or
+ * the marker's literal text (no slot / not ready). Empty text pieces are dropped so no
+ * zero-length text node reaches the schema.
+ */
+function splitTextOnMarkers(
+  node: InlineNode,
+  take: () => ImageSlot | undefined,
+): unknown[] {
+  const text = node.text as string;
+  const marks = node.marks;
+  const textPiece = (t: string): unknown => (marks ? { type: 'text', text: t, marks } : { type: 'text', text: t });
+  const out: unknown[] = [];
+  let last = 0;
+  // A fresh global regex per call — never the shared non-global PICTURE_MARKER — so
+  // there is no `lastIndex` state to leak between text nodes.
+  for (const match of text.matchAll(new RegExp(PICTURE_MARKER.source, 'g'))) {
+    const idx = match.index ?? 0;
+    if (idx > last) out.push(textPiece(text.slice(last, idx)));
+    const slot = take(); // advance per marker, resolved or not
+    out.push(slot && slot.storage_path ? slotImageNode(slot) : textPiece(match[0]));
+    last = idx + match[0].length;
+  }
+  if (last < text.length) out.push(textPiece(text.slice(last)));
+  return out;
+}
+
+/**
+ * Replace every `[Picture: …]` marker across one exercise's nodes with its paired
+ * slot's inline image, where that slot is ready. Markers are matched in DOCUMENT ORDER
+ * wherever they sit in a text run (alone in a paragraph, or beside words, or nested in
+ * a list item / table cell), and each advances the slot index — resolved or not — so a
+ * null-storage marker never shifts a later pairing. The image is spliced INLINE into
+ * its paragraph, so surrounding text keeps its place.
+ *
+ * The top-level node COUNT is preserved (only inline content within nodes changes), so
+ * exercise-identity tagging (`tagCompiled`) and the per-exercise splice still key off
+ * the same top-level nodes. Nodes with no markers pass through by reference.
  */
 export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] {
   let i = 0;
-  return nodes.map((node) => {
-    if (markerParagraphText(node) === null) return node;
-    const slot = slots[i++]; // advance per marker, before the resolved-check
-    return slot && slot.storage_path ? slotImageNode(slot) : node;
-  });
+  const take = (): ImageSlot | undefined => slots[i++];
+
+  const walk = (node: unknown): unknown => {
+    if (!node || typeof node !== 'object') return node;
+    const n = node as { type?: unknown; content?: unknown };
+    if (!Array.isArray(n.content)) return node;
+    let changed = false;
+    const content: unknown[] = [];
+    for (const child of n.content) {
+      const c = child as InlineNode;
+      if (c && c.type === 'text' && typeof c.text === 'string' && PICTURE_MARKER.test(c.text)) {
+        content.push(...splitTextOnMarkers(c, take));
+        changed = true;
+      } else {
+        const healed = walk(child);
+        if (healed !== child) changed = true;
+        content.push(healed);
+      }
+    }
+    return changed ? { ...(node as object), content } : node;
+  };
+
+  return nodes.map(walk);
 }
 
 // ── Flashcard grid + image-size-by-count (compile-time layout) ───────────────

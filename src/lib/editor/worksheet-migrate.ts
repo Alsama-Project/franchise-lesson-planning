@@ -76,6 +76,50 @@ export function isWorksheetV3(raw: unknown): raw is WorksheetV3 {
 
 const EMPTY_PARAGRAPH: DocNode = { type: 'paragraph' };
 
+/** Node types whose content is an INLINE run (where an image node is legal inline).
+ *  Every other container (`doc`, `blockquote`, `listItem`, `tableCell`, …) holds
+ *  block content, so an image directly inside one is illegal under the inline schema
+ *  and must be wrapped. */
+const INLINE_HOLDER_TYPES = new Set(['paragraph', 'heading']);
+
+/**
+ * Heal a stored document for the inline image schema (`ResizableImage` is now
+ * `inline: true`): wrap any BARE image node sitting in a block position — a direct
+ * child of `doc`, a `blockquote`, a `listItem`, a `tableCell`, anything that is NOT a
+ * paragraph/heading inline run — in a paragraph, so it parses. An image already inside
+ * a paragraph/heading is left exactly as it is (legal inline).
+ *
+ * Every saved worksheet predating the inline switch holds block-level (top-level)
+ * image nodes; without this they would fail to parse against the inline schema and the
+ * image would be dropped on load. Running it here — the one boundary every doc crosses
+ * on read (`migrateWorksheetToV3`, called from DocumentWorksheet / …ReadOnly) — heals
+ * them with NO database migration and NO SQL.
+ *
+ * Pure, idempotent (a wrapped image is left alone on a second pass), and — crucially —
+ * it re-parents the SAME image object BY REFERENCE. It never reads, copies, or rebuilds
+ * `attrs`, so `storagePath` / `slotId` / `exerciseId` are untouched and it cannot
+ * reintroduce the null-prototype `$T` Server-Action bug (the wrap adds only plain
+ * Object.prototype paragraph wrappers; `toPlainJSON` still runs on save).
+ */
+export function wrapBareBlockImages<T>(node: T): T {
+  const n = node as DocNode;
+  if (!Array.isArray(n.content)) return node;
+  const holdsInline = typeof n.type === 'string' && INLINE_HOLDER_TYPES.has(n.type);
+  let changed = false;
+  const content: DocNode[] = [];
+  for (const child of n.content) {
+    if (!holdsInline && child?.type === 'image') {
+      content.push({ type: 'paragraph', content: [child] });
+      changed = true;
+    } else {
+      const healed = wrapBareBlockImages(child);
+      if (healed !== child) changed = true;
+      content.push(healed);
+    }
+  }
+  return (changed ? { ...n, content } : node) as T;
+}
+
 /** A render-only reference to a bank resource (migrated legacy resource block). */
 function resourceRefNode(resourceId: string, uploaderName: string | null): DocNode {
   return { type: 'resourceRef', attrs: { resourceId, uploaderName } };
@@ -167,7 +211,7 @@ export function findFloatingOverImage(elements: FloatingElement[]): FloatingOver
  */
 export function migrateWorksheetToV3(raw: unknown): WorksheetV3 {
   if (isWorksheetV3(raw)) {
-    return { version: 3, doc: normaliseDoc((raw as WorksheetV3).doc) };
+    return { version: 3, doc: wrapBareBlockImages(normaliseDoc((raw as WorksheetV3).doc)) };
   }
 
   const ws: Worksheet = parseWorksheet(raw);
@@ -224,7 +268,9 @@ export function migrateWorksheetToV3(raw: unknown): WorksheetV3 {
   // A tiptap doc must hold at least one block node, or the editor won't mount.
   if (content.length === 0) content.push({ ...EMPTY_PARAGRAPH });
 
-  return { version: 3, doc: { type: 'doc', content } };
+  // Flattening a v2 float / v1 body can leave a bare image at block level; the inline
+  // schema needs each wrapped in a paragraph. (v3 is healed at its own return above.)
+  return { version: 3, doc: wrapBareBlockImages({ type: 'doc', content }) };
 }
 
 /** Normalise an arbitrary value into a well-formed tiptap doc node. */

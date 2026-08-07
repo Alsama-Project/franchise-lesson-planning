@@ -12,6 +12,7 @@ import {
   findFloatingOverImage,
   sourceVersion,
   isWorksheetV3,
+  wrapBareBlockImages,
 } from '../worksheet-migrate';
 import { downgradeV3Doc } from '../worksheet';
 
@@ -48,6 +49,18 @@ function floatBox(id, geom, text) {
   };
 }
 
+/** The first `image` node anywhere in a node tree (images are now inline, so they sit
+ *  INSIDE a paragraph rather than at the top level). */
+function firstImage(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === 'image') return node;
+  for (const child of node.content ?? []) {
+    const found = firstImage(child);
+    if (found) return found;
+  }
+  return null;
+}
+
 test('flattens ordered v2 free blocks into one doc, preserving order', () => {
   const ws = {
     version: 2,
@@ -67,13 +80,17 @@ test('flattens ordered v2 free blocks into one doc, preserving order', () => {
   assert.equal(v3.doc.content[3].content[0].text, 'Second');
 });
 
-test('a floating image becomes an inline image node with width + align', () => {
+test('a floating image becomes an inline image node with width + align, wrapped in a paragraph', () => {
   const ws = {
     version: 2,
     blocks: [freeBlock('a', [para('Look:')], [floatImage('img', { x: 10, y: 10, w: 320, h: 200 })])],
   };
   const v3 = migrateWorksheetToV3(ws);
-  const img = v3.doc.content.find((n) => n.type === 'image');
+  // The image is inline now, so no bare top-level image survives — it is wrapped.
+  assert.equal(v3.doc.content.filter((n) => n.type === 'image').length, 0, 'no bare top-level image');
+  const wrapper = v3.doc.content.find((n) => n.type === 'paragraph' && n.content?.[0]?.type === 'image');
+  assert.ok(wrapper, 'expected the image wrapped in a paragraph');
+  const img = firstImage(v3.doc);
   assert.ok(img, 'expected an inline image node');
   assert.equal(img.attrs.src, 'https://x/img.png');
   assert.equal(img.attrs.width, 320);
@@ -111,11 +128,12 @@ test('floating overlays flatten after flow content in z-order', () => {
     ],
   };
   const v3 = migrateWorksheetToV3(ws);
-  // paragraph, then z=3 callout, then z=5 image.
+  // paragraph, then z=3 callout, then z=5 image (now wrapped in its own paragraph).
   assert.deepEqual(
     v3.doc.content.map((n) => n.type),
-    ['paragraph', 'blockquote', 'image'],
+    ['paragraph', 'blockquote', 'paragraph'],
   );
+  assert.equal(v3.doc.content[2].content?.[0]?.type, 'image', 'the last node wraps the image');
 });
 
 test('a text box overlapping an image becomes a caption right after that image', () => {
@@ -129,12 +147,13 @@ test('a text box overlapping an image becomes a caption right after that image',
     ],
   };
   const v3 = migrateWorksheetToV3(ws);
+  // The image is wrapped in a paragraph; the caption still sits right after it.
   assert.deepEqual(
     v3.doc.content.map((n) => n.type),
-    ['paragraph', 'image', 'caption'],
+    ['paragraph', 'paragraph', 'caption'],
   );
-  // the caption sits IMMEDIATELY AFTER its image, not dumped at the block end
-  const imgIdx = v3.doc.content.findIndex((n) => n.type === 'image');
+  // the caption sits IMMEDIATELY AFTER its image's wrapper, not dumped at the block end
+  const imgIdx = v3.doc.content.findIndex((n) => n.content?.[0]?.type === 'image');
   assert.equal(v3.doc.content[imgIdx + 1].type, 'caption');
   assert.equal(v3.doc.content[imgIdx + 1].content[0].content[0].text, 'stem');
 });
@@ -151,10 +170,12 @@ test('a non-overlapping text box stays a callout while an overlapping one captio
     ],
   };
   const v3 = migrateWorksheetToV3(ws);
+  // The overlapped image wraps in a paragraph; caption after it, aside as a callout.
   assert.deepEqual(
     v3.doc.content.map((n) => n.type),
-    ['image', 'caption', 'blockquote'],
+    ['paragraph', 'caption', 'blockquote'],
   );
+  assert.equal(v3.doc.content[0].content?.[0]?.type, 'image', 'first node wraps the image');
 });
 
 test('a legacy resource block becomes a render-only resourceRef node', () => {
@@ -202,6 +223,67 @@ test('migration is idempotent for a v3 envelope', () => {
 test('a v3 envelope with an empty doc is normalised to one empty paragraph', () => {
   const v3 = migrateWorksheetToV3({ version: 3, doc: { type: 'doc', content: [] } });
   assert.deepEqual(v3.doc.content, [{ type: 'paragraph' }]);
+});
+
+// ── inline image healing (wrapBareBlockImages) ───────────────────────────────
+// Every saved worksheet predating `inline: true` holds bare (block-level) image
+// nodes. They must be wrapped in a paragraph on read so they parse, with NO SQL and
+// NO database migration — and without touching the image's own attrs (the $T guard).
+
+function imageNode(extra = {}) {
+  return { type: 'image', attrs: { src: null, storagePath: 's/1.png', slotId: 'slot-1', ...extra } };
+}
+
+test('wrapBareBlockImages wraps a bare top-level image in a paragraph', () => {
+  const d = doc(para('Before'), imageNode(), para('After'));
+  const out = wrapBareBlockImages(d);
+  assert.deepEqual(
+    out.content.map((n) => n.type),
+    ['paragraph', 'paragraph', 'paragraph'],
+  );
+  assert.equal(out.content[1].content[0].type, 'image');
+});
+
+test('wrapBareBlockImages leaves an image already inline in a paragraph untouched', () => {
+  const inlinePara = { type: 'paragraph', content: [{ type: 'text', text: 'cat ' }, imageNode(), { type: 'text', text: ' sat' }] };
+  const d = doc(inlinePara);
+  const out = wrapBareBlockImages(d);
+  assert.equal(out, d, 'no change → same reference');
+});
+
+test('wrapBareBlockImages wraps an image nested in a block container (blockquote)', () => {
+  const d = doc({ type: 'blockquote', content: [imageNode()] });
+  const out = wrapBareBlockImages(d);
+  assert.equal(out.content[0].type, 'blockquote');
+  assert.equal(out.content[0].content[0].type, 'paragraph');
+  assert.equal(out.content[0].content[0].content[0].type, 'image');
+});
+
+test('wrapBareBlockImages is idempotent', () => {
+  const d = doc(imageNode(), { type: 'blockquote', content: [imageNode()] });
+  const once = wrapBareBlockImages(d);
+  const twice = wrapBareBlockImages(once);
+  assert.deepEqual(twice, once);
+  assert.equal(twice, once, 'second pass changes nothing → same reference');
+});
+
+test('wrapBareBlockImages re-parents the image object BY REFERENCE (attrs untouched — $T guard)', () => {
+  const img = imageNode();
+  const originalAttrs = img.attrs;
+  const d = doc(img);
+  const out = wrapBareBlockImages(d);
+  const wrapped = out.content[0].content[0];
+  assert.equal(wrapped, img, 'the SAME image object is re-parented, not a copy');
+  assert.equal(wrapped.attrs, originalAttrs, 'attrs object is the SAME reference — never read/rebuilt');
+});
+
+test('a stored v3 doc with a bare top-level image is healed on migrate', () => {
+  const raw = { version: 3, doc: doc(para('Look:'), imageNode()) };
+  const v3 = migrateWorksheetToV3(raw);
+  assert.equal(v3.doc.content.filter((n) => n.type === 'image').length, 0, 'no bare image survives');
+  const img = firstImage(v3.doc);
+  assert.ok(img, 'the image survives, inside a paragraph');
+  assert.equal(img.attrs.storagePath, 's/1.png', 'storagePath preserved through the heal');
 });
 
 // ── reversibility (migrateV3ToV2 + parseWorksheet routing) ───────────────────

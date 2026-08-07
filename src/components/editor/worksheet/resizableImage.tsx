@@ -55,13 +55,22 @@ export type RegenerateImageFn = (args: RegenerateImageArgs) => Promise<string | 
 const MIN_WIDTH = 60;
 const TEAL = '#1F7A6C';
 
-/** Wrapper layout. `float` (wrap) wins over `align` (block positioning). */
-function wrapperLayout(align: ImageAlign, float: ImageFloat): CSSProperties {
+/**
+ * Wrapper layout for the (now inline) image. `float` (wrap) wins over everything. With
+ * no float: an image ALONE in its paragraph is treated as a block band, so the block-
+ * align controls (left / centre / right) behave exactly as before the inline switch; an
+ * image sitting inline AMONG text flows with the line (`inline-block`), which is the
+ * whole point of `inline: true` — an image beside a word.
+ */
+function wrapperLayout(align: ImageAlign, float: ImageFloat, aloneInBlock: boolean): CSSProperties {
   if (float === 'left') return { float: 'left', margin: '4px 18px 10px 0' };
   if (float === 'right') return { float: 'right', margin: '4px 0 10px 18px' };
-  if (align === 'left') return { float: 'none', display: 'block', margin: '12px auto 12px 0' };
-  if (align === 'right') return { float: 'none', display: 'block', margin: '12px 0 12px auto' };
-  return { float: 'none', display: 'block', margin: '12px auto' };
+  if (aloneInBlock) {
+    if (align === 'left') return { float: 'none', display: 'block', margin: '12px auto 12px 0' };
+    if (align === 'right') return { float: 'none', display: 'block', margin: '12px 0 12px auto' };
+    return { float: 'none', display: 'block', margin: '12px auto' };
+  }
+  return { float: 'none', display: 'inline-block', verticalAlign: 'middle', margin: '0 4px' };
 }
 
 /** The same layout as inline-style strings, for the printable HTML. */
@@ -92,7 +101,7 @@ export function resolveImageSrc(src: string, storagePath: string | null): string
     : src;
 }
 
-function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, extension }: NodeViewProps) {
+function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, extension, getPos }: NodeViewProps) {
   const t = useTranslations('worksheet');
   const src = node.attrs.src as string;
   const storagePath = (node.attrs.storagePath as string | null) ?? null;
@@ -103,6 +112,24 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
   const float = ((node.attrs.float as ImageFloat | null) ?? 'none') as ImageFloat;
   const slotId = (node.attrs.slotId as string | null) ?? null;
   const brief = (node.attrs.brief as string | null) ?? null;
+
+  // Is this image the ONLY child of its paragraph/heading? The node is inline now, so
+  // block-only affordances (block align, full width) apply solely when the image is a
+  // band of its own — never while it sits inline beside text. Resolving the parent from
+  // the node's position is cheap and re-runs on every selection change (when the control
+  // bar shows). Defaults to true if the position is momentarily unavailable, so a lone
+  // image never briefly loses its align controls.
+  let aloneInBlock = true;
+  try {
+    const pos = typeof getPos === 'function' ? getPos() : null;
+    if (pos != null) {
+      const parent = editor.state.doc.resolve(pos).parent;
+      aloneInBlock =
+        (parent.type.name === 'paragraph' || parent.type.name === 'heading') && parent.childCount === 1;
+    }
+  } catch {
+    aloneInBlock = true;
+  }
 
   const onFloat = (extension.options as { onFloatImage?: (info: FloatImageInfo) => void }).onFloatImage;
   const onRegenerateImage = (extension.options as { onRegenerateImage?: RegenerateImageFn }).onRegenerateImage;
@@ -189,6 +216,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
 
   return (
     <NodeViewWrapper
+      as="span"
       ref={wrapperRef}
       className="ws-img-nv"
       data-align={align}
@@ -197,7 +225,7 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
         position: 'relative',
         maxWidth: '100%',
         width: displayWidth ? `${displayWidth}px` : 'fit-content',
-        ...wrapperLayout(align, float),
+        ...wrapperLayout(align, float, aloneInBlock),
       }}
     >
       {/* The image is the drag handle for snap-into-flow reorder. A tiptap React
@@ -258,34 +286,41 @@ function ImageNodeView({ node, updateAttributes, deleteNode, selected, editor, e
                 <WrapIcon dir={dir} />
               </button>
             ))}
-            <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
-            {/* Block align (no wrap): position the image; text sits below it */}
-            {(['left', 'center', 'right'] as const).map((a) => (
-              <button
-                key={a}
-                type="button"
-                title={t(`image.align${a[0].toUpperCase()}${a.slice(1)}`)}
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={() => updateAttributes({ align: a, float: 'none' })}
-                style={ctrlBtn(float === 'none' && align === a)}
-              >
-                <AlignIcon align={a} />
-              </button>
-            ))}
-            <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
-            {/* Full width — span the whole text column */}
-            <button
-              type="button"
-              title={t('image.fullWidth')}
-              onMouseDown={(ev) => ev.preventDefault()}
-              onClick={() => {
-                const col = wrapperRef.current?.closest('.ws-doc, .worksheet-doc') as HTMLElement | null;
-                updateAttributes({ width: col?.clientWidth ?? null, float: 'none', align: 'center' });
-              }}
-              style={ctrlBtn(false)}
-            >
-              <FullWidthIcon />
-            </button>
+            {/* Block align + full width are BLOCK affordances — they only make sense
+                when the image is a band of its own. Hidden while it sits inline beside
+                text (where only wrap/float, resize, crop and regenerate apply). */}
+            {aloneInBlock ? (
+              <>
+                <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
+                {/* Block align (no wrap): position the image; text sits below it */}
+                {(['left', 'center', 'right'] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    title={t(`image.align${a[0].toUpperCase()}${a.slice(1)}`)}
+                    onMouseDown={(ev) => ev.preventDefault()}
+                    onClick={() => updateAttributes({ align: a, float: 'none' })}
+                    style={ctrlBtn(float === 'none' && align === a)}
+                  >
+                    <AlignIcon align={a} />
+                  </button>
+                ))}
+                <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
+                {/* Full width — span the whole text column */}
+                <button
+                  type="button"
+                  title={t('image.fullWidth')}
+                  onMouseDown={(ev) => ev.preventDefault()}
+                  onClick={() => {
+                    const col = wrapperRef.current?.closest('.ws-doc, .worksheet-doc') as HTMLElement | null;
+                    updateAttributes({ width: col?.clientWidth ?? null, float: 'none', align: 'center' });
+                  }}
+                  style={ctrlBtn(false)}
+                >
+                  <FullWidthIcon />
+                </button>
+              </>
+            ) : null}
             {/* Crop — re-uploads a real cropped image and swaps this node's src. */}
             <span style={{ width: 1, height: 18, background: '#E0EAE7', margin: '0 2px', alignSelf: 'center' }} />
             <button

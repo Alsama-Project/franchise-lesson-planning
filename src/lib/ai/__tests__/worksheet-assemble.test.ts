@@ -15,8 +15,22 @@ import {
   EXERCISE_ID_ATTR,
   nodeExerciseId,
   planExerciseSplice,
+  fillImageSlots,
 } from '../worksheet-assemble';
 import { markdownToDoc } from '../../editor/markdown';
+
+/** An image slot as the exercise route hands it to fillImageSlots. `storage_path`
+ *  null → the marker is left as text (image not ready). */
+function slot(id, storagePath) {
+  return { slot_id: id, storage_path: storagePath, subject: 'a fox', brief: 'a red fox' };
+}
+/** A paragraph node holding the given inline children (text strings become text nodes). */
+function paraNodes(...inline) {
+  return {
+    type: 'paragraph',
+    content: inline.map((c) => (typeof c === 'string' ? { type: 'text', text: c } : c)),
+  };
+}
 
 /** A scaffold with two headings, built the same way compile builds its base. */
 function scaffoldContent() {
@@ -252,4 +266,97 @@ test('splice plan: a deleted exercise with no anchor match appends at the end', 
   const nodes = [headingNode('Warm up'), plainNode('intro')];
   assert.deepEqual(planExerciseSplice(nodes, 'ex-gone', 'No Such Heading'), { removeIndices: [], insertIndex: 2 });
   assert.deepEqual(planExerciseSplice(nodes, 'ex-gone', null), { removeIndices: [], insertIndex: 2 });
+});
+
+// ── fillImageSlots: marker-RUN replacement (inline images) ───────────────────
+// The marker is replaced IN PLACE within its text run, so an image can sit beside a
+// word; surrounding text keeps its position. A marker alone in its paragraph yields a
+// paragraph holding just the image (the legal inline form of the old block image).
+// Pairing is by marker order across the whole exercise; the index advances on every
+// marker, resolved or not, and an unresolved marker is left as its literal text.
+
+test('a marker alone in its paragraph becomes a paragraph holding just the image', () => {
+  const nodes = [paraNodes('[Picture: a fox]')];
+  const [p] = fillImageSlots(nodes, [slot('slot-1', 'imgs/fox.png')]);
+  assert.equal(p.type, 'paragraph');
+  assert.equal(p.content.length, 1);
+  assert.equal(p.content[0].type, 'image');
+  assert.equal(p.content[0].attrs.storagePath, 'imgs/fox.png');
+  assert.equal(p.content[0].attrs.slotId, 'slot-1');
+  assert.equal(p.content[0].attrs.src, null, 'src stays null so resolveImageSrc re-signs');
+});
+
+test('a marker embedded in a sentence becomes an inline image between the words', () => {
+  const nodes = [paraNodes('The ', '[Picture: a fox]', ' jumped.')];
+  const [p] = fillImageSlots(nodes, [slot('slot-1', 'imgs/fox.png')]);
+  assert.deepEqual(
+    p.content.map((c) => c.type),
+    ['text', 'image', 'text'],
+  );
+  assert.equal(p.content[0].text, 'The ');
+  assert.equal(p.content[2].text, ' jumped.');
+});
+
+test('a marker mid-text (single text node) splits that node around the image', () => {
+  const nodes = [paraNodes('The [Picture: a fox] jumped.')];
+  const [p] = fillImageSlots(nodes, [slot('slot-1', 'imgs/fox.png')]);
+  assert.deepEqual(
+    p.content.map((c) => c.type),
+    ['text', 'image', 'text'],
+  );
+  assert.equal(p.content[0].text, 'The ');
+  assert.equal(p.content[2].text, ' jumped.');
+});
+
+test('two markers in one paragraph become two inline images, paired in order', () => {
+  const nodes = [paraNodes('A [Picture: a fox] and a [Picture: a hen].')];
+  const [p] = fillImageSlots(nodes, [slot('s1', 'imgs/fox.png'), slot('s2', 'imgs/hen.png')]);
+  const images = p.content.filter((c) => c.type === 'image');
+  assert.equal(images.length, 2);
+  assert.equal(images[0].attrs.storagePath, 'imgs/fox.png');
+  assert.equal(images[1].attrs.storagePath, 'imgs/hen.png');
+});
+
+test('an unresolved slot (null storage) leaves the marker text exactly as it was', () => {
+  const nodes = [paraNodes('The ', '[Picture: a fox]', ' jumped.')];
+  const [p] = fillImageSlots(nodes, [slot('slot-1', null)]);
+  // No image node; the run is unchanged text.
+  assert.equal(p.content.every((c) => c.type === 'text'), true);
+  assert.equal(p.content.map((c) => c.text).join(''), 'The [Picture: a fox] jumped.');
+});
+
+test('a null-storage marker still advances the index so a later marker keeps its slot', () => {
+  const nodes = [paraNodes('[Picture: first]'), paraNodes('[Picture: second]')];
+  // slots[0] not ready, slots[1] ready — the second marker must pair with slots[1].
+  const out = fillImageSlots(nodes, [slot('s1', null), slot('s2', 'imgs/second.png')]);
+  assert.equal(out[0].content[0].type, 'text', 'first marker left as text');
+  assert.equal(out[1].content[0].type, 'image', 'second marker resolved');
+  assert.equal(out[1].content[0].attrs.storagePath, 'imgs/second.png');
+});
+
+test('marks on the split text are preserved on both sides of the image', () => {
+  const bold = { type: 'text', text: 'The [Picture: a fox] ran', marks: [{ type: 'bold' }] };
+  const [p] = fillImageSlots([paraNodes(bold)], [slot('s1', 'imgs/fox.png')]);
+  const texts = p.content.filter((c) => c.type === 'text');
+  assert.equal(texts.length, 2);
+  for (const tnode of texts) assert.deepEqual(tnode.marks, [{ type: 'bold' }]);
+});
+
+test('a marker nested in a list item resolves inline, list stays the top-level node', () => {
+  const list = {
+    type: 'bulletList',
+    content: [{ type: 'listItem', content: [paraNodes('See [Picture: a fox] here')] }],
+  };
+  const [out] = fillImageSlots([list], [slot('s1', 'imgs/fox.png')]);
+  assert.equal(out.type, 'bulletList', 'top-level node count/shape preserved');
+  const li = out.content[0].content[0];
+  assert.deepEqual(li.content.map((c) => c.type), ['text', 'image', 'text']);
+});
+
+test('nodes with no markers pass through by reference (top-level count preserved)', () => {
+  const clean = paraNodes('No pictures here.');
+  const nodes = [clean];
+  const out = fillImageSlots(nodes, []);
+  assert.equal(out.length, 1);
+  assert.equal(out[0], clean, 'unchanged node → same reference');
 });

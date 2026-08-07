@@ -32,7 +32,12 @@ export function worksheetEditorExtensions(opts: WorksheetEditorOptions = {}): An
     Color,
     FontSize,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ResizableImage.configure({ inline: false, allowBase64: false, onFloatImage: opts.onFloatImage }),
+    // `inline: true` to match the v3 bundle (doc/extensions.ts) — the ResizableImage
+    // node is shared, so both bundles keep it inline-capable. This legacy/kill-switch
+    // bundle only ever serialises through `generateHTML`; `docHtml` in
+    // WorksheetPrintView wraps any stored bare block-level image before serialising so
+    // the inline schema stays valid.
+    ResizableImage.configure({ inline: true, allowBase64: false, onFloatImage: opts.onFloatImage }),
     // Declares the compile idempotency marker (`wsCompiled`) so a compiled doc
     // serialised through this bundle (e.g. the print/`generateHTML` path) keeps its
     // tag. Declare-only, emits nothing to the DOM. See doc/nodes/WsCompiledMarker.

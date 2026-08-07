@@ -365,15 +365,19 @@ function isImageNode(node: unknown): boolean {
 }
 
 /**
- * A short label paragraph — the flashcard word under a picture: a `paragraph` whose whole
- * content is text and reads as a label (≤ 3 words, ≤ 24 chars). Bold is the model's
- * signal but not required — within a run of images a short line is a label either way, and
- * this is only ever consulted immediately after an image, so ordinary prose is never swept
- * in. Returns the text, or null when the node is not a short label.
+ * The flashcard word under a picture: a short line (≤ 3 words, ≤ 24 chars) — either a
+ * `paragraph` (the model's older `**bold**` form) OR a level-3 `heading` (the `### word`
+ * form the heading contract now produces: it tells the model a label is `### Label` and
+ * bold is never a label, so the flashcard word became a level-3 heading — which is exactly
+ * why a paragraph-only detector stopped matching once the contract landed). Level-2 `##`
+ * TITLES are never a label. Consulted only immediately after an image, so ordinary prose
+ * is never swept in. Returns the text, or null when the node is not a short label.
  */
 function shortLabelText(node: unknown): string | null {
-  const n = node as { type?: unknown; content?: unknown };
-  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
+  const n = node as { type?: unknown; attrs?: { level?: unknown }; content?: unknown };
+  const isPara = n?.type === 'paragraph';
+  const isLabelHeading = n?.type === 'heading' && Number(n.attrs?.level) === 3;
+  if ((!isPara && !isLabelHeading) || !Array.isArray(n.content) || n.content.length === 0) return null;
   let text = '';
   for (const child of n.content) {
     const c = child as { type?: unknown; text?: unknown };

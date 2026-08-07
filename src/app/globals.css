@@ -820,20 +820,49 @@ html:lang(ar) body {
 }
 
 @media print {
-  /* Hide everything, then reveal only the print surface. */
-  body * {
-    visibility: hidden !important;
+  /* Print ONLY the worksheet page surface (`.ws-print-area`). The old approach hid
+     everything with `visibility:hidden` and absolutely positioned the surface at 0,0
+     to escape the ancestor chrome that `visibility` leaves occupying space. But an
+     absolutely-positioned box cannot fragment across pages (→ only page 1 printed,
+     the rest clipped) AND, with `width:auto` + `left:0` + `right:auto`, it collapses
+     to shrink-to-fit (≈ A5 inside an A4 sheet). Both faults were that one
+     `position:absolute`.
+
+     Instead: collapse the surface's ANCESTOR CHAIN to `display:contents` (so their
+     overflow / viewport heights / flex / padding generate no box — nothing to clip or
+     offset the surface) and remove every off-path element from flow. The surface is
+     then a normal in-flow child of `<body>`: it starts at the page origin, fills the
+     sheet width, and fragments naturally across sheets.
+
+     Selector support: `:has()` + complex `:not()` (Chromium 105+, Firefox 121+,
+     Safari 15.4+ — Baseline since Dec 2023). */
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
   }
-  .ws-print-area,
-  .ws-print-area * {
-    visibility: visible !important;
+  /* Every ancestor of the surface → boxless. (`:has(.ws-print-area)` is exactly the
+     ancestor chain; the surface itself has no NESTED `.ws-print-area`, so it is not
+     matched here and stays a block via the rule below.) */
+  body :has(.ws-print-area) {
+    display: contents !important;
+  }
+  /* Off-path elements — not an ancestor, not the surface, not inside it — are removed
+     from flow so no chrome reserves space around the surface. The surface's own
+     descendants are untouched, so their layout (task-list flex, tables, images)
+     prints intact. */
+  body *:not(:has(.ws-print-area)):not(.ws-print-area):not(.ws-print-area *) {
+    display: none !important;
   }
   .ws-print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    /* In normal flow at the page origin — NOT absolutely positioned, so it paginates
+       and fills the sheet width instead of shrinking to fit. */
+    position: static !important;
+    width: auto !important;
     margin: 0 !important;
     box-shadow: none !important;
+    transform: none !important;
   }
   /* The page surface prints at natural A4 — undo the on-screen preview scale. */
   .ws-print-scale {
@@ -873,14 +902,8 @@ html:lang(ar) body {
      * (v2 printed through a separate preview modal, so it never needed this). */
     transform: none !important;
   }
-  /* The scroll sizer only exists to reserve panning space for a zoomed page on
-   * screen. Collapse it and drop its containing-block role so `.ws-print-area`'s
-   * `position:absolute; left:0; top:0` still resolves against the page origin. */
-  .ws-zoom-sizer {
-    position: static !important;
-    width: auto !important;
-    height: auto !important;
-  }
+  /* (The scroll sizer needs no print rule: it is an ancestor of `.ws-print-area`, so
+     the `display:contents` collapse above already drops its box and panning size.) */
   .ws-doc .ws-page-break {
     break-before: page;
     page-break-before: always;
@@ -911,25 +934,23 @@ html:lang(ar) body {
   .ws-doc-footer-screen {
     display: none !important;
   }
+  /* The running footer prints once at the document end, in normal flow — NOT
+     `position:fixed`. A fixed per-sheet footer needs an `@page` bottom margin to
+     reserve its band, and that same margin is exactly where the browser paints its
+     own header/footer; `@page { margin: 0 }` (below, per surface) deliberately removes
+     that band to kill the browser chrome, so the footer flows with the content
+     instead of repeating per sheet. */
   .ws-print-footer {
     display: flex !important;
     align-items: center;
     justify-content: space-between;
-    visibility: visible !important;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
   }
 
-  @page {
-    size: A4 portrait;
-    /* Room for the fixed running footer. */
-    margin: 0 0 14mm 0;
-    @bottom-right {
-      content: 'Page ' counter(page) ' of ' counter(pages);
-    }
-  }
+  /* NOTE: no `@page` here. The app-default page box is emitted per surface by
+     `PrintPageStyle` (non-frame surfaces only); a subject's page frame supplies its
+     own `@page`. Keeping the app `@page` out of the frame path means a framed
+     printout has exactly ONE page rule — the frame's — so the two page-number margin
+     boxes can never both paint (the old duplicate-page-number bug). */
 }
 
 /* Exactly one footer on the pageless editing surface (layout via class, never an

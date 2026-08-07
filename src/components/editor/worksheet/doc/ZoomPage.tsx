@@ -12,12 +12,12 @@
 //       page — `.ws-doc-page`, absolutely placed at the sizer's top-left, scaled
 //              from `transform-origin: top left` so it exactly fills the sizer.
 //
-// The transform goes on `.ws-doc-page` ITSELF, never an ancestor: an ancestor
-// transform would establish a containing block, and the print rule's
-// `position:absolute; left:0; top:0` on `.ws-print-area` would then resolve against
-// the transformed box instead of the page origin — breaking the print reposition on
-// top of scaling the output. `@media print` resets `.ws-doc-page`'s transform and
-// neutralises the sizer, so zoom never reaches paper.
+// The transform goes on `.ws-doc-page` ITSELF, never an ancestor. On screen an
+// ancestor transform would establish a containing block for the absolutely-placed
+// page. In print, `@media print` collapses the whole ancestor chain (canvas + sizer)
+// to `display:contents` and resets `.ws-doc-page`'s own transform, so the page prints
+// in normal flow at true A4 scale — zoom never reaches paper. (Print no longer
+// absolutely positions the surface; it fragments in flow, which is what paginates it.)
 //
 // RESPONSIVE BASE WIDTH: the page is laid out at `min(PAGE_WIDTH, available)` — the
 // JS equivalent of the old `width:794; maxWidth:100%`, computed here only so the

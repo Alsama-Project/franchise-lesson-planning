@@ -13,6 +13,7 @@ import { normalizeTableColwidths } from './normalizeTables';
 import type { WorksheetContext } from '../context';
 import { worksheetDocExtensions } from './extensions';
 import { DocMasthead, DocFooter } from './DocMasthead';
+import { PrintPageStyle } from './PrintPageStyle';
 import { BRAND, PAGE_WIDTH, PAGE_PAD_X, PAGE_PAD_TOP, PAGE_PAD_BOTTOM } from './theme';
 
 export function DocumentWorksheetReadOnly({
@@ -33,6 +34,7 @@ export function DocumentWorksheetReadOnly({
   return (
     <div className="ws-doc-canvas" style={{ height: '100%', overflow: 'auto', background: BRAND.canvas, padding: '28px 20px 60px' }}>
       <div className="ws-doc-page ws-print-area" style={{ width: PAGE_WIDTH, maxWidth: '100%', margin: '0 auto', background: '#fff', boxShadow: BRAND.pageShadow, borderRadius: 2 }}>
+        <PrintPageStyle />
         <DocMasthead ctx={context} />
         <div className="ws-doc-body" style={{ padding: `${PAGE_PAD_TOP}px ${PAGE_PAD_X}px ${PAGE_PAD_BOTTOM}px`, minHeight: 520 }}>
           <EditorContent editor={editor} />

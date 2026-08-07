@@ -40,6 +40,7 @@ import { nodeExerciseId } from '@/lib/ai/worksheet-assemble';
 import { requestImage } from '@/lib/worksheet/generate-client';
 import type { RegenerateImageArgs } from '../resizableImage';
 import { WorksheetFramePage } from './WorksheetFramePage';
+import { PrintPageStyle } from './PrintPageStyle';
 import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
 
 export type { SaveState } from './theme';
@@ -419,6 +420,9 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     </WorksheetFramePage>
   ) : (
     <>
+      {/* No page frame → this surface owns the app-default @page (A4, margin 0). The
+          frame path never renders this, so a framed printout keeps ONE @page. */}
+      <PrintPageStyle />
       <DocMasthead ctx={context} templateMode={templateMode} />
       <div
         className="ws-doc-body"
@@ -427,8 +431,8 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
         <EditorContent editor={editor} />
       </div>
       <DocFooter ctx={context} className="ws-doc-footer-screen ws-no-print" />
-      {/* Print-only running footer — inside .ws-print-area so it stays visible under
-          the print rules; position:fixed makes it repeat on every sheet. */}
+      {/* Print-only running footer — inside .ws-print-area so it survives the print
+          rules; it flows once at the document end (see .ws-print-footer in globals). */}
       <DocFooter ctx={context} className="ws-print-footer" />
     </>
   );

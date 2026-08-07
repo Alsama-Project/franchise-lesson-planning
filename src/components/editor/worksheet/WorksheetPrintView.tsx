@@ -23,6 +23,7 @@ import type { ResourceWithTags } from '@/types/resource';
 import type { PaginationResult } from '@/lib/editor/pagination';
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 import { MasterFrame } from './MasterFrame';
+import { PrintPageStyle } from './doc/PrintPageStyle';
 import { ResourceBlock } from './ResourceBlock';
 import { ExerciseHeading } from './ExerciseHeading';
 import { WorksheetMeasurer } from './WorksheetMeasurer';
@@ -151,6 +152,8 @@ export function WorksheetPrintView({
 
   return (
     <>
+      {/* v2 has no page frame → it owns the app-default @page (A4, margin 0). */}
+      <PrintPageStyle />
       <WorksheetMeasurer ws={ws} ctx={ctx} resolved={resolved} onResult={setResult} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {result.pages.map((indices, p) => (

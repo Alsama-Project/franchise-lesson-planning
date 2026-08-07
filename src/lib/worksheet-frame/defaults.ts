@@ -24,6 +24,18 @@
 //
 // Keep these authored against the `{{exercises}}` marker + the `{{subject}} {{year}}
 // {{theme}} {{centre}} {{objective}} {{lesson_key}}` placeholders (see frame.ts).
+//
+// PRINT CONVENTION (applies to every frame, built-in OR uploaded — the CD/Connie
+// brief must carry it):
+//   · `@page { margin: 0 }`. A page margin is the only band the browser has to print
+//     its OWN header/footer into; margin:0 leaves it nowhere to land, so teachers on
+//     shared machines never have to untick "Headers and footers".
+//   · Put the visual page margin in `.sheet` padding, NOT the `@page` margin, and do
+//     NOT zero that padding in `@media print`.
+//   · No `@page` margin-box page counter (`@bottom-*`): a counter box needs an `@page`
+//     margin, which reopens the browser-chrome band. Page numbers are unavailable in
+//     flowing content, so a frame carries a normal-flow footer (`.page-footer`), not a
+//     per-sheet number.
 
 import type { WorksheetContentLanguage } from '@/lib/editor/worksheet-content-locale';
 
@@ -35,19 +47,17 @@ const EN_FRAME = `<!DOCTYPE html>
 <style>
 /* Alsama student worksheet — English page scaffold. A4 portrait. Two-row header
    table (logo | centre block), objective line, centred lesson title, then the
-   generated exercises. Footer repeats per page (via @page in print). */
+   generated exercises. A normal-flow footer prints once at the document end. */
 
+/* Page box: A4 portrait, NO margin — with no page margin the browser has nowhere to
+   paint its own header/footer (URL, date, page count), so they never print and no
+   teacher has to remember to untick "Headers and footers". The visual page margin is
+   the .sheet padding instead. (A per-sheet page-number counter is not possible under
+   margin:0 — an @page counter box needs an @page margin, which is the very band we
+   removed to kill the browser chrome. See .page-footer.) */
 @page {
   size: A4 portrait;
-  margin: 20mm 20mm 18mm 20mm;
-
-  @bottom-center {
-    content: counter(page);
-    font-family: Sora, sans-serif;
-    font-size: 10pt;
-    color: #1E1B19;
-    padding-bottom: 4mm;
-  }
+  margin: 0;
 }
 
 * { box-sizing: border-box; }
@@ -163,18 +173,24 @@ a:hover { color: #8E1F47; }
   min-height: 150mm;
 }
 
-/* footer shown on screen only; print uses the @page counter */
-.screen-footer {
+/* Footer in NORMAL FLOW — prints once at the document end. It is not a running
+   per-sheet footer (that needs an @page margin box, removed with margin:0) and not a
+   page number; it is the page's footer mark, shown on screen and in print alike. */
+.page-footer {
   margin-top: 10mm;
+  padding-top: 4mm;
+  border-top: 0.5pt solid #E6D9C7;
   text-align: center;
-  font-size: 10pt;
+  font-size: 9pt;
+  letter-spacing: 0.04em;
+  color: #6E6052;
 }
 
 @media print {
   body { background: #fff; }
-  .sheet { padding: 0; }
+  /* .sheet KEEPS its padding in print: with @page margin:0 that padding IS the
+     visual page margin (it was previously zeroed because the @page carried 20mm). */
   .body { min-height: 0; }
-  .screen-footer { display: none; }
 }
 </style>
 </head>
@@ -206,7 +222,7 @@ a:hover { color: #8E1F47; }
 
   <main class="body">{{exercises}}</main>
 
-  <div class="screen-footer">1</div>
+  <div class="page-footer">Alsama Centers</div>
 
 </div>
 
@@ -224,17 +240,13 @@ const AR_FRAME = `<!DOCTYPE html>
    mirrored. Same furniture as the English page; fixed wording from the template.
    Font: IBM Plex Sans Arabic (the app's self-hosted Arabic face), via the app var. */
 
+/* Page box: A4 portrait, NO margin — with no page margin the browser has nowhere to
+   paint its own header/footer, so they never print and no teacher has to untick
+   "Headers and footers". The visual page margin is the .sheet padding instead. (A
+   per-sheet page-number counter is not possible under margin:0 — see .page-footer.) */
 @page {
   size: A4 portrait;
-  margin: 20mm 20mm 18mm 20mm;
-
-  @bottom-center {
-    content: counter(page);
-    font-family: var(--font-ibm-plex-arabic), sans-serif;
-    font-size: 10pt;
-    color: #1E1B19;
-    padding-bottom: 4mm;
-  }
+  margin: 0;
 }
 
 * { box-sizing: border-box; }
@@ -349,17 +361,24 @@ a:hover { color: #8E1F47; }
   min-height: 150mm;
 }
 
-.screen-footer {
+/* Footer in NORMAL FLOW — prints once at the document end. Not a running per-sheet
+   footer (that needs an @page margin box, removed with margin:0) and not a page
+   number; it is the page's footer mark, shown on screen and in print alike. */
+.page-footer {
   margin-top: 10mm;
+  padding-top: 4mm;
+  border-top: 0.5pt solid #E6D9C7;
   text-align: center;
-  font-size: 10pt;
+  font-size: 9pt;
+  letter-spacing: 0.04em;
+  color: #6E6052;
 }
 
 @media print {
   body { background: #fff; }
-  .sheet { padding: 0; }
+  /* .sheet KEEPS its padding in print: with @page margin:0 that padding IS the
+     visual page margin (it was previously zeroed because the @page carried 20mm). */
   .body { min-height: 0; }
-  .screen-footer { display: none; }
 }
 </style>
 </head>
@@ -391,7 +410,7 @@ a:hover { color: #8E1F47; }
 
   <main class="body">{{exercises}}</main>
 
-  <div class="screen-footer">١</div>
+  <div class="page-footer">مركز السماء</div>
 
 </div>
 

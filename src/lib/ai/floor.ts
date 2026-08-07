@@ -45,18 +45,31 @@ const RESOURCE_GENERATOR_CONTRACT = `OUTPUT CONTRACT:
 // ── worksheet_builder ─────────────────────────────────────────────────────────
 
 /** Worksheet builder response contract: the JSON shape (per-route schema) plus the
- *  ONE marker rule that is machine-parsed — `[Picture: …]` alone on its own line,
- *  regex-read at exercise/route.ts:67, worksheet-compile.ts, and ExerciseBody.tsx.
+ *  MECHANICAL markup the renderer depends on — the `[Picture: …]` marker (regex-read
+ *  at exercise/route.ts:67, worksheet-compile.ts, and ExerciseBody.tsx) and the
+ *  HEADING contract (`## title` / `### label`, `markdownToDoc` maps these to h2/h3 and
+ *  compile/CSS key exercise layout + the pink title off them). These are the same class
+ *  as `[Picture: …]` and `______`: mechanical, the renderer breaks without them, so they
+ *  live in the floor, not a layer-4 doc. The "no pipe-table markdown" rule is here for
+ *  the same reason — pipe syntax leaks as literal text, and compile owns any grid
+ *  layout itself. The "refer to exercises by title, never by number" rule was in layer 4
+ *  and kept being broken; it is mechanical (numbers are never printed) so it moves here.
  *  The `never null` clause is dropped: `resource_id` and `template_anchor` are
  *  required-and-nullable in the plan schema and the prompt itself instructs null.
- *  Exercise coverage, blanks, the permitted/forbidden markdown list, image briefs
- *  and the language guidance have moved to Connie's doc. */
+ *  Exercise coverage, blanks, image briefs and the language guidance stay in Connie's doc. */
 const WORKSHEET_BUILDER_CONTRACT = `OUTPUT CONTRACT:
 - Return ONLY the JSON object the request schema defines. No preamble, no explanation, no markdown fence around it.
 - Never add fields. Never omit a required field — if you cannot produce a value return an empty string or an empty array, never a placeholder such as "TODO" or "N/A".
 
+HEADINGS (the renderer keys layout and print styling off these — treat them as literally as the picture marker):
+- An exercise TITLE is a level-2 heading on its own line: ## Title. Every exercise begins with one. Give it a real title — never a bare label like "Exercise".
+- A LABEL inside an exercise (e.g. Word Bank, Example, Extension) is a level-3 heading: ### Label.
+- **Bold** is emphasis WITHIN a sentence only — never a title and never a label. A title or label is always a heading (## or ###), never a bold line.
+- Refer to an exercise ONLY by its title, never by a number: exercises have titles, not numbers, and the numbers are never printed. Do not write "Exercise 4", "the first exercise", etc.
+
 BODY MARKERS (the renderer parses these literally):
 - An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.
+- Do NOT write pipe-table markdown (\`| … | … |\`) — it renders as literal text. Lay out repeated picture-and-word cards as a plain run of [Picture: …] markers each followed by a short **bold** word; the renderer arranges them into a grid itself.
 
 IMAGE SLOTS (one "image_slots" entry per [Picture: …] marker, in the order the markers appear):
 - Each entry has two fields, "subject" and "brief".

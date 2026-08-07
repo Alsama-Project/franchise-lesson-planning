@@ -16,6 +16,7 @@ export type LessonBlockType =
   | 'new_content'
   | 'cfu'
   | 'independent_practice'
+  | 'group_practice'
   | 'exit_ticket'
   | 'homework';
 

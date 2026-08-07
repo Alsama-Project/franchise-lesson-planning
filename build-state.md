@@ -1893,3 +1893,52 @@ into the editor** to make free edits — the read-only surface was a dead-end. A
   reviewing the same plan is not the creator → `editHref` undefined → **no "Edit plan"**
   button (their footer stays Approve / Return). Submitted/approved and centre/non-author
   views show nothing new.
+
+## Practice step split — 5 → 5a Independent / 5b Group ✅ (this phase)
+
+Step 5 ("Independent practice") is renamed **"Practice"** and now renders **two
+stacked sub-section cards inside the ONE existing stepper node** — no renumbering,
+no new node. Step id stays `practice`; steps 6/7 keep their numbers (derived from
+`STEPS` position, never hardcoded).
+
+### Done
+
+- **New block type** `group_practice` (`LessonBlockType`), seeded in `DEFAULT_BLOCKS`
+  immediately after `independent_practice` at **0 min / `you_do`**, so the in-session
+  total stays 50 on load. Exhaustive `BLOCK_GUIDANCE` entry + `REVIEW_EDITABLE_TYPES`
+  entry added.
+- **Editor** (`LessonPlanEditor`): the `stepId === 'practice'` branch renders 5a
+  (`independent_practice`, unchanged) then 5b (`group_practice`) as two `PractiseStep`
+  cards, `showWorksheet={false}` on both. Sub-headings are `${stepNo}a/b · <i18n>`,
+  NOT `block.title`. Full patch/attach/detach wiring for `group_practice`.
+- **Seed is save-free on load.** `ensureGroupPractice()` splices the 5b block into the
+  `blocks` **useState initializer** (primary rule: after `independent_practice`;
+  fallback: canonical `DEFAULT_BLOCKS` index). Because the plan-autosave effect
+  early-returns on first render (`firstRender` guard) and only fires on a later
+  dependency change, opening a plan never marks it dirty and never writes — the same
+  property the existing `normalizeBlocks` seed relies on. Idempotent; also applied on
+  the accepted-suggestion path. The block persists on the first real edit.
+- **Worksheet stays on 5a.** The two `block.type === 'independent_practice'`
+  worksheet-attach sites (`ReviewStep`, `ReadOnlyPlan`) are untouched — one worksheet
+  per plan, anchored to 5a; 5b never carries one.
+- **Review table**: `group_practice` part row added after `independent_practice`.
+- **Worksheet planner** (`worksheet-plan.ts`): `blockLines` now **skips content-less
+  blocks** (no activity/students-do/teacher-does/note), so an empty 5b — and any other
+  empty block — is no longer fed a bare title line. Removes only detail-less titles;
+  blocks that already yielded no exercise are unaffected.
+- **AI generate**: `'group_practice'` added to the `LessonStage` union +
+  `LESSON_STAGES` allow-list. The stage is echoed verbatim into the prompt (no
+  stage→instruction lookup), so no pedagogical prose was invented. AI generation lives
+  in the 5a-anchored worksheet builder; the client stage stays `independent_practice`.
+- **i18n**: `steps.practice` → "Practice"; new `practice.independent` /
+  `practice.group` and `review.parts.groupPractice`. 5a reuses the existing approved
+  Arabic. ⚠️ **Arabic flagged for Kadria** — `steps.practice` ("التطبيق"),
+  `practice.group` / `review.parts.groupPractice` ("التطبيق الجماعي").
+
+### Preserved (no change)
+
+- **No migration, no SQL.** `lesson_plans.blocks` is unconstrained JSONB; the
+  `lesson_block` enum backs only `activity_bank.block_type` (unused by practice).
+  Annotation `phase_ref` is free text → 5b self-namespaces. Existing 5a content stays
+  put with zero backfill. `PhaseRow` / PDF render `block.title` generically — the new
+  block appears automatically; no stored titles rewritten.

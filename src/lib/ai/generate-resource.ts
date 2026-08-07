@@ -36,9 +36,12 @@ const MODEL = 'claude-sonnet-4-6';
 
 /**
  * Lesson stage the resource targets. Mirrors the codebase block enum — note it
- * is `independent_practice`, NOT "practice".
+ * is `independent_practice`, NOT "practice", and `group_practice` for the step-5b
+ * Group practice section. The value is echoed verbatim into the user prompt
+ * (`- Lesson stage: …`); there is no stage→instruction lookup, so extending this
+ * union is purely mechanical.
  */
-export type LessonStage = 'new_content' | 'independent_practice';
+export type LessonStage = 'new_content' | 'independent_practice' | 'group_practice';
 
 /**
  * Everything needed to generate (or adjust) a resource. The curriculum fields are

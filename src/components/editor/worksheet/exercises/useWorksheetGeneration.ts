@@ -31,36 +31,39 @@ import {
 import { compileWorksheet } from '@/lib/actions/worksheet-compile';
 import { requestExercise, requestImage, requestPlan } from '@/lib/worksheet/generate-client';
 import type { ExerciseRegenPayload } from '../doc/exerciseSplice';
+import { IMAGE_CAP, drawableSlots, flattenSlots, type FlatSlotRef } from './slots';
 
-/** The per-slot picture cap. Mirrors the route's `WORKSHEET_IMAGE_CAP` default (8);
- *  the route is authoritative and refuses server-side, so this is only for the
- *  running count and the positional refused-state render. */
-export const IMAGE_CAP = 8;
+// Re-exported so existing consumers keep importing these from the hook module.
+export { IMAGE_CAP, drawableSlots, flattenSlots };
+export type { FlatSlotRef };
 
-/** A slot with its whole-worksheet flattened index, for the positional cap/refusal. */
-export interface FlatSlotRef {
-  exerciseId: string;
-  slotId: string;
-  index: number;
-}
+/**
+ * The real, currently-running stage of a full-sheet generation — what to SAY instead of
+ * a timer or a spinner. Each value is set by `generateAll` at the actual transition, so
+ * the copy tracks the work: `planning` while the one /plan call runs (no count — it is a
+ * single opaque request); `exercises` / `images` tick a genuine `index` of `total` as
+ * their sequential loops advance; `compiling` while the document is assembled. `null`
+ * whenever `filling` is false. The images stage only ever appears if a picture is actually
+ * drawn (its loop is what sets it), so a sheet with no images never shows it.
+ */
+export type FillStage =
+  | { phase: 'planning' }
+  | { phase: 'exercises'; index: number; total: number }
+  | { phase: 'images'; index: number; total: number }
+  | { phase: 'compiling' };
 
-/** Flatten every row's slots in whole-worksheet order (position, then array order). */
-export function flattenSlots(rows: WorksheetExercise[]): FlatSlotRef[] {
-  const flat: FlatSlotRef[] = [];
-  for (const row of rows) {
-    const slots = Array.isArray(row.image_slots) ? row.image_slots : [];
-    for (const slot of slots) {
-      flat.push({ exerciseId: row.id, slotId: slot.slot_id, index: flat.length });
-    }
-  }
-  return flat;
-}
+/** The real stage of a single-exercise regenerate (its own shorter copy set). `exercise`
+ *  while its body is re-written; `image` only if it actually has a picture to redraw. */
+export type RegenPhase = 'exercise' | 'image';
 
 export interface GenerationState {
   /** The live rows the surface renders. */
   exercises: WorksheetExercise[];
   /** Full-sheet generation in flight → render every planned position as a skeleton. */
   filling: boolean;
+  /** The real stage of the in-flight full generation (drives the header copy). Null when
+   *  not filling. */
+  stage: FillStage | null;
   /** Skeleton heights while `filling` (from the plan's specs). Null when idle. */
   fillSpecs: ExerciseSpec[] | null;
   /** Ids of cards mid per-card regeneration (skeleton at current height; others live). */
@@ -83,8 +86,16 @@ export interface GenerationApi extends GenerationState {
    * regenerates plainly. Returns null only if the exercise vanished from state
    * mid-flight; a generation failure returns a payload with `failed: true` (a visible,
    * retryable placeholder is spliced).
+   *
+   * `onStage` is called at each real transition (`exercise` → `image`) so the caller can
+   * show the regenerate's own short copy set; `image` fires ONLY when the exercise has a
+   * picture that will actually be drawn.
    */
-  regenerateExercise: (exerciseId: string, instruction?: string) => Promise<ExerciseRegenPayload | null>;
+  regenerateExercise: (
+    exerciseId: string,
+    instruction?: string,
+    onStage?: (phase: RegenPhase) => void,
+  ) => Promise<ExerciseRegenPayload | null>;
 }
 
 /** Condense a route error into a short, safe slot `error`: single line, length-capped,
@@ -120,6 +131,7 @@ export function useWorksheetGeneration({
 }): GenerationApi {
   const [exercises, setExercises] = useState<WorksheetExercise[]>(initialExercises);
   const [filling, setFilling] = useState(false);
+  const [stage, setStage] = useState<FillStage | null>(null);
   const [fillSpecs, setFillSpecs] = useState<ExerciseSpec[] | null>(null);
   const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -147,18 +159,26 @@ export function useWorksheetGeneration({
    * refused render is derived positionally, not persisted). Returns the updated rows.
    */
   const fillImagesFor = useCallback(
-    async (rows: WorksheetExercise[], allRowsInOrder: WorksheetExercise[]): Promise<WorksheetExercise[]> => {
+    async (
+      rows: WorksheetExercise[],
+      allRowsInOrder: WorksheetExercise[],
+      onProgress?: (index: number, total: number) => void,
+    ): Promise<WorksheetExercise[]> => {
       if (!subjectId) return rows; // no subject → cannot steer the illustrator; keep tokens
-      const targetIds = new Set(rows.map((r) => r.id));
-      const flat = flattenSlots(allRowsInOrder).filter((f) => targetIds.has(f.exerciseId));
       const byId = new Map(rows.map((r) => [r.id, r]));
+      // The pictures that WILL be drawn (present, under the positional cap) — `total` is the
+      // denominator the "picture n of total" copy ticks against, stable while `index` advances.
+      const drawable = drawableSlots(rows, allRowsInOrder);
+      const total = drawable.length;
+      let drawn = 0;
       let disabled = false;
-      for (const ref of flat) {
+      for (const ref of drawable) {
         if (disabled) break;
-        if (ref.index >= IMAGE_CAP) continue; // positional refusal — server would 200 refuse
         const row = byId.get(ref.exerciseId);
         const slot = row?.image_slots.find((s) => s.slot_id === ref.slotId);
-        if (!row || !slot) continue;
+        if (!row || !slot) continue; // defensive — drawableSlots already required both
+        drawn += 1;
+        onProgress?.(drawn, total); // announce "drawing picture n of total" before the call
         const res = await requestImage({
           slot_id: ref.slotId,
           brief: slot.brief,
@@ -190,31 +210,43 @@ export function useWorksheetGeneration({
     setError(null);
     setFilling(true);
     setImagesDisabled(false);
+    // The one /plan call is opaque from here (reads the curriculum, the teacher's intent
+    // and works out placement server-side in a single request), so planning has no count.
+    setStage({ phase: 'planning' });
     const plan = await requestPlan(lessonPlanId);
     if (!plan.ok) {
       setError(plan.error);
       setFilling(false);
       setFillSpecs(null);
+      setStage(null);
       return;
     }
     setFillSpecs(plan.specs);
     // Recover the persisted skeleton rows (with ids) — /plan returns specs only.
     const skeletons = await loadWorksheetExercises(lessonPlanId);
-    // Generate every exercise, buffered — nothing is shown until all settle.
+    // Generate every exercise, buffered — nothing is shown until all settle. The count
+    // ticks as this sequential loop advances (real progress, never a timer).
+    const total = skeletons.length;
     const generated: WorksheetExercise[] = [];
-    for (const row of skeletons) {
-      const res = await requestExercise(row.id);
-      generated.push(res.ok ? res.exercise : { ...row, status: 'failed' });
+    for (let i = 0; i < skeletons.length; i++) {
+      setStage({ phase: 'exercises', index: i + 1, total });
+      const res = await requestExercise(skeletons[i].id);
+      generated.push(res.ok ? res.exercise : { ...skeletons[i], status: 'failed' });
     }
-    // Then all images, in flattened order, still buffered.
-    const withImages = await fillImagesFor(generated, generated);
+    // Then all images, in flattened order, still buffered. `fillImagesFor` sets the images
+    // stage per picture — so it appears ONLY if a picture is actually drawn.
+    const withImages = await fillImagesFor(generated, generated, (index, imageTotal) =>
+      setStage({ phase: 'images', index, total: imageTotal }),
+    );
     // ONE atomic reveal. Write the real document into the editor while the skeleton
     // overlay is STILL up (filling stays true), then drop the overlay — so the page
     // goes skeleton → finished content in one pass, never flashing empty in between.
+    setStage({ phase: 'compiling' });
     setExercises(withImages);
     await compileAndPersist();
     setFilling(false);
     setFillSpecs(null);
+    setStage(null);
   }, [lessonPlanId, fillImagesFor, compileAndPersist]);
 
   // Latest rows for reading a spec anchor without re-binding the callback each edit.
@@ -224,8 +256,13 @@ export function useWorksheetGeneration({
   }, [exercises]);
 
   const regenerateExercise = useCallback(
-    async (exerciseId: string, instruction?: string): Promise<ExerciseRegenPayload | null> => {
+    async (
+      exerciseId: string,
+      instruction?: string,
+      onStage?: (phase: RegenPhase) => void,
+    ): Promise<ExerciseRegenPayload | null> => {
       setRegenerating((prev) => new Set(prev).add(exerciseId));
+      onStage?.('exercise'); // "having another go" while the body is re-written
       const res = await requestExercise(exerciseId, instruction);
       setExercises((cur) => {
         const idx = cur.findIndex((e) => e.id === exerciseId);
@@ -259,6 +296,10 @@ export function useWorksheetGeneration({
       const current = await loadWorksheetExercises(lessonPlanId);
       const target = current.find((e) => e.id === exerciseId);
       if (target) {
+        // Announce "drawing it again" only when a picture will actually be drawn — a slot
+        // present and under the whole-sheet positional cap. No pictures → no stage.
+        const willDraw = !!subjectId && drawableSlots([target], current).length > 0;
+        if (willDraw) onStage?.('image');
         const withImages = await fillImagesFor([target], current);
         merged = withImages[0];
         setExercises((cur) => cur.map((e) => (e.id === exerciseId ? merged : e)));
@@ -272,12 +313,13 @@ export function useWorksheetGeneration({
         failed: merged.status === 'failed' || !merged.body_doc,
       };
     },
-    [lessonPlanId, fillImagesFor],
+    [lessonPlanId, subjectId, fillImagesFor],
   );
 
   return {
     exercises,
     filling,
+    stage,
     fillSpecs,
     regenerating,
     error,

@@ -35,6 +35,7 @@ import { ZoomPage } from './ZoomPage';
 import { ExerciseGutter, EXERCISE_GUTTER_REDRAW, type ExerciseGutterStorage } from './nodes/ExerciseGutter';
 import { SCAFFOLD_LOCK_BYPASS } from './nodes/ScaffoldHeadingLock';
 import { applyExerciseSplice, buildExerciseNodes, type ExerciseRegenPayload } from './exerciseSplice';
+import type { RegenPhase } from '../exercises/useWorksheetGeneration';
 import { nodeExerciseId } from '@/lib/ai/worksheet-assemble';
 import { requestImage } from '@/lib/worksheet/generate-client';
 import type { RegenerateImageArgs } from '../resizableImage';
@@ -70,10 +71,12 @@ interface DocumentWorksheetProps {
   onTeacherEdit?: () => void;
   /** Regenerate one exercise: returns its fresh body to splice into the live editor,
    *  or null on abort. An optional teacher `instruction` steers the regeneration (the
-   *  adjust pattern). Presence installs the gutter affordance + splice path. */
+   *  adjust pattern). `onStage` reports the real regenerate stage for the gutter chip's
+   *  copy. Presence installs the gutter affordance + splice path. */
   onRegenerateExercise?: (
     exerciseId: string,
     instruction?: string,
+    onStage?: (phase: RegenPhase) => void,
   ) => Promise<ExerciseRegenPayload | null>;
 }
 
@@ -118,6 +121,9 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
   const [spliceError, setSpliceError] = useState<string | null>(null);
   // Ids currently regenerating, for the gutter buttons' disabled/spinner state.
   const [regenBusy, setRegenBusy] = useState<Set<string>>(() => new Set());
+  // Per-id live stage copy while regenerating ("Having another go" → "Drawing it again"),
+  // driven by the hook's real transitions and shown on the chip in place of "Regenerate".
+  const [regenStage, setRegenStage] = useState<Record<string, string>>({});
   // The open "regenerate this exercise" comment popover (optional comment → adjust).
   const [regenPrompt, setRegenPrompt] = useState<{ exerciseId: string; anchor: Anchor } | null>(null);
 
@@ -258,7 +264,12 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
       });
       setSpliceError(null);
       try {
-        const payload = await onRegenerateExercise(exerciseId, instruction);
+        const payload = await onRegenerateExercise(exerciseId, instruction, (phase) =>
+          setRegenStage((prev) => ({
+            ...prev,
+            [exerciseId]: phase === 'image' ? t('progress.regenImage') : t('progress.regenExercise'),
+          })),
+        );
         if (payload) {
           const nodes = buildExerciseNodes(exerciseId, payload, failedText);
           programmatic.current = true;
@@ -272,6 +283,12 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
         setRegenBusy((prev) => {
           const next = new Set(prev);
           next.delete(exerciseId);
+          return next;
+        });
+        setRegenStage((prev) => {
+          if (!(exerciseId in prev)) return prev;
+          const next = { ...prev };
+          delete next[exerciseId];
           return next;
         });
       }
@@ -291,11 +308,12 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
     storage.onRegenerate = openRegenPrompt;
     storage.busy = regenBusy;
     storage.title = regenTitle;
-    // A doc-unchanged transaction so the decorations recompute against the new busy
-    // set. `preventUpdate` + no steps ⇒ tiptap's onUpdate never fires (it gates on
-    // `docChanged`), so this never persists or trips the teacher-edited gate.
+    storage.stageById = regenStage;
+    // A doc-unchanged transaction so the decorations recompute against the new busy set
+    // AND stage copy. `preventUpdate` + no steps ⇒ tiptap's onUpdate never fires (it gates
+    // on `docChanged`), so this never persists or trips the teacher-edited gate.
     editor.view.dispatch(editor.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
-  }, [editor, openRegenPrompt, regenBusy, regenTitle]);
+  }, [editor, openRegenPrompt, regenBusy, regenStage, regenTitle]);
 
   /** Open the adjust popover anchored at the end of the current selection. */
   const openAdjust = useCallback(() => {

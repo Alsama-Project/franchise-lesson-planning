@@ -8,7 +8,13 @@ import type { Annotation } from '@/types/annotation';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
 import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
-import { deriveMaterials, getBlock, patchBlock, setRoutinesMinutes } from '@/lib/editor/plan-blocks';
+import {
+  deriveMaterials,
+  ensureGroupPractice,
+  getBlock,
+  patchBlock,
+  setRoutinesMinutes,
+} from '@/lib/editor/plan-blocks';
 import {
   normalizeLinkIt,
   applyLinkIt,
@@ -73,6 +79,11 @@ function normalizeBlocks(blocks: Block[]): Block[] {
   return blocks.map((b) => ({ ...b, minutes: b.minutes ?? b.duration_minutes }));
 }
 
+// `ensureGroupPractice` (seed the step-5b block, save-free on load) lives in
+// `@/lib/editor/plan-blocks` beside the other block helpers, so it is unit-testable
+// without this client component. See its doc comment for the save-free-on-load
+// guarantee (the `firstRender` guard on the autosave effect below).
+
 function SaveIndicator({ state }: { state: SaveState }) {
   const t = useTranslations('wizard.save');
   if (state === 'saving') return <span className="text-[13px] text-neutral-600">{t('saving')}</span>;
@@ -134,7 +145,9 @@ export function LessonPlanEditor({
     plan.status === 'needs_review' && hasFeedback ? LAST_STEP : FIRST_STEP,
   );
   const [remainder, setRemainder] = useState(() => stripStem(plan.smartt_objective));
-  const [blocks, setBlocks] = useState<Block[]>(() => normalizeBlocks(plan.blocks));
+  const [blocks, setBlocks] = useState<Block[]>(() =>
+    normalizeBlocks(ensureGroupPractice(plan.blocks)),
+  );
   const [worksheet, setWorksheet] = useState<unknown>(() => plan.worksheet);
   const [materials, setMaterials] = useState<string[]>(() =>
     Array.isArray(plan.requiredMaterials) && plan.requiredMaterials.length > 0
@@ -335,7 +348,9 @@ export function LessonPlanEditor({
     if (applied.target === 'objective') {
       setRemainder(stripStem(applied.smartt_objective));
     } else {
-      setBlocks(normalizeBlocks(applied.blocks));
+      // Keep the 5b block present when folding in a server-applied change (idempotent
+      // if the applied blocks already carry it).
+      setBlocks(normalizeBlocks(ensureGroupPractice(applied.blocks)));
     }
   }, []);
 
@@ -579,6 +594,7 @@ export function LessonPlanEditor({
 
   const newContentBlock = getBlock(blocks, 'new_content');
   const practiceBlock = getBlock(blocks, 'independent_practice');
+  const groupPracticeBlock = getBlock(blocks, 'group_practice');
 
   // Section keys in lesson order (objective, then blocks) so the Review comments list
   // orders its section groups the way the lesson reads.
@@ -780,19 +796,45 @@ export function LessonPlanEditor({
                     />
                   ) : null}
 
-                  {stepId === 'practice' && practiceBlock ? (
-                    <PractiseStep
-                      title={stepHeading('practice')}
-                      block={practiceBlock}
-                      onPatch={(patch) => patchType('independent_practice', patch)}
-                      context={worksheetContext}
-                      vocabulary={resourceBank.vocabulary}
-                      attachedResources={attachedFor(practiceBlock)}
-                      onAttach={(resource) => attachResource('independent_practice', resource)}
-                      onRemove={(resourceId) => detachResource('independent_practice', resourceId)}
-                      showWorksheet={false}
-                      locked={locked}
-                    />
+                  {/* Step 5 · Practice — ONE stepper node, TWO stacked sub-section
+                      cards inside it: 5a Independent practice (the existing
+                      `independent_practice` block, unchanged) and 5b Group practice
+                      (the `group_practice` block). Neither is mandatory. Sub-headings
+                      are registry-number + letter + i18n label ("5a · …" / "5b · …"),
+                      NOT `block.title`. The student worksheet stays anchored to 5a
+                      (rendered in the Review right pane), so both cards are writing +
+                      resources only (`showWorksheet={false}`). */}
+                  {stepId === 'practice' ? (
+                    <>
+                      {practiceBlock ? (
+                        <PractiseStep
+                          title={`${stepIndex('practice') + 1}a · ${t('practice.independent')}`}
+                          block={practiceBlock}
+                          onPatch={(patch) => patchType('independent_practice', patch)}
+                          context={worksheetContext}
+                          vocabulary={resourceBank.vocabulary}
+                          attachedResources={attachedFor(practiceBlock)}
+                          onAttach={(resource) => attachResource('independent_practice', resource)}
+                          onRemove={(resourceId) => detachResource('independent_practice', resourceId)}
+                          showWorksheet={false}
+                          locked={locked}
+                        />
+                      ) : null}
+                      {groupPracticeBlock ? (
+                        <PractiseStep
+                          title={`${stepIndex('practice') + 1}b · ${t('practice.group')}`}
+                          block={groupPracticeBlock}
+                          onPatch={(patch) => patchType('group_practice', patch)}
+                          context={worksheetContext}
+                          vocabulary={resourceBank.vocabulary}
+                          attachedResources={attachedFor(groupPracticeBlock)}
+                          onAttach={(resource) => attachResource('group_practice', resource)}
+                          onRemove={(resourceId) => detachResource('group_practice', resourceId)}
+                          showWorksheet={false}
+                          locked={locked}
+                        />
+                      ) : null}
+                    </>
                   ) : null}
 
                   {stepId === 'exitTicket' ? (

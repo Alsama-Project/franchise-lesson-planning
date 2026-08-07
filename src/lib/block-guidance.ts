@@ -52,6 +52,11 @@ export const BLOCK_GUIDANCE: Record<LessonBlockType, BlockGuidance> = {
       'Students apply the new skill on their own or in groups (you do); keep checking for understanding throughout.',
     technique: 'Radar, Look Forward.',
   },
+  group_practice: {
+    purpose:
+      'Students apply the new skill together in groups (you do); keep checking for understanding throughout.',
+    technique: 'Radar, Look Forward.',
+  },
   exit_ticket: {
     purpose: 'Measure mastery at the end and prepare for the next lesson.',
     technique: 'Art of the Consequence.',

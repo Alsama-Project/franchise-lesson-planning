@@ -114,6 +114,20 @@ function blockLines(blocks: Block[]): string[] {
   const phaseLabel: Record<string, string> = { i_do: 'I do', we_do: 'We do', you_do: 'You do' };
   const out: string[] = ['The lesson blocks (the plan to build the worksheet from):'];
   for (const b of blocks) {
+    // Skip a block that carries no printable content (no activity title, students-do,
+    // teacher-does, or note). Such a block would otherwise emit only a bare title line
+    // and rely on the model to notice it yields no exercise; skipping it keeps the
+    // empty step-5b Group-practice block (0-min, seeded on every existing plan) — and
+    // any other content-less block — out of the planner input entirely. It removes only
+    // detail-less title lines, so blocks that already produce no exercise are unaffected.
+    if (
+      !hasText(b.activity_title) &&
+      !hasText(b.students_do) &&
+      !hasText(b.teacher_does) &&
+      !hasText(b.note)
+    ) {
+      continue;
+    }
     const parts: string[] = [`- ${b.title}`];
     if (hasText(b.phase)) parts.push(`(${phaseLabel[b.phase] ?? b.phase})`);
     out.push(parts.join(' '));

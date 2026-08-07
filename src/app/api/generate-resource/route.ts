@@ -29,7 +29,7 @@ import { resolveSubjectId } from '@/lib/ai/subject-access';
  *     "monthly_lo"?: string,
  *     "grammar_vocab"?: string,
  *     "theme"?: string,
- *     "lesson_stage"?: "new_content" | "independent_practice"
+ *     "lesson_stage"?: "new_content" | "independent_practice" | "group_practice"
  *   }
  * Only `subject` and `teacher_prompt` are required. Every other field is a
  * curriculum context ANCHOR: optional, validated when present, and simply omitted
@@ -78,7 +78,7 @@ interface GenerateResourceBody {
   subject_id?: unknown;
 }
 
-const LESSON_STAGES: readonly LessonStage[] = ['new_content', 'independent_practice'];
+const LESSON_STAGES: readonly LessonStage[] = ['new_content', 'independent_practice', 'group_practice'];
 
 /** Returns true for a present, non-empty string. */
 function isNonEmptyString(value: unknown): value is string {

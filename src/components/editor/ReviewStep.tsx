@@ -122,6 +122,7 @@ export function ReviewStep({
     part('new_content', t('review.parts.newContent'), 'new_content'),
     part('cfu', t('review.parts.cfu'), 'cfu'),
     part('independent_practice', t('review.parts.independentPractice'), 'independent_practice'),
+    part('group_practice', t('review.parts.groupPractice'), 'group_practice'),
     part('exit_ticket', t('review.parts.exitTicket'), 'exit_ticket'),
   ];
 

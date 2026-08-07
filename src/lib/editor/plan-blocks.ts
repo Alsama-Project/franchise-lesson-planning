@@ -3,7 +3,7 @@
 // block by type and derive the review/materials views the steps render.
 
 import type { Block, LessonBlockType } from '@/types/lesson';
-import { blockMinutes } from '@/lib/blocks';
+import { blockMinutes, DEFAULT_BLOCKS } from '@/lib/blocks';
 
 /** Index of the first block of a given type, or -1 if absent. */
 export function blockIndex(blocks: Block[], type: LessonBlockType): number {
@@ -51,12 +51,48 @@ export function deriveMaterials(blocks: Block[]): string[] {
   return out;
 }
 
+/**
+ * Ensure the plan carries a step-5b `group_practice` block, spliced immediately
+ * AFTER the `independent_practice` (5a) block — so array order matches lesson order
+ * for every consumer that iterates `blocks` in order (the Review parts table, the
+ * PDF export, the coordinator read-only view, the worksheet planner). Plans created
+ * before the Practice split load without the block; this seeds an empty one from the
+ * `DEFAULT_BLOCKS` template (0-min, `you_do`, so the in-session total is unchanged).
+ *
+ * The editor calls this inside its `blocks` useState initializer, so the seeded array
+ * is part of the FIRST render; the plan-autosave effect early-returns on first render,
+ * so seeding never marks the plan dirty and never writes on open. The block persists
+ * only when the teacher makes a genuine edit.
+ *
+ * Idempotent: a plan that already has a `group_practice` block is returned unchanged.
+ * Fallback: if `independent_practice` is absent from the stored array, the block is
+ * inserted at the index `group_practice` occupies in the canonical `DEFAULT_BLOCKS`
+ * scaffold, clamped to the array length (no known plan reaches this branch — every
+ * plan seeds from `DEFAULT_BLOCKS`, which contains `independent_practice`).
+ */
+export function ensureGroupPractice(blocks: Block[]): Block[] {
+  if (blocks.some((b) => b.type === 'group_practice')) return blocks;
+  const template = DEFAULT_BLOCKS.find((b) => b.type === 'group_practice');
+  if (!template) return blocks; // unreachable — group_practice lives in DEFAULT_BLOCKS
+  const seed: Block = { ...template };
+  const next = blocks.slice();
+  const ipIdx = blocks.findIndex((b) => b.type === 'independent_practice');
+  if (ipIdx !== -1) {
+    next.splice(ipIdx + 1, 0, seed);
+  } else {
+    const canonicalIdx = DEFAULT_BLOCKS.findIndex((b) => b.type === 'group_practice');
+    next.splice(Math.min(canonicalIdx, next.length), 0, seed);
+  }
+  return next;
+}
+
 /** The editable lesson parts shown in the Review table, in lesson order. */
 export const REVIEW_EDITABLE_TYPES: LessonBlockType[] = [
   'recap',
   'new_content',
   'cfu',
   'independent_practice',
+  'group_practice',
   'exit_ticket',
 ];
 

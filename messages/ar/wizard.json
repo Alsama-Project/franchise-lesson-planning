@@ -5,7 +5,7 @@
       "recap": "الاستذكار",
       "newContent": "المحتوى الجديد",
       "cfu": "التحقق من الفهم",
-      "practice": "التطبيق المستقل",
+      "practice": "التطبيق",
       "exitTicket": "بطاقة الخروج",
       "review": "المراجعة",
       "optional": "اختياري"
@@ -73,6 +73,10 @@
       "worksheetHint": "ابنِ الورقة التي يعمل منها الطلاب",
       "addFromBank": "أضف من المكتبة"
     },
+    "practice": {
+      "independent": "التطبيق المستقل",
+      "group": "التطبيق الجماعي"
+    },
     "resource": {
       "upload": "ارفع من الحاسوب",
       "downloadFile": "تنزيل الملف",
@@ -118,6 +122,7 @@
         "newContent": "المحتوى الجديد",
         "cfu": "التحقق من الفهم",
         "independentPractice": "التطبيق المستقل",
+        "groupPractice": "التطبيق الجماعي",
         "exitTicket": "بطاقة الخروج"
       },
       "homework": "الواجب المنزلي",

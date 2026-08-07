@@ -56,19 +56,28 @@ the curriculum data layer was ported forward.
 ## The 50-minute rule
 
 The in-session target is **50 minutes = the sum of every block EXCEPT
-`homework`** (1+1+1+7+10+5+20+5). `homework` is done at home (guidance:
+`homework`** (1+1+1+7+10+5+20+0+5). `homework` is done at home (guidance:
 30–60 min) and is excluded from the in-session total. (The former 2-minute
-`check_homework` block was folded into `recap`, taking it 5 → 7.) The canonical scaffold is
-`DEFAULT_BLOCKS` in `src/lib/blocks.ts`; `inSessionMinutes()` computes the total
-and `IN_SESSION_TARGET_MINUTES` is the target.
+`check_homework` block was folded into `recap`, taking it 5 → 7.) The step-5
+`group_practice` block (5b) seeds at **0 minutes**, so splitting Practice into
+5a/5b leaves the total at 50; teachers rebalance 5a/5b via the Review TimeStepper.
+The canonical scaffold is `DEFAULT_BLOCKS` in `src/lib/blocks.ts`;
+`inSessionMinutes()` computes the total and `IN_SESSION_TARGET_MINUTES` is the target.
 
 ## Lesson blocks (fixed order)
 
 `anthem · warm_up · cool_down · recap · new_content · cfu ·
-independent_practice · exit_ticket · homework`. Phases: `we_do` for the three
-openers, `i_do` for new_content, `you_do` for independent_practice; the rest have
-no phase. (`check_homework` was folded into `recap` and is no longer seeded in
+independent_practice · group_practice · exit_ticket · homework`. Phases: `we_do`
+for the three openers, `i_do` for new_content, `you_do` for both
+independent_practice and group_practice; the rest have no phase.
+(`check_homework` was folded into `recap` and is no longer seeded in
 `DEFAULT_BLOCKS`; it remains in the `LessonBlockType` union so legacy rows parse.)
+Step 5 ("Practice") is ONE stepper node rendering two sub-section cards — 5a
+Independent practice (`independent_practice`) and 5b Group practice
+(`group_practice`) — neither mandatory. The single student worksheet stays
+anchored to 5a. Plans predating the split gain an empty `group_practice` block
+(0-min) in editor state on open; it is persisted on the first real edit, never on
+load.
 
 ## Local Supabase
 

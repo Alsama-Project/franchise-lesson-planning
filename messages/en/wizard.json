@@ -5,7 +5,7 @@
       "recap": "Recap",
       "newContent": "New content",
       "cfu": "Check for understanding",
-      "practice": "Independent practice",
+      "practice": "Practice",
       "exitTicket": "Exit ticket",
       "review": "Review",
       "optional": "Optional"
@@ -73,6 +73,10 @@
       "worksheetHint": "build the sheet students work from",
       "addFromBank": "Add from bank"
     },
+    "practice": {
+      "independent": "Independent practice",
+      "group": "Group practice"
+    },
     "resource": {
       "upload": "Upload from computer",
       "downloadFile": "Download file",
@@ -118,6 +122,7 @@
         "newContent": "New content",
         "cfu": "Check for Understanding",
         "independentPractice": "Independent practice",
+        "groupPractice": "Group practice",
         "exitTicket": "Exit ticket"
       },
       "homework": "Homework",

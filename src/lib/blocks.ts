@@ -14,16 +14,21 @@ export const DEFAULT_BLOCKS: Block[] = [
   { type: 'new_content', title: 'New Content / Skill', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: 'i_do', duration_minutes: 10, minutes: 10 },
   { type: 'cfu', title: 'Check for Understanding', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: null, duration_minutes: 5, minutes: 5 },
   { type: 'independent_practice', title: 'Independent or Group Practice', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: 'you_do', duration_minutes: 20, minutes: 20 },
+  // Step 5b · Group practice. Seeds at 0 minutes so adding it never changes a plan's
+  // in-session total (the 50 stays 50); teachers rebalance 5a/5b themselves via the
+  // Review TimeStepper. Same `you_do` phase as Independent practice.
+  { type: 'group_practice', title: 'Group Practice', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: 'you_do', duration_minutes: 0, minutes: 0 },
   { type: 'exit_ticket', title: 'Exit Ticket', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: null, duration_minutes: 5, minutes: 5 },
   { type: 'homework', title: 'Homework', activity_title: '', activity_ref: null, teacher_does: '', students_do: '', resources: '', phase: null, duration_minutes: 0, minutes: 0 },
 ];
 
 /**
  * The in-session target: the sum of every block EXCEPT 'homework'
- * (1+1+1+7+10+5+20+5 = 50). Homework is done at home (guidance: 30–60 min)
+ * (1+1+1+7+10+5+20+0+5 = 50). Homework is done at home (guidance: 30–60 min)
  * and is excluded from the in-session total. The former 2-minute Check-homework
- * block was folded into Recap (5 → 7), so the total is unchanged. See "the
- * 50-minute rule" in CLAUDE.md.
+ * block was folded into Recap (5 → 7), so the total is unchanged. The Group
+ * practice block (step 5b) seeds at 0 minutes, so splitting Practice into 5a/5b
+ * likewise leaves the total unchanged. See "the 50-minute rule" in CLAUDE.md.
  */
 export const IN_SESSION_TARGET_MINUTES = 50;
 

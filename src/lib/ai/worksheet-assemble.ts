@@ -308,6 +308,116 @@ export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] 
   });
 }
 
+// ── Flashcard grid + image-size-by-count (compile-time layout) ───────────────
+//
+// The model already writes picture-and-word cards as a plain run — [Picture: …] then
+// a short bold word, repeated (the `---` rules between them are stripped by the floor).
+// After `fillImageSlots` that run is a sequence of image nodes each optionally followed
+// by a short label paragraph. Rather than stack them as full-width images down the page,
+// compile arranges a RUN OF ADJACENT IMAGES into a table grid — the schema already
+// supports tables; we build the nodes ourselves (the model never writes pipe markdown).
+//
+// Size follows the count, purely from the column layout (each image is max-width:100%
+// of its cell): ONE image is large and stands alone (no table); TWO or THREE sit side by
+// side in a single row; FOUR or more wrap into a grid of 3–4 per row (so each is small).
+
+/** True when a node is an image node (a resolved slot image or an inline image). */
+function isImageNode(node: unknown): boolean {
+  return !!node && typeof node === 'object' && (node as { type?: unknown }).type === 'image';
+}
+
+/**
+ * A short label paragraph — the flashcard word under a picture: a `paragraph` whose whole
+ * content is text and reads as a label (≤ 3 words, ≤ 24 chars). Bold is the model's
+ * signal but not required — within a run of images a short line is a label either way, and
+ * this is only ever consulted immediately after an image, so ordinary prose is never swept
+ * in. Returns the text, or null when the node is not a short label.
+ */
+function shortLabelText(node: unknown): string | null {
+  const n = node as { type?: unknown; content?: unknown };
+  if (n?.type !== 'paragraph' || !Array.isArray(n.content) || n.content.length === 0) return null;
+  let text = '';
+  for (const child of n.content) {
+    const c = child as { type?: unknown; text?: unknown };
+    if (c?.type !== 'text' || typeof c.text !== 'string') return null;
+    text += c.text;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/).length <= 3 && trimmed.length <= 24 ? trimmed : null;
+}
+
+const SIDE_BY_SIDE_MAX = 3; // 1 image large; 2–3 side by side in one row; 4+ wrap to a grid.
+
+/** Columns per row for a grid of `n` cards: 2–3 stay in one row; 4+ use 3 or 4 per row,
+ *  whichever fills the last row best (fewest empty pad cells), preferring 4 on a tie. */
+function perRowFor(n: number): number {
+  if (n <= SIDE_BY_SIDE_MAX) return n;
+  const pad = (perRow: number) => (perRow - (n % perRow)) % perRow;
+  return pad(3) < pad(4) ? 3 : 4;
+}
+
+/** One grid cell holding a card's image and (when present) its label; or an empty cell
+ *  used to pad a short final row so the table stays rectangular (ProseMirror requires it).
+ *  `wsFlashcardCell` (declared by FlashcardTableStyle) renders the borderless-grid class
+ *  and round-trips through getJSON; without it a reload would show plain table borders. */
+function flashcardCell(content: unknown[] | null): unknown {
+  return {
+    type: 'tableCell',
+    attrs: { colspan: 1, rowspan: 1, colwidth: null, wsFlashcardCell: true },
+    content: content ?? [{ type: 'paragraph' }],
+  };
+}
+
+/** Build the flashcard grid table laying `cards` out `perRow` per row. */
+function flashcardTable(cards: { image: unknown; label: unknown | null }[], perRow: number): unknown {
+  const rows: unknown[] = [];
+  for (let r = 0; r < cards.length; r += perRow) {
+    const cells = cards.slice(r, r + perRow).map((card) =>
+      flashcardCell(card.label ? [card.image, card.label] : [card.image]),
+    );
+    while (cells.length < perRow) cells.push(flashcardCell(null)); // pad → rectangular
+    rows.push({ type: 'tableRow', content: cells });
+  }
+  return { type: 'table', content: rows };
+}
+
+/**
+ * Lay out one exercise's top-level nodes (AFTER `fillImageSlots`): a run of adjacent
+ * images — each optionally trailed by a short label — becomes a grid table when it holds
+ * two or more images; a lone image (with its label) is left inline and large. Everything
+ * else passes through untouched, in order.
+ */
+export function layoutExerciseImages(nodes: unknown[]): unknown[] {
+  const out: unknown[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    if (!isImageNode(nodes[i])) {
+      out.push(nodes[i]);
+      i += 1;
+      continue;
+    }
+    const cards: { image: unknown; label: unknown | null }[] = [];
+    while (i < nodes.length && isImageNode(nodes[i])) {
+      const image = nodes[i];
+      i += 1;
+      let label: unknown | null = null;
+      if (i < nodes.length && shortLabelText(nodes[i]) !== null) {
+        label = nodes[i];
+        i += 1;
+      }
+      cards.push({ image, label });
+    }
+    if (cards.length === 1) {
+      out.push(cards[0].image);
+      if (cards[0].label) out.push(cards[0].label);
+    } else {
+      out.push(flashcardTable(cards, perRowFor(cards.length)));
+    }
+  }
+  return out;
+}
+
 /**
  * The placeholder nodes for an exercise whose generation FAILED (null body_doc).
  * Compile emits nothing for such a row, which would leave a failed exercise

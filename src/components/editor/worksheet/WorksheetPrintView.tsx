@@ -27,12 +27,19 @@ import { ResourceBlock } from './ResourceBlock';
 import { ExerciseHeading } from './ExerciseHeading';
 import { WorksheetMeasurer } from './WorksheetMeasurer';
 import { worksheetEditorExtensions } from './editorExtensions';
+import { wrapBareBlockImages } from '@/lib/editor/worksheet-migrate';
 import type { WorksheetContext } from './context';
 
 function docHtml(doc: unknown): string {
   if (!doc) return '';
   try {
-    return generateHTML(doc as JSONContent, worksheetEditorExtensions());
+    // `ResizableImage` is now `inline: true`, so a stored bare (block-level) image
+    // node is illegal against this schema and would throw here → the silent catch →
+    // the whole block blanks. Heal it first (wrap each bare image in a paragraph) with
+    // the same pure pass the editor read path uses, so this legacy static render keeps
+    // showing images instead of regressing. No new content is routed through
+    // generateHTML — the existing doc is only made schema-valid.
+    return generateHTML(wrapBareBlockImages(doc as JSONContent) as JSONContent, worksheetEditorExtensions());
   } catch {
     return '';
   }

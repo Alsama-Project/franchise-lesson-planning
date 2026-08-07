@@ -138,8 +138,13 @@ export function worksheetDocExtensions(
     TableRow,
     TableHeader,
     TableCell,
+    // `inline: true` — an image is an INLINE node, so it can sit within a line of
+    // text (beside a word) or two can share one paragraph, not only in a full-width
+    // band of its own. It therefore lives inside a paragraph/heading's inline run and
+    // is NOT a legal direct child of `doc`; `fillImageSlots` emits inline images and
+    // stored block-level images are healed at read time (see `wrapBareBlockImages`).
     ResizableImage.configure({
-      inline: false,
+      inline: true,
       allowBase64: false,
       onRegenerateImage: options.onRegenerateImage,
     }),

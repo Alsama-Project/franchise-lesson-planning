@@ -263,6 +263,17 @@ function listItemNode(text: string): JSONContent {
  */
 export const PICTURE_MARKER_LINE = /^\s*\[Picture:\s*[^\]]+\]\s*$/;
 
+/**
+ * A single `[Picture: …]` marker ANYWHERE within a text run — not anchored to the
+ * whole string. The inline counterpart of `PICTURE_MARKER_LINE`, used by
+ * `fillImageSlots` to find a marker embedded beside words in a sentence (so an image
+ * can sit inline, not only alone in its own paragraph). Non-global on purpose: build a
+ * fresh global copy (`new RegExp(PICTURE_MARKER.source, 'g')`) per scan so no shared
+ * `lastIndex` state leaks between calls. Shares the marker body with the line form, so
+ * the two can never drift on what a marker looks like.
+ */
+export const PICTURE_MARKER = /\[Picture:\s*[^\]]+\]/;
+
 /** A CommonMark thematic break: a whole (trimmed) line of 3+ of the same `-`/`*`/`_`.
  *  There is no `horizontalRule` node in the worksheet schema, so a match is dropped. */
 const THEMATIC_BREAK = /^([-*_])\1{2,}$/;

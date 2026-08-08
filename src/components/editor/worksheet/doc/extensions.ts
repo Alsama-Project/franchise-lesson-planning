@@ -39,6 +39,7 @@ import { HintPlaceholder } from './nodes/HintPlaceholder';
 import { WsCompiledMarker } from './nodes/WsCompiledMarker';
 import { ExerciseHeadingStyle } from './nodes/ExerciseHeadingStyle';
 import { FlashcardTableStyle } from './nodes/FlashcardTableStyle';
+import { MediaCellStyle } from './nodes/MediaCellStyle';
 
 /** Cmd/Ctrl-K → link (Docs/Word parity): prompt for a URL on the current selection.
  *  Bold/italic/underline (Mod-b/i/u), undo/redo (Mod-z / Mod-Shift-z), and Docs-style
@@ -167,5 +168,8 @@ export function worksheetDocExtensions(
     // Marks a compile-built flashcard grid table (`wsFlashcards`) so it renders as a
     // borderless grid of picture-and-word cards rather than a bordered data table.
     FlashcardTableStyle,
+    // Marks a compile-built image-beside-sentence table (`wsMediaCell`) so a picture-
+    // prompted gap fill renders as a narrow picture column beside its sentence.
+    MediaCellStyle,
   ];
 }

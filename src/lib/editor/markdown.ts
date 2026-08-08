@@ -24,16 +24,37 @@ export function escapeHtml(text: string): string {
 }
 
 /**
- * Apply inline emphasis (bold then italic) to already-escaped text. Only
- * asterisk syntax is honoured — worksheet content routinely contains underscores
- * (fill-in-the-blank runs, snake_case), so treating `_` as emphasis would mangle
- * it. `**bold**` is matched before `*italic*` so the single-asterisk rule does
- * not split a bold run.
+ * Remove `*` / `~` left over AFTER emphasis parsing — an unclosed `*word` or a stray `**`
+ * the model emitted, which otherwise prints as literal punctuation. Any such delimiter is
+ * unpaired by definition (the paired ones were already consumed into marks), so a run of
+ * them that TOUCHES a word character on either side is a scrap and is dropped; a space-
+ * flanked ` * ` (multiplication) is left alone. `_` is never touched — worksheet content is
+ * full of `______` blanks and snake_case. Applied only to non-emphasised text.
+ */
+function stripStrayEmphasis(text: string): string {
+  return text
+    // A delimiter run jammed against a word — `*word`, `word**`.
+    .replace(/(?<=\w)[*~]+|[*~]+(?=\w)/g, '')
+    // …or stranded at the very start/end of a non-emphasised piece, where a mis-parse's
+    // leftover closing delimiter lands (`* and …`). An INTERIOR space-flanked ` * `
+    // (multiplication, always mid-piece with digits either side) is untouched.
+    .replace(/^\s*[*~]+|[*~]+\s*$/g, '');
+}
+
+/**
+ * Apply inline emphasis (bold, then strikethrough, then italic) to already-escaped text.
+ * Only asterisk/tilde syntax is honoured — worksheet content routinely contains underscores
+ * (fill-in-the-blank runs, snake_case), so treating `_` as emphasis would mangle it.
+ * `**bold**` is matched before `*italic*` so the single-asterisk rule does not split a bold
+ * run; `~~strike~~` sits between. Any leftover stray `*`/`~` is then scrubbed.
  */
 function inline(text: string): string {
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>');
+  return stripStrayEmphasis(
+    text
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/~~([^~]+)~~/g, '<s>$1</s>')
+      .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>'),
+  );
 }
 
 /** Render one block of non-list lines as a paragraph (single <br> between lines). */
@@ -139,8 +160,9 @@ function inlineToMarkdown(nodes: JSONContent[] | undefined): string {
       if (node.type !== 'text') return '';
       let text = node.text ?? '';
       const marks = node.marks ?? [];
-      // Bold inside italic, mirroring `inline()` above (** then *).
+      // Bold, then strike, then italic — mirroring `inline()` above (** ~~ *).
       if (marks.some((m) => m.type === 'bold')) text = `**${text}**`;
+      if (marks.some((m) => m.type === 'strike')) text = `~~${text}~~`;
       if (marks.some((m) => m.type === 'italic')) text = `*${text}*`;
       return text;
     })
@@ -211,27 +233,34 @@ export function docToMarkdown(doc: JSONContent | null | undefined): string {
 // `[Picture: …]` markers and `______` blanks are ordinary text and pass through
 // verbatim, exactly as the floor's marker conventions require.
 
-/** Parse inline emphasis (asterisk only) into tiptap text nodes with marks. */
+/** Parse inline emphasis (asterisk + `~~strike~~`) into tiptap text nodes with marks. */
 function inlineToNodes(text: string): JSONContent[] {
   const nodes: JSONContent[] = [];
   // `**bold**` is matched before `*italic*` so a bold run is not split by the
-  // single-asterisk rule. Underscores are NEVER emphasis — worksheet content is
-  // full of `______` blanks and snake_case. Non-nested by construction (the char
-  // classes forbid a `*` inside a run), matching `markdownToHtml`'s behaviour.
-  const pattern = /\*\*([^*]+)\*\*|\*([^*\s][^*]*?)\*/g;
+  // single-asterisk rule; `~~strike~~` sits between. Underscores are NEVER emphasis —
+  // worksheet content is full of `______` blanks and snake_case. Non-nested by
+  // construction (the char classes forbid the delimiter inside a run), matching
+  // `markdownToHtml`'s behaviour.
+  const pattern = /\*\*([^*]+)\*\*|~~([^~]+)~~|\*([^*\s][^*]*?)\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
-  const pushText = (value: string, mark?: 'bold' | 'italic') => {
-    if (!value) return;
-    nodes.push(mark ? { type: 'text', text: value, marks: [{ type: mark }] } : { type: 'text', text: value });
+  const pushMark = (value: string, mark: 'bold' | 'italic' | 'strike') => {
+    if (value) nodes.push({ type: 'text', text: value, marks: [{ type: mark }] });
+  };
+  // Non-emphasised text is scrubbed of any stray `*`/`~` an unclosed run left behind, so
+  // a leftover delimiter never prints as literal punctuation on the sheet.
+  const pushPlain = (value: string) => {
+    const clean = stripStrayEmphasis(value);
+    if (clean) nodes.push({ type: 'text', text: clean });
   };
   while ((match = pattern.exec(text)) !== null) {
-    pushText(text.slice(last, match.index));
-    if (match[1] !== undefined) pushText(match[1], 'bold');
-    else pushText(match[2], 'italic');
+    pushPlain(text.slice(last, match.index));
+    if (match[1] !== undefined) pushMark(match[1], 'bold');
+    else if (match[2] !== undefined) pushMark(match[2], 'strike');
+    else pushMark(match[3], 'italic');
     last = pattern.lastIndex;
   }
-  pushText(text.slice(last));
+  pushPlain(text.slice(last));
   return nodes;
 }
 

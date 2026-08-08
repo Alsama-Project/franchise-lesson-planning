@@ -48,7 +48,7 @@ import {
   assembleWorksheetDoc,
   exerciseNodes,
   fillImageSlots,
-  layoutFlashcards,
+  layoutExercisePictures,
   failedExercisePlaceholder,
   type PreparedExercise,
 } from '@/lib/ai/worksheet-assemble';
@@ -112,13 +112,13 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   const exercises: PreparedExercise[] = ((exRows ?? []) as ExerciseRow[])
     .map((row): PreparedExercise | null => {
       const anchor = row.generation?.spec?.template_anchor?.trim() || null;
-      // Lay a run of adjacent picture markers out as a flashcard grid FIRST — keyed
-      // on the marker structure, while the pictures are still `[Picture: …]` text —
-      // then pair markers ↔ slots per row (fresh index), against THIS row's own
-      // body_doc + image_slots, so `fillImageSlots` resolves each marker in place,
-      // including the ones now sitting inside grid cells.
+      // Lay this row's pictures out as tables FIRST — keyed on the marker structure,
+      // while the pictures are still `[Picture: …]` text: a flashcard grid, or an
+      // image-beside-sentence gap fill. Then pair markers ↔ slots per row (fresh
+      // index), against THIS row's own body_doc + image_slots, so `fillImageSlots`
+      // resolves each marker in place, including the ones now sitting inside cells.
       const nodes = fillImageSlots(
-        layoutFlashcards(exerciseNodes(row.body_doc)),
+        layoutExercisePictures(exerciseNodes(row.body_doc)),
         row.image_slots ?? [],
       );
       if (nodes.length > 0) return { id: row.id, anchor, nodes };

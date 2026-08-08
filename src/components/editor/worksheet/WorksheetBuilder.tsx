@@ -60,6 +60,7 @@ import {
 import { buildBlocksFromResource } from '@/lib/editor/resource-to-block';
 import { getResourcesByIdsAction, recordUsageAction } from '@/lib/actions/resources';
 import type { PaginationResult } from '@/lib/editor/pagination';
+import { printWithTitle, worksheetPdfTitle } from '@/lib/editor/worksheet-filename';
 import type { WorksheetContext } from './context';
 import { MasterFrame } from './MasterFrame';
 import { AddExerciseMenu } from './AddExerciseMenu';
@@ -876,7 +877,7 @@ function PrintPreview({
         <span style={{ fontSize: 14, fontWeight: 700 }}>{t('print.title')}</span>
         <span style={{ fontSize: 12, color: '#8A8178' }}>{t('print.subtitle')}</span>
         <span style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 8 }}>
-          <button type="button" onClick={() => window.print()} style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#fff', background: '#1F7A6C', border: 'none', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <button type="button" onClick={() => printWithTitle(worksheetPdfTitle(ctx))} style={{ fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#fff', background: '#1F7A6C', border: 'none', borderRadius: 9, padding: '8px 16px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="3" width="12" height="6" rx="1" /><path d="M6 14h12v7H6z" /><path d="M6 14H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>
             {t('print.print')}
           </button>

@@ -21,6 +21,7 @@ import {
   exerciseNodes,
   fillImageSlots,
   layoutExercisePictures,
+  sizeImagesByCount,
   failedExercisePlaceholder,
   planExerciseSplice,
   tagCompiled,
@@ -53,7 +54,9 @@ export function buildExerciseNodes(
   const raw =
     payload.failed || !payload.bodyDoc
       ? failedExercisePlaceholder(failedText)
-      : fillImageSlots(layoutExercisePictures(exerciseNodes(payload.bodyDoc)), payload.imageSlots);
+      : sizeImagesByCount(
+          fillImageSlots(layoutExercisePictures(exerciseNodes(payload.bodyDoc)), payload.imageSlots),
+        );
   return raw.map((n) => tagCompiled(n, exerciseId)) as JSONContent[];
 }
 

@@ -346,6 +346,88 @@ export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] 
   return nodes.map(walk);
 }
 
+// ── Size every image by how many the exercise has (count-based, layout-INDEPENDENT) ──
+//
+// A generated image carries no width, so on the page it prints at full column width — fine
+// for a lone illustration, unusable once an exercise has several. The sizing signal is HOW
+// MANY images the exercise holds and NOTHING ELSE: an exercise with four scattered picture-
+// prompts (each `[Picture: …]` sitting between numbered `**1.**` sentences, so `markdownToDoc`
+// makes NO list and `layoutExercisePictures` matches NO grid) must get the SAME small images
+// as a four-card flashcard grid. Sizing that only fell out of BUILDING a grid was the bug —
+// a non-grid exercise kept full-width images no matter how many it had.
+//
+// This runs AFTER `fillImageSlots` (over the real `image` nodes, ready slots only, so it
+// counts what will actually print) and is applied at EVERY call site, table or not. Width is
+// an explicit pixel value against the fixed A4 text column — the same layout width the editor
+// and the "full width" control use — because compile has no DOM to measure. Crucially the
+// image `renderHTML` emits `width:Npx; max-width:100%`, so this explicit width is CAPPED by a
+// narrow flashcard/media cell (the grid keeps sizing those via the cell) yet TAKES EFFECT for
+// a bare image alone in its paragraph — which is exactly the case that used to print huge.
+
+/** The A4 editable text-column width in layout px: PAGE_WIDTH − 2× side pad. Mirrors the page
+ *  geometry in `doc/theme.ts` (794 − 2×56); kept local so this pure module stays dependency-
+ *  free. Images size as a fraction of THIS, so a count-based width means the same in the
+ *  editor (an A4-scaled page) and in print (physical A4). */
+const TEXT_COLUMN_WIDTH = 794 - 2 * 56;
+
+/**
+ * Target width (layout px) for each image when an exercise holds `count` of them, or null
+ * (natural / full width) for a lone image, which stays large. 2–3 read medium, 4+ small —
+ * the same 2–3-vs-4+ split the flashcard grid uses (`SIDE_BY_SIDE_MAX`), so a scattered set
+ * and a grid of the same count land at the same size.
+ */
+export function imageWidthForCount(count: number): number | null {
+  if (count <= 1) return null;
+  const fraction = count === 2 ? 0.46 : count === 3 ? 0.3 : 0.22;
+  return Math.round(TEXT_COLUMN_WIDTH * fraction);
+}
+
+/** Count every `image` node anywhere in `nodes` — into list items and table cells too. */
+function countImageNodes(nodes: unknown[]): number {
+  let n = 0;
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== 'object') return;
+    const x = node as { type?: unknown; content?: unknown };
+    if (x.type === 'image') n += 1;
+    if (Array.isArray(x.content)) x.content.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return n;
+}
+
+/**
+ * Stamp a count-based `width` on every image node of ONE exercise, so images size by how many
+ * the exercise has — never by whether a layout pattern matched. Run AFTER `fillImageSlots`.
+ *
+ * Deterministic and idempotent: the width is a pure function of the image count, so re-running
+ * (or re-compiling) reproduces it. An image that already carries an explicit `width` — a
+ * teacher's drag-resize — is left untouched, so a re-compile never overrides a manual size.
+ * Nodes with no images (0 or 1) pass through by reference; walks into cells and list items so
+ * a grid's images are sized the same as loose ones (their cell's `max-width:100%` then caps
+ * the value, keeping the grid's own layout intact).
+ */
+export function sizeImagesByCount(nodes: unknown[]): unknown[] {
+  const width = imageWidthForCount(countImageNodes(nodes));
+  if (width == null) return nodes; // 0 or 1 image → nothing to shrink
+  const walk = (node: unknown): unknown => {
+    if (!node || typeof node !== 'object') return node;
+    const n = node as { type?: unknown; attrs?: Record<string, unknown>; content?: unknown };
+    if (n.type === 'image') {
+      if (n.attrs?.width != null) return node; // respect a teacher-set width
+      return { ...(node as object), attrs: { ...(n.attrs ?? {}), width } };
+    }
+    if (!Array.isArray(n.content)) return node;
+    let changed = false;
+    const content = n.content.map((c) => {
+      const healed = walk(c);
+      if (healed !== c) changed = true;
+      return healed;
+    });
+    return changed ? { ...(node as object), content } : node;
+  };
+  return nodes.map(walk);
+}
+
 // ── Picture layout: flashcard grid + image-beside-sentence rows (compile-time) ─
 //
 // A bare inline image carries no width, so on the page it prints at full size — one

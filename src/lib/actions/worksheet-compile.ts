@@ -49,6 +49,7 @@ import {
   exerciseNodes,
   fillImageSlots,
   layoutExercisePictures,
+  sizeImagesByCount,
   failedExercisePlaceholder,
   type PreparedExercise,
 } from '@/lib/ai/worksheet-assemble';
@@ -117,9 +118,13 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
       // image-beside-sentence gap fill. Then pair markers ↔ slots per row (fresh
       // index), against THIS row's own body_doc + image_slots, so `fillImageSlots`
       // resolves each marker in place, including the ones now sitting inside cells.
-      const nodes = fillImageSlots(
-        layoutExercisePictures(exerciseNodes(row.body_doc)),
-        row.image_slots ?? [],
+      // Finally size every image by how many this exercise holds — layout-independent, so
+      // scattered picture-prompts shrink like a grid would (see `sizeImagesByCount`).
+      const nodes = sizeImagesByCount(
+        fillImageSlots(
+          layoutExercisePictures(exerciseNodes(row.body_doc)),
+          row.image_slots ?? [],
+        ),
       );
       if (nodes.length > 0) return { id: row.id, anchor, nodes };
       // A failed row carries no body — emit a visible, retryable placeholder rather

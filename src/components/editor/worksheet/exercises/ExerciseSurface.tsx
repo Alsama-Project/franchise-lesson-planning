@@ -28,7 +28,7 @@ import { printWithTitle, worksheetPdfTitle } from '@/lib/editor/worksheet-filena
 import type { WorksheetContext } from '../context';
 import { DocumentWorksheet, type DocumentWorksheetHandle, type SaveState } from '../doc/DocumentWorksheet';
 import { CardConfirm } from './CardConfirm';
-import { IMAGE_CAP, useWorksheetGeneration, type FillStage } from './useWorksheetGeneration';
+import { IMAGE_CAP, useWorksheetGeneration } from './useWorksheetGeneration';
 import { WorksheetSkeleton } from './WorksheetSkeleton';
 import { summariseWorksheetImages } from '@/lib/worksheet/image-summary';
 import { ZoomControls } from '../doc/ZoomControls';
@@ -40,30 +40,6 @@ interface PaneProps {
   context: WorksheetContext;
   vocabulary: TagsByDimension;
   saveState?: SaveState;
-}
-
-/**
- * The header status line for a full generation — the REAL stage, not a spinner caption.
- * Each phase says what is actually happening now; `exercises` / `images` carry their live
- * count. Falls back to the generic "filling" string only for the sliver before the first
- * stage is set (filling and stage are set together, so this is effectively unreachable).
- */
-function fillStageLabel(
-  t: ReturnType<typeof useTranslations<'worksheetGen'>>,
-  stage: FillStage | null,
-): string {
-  switch (stage?.phase) {
-    case 'planning':
-      return t('progress.planning');
-    case 'exercises':
-      return t('progress.exercises', { n: stage.index, total: stage.total });
-    case 'images':
-      return t('progress.images', { n: stage.index, total: stage.total });
-    case 'compiling':
-      return t('progress.compiling');
-    default:
-      return t('filling');
-  }
 }
 
 export function GeneratingPane(props: PaneProps) {
@@ -210,9 +186,12 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
         </button>
 
         {gen.filling ? (
+          // A quiet busy anchor in the header slot — the button is unavailable for the run.
+          // The step-by-step progress copy now lives in the list over the page, so this stays
+          // deliberately generic and does not duplicate it.
           <span className="inline-flex items-center gap-2 rounded-[9px] bg-[#E4F0ED] px-[13px] py-[8px] text-[13px] font-semibold text-teal">
             <Spinner size={14} />
-            {fillStageLabel(t, gen.stage)}
+            {t('filling')}
           </span>
         ) : hasRows ? (
           <button
@@ -321,8 +300,8 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
           zoom={zoom}
           onZoomChange={setZoom}
         />
-        {gen.filling && gen.fillSpecs && gen.fillSpecs.length > 0 ? (
-          <WorksheetSkeleton specs={gen.fillSpecs} />
+        {gen.filling ? (
+          <WorksheetSkeleton specs={gen.fillSpecs ?? []} run={gen.run} />
         ) : null}
       </div>
 

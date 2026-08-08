@@ -3,6 +3,39 @@
     "generate": "إنشاء ورقة العمل",
     "regenerateAll": "إعادة إنشاء الكل",
     "filling": "آية تملأ ورقة عملك",
+    "avatar": "آ",
+    "buildingHeadline": "آية تُنشئ ورقة عملك",
+    "readyHeadline": "ورقة عملك جاهزة",
+    "steps": {
+      "planning": {
+        "live": "قراءة درسك والمنهج",
+        "past": "قرأتُ درسك والمنهج"
+      },
+      "exercises": {
+        "live": "كتابة التمارين",
+        "current": "كتابة التمرين",
+        "of": "{n} من {total}",
+        "past": "كتبتُ {n} تمارين"
+      },
+      "pictures": {
+        "live": "رسم الصور",
+        "current": "رسم الصورة",
+        "of": "{n} من {total}",
+        "past": "رسمتُ {n} صور",
+        "none": "لا حاجة إلى صور",
+        "partly": "رسمتُ {drawn} من {total} صور",
+        "blankOne": "تُركت مساحة واحدة فارغة",
+        "blankMany": "تُركت {n} مساحات فارغة"
+      },
+      "page": {
+        "live": "وضعها على الصفحة",
+        "past": "على الصفحة"
+      }
+    },
+    "progress": {
+      "regenExercise": "محاولة أخرى",
+      "regenImage": "إعادة رسمها"
+    },
     "print": "طباعة",
     "zoom": {
       "zoomOut": "تصغير (Ctrl −)",

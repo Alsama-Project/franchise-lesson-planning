@@ -24,6 +24,7 @@ import type { Worksheet, WorksheetV3 } from '@/types/lesson';
 import type { TagsByDimension } from '@/types/resource';
 import type { WorksheetExercise } from '@/types/worksheet-exercise';
 import { loadWorksheetExercises } from '@/lib/actions/worksheet-exercise';
+import { printWithTitle, worksheetPdfTitle } from '@/lib/editor/worksheet-filename';
 import type { WorksheetContext } from '../context';
 import { DocumentWorksheet, type DocumentWorksheetHandle, type SaveState } from '../doc/DocumentWorksheet';
 import { CardConfirm } from './CardConfirm';
@@ -199,7 +200,7 @@ function GenBody({ value, onChange, context, vocabulary, saveState, initialExerc
 
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={() => printWithTitle(worksheetPdfTitle(context))}
           className="inline-flex items-center gap-[6px] rounded-[9px] border border-border-strong bg-surface px-[12px] py-[7px] text-[13px] font-semibold text-ink hover:bg-surface-subtle"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">

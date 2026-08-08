@@ -346,27 +346,31 @@ export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] 
   return nodes.map(walk);
 }
 
-// ── Flashcard grid + image-size-by-count (compile-time layout) ───────────────
+// ── Picture layout: flashcard grid + image-beside-sentence rows (compile-time) ─
 //
-// The model already writes picture-and-word cards as a plain run — [Picture: …] then
-// a short bold word, repeated (the `---` rules between them are stripped by the floor).
-// After `fillImageSlots` that run is a sequence of image nodes each optionally followed
-// by a short label paragraph. Rather than stack them as full-width images down the page,
-// compile arranges a RUN OF ADJACENT IMAGES into a table grid — the schema already
-// supports tables; we build the nodes ourselves (the model never writes pipe markdown).
+// A bare inline image carries no width, so on the page it prints at full size — one
+// picture per line down the sheet, unusable when an exercise has several. Compile sizes
+// pictures by arranging them into tables whose cells constrain the width. TWO shapes the
+// model writes, both keyed on STRUCTURE (never on a label's content, which keeps
+// changing) and both built BEFORE `fillImageSlots` — while the pictures are still
+// `[Picture: …]` markers, because `fillImageSlots` splices each image INLINE into its
+// paragraph (there is no top-level image node to group afterwards). Once a table is built,
+// `fillImageSlots` walks into its cells and resolves the markers there.
 //
-// Size follows the count, purely from the column layout (each image is max-width:100%
-// of its cell): ONE image is large and stands alone (no table); TWO or THREE sit side by
-// side in a single row; FOUR or more wrap into a grid of 3–4 per row (so each is small).
-
-// The layout is keyed on STRUCTURE, not on the label's content — because the label form
-// keeps changing (a **bold** word, a `### word` heading, or a `______` writing blank, and
-// the blank is dropped by markdownToDoc's thematic-break rule entirely). A flashcard run
-// is what all those share: consecutive `[Picture: …]` marker paragraphs with AT MOST ONE
-// short line between them. This runs BEFORE `fillImageSlots` — on the marker paragraphs,
-// while the pictures are still markers — because `fillImageSlots` splices each picture
-// INLINE into its paragraph (there is no top-level image node to group afterwards); once
-// the grid is built, `fillImageSlots` walks into the cells and resolves the markers there.
+//   • FLASHCARD GRID — a run of consecutive `[Picture: …]` marker paragraphs, each with
+//     at most one short line between (a **bold** word, a `### word` heading, or nothing —
+//     the model's `______` writing blank is dropped by markdownToDoc, so a blank card
+//     arrives label-less and the layout synthesises the writing line). Two or more become
+//     a grid (3–4 per row → each small); a lone card stays large.
+//
+//   • IMAGE-BESIDE-SENTENCE ROWS — a picture-prompted gap fill: a `[Picture: …]` marker
+//     followed by a NUMBERED line (an `orderedList`/`bulletList` after markdownToDoc),
+//     repeated. Each picture belongs beside its OWN sentence, NOT in a shared grid, so
+//     this builds a two-column table — a narrow picture column, the sentence beside it —
+//     one row per pair. The narrow column is what sizes the picture down.
+//
+// The two are told apart by what FOLLOWS a marker: another marker or a short word → a
+// flashcard; a list (the numbered sentence) → an image-beside-sentence row.
 
 /** Concatenated text of a node's direct children, or null if any child is a non-text node
  *  (an inline image, hard break, …) — i.e. the node is not a plain single-line text node. */
@@ -413,6 +417,16 @@ function writingLine(): unknown {
   return { type: 'paragraph', content: [{ type: 'text', text: '__________' }] };
 }
 
+/** The "sentence" side of a picture-prompted gap fill: the numbered line the model writes
+ *  under a picture, which markdownToDoc turns into a list (`1. The ___ is …` → a single-
+ *  item `orderedList`; a `- …` prompt → a `bulletList`). A marker followed by one of these
+ *  is an image-beside-sentence row, NOT a flashcard — the picture belongs beside its own
+ *  sentence. A short LABEL (a word) is never a list, so the two shapes never collide. */
+function isMediaBody(node: unknown): boolean {
+  const t = (node as { type?: unknown })?.type;
+  return t === 'orderedList' || t === 'bulletList';
+}
+
 const SIDE_BY_SIDE_MAX = 3; // 1 image large; 2–3 side by side in one row; 4+ wrap to a grid.
 
 /** Columns per row for a grid of `n` cards: 2–3 stay in one row; 4+ use 3 or 4 per row,
@@ -449,15 +463,43 @@ function flashcardTable(cards: { marker: unknown; label: unknown | null }[], per
   return { type: 'table', content: rows };
 }
 
+/** One cell of an image-beside-sentence row: `role` is `'pic'` (the narrow picture column,
+ *  which sizes the image down) or `'text'` (the sentence beside it). `wsMediaCell`
+ *  (declared by MediaCellStyle) renders the borderless class + column width and round-trips
+ *  through getJSON. */
+function mediaCell(role: 'pic' | 'text', content: unknown[]): unknown {
+  return {
+    type: 'tableCell',
+    attrs: { colspan: 1, rowspan: 1, colwidth: null, wsMediaCell: role },
+    content,
+  };
+}
+
+/** Build the image-beside-sentence table: one row per (picture, sentence) pair, the picture
+ *  in a narrow left column and its numbered sentence beside it. */
+function mediaTable(pairs: { marker: unknown; body: unknown }[]): unknown {
+  const rows = pairs.map((p) => ({
+    type: 'tableRow',
+    content: [mediaCell('pic', [p.marker]), mediaCell('text', [p.body])],
+  }));
+  return { type: 'table', content: rows };
+}
+
 /**
- * Arrange picture-and-word flashcards into a grid, BEFORE `fillImageSlots`. A run of
- * consecutive `[Picture: …]` marker paragraphs — each optionally trailed by ONE short line
- * (the word) — of two or more cards becomes a grid table (each cell: the picture over its
- * word, or a blank writing line when the card carries none). A lone card stays inline and
- * large. Everything else passes through untouched, in order. `fillImageSlots` then walks
- * into the cells and splices each marker's image in place.
+ * Lay an exercise's pictures out as tables, BEFORE `fillImageSlots`, so each is sized by
+ * its cell rather than printing full-width. Two shapes, told apart by what follows a
+ * `[Picture: …]` marker:
+ *
+ *   • a marker followed by a NUMBERED line (a list) → an image-beside-sentence row; a run
+ *     of such pairs becomes a two-column table (narrow picture | sentence), one row each.
+ *   • otherwise → a flashcard run: consecutive markers each optionally trailed by one short
+ *     word; two or more become a grid (a blank card gets a writing line), a lone card stays
+ *     inline and large.
+ *
+ * Everything else passes through untouched, in order. `fillImageSlots` then walks into the
+ * cells and splices each marker's image in place.
  */
-export function layoutFlashcards(nodes: unknown[]): unknown[] {
+export function layoutExercisePictures(nodes: unknown[]): unknown[] {
   const out: unknown[] = [];
   let i = 0;
   while (i < nodes.length) {
@@ -466,8 +508,20 @@ export function layoutFlashcards(nodes: unknown[]): unknown[] {
       i += 1;
       continue;
     }
+    // A marker followed by a list (the numbered sentence) → image-beside-sentence rows.
+    if (isMediaBody(nodes[i + 1])) {
+      const pairs: { marker: unknown; body: unknown }[] = [];
+      while (i < nodes.length && isPictureMarkerParagraph(nodes[i]) && isMediaBody(nodes[i + 1])) {
+        pairs.push({ marker: nodes[i], body: nodes[i + 1] });
+        i += 2;
+      }
+      out.push(mediaTable(pairs));
+      continue;
+    }
+    // Otherwise a flashcard run — but a marker that is itself followed by a list belongs to
+    // the media branch, so it ends this run rather than joining the grid.
     const cards: { marker: unknown; label: unknown | null }[] = [];
-    while (i < nodes.length && isPictureMarkerParagraph(nodes[i])) {
+    while (i < nodes.length && isPictureMarkerParagraph(nodes[i]) && !isMediaBody(nodes[i + 1])) {
       const marker = nodes[i];
       i += 1;
       let label: unknown | null = null;

@@ -345,3 +345,35 @@ test('entities: a decoded &#35; at line start heads a heading (parity with \\#)'
   assert.equal(content[0].attrs.level, 1);
   assert.equal(plain(content[0].content), 'Heading');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// Emphasis — `~~strike~~` is supported; a stray `*`/`~` an unclosed run leaves never
+// prints; a space-flanked ` * ` (multiplication) is preserved.
+// ─────────────────────────────────────────────────────────────────────────────────
+const marks = (n) => (n.marks ?? []).map((m) => m.type);
+
+test('strikethrough: ~~word~~ becomes a struck text node (not literal ~~)', () => {
+  const { content } = markdownToDoc('Not the ~~bus~~ today.');
+  const run = content[0].content;
+  const struck = run.find((n) => plain([n]) === 'bus');
+  assert.deepEqual(marks(struck), ['strike']);
+  assert.ok(!plain(run).includes('~'), 'no literal tilde survives');
+});
+
+test('a stray unclosed asterisk is scrubbed, never printed', () => {
+  // `**taxi**` is well-formed; the leading unclosed `*car` leaves a stray `*` that must
+  // not print. Whatever the emphasis parse does, no bare `*` reaches the text.
+  const { content } = markdownToDoc('A *car and a **bus** here.');
+  const text = plain(content[0].content);
+  assert.ok(!text.includes('*'), `no stray asterisk prints, got: ${text}`);
+});
+
+test('a space-flanked asterisk (multiplication) is preserved', () => {
+  const { content } = markdownToDoc('Work out 2 * 3 and 4 * 5.');
+  assert.equal(plain(content[0].content), 'Work out 2 * 3 and 4 * 5.');
+});
+
+test('bold and strike still round-trip through docToMarkdown', () => {
+  const doc = markdownToDoc('Use **taxi** not ~~bus~~.');
+  assert.equal(docToMarkdown(doc), 'Use **taxi** not ~~bus~~.');
+});

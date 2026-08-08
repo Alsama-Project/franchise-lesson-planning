@@ -655,7 +655,7 @@ html:lang(ar) body {
 .ws-doc th > p {
   margin: 0;
 }
-/* A compile-built FLASHCARD GRID (FlashcardTableStyle / layoutFlashcards): the cells
+/* A compile-built FLASHCARD GRID (FlashcardTableStyle / layoutExercisePictures): the cells
  * carry `ws-flashcard-cell`, so the grid reads as borderless picture-and-word cards, not
  * a data table. Columns are even (`table-layout: fixed`, width 100%), so each image is
  * sized purely by the column count — 2–3 per row read medium, 4 per row small — while a
@@ -681,6 +681,35 @@ html:lang(ar) body {
 .ws-doc td.ws-flashcard-cell .ws-img-nv,
 .ws-doc td.ws-flashcard-cell img {
   margin-inline: auto;
+}
+/* A compile-built IMAGE-BESIDE-SENTENCE table (MediaCellStyle / layoutExercisePictures):
+ * a picture-prompted gap fill — a narrow picture column beside its numbered sentence,
+ * borderless, one row per prompt. The narrow `ws-media-pic` column (via `table-layout:
+ * fixed`, the first row's width sets the column) is what sizes the picture down from
+ * full-page. The sentence column takes the rest; both cells drop the data-table border.
+ * On the CELL (not the table): the live editor renders the table via a NodeView that
+ * drops a table-level class, but the cells are ordinary nodes. Screen + print alike. */
+.ws-doc td.ws-media-cell {
+  border: none;
+  height: auto;
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+.ws-doc td.ws-media-pic {
+  width: 24%;
+  text-align: center;
+}
+.ws-doc td.ws-media-text {
+  width: 76%;
+}
+.ws-doc td.ws-media-pic .ws-img-nv,
+.ws-doc td.ws-media-pic img {
+  margin-inline: auto;
+}
+.ws-doc td.ws-media-text > ol,
+.ws-doc td.ws-media-text > ul {
+  margin: 0;
+  padding-inline-start: 1.2em;
 }
 .ws-doc .selectedCell::after {
   content: '';

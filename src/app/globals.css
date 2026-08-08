@@ -655,7 +655,7 @@ html:lang(ar) body {
 .ws-doc th > p {
   margin: 0;
 }
-/* A compile-built FLASHCARD GRID (FlashcardTableStyle / layoutExerciseImages): the cells
+/* A compile-built FLASHCARD GRID (FlashcardTableStyle / layoutFlashcards): the cells
  * carry `ws-flashcard-cell`, so the grid reads as borderless picture-and-word cards, not
  * a data table. Columns are even (`table-layout: fixed`, width 100%), so each image is
  * sized purely by the column count — 2–3 per row read medium, 4 per row small — while a
@@ -668,9 +668,10 @@ html:lang(ar) body {
   padding: 6px 8px;
   text-align: center;
 }
-/* The word under the picture — a paragraph (older **bold** form) or a level-3 heading
- * (the `### word` the heading contract now produces). Normalise both to one compact,
- * centred, bold word so a heading label never reads as a big section title in a cell. */
+/* The word under the picture — a paragraph (a **bold** word, or a `______` writing line
+ * for a card the model left blank) or a level-3 heading (the `### word` the heading
+ * contract can produce). Normalise all to one compact, centred, bold line so a heading
+ * label never reads as a big section title in a cell. */
 .ws-doc td.ws-flashcard-cell > p,
 .ws-doc td.ws-flashcard-cell > h3 {
   margin: 4px 0 0;

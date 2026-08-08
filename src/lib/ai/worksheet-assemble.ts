@@ -9,7 +9,7 @@
 
 import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
 import type { ImageSlot } from '@/types/worksheet-exercise';
-import { PICTURE_MARKER } from '@/lib/editor/markdown';
+import { PICTURE_MARKER, PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -359,34 +359,58 @@ export function fillImageSlots(nodes: unknown[], slots: ImageSlot[]): unknown[] 
 // of its cell): ONE image is large and stands alone (no table); TWO or THREE sit side by
 // side in a single row; FOUR or more wrap into a grid of 3–4 per row (so each is small).
 
-/** True when a node is an image node (a resolved slot image or an inline image). */
-function isImageNode(node: unknown): boolean {
-  return !!node && typeof node === 'object' && (node as { type?: unknown }).type === 'image';
-}
+// The layout is keyed on STRUCTURE, not on the label's content — because the label form
+// keeps changing (a **bold** word, a `### word` heading, or a `______` writing blank, and
+// the blank is dropped by markdownToDoc's thematic-break rule entirely). A flashcard run
+// is what all those share: consecutive `[Picture: …]` marker paragraphs with AT MOST ONE
+// short line between them. This runs BEFORE `fillImageSlots` — on the marker paragraphs,
+// while the pictures are still markers — because `fillImageSlots` splices each picture
+// INLINE into its paragraph (there is no top-level image node to group afterwards); once
+// the grid is built, `fillImageSlots` walks into the cells and resolves the markers there.
 
-/**
- * The flashcard word under a picture: a short line (≤ 3 words, ≤ 24 chars) — either a
- * `paragraph` (the model's older `**bold**` form) OR a level-3 `heading` (the `### word`
- * form the heading contract now produces: it tells the model a label is `### Label` and
- * bold is never a label, so the flashcard word became a level-3 heading — which is exactly
- * why a paragraph-only detector stopped matching once the contract landed). Level-2 `##`
- * TITLES are never a label. Consulted only immediately after an image, so ordinary prose
- * is never swept in. Returns the text, or null when the node is not a short label.
- */
-function shortLabelText(node: unknown): string | null {
-  const n = node as { type?: unknown; attrs?: { level?: unknown }; content?: unknown };
-  const isPara = n?.type === 'paragraph';
-  const isLabelHeading = n?.type === 'heading' && Number(n.attrs?.level) === 3;
-  if ((!isPara && !isLabelHeading) || !Array.isArray(n.content) || n.content.length === 0) return null;
+/** Concatenated text of a node's direct children, or null if any child is a non-text node
+ *  (an inline image, hard break, …) — i.e. the node is not a plain single-line text node. */
+function pureText(node: unknown): string | null {
+  const content = (node as { content?: unknown })?.content;
+  if (!Array.isArray(content) || content.length === 0) return null;
   let text = '';
-  for (const child of n.content) {
+  for (const child of content) {
     const c = child as { type?: unknown; text?: unknown };
     if (c?.type !== 'text' || typeof c.text !== 'string') return null;
     text += c.text;
   }
+  return text;
+}
+
+/** A top-level paragraph whose ENTIRE text is one `[Picture: …]` marker — the picture side
+ *  of a flashcard, before `fillImageSlots` turns the marker into an inline image. */
+function isPictureMarkerParagraph(node: unknown): boolean {
+  if ((node as { type?: unknown })?.type !== 'paragraph') return false;
+  const text = pureText(node);
+  return text !== null && PICTURE_MARKER_LINE.test(text);
+}
+
+/** The one short "line" that may sit between two picture markers — the word under a card.
+ *  STRUCTURE, not content: a `paragraph` (older `**bold**`) OR a level-3 `heading` (the
+ *  `### word` the heading contract now produces), short (≤ 3 words, ≤ 24 chars), and not
+ *  itself a picture marker. A level-2 `##` TITLE is never a label (it breaks the run). */
+function isShortLabel(node: unknown): boolean {
+  const n = node as { type?: unknown; attrs?: { level?: unknown } };
+  const isPara = n?.type === 'paragraph';
+  const isLabelHeading = n?.type === 'heading' && Number(n.attrs?.level) === 3;
+  if (!isPara && !isLabelHeading) return false;
+  const text = pureText(node);
+  if (text === null) return false;
   const trimmed = text.trim();
-  if (!trimmed) return null;
-  return trimmed.split(/\s+/).length <= 3 && trimmed.length <= 24 ? trimmed : null;
+  if (!trimmed || PICTURE_MARKER_LINE.test(trimmed)) return false;
+  return trimmed.split(/\s+/).length <= 3 && trimmed.length <= 24;
+}
+
+/** A blank writing line for a card with no word — "say the word, then write it here". A
+ *  short underscore run (what the model itself writes as `______`, before markdownToDoc
+ *  drops it as a thematic break). */
+function writingLine(): unknown {
+  return { type: 'paragraph', content: [{ type: 'text', text: '__________' }] };
 }
 
 const SIDE_BY_SIDE_MAX = 3; // 1 image large; 2–3 side by side in one row; 4+ wrap to a grid.
@@ -399,10 +423,11 @@ function perRowFor(n: number): number {
   return pad(3) < pad(4) ? 3 : 4;
 }
 
-/** One grid cell holding a card's image and (when present) its label; or an empty cell
- *  used to pad a short final row so the table stays rectangular (ProseMirror requires it).
- *  `wsFlashcardCell` (declared by FlashcardTableStyle) renders the borderless-grid class
- *  and round-trips through getJSON; without it a reload would show plain table borders. */
+/** One grid cell holding a card's picture (marker paragraph, which `fillImageSlots` later
+ *  fills) and its word — the model's label if it wrote one, else a blank writing line; or
+ *  an empty cell used to pad a short final row so the table stays rectangular (ProseMirror
+ *  requires it). `wsFlashcardCell` (declared by FlashcardTableStyle) renders the
+ *  borderless-grid class and round-trips through getJSON. */
 function flashcardCell(content: unknown[] | null): unknown {
   return {
     type: 'tableCell',
@@ -412,11 +437,11 @@ function flashcardCell(content: unknown[] | null): unknown {
 }
 
 /** Build the flashcard grid table laying `cards` out `perRow` per row. */
-function flashcardTable(cards: { image: unknown; label: unknown | null }[], perRow: number): unknown {
+function flashcardTable(cards: { marker: unknown; label: unknown | null }[], perRow: number): unknown {
   const rows: unknown[] = [];
   for (let r = 0; r < cards.length; r += perRow) {
     const cells = cards.slice(r, r + perRow).map((card) =>
-      flashcardCell(card.label ? [card.image, card.label] : [card.image]),
+      flashcardCell([card.marker, card.label ?? writingLine()]),
     );
     while (cells.length < perRow) cells.push(flashcardCell(null)); // pad → rectangular
     rows.push({ type: 'tableRow', content: cells });
@@ -425,33 +450,35 @@ function flashcardTable(cards: { image: unknown; label: unknown | null }[], perR
 }
 
 /**
- * Lay out one exercise's top-level nodes (AFTER `fillImageSlots`): a run of adjacent
- * images — each optionally trailed by a short label — becomes a grid table when it holds
- * two or more images; a lone image (with its label) is left inline and large. Everything
- * else passes through untouched, in order.
+ * Arrange picture-and-word flashcards into a grid, BEFORE `fillImageSlots`. A run of
+ * consecutive `[Picture: …]` marker paragraphs — each optionally trailed by ONE short line
+ * (the word) — of two or more cards becomes a grid table (each cell: the picture over its
+ * word, or a blank writing line when the card carries none). A lone card stays inline and
+ * large. Everything else passes through untouched, in order. `fillImageSlots` then walks
+ * into the cells and splices each marker's image in place.
  */
-export function layoutExerciseImages(nodes: unknown[]): unknown[] {
+export function layoutFlashcards(nodes: unknown[]): unknown[] {
   const out: unknown[] = [];
   let i = 0;
   while (i < nodes.length) {
-    if (!isImageNode(nodes[i])) {
+    if (!isPictureMarkerParagraph(nodes[i])) {
       out.push(nodes[i]);
       i += 1;
       continue;
     }
-    const cards: { image: unknown; label: unknown | null }[] = [];
-    while (i < nodes.length && isImageNode(nodes[i])) {
-      const image = nodes[i];
+    const cards: { marker: unknown; label: unknown | null }[] = [];
+    while (i < nodes.length && isPictureMarkerParagraph(nodes[i])) {
+      const marker = nodes[i];
       i += 1;
       let label: unknown | null = null;
-      if (i < nodes.length && shortLabelText(nodes[i]) !== null) {
+      if (i < nodes.length && isShortLabel(nodes[i])) {
         label = nodes[i];
         i += 1;
       }
-      cards.push({ image, label });
+      cards.push({ marker, label });
     }
     if (cards.length === 1) {
-      out.push(cards[0].image);
+      out.push(cards[0].marker);
       if (cards[0].label) out.push(cards[0].label);
     } else {
       out.push(flashcardTable(cards, perRowFor(cards.length)));

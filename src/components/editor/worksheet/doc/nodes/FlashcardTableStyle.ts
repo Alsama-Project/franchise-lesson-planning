@@ -1,8 +1,8 @@
 // Marks the CELLS of a compile-built FLASHCARD GRID so the grid renders borderless —
 // a grid of picture-and-word cards, not a bordered data table.
 //
-// `compileWorksheet` lays a run of adjacent images out as a `table` whose cells are
-// stamped `wsFlashcardCell: true` (see `layoutExerciseImages`). The marker lives on the
+// `compileWorksheet` lays a run of adjacent picture markers out as a `table` whose cells
+// are stamped `wsFlashcardCell: true` (see `layoutFlashcards`). The marker lives on the
 // CELL, not the table, on purpose: the live editor renders a table through a NodeView
 // (prosemirror-tables' TableView), which ignores the table node's `renderHTML` class —
 // but the CELLS are ordinary nodes, so a global attribute's `renderHTML` reaches them in

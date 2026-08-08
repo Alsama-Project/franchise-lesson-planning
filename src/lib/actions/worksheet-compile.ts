@@ -48,7 +48,7 @@ import {
   assembleWorksheetDoc,
   exerciseNodes,
   fillImageSlots,
-  layoutExerciseImages,
+  layoutFlashcards,
   failedExercisePlaceholder,
   type PreparedExercise,
 } from '@/lib/ai/worksheet-assemble';
@@ -112,11 +112,14 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   const exercises: PreparedExercise[] = ((exRows ?? []) as ExerciseRow[])
     .map((row): PreparedExercise | null => {
       const anchor = row.generation?.spec?.template_anchor?.trim() || null;
-      // Pair markers ↔ slots per row (fresh index), against THIS row's own
-      // body_doc + image_slots, then lay a run of adjacent images out as a grid
-      // (flashcards) sized by count — a lone image stays large; 2+ become a table.
-      const nodes = layoutExerciseImages(
-        fillImageSlots(exerciseNodes(row.body_doc), row.image_slots ?? []),
+      // Lay a run of adjacent picture markers out as a flashcard grid FIRST — keyed
+      // on the marker structure, while the pictures are still `[Picture: …]` text —
+      // then pair markers ↔ slots per row (fresh index), against THIS row's own
+      // body_doc + image_slots, so `fillImageSlots` resolves each marker in place,
+      // including the ones now sitting inside grid cells.
+      const nodes = fillImageSlots(
+        layoutFlashcards(exerciseNodes(row.body_doc)),
+        row.image_slots ?? [],
       );
       if (nodes.length > 0) return { id: row.id, anchor, nodes };
       // A failed row carries no body — emit a visible, retryable placeholder rather

@@ -22,15 +22,16 @@
 import type { ExerciseSpec } from '@/types/worksheet-exercise';
 import { BRAND } from '../doc/theme';
 import { PAGE_WIDTH, skeletonHeight, IMAGE_SLOT_HEIGHT } from './heights';
+import { WorksheetProgress } from './WorksheetProgress';
+import type { WorksheetRun } from './useWorksheetGeneration';
 
 const BAR = '#E7E1D6';
 const BLOCK = '#F2EEE7';
 const IMG = '#EDE8DF';
 
-export function WorksheetSkeleton({ specs }: { specs: ExerciseSpec[] }) {
+export function WorksheetSkeleton({ specs, run }: { specs: ExerciseSpec[]; run: WorksheetRun | null }) {
   return (
     <div
-      aria-hidden
       className="ws-no-print absolute inset-0 z-10 overflow-auto"
       style={{ background: BRAND.canvas, padding: '28px 20px 60px' }}
     >
@@ -39,40 +40,57 @@ export function WorksheetSkeleton({ specs }: { specs: ExerciseSpec[] }) {
           width: PAGE_WIDTH,
           maxWidth: '100%',
           margin: '0 auto',
-          background: '#fff',
-          boxShadow: BRAND.pageShadow,
-          borderRadius: 2,
-          padding: '40px 48px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 30,
+          gap: 16,
         }}
       >
-        {/* Masthead placeholder — the page reads as a worksheet immediately. */}
-        <div className="animate-pulse" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ height: 26, width: '55%', borderRadius: 6, background: BAR }} />
-          <div style={{ height: 12, width: '32%', borderRadius: 6, background: BLOCK }} />
-        </div>
+        {/* The named step list — what tells the teacher how far the run has got. It sits
+            above the skeleton page and is the only live element in the overlay (the page
+            below is aria-hidden scaffolding). Present from planning onward. */}
+        {run ? <WorksheetProgress run={run} /> : null}
 
-        {specs.map((spec, i) => (
-          <div key={i} className="animate-pulse" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Exercise heading */}
-            <div style={{ height: 16, width: '42%', borderRadius: 6, background: BAR }} />
-            {/* Body block, reserving roughly the exercise's footprint */}
-            <div style={{ height: skeletonHeight(spec.estimated_height), borderRadius: 8, background: BLOCK }} />
-            {/* One reserved square per image the exercise plans (bounded by the cap) */}
-            {spec.image_count > 0 ? (
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {Array.from({ length: Math.min(spec.image_count, 8) }).map((_, k) => (
-                  <div
-                    key={k}
-                    style={{ width: IMAGE_SLOT_HEIGHT, height: IMAGE_SLOT_HEIGHT, borderRadius: 8, background: IMG }}
-                  />
-                ))}
-              </div>
-            ) : null}
+        {/* The page taking shape behind the list — unchanged scaffolding at roughly the
+            heights the finished page will occupy. Empty of exercise rows until /plan
+            returns specs (planning shows just the masthead). */}
+        <div
+          aria-hidden
+          style={{
+            background: '#fff',
+            boxShadow: BRAND.pageShadow,
+            borderRadius: 2,
+            padding: '40px 48px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 30,
+          }}
+        >
+          {/* Masthead placeholder — the page reads as a worksheet immediately. */}
+          <div className="animate-pulse" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ height: 26, width: '55%', borderRadius: 6, background: BAR }} />
+            <div style={{ height: 12, width: '32%', borderRadius: 6, background: BLOCK }} />
           </div>
-        ))}
+
+          {specs.map((spec, i) => (
+            <div key={i} className="animate-pulse" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Exercise heading */}
+              <div style={{ height: 16, width: '42%', borderRadius: 6, background: BAR }} />
+              {/* Body block, reserving roughly the exercise's footprint */}
+              <div style={{ height: skeletonHeight(spec.estimated_height), borderRadius: 8, background: BLOCK }} />
+              {/* One reserved square per image the exercise plans (bounded by the cap) */}
+              {spec.image_count > 0 ? (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {Array.from({ length: Math.min(spec.image_count, 8) }).map((_, k) => (
+                    <div
+                      key={k}
+                      style={{ width: IMAGE_SLOT_HEIGHT, height: IMAGE_SLOT_HEIGHT, borderRadius: 8, background: IMG }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

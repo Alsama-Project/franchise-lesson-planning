@@ -3,11 +3,36 @@
     "generate": "Generate worksheet",
     "regenerateAll": "Regenerate all",
     "filling": "Aya is filling your worksheet",
+    "avatar": "A",
+    "buildingHeadline": "Aya is building your worksheet",
+    "readyHeadline": "Your worksheet is ready",
+    "steps": {
+      "planning": {
+        "live": "Reading your lesson and the curriculum",
+        "past": "Read your lesson and the curriculum"
+      },
+      "exercises": {
+        "live": "Writing the exercises",
+        "current": "Writing exercise",
+        "of": "{n} of {total}",
+        "past": "Wrote {n} exercises"
+      },
+      "pictures": {
+        "live": "Drawing the pictures",
+        "current": "Drawing picture",
+        "of": "{n} of {total}",
+        "past": "Drew {n} pictures",
+        "none": "No pictures needed",
+        "partly": "Drew {drawn} of {total} pictures",
+        "blankOne": "one space left blank",
+        "blankMany": "{n} spaces left blank"
+      },
+      "page": {
+        "live": "Putting it on the page",
+        "past": "On the page"
+      }
+    },
     "progress": {
-      "planning": "Reading the curriculum. All of it.",
-      "exercises": "Writing exercise {n} of {total}",
-      "images": "Drawing picture {n} of {total}. Slowest bit.",
-      "compiling": "Putting it on the page",
       "regenExercise": "Having another go",
       "regenImage": "Drawing it again"
     },

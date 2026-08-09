@@ -36,6 +36,9 @@ export interface ExerciseGutterStorage {
   stageById: Record<string, string>;
   /** The exercise currently under the pointer, so only its chip is revealed. */
   hoveredId: string | null;
+  /** The exercise whose Regenerate chip is currently hovered, so its whole range is
+   *  outlined — a quiet "this is what I'd replace" preview. Cleared on chip leave. */
+  outlinedId: string | null;
 }
 
 export const exerciseGutterKey = new PluginKey('exerciseGutter');
@@ -69,7 +72,14 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
   name: 'exerciseGutter',
 
   addStorage() {
-    return { onRegenerate: null, busy: new Set<string>(), title: 'Regenerate', stageById: {}, hoveredId: null };
+    return {
+      onRegenerate: null,
+      busy: new Set<string>(),
+      title: 'Regenerate',
+      stageById: {},
+      hoveredId: null,
+      outlinedId: null,
+    };
   },
 
   addProseMirrorPlugins() {
@@ -83,10 +93,23 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
         view.dispatch(view.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
       }
     };
+    /** Dispatch a doc-unchanged, autosave-free transaction so `decorations` recomputes. */
+    const redraw = (view: EditorView) =>
+      view.dispatch(view.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
+
     const clear = (view: EditorView) => {
-      if (storage.hoveredId !== null) {
+      // Leaving the page drops BOTH the revealed chip and any chip-hover outline.
+      if (storage.hoveredId !== null || storage.outlinedId !== null) {
         storage.hoveredId = null;
-        view.dispatch(view.state.tr.setMeta(EXERCISE_GUTTER_REDRAW, true).setMeta('preventUpdate', true));
+        storage.outlinedId = null;
+        redraw(view);
+      }
+    };
+    /** Set/clear the outlined exercise from the chip's own hover, redrawing on a change. */
+    const setOutlined = (view: EditorView, id: string | null) => {
+      if (storage.outlinedId !== id) {
+        storage.outlinedId = id;
+        redraw(view);
       }
     };
 
@@ -126,7 +149,7 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                 decos.push(
                   Decoration.widget(
                     pos,
-                    () => {
+                    (view) => {
                       const wrap = document.createElement('div');
                       wrap.className =
                         'ws-ex-gutter ws-no-print' + (busy ? ' is-busy' : '') + (active ? ' is-active' : '');
@@ -148,6 +171,10 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                         e.preventDefault();
                         if (!storage.busy.has(id)) storage.onRegenerate?.(id);
                       });
+                      // Hovering the chip outlines the exercise it would replace — a quiet
+                      // preview of the range. Cleared on leave (and by the page mouseleave).
+                      btn.addEventListener('mouseenter', () => setOutlined(view, id));
+                      btn.addEventListener('mouseleave', () => setOutlined(view, null));
                       wrap.appendChild(btn);
                       return wrap;
                     },
@@ -163,6 +190,13 @@ export const ExerciseGutter = Extension.create<Record<string, never>, ExerciseGu
                     },
                   ),
                 );
+              }
+              // Chip-hover outline: EVERY top-level node carrying the outlined exercise's id
+              // gets a quiet range tint (a node decoration — screen-only via CSS, no layout
+              // shift). Outside the once-per-exercise chip guard so the whole span is marked,
+              // not just the first node.
+              if (id && id === storage.outlinedId) {
+                decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'ws-ex-outline' }));
               }
               pos += node.nodeSize;
             });

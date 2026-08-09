@@ -912,8 +912,6 @@ export function LessonPlanEditor({
                     blocks={blocks}
                     total={total}
                     materials={materials}
-                    worksheet={worksheet}
-                    worksheetContext={worksheetContext}
                     techniqueLabels={techniqueLabels}
                     attachedFor={attachedFor}
                     onMaterialsChange={setMaterials}

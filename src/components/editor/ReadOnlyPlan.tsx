@@ -255,12 +255,17 @@ export function ReadOnlyPlan({
                   minutes={blockMinutes(block)}
                 />
                 <div className="mt-[8px]">
+                  {/* The inline "View worksheet" toggle is only useful on the standalone
+                      read-only /view page. In the embedded editor split the worksheet is
+                      already the right pane, so the button is vestigial — omit it there. */}
                   <PartContent
                     block={block}
                     attachedResources={attachedFor(block)}
-                    worksheet={block.type === 'independent_practice' ? plan.worksheet : undefined}
+                    worksheet={
+                      !embedded && block.type === 'independent_practice' ? plan.worksheet : undefined
+                    }
                     worksheetContext={
-                      block.type === 'independent_practice' ? worksheetContext : undefined
+                      !embedded && block.type === 'independent_practice' ? worksheetContext : undefined
                     }
                     techniques={techniquesFor(block.type)}
                   />

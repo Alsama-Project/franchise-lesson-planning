@@ -11,7 +11,6 @@ import { normalizeLinkIt, resolveTechniques } from '@/lib/editor/link-it';
 import { phaseLabel } from '@/lib/editor/phase';
 import { TimeStepper } from '@/components/editor/TimeStepper';
 import { PartContent } from '@/components/editor/PartContent';
-import type { WorksheetContext } from '@/components/editor/worksheet/context';
 
 const PHASE_TAG: Record<TeachingPhase, string> = {
   i_do: 'text-[#1F7A6C] bg-[#E4F0ED]',
@@ -46,8 +45,6 @@ export function ReviewStep({
   blocks,
   total,
   materials,
-  worksheet,
-  worksheetContext,
   techniqueLabels,
   attachedFor,
   onMaterialsChange,
@@ -60,10 +57,6 @@ export function ReviewStep({
   blocks: Block[];
   total: number;
   materials: string[];
-  /** The plan's student worksheet (rendered read-only under Independent practice). */
-  worksheet: unknown;
-  /** Master-frame context for the read-only worksheet render. */
-  worksheetContext: WorksheetContext;
   /** Technique id → display-name map for resolving the Link-it selections. */
   techniqueLabels: Map<string, string>;
   /** Resolve a block's attached bank resources via the editor's client cache. */
@@ -313,10 +306,6 @@ export function ReviewStep({
                   <PartContent
                     block={p.block}
                     attachedResources={attachedFor(p.block)}
-                    worksheet={p.key === 'independent_practice' ? worksheet : undefined}
-                    worksheetContext={
-                      p.key === 'independent_practice' ? worksheetContext : undefined
-                    }
                     techniques={techniquesFor(p.key)}
                     fallback={p.detail}
                   />

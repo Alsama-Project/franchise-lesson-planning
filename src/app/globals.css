@@ -500,6 +500,24 @@ html:lang(ar) body {
     transform: rotate(360deg);
   }
 }
+/* Chip-hover outline (ExerciseGutter node decoration): while the Regenerate chip is
+ * hovered, every top-level node of THAT exercise carries `ws-ex-outline` — a quiet teal
+ * tint + inset left accent marking the range the chip would replace. Uses background and
+ * INSET box-shadow only (never border/outline-width or margin), so it never shifts the
+ * document layout. Screen-only — reset under print so it can never reach a student's
+ * sheet (the chip itself is `ws-no-print`; this range mark is suppressed the same way). */
+.ws-ex-outline {
+  background: rgba(31, 122, 108, 0.06);
+  box-shadow: inset 2px 0 0 rgba(31, 122, 108, 0.35);
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+@media print {
+  .ws-ex-outline {
+    background: none !important;
+    box-shadow: none !important;
+  }
+}
 
 /* Scaffold SECTION headings are fixed (ScaffoldHeadingLock rejects edits to them).
  * Styled as system-provided (cream) with a lock glyph and no text caret, so a keystroke

@@ -509,6 +509,47 @@ function isMediaBody(node: unknown): boolean {
   return t === 'orderedList' || t === 'bulletList';
 }
 
+/** The OTHER "sentence" the model actually writes for a picture-prompted gap fill: a
+ *  paragraph that OPENS with a number, e.g. `**1.** The ___ is …`. The model bolds the
+ *  number (`**1.**`), so markdownToDoc makes a plain bold PARAGRAPH — never an ordered
+ *  list — which is exactly why `isMediaBody` (list-only) missed this shape and the pairs
+ *  stacked. STRUCTURE, not content: a single-line `paragraph` (all text, no inline image)
+ *  whose trimmed text starts `1.` / `1)` and is not itself a picture marker. Length is not
+ *  constrained — these are full one-line prompts, not short labels. */
+function isNumberedSentence(node: unknown): boolean {
+  if ((node as { type?: unknown })?.type !== 'paragraph') return false;
+  const text = pureText(node);
+  if (text === null) return false;
+  const trimmed = text.trim();
+  if (!trimmed || PICTURE_MARKER_LINE.test(trimmed)) return false;
+  return /^\d+[.)]\s/.test(trimmed);
+}
+
+/** A numbered-sentence ↔ picture pair starting at `nodes[i]`, in EITHER order (the model
+ *  usually writes the sentence first, then its `[Picture: …]`, but tolerate the reverse),
+ *  or null when the two nodes at `i` are not such a pair. Normalised so the caller always
+ *  gets `{ sentence, marker }` regardless of which came first. */
+function sentencePictureAt(nodes: unknown[], i: number): { sentence: unknown; marker: unknown } | null {
+  const a = nodes[i];
+  const b = nodes[i + 1];
+  if (isNumberedSentence(a) && isPictureMarkerParagraph(b)) return { sentence: a, marker: b };
+  if (isPictureMarkerParagraph(a) && isNumberedSentence(b)) return { sentence: b, marker: a };
+  return null;
+}
+
+/** Build the sentence-beside-image table for the numbered-sentence gap fill: one row per
+ *  (sentence, picture) pair, the SENTENCE in the wide left column and its picture in the
+ *  narrow right column. Mirror image of `mediaTable`'s column order — this shape reads as a
+ *  worksheet (read the prompt, look at the picture on the right), and the narrow picture
+ *  column is what sizes the image down. */
+function sentencePictureTable(pairs: { sentence: unknown; marker: unknown }[]): unknown {
+  const rows = pairs.map((p) => ({
+    type: 'tableRow',
+    content: [mediaCell('text', [p.sentence]), mediaCell('pic', [p.marker])],
+  }));
+  return { type: 'table', content: rows };
+}
+
 const SIDE_BY_SIDE_MAX = 3; // 1 image large; 2–3 side by side in one row; 4+ wrap to a grid.
 
 /** Columns per row for a grid of `n` cards: 2–3 stay in one row; 4+ use 3 or 4 per row,
@@ -572,8 +613,11 @@ function mediaTable(pairs: { marker: unknown; body: unknown }[]): unknown {
  * its cell rather than printing full-width. Two shapes, told apart by what follows a
  * `[Picture: …]` marker:
  *
- *   • a marker followed by a NUMBERED line (a list) → an image-beside-sentence row; a run
- *     of such pairs becomes a two-column table (narrow picture | sentence), one row each.
+ *   • a NUMBERED SENTENCE next to a marker (`**1.**` bold, so markdownToDoc makes a
+ *     paragraph, NOT a list — the shape the model actually writes), repeated → a two-column
+ *     table with the SENTENCE wide on the left and its picture narrow on the right.
+ *   • a marker followed by a NUMBERED line (a real markdown list) → an image-beside-sentence
+ *     row (narrow picture | sentence); a run of such pairs becomes a two-column table.
  *   • otherwise → a flashcard run: consecutive markers each optionally trailed by one short
  *     word; two or more become a grid (a blank card gets a writing line), a lone card stays
  *     inline and large.
@@ -585,6 +629,19 @@ export function layoutExercisePictures(nodes: unknown[]): unknown[] {
   const out: unknown[] = [];
   let i = 0;
   while (i < nodes.length) {
+    // A RUN of numbered-sentence ↔ picture pairs (the `**1.**`-bold gap fill). Require TWO
+    // consecutive pairs to start, so a single decorative picture that merely happens to sit
+    // by a numbered line is left large (not forced into a narrow column). Each pair advances
+    // by two; the sentence rides the wide left column, its picture the narrow right one.
+    if (sentencePictureAt(nodes, i) && sentencePictureAt(nodes, i + 2)) {
+      const pairs: { sentence: unknown; marker: unknown }[] = [];
+      for (let p = sentencePictureAt(nodes, i); p; p = sentencePictureAt(nodes, i)) {
+        pairs.push(p);
+        i += 2;
+      }
+      out.push(sentencePictureTable(pairs));
+      continue;
+    }
     if (!isPictureMarkerParagraph(nodes[i])) {
       out.push(nodes[i]);
       i += 1;

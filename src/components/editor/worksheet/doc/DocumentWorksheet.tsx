@@ -35,6 +35,7 @@ import { ZoomPage } from './ZoomPage';
 import { ExerciseGutter, EXERCISE_GUTTER_REDRAW, type ExerciseGutterStorage } from './nodes/ExerciseGutter';
 import { SCAFFOLD_LOCK_BYPASS } from './nodes/ScaffoldHeadingLock';
 import { applyExerciseSplice, buildExerciseNodes, type ExerciseRegenPayload } from './exerciseSplice';
+import { yearBandForYear } from '@/lib/ai/worksheet-compose';
 import type { RegenPhase } from '../exercises/useWorksheetGeneration';
 import { nodeExerciseId } from '@/lib/ai/worksheet-assemble';
 import { requestImage } from '@/lib/worksheet/generate-client';
@@ -272,7 +273,7 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
           })),
         );
         if (payload) {
-          const nodes = buildExerciseNodes(exerciseId, payload, failedText);
+          const nodes = buildExerciseNodes(exerciseId, payload, failedText, yearBandForYear(context.year));
           programmatic.current = true;
           const ok = applyExerciseSplice(editor, exerciseId, nodes, payload.anchor);
           programmatic.current = false;
@@ -294,7 +295,7 @@ export const DocumentWorksheet = forwardRef<DocumentWorksheetHandle, DocumentWor
         });
       }
     },
-    [editor, onRegenerateExercise, failedText, t],
+    [editor, onRegenerateExercise, failedText, t, context.year],
   );
 
   // Bridge React state into the gutter widget's storage, and force a redraw (a

@@ -16,16 +16,14 @@
 
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { WorksheetDoc } from '@/types/lesson';
-import type { ImageSlot } from '@/types/worksheet-exercise';
+import type { ImageSlot, WorksheetItem } from '@/types/worksheet-exercise';
 import {
-  exerciseNodes,
-  fillImageSlots,
-  layoutExercisePictures,
-  sizeImagesByCount,
+  buildExerciseContent,
   failedExercisePlaceholder,
   planExerciseSplice,
   tagCompiled,
 } from '@/lib/ai/worksheet-assemble';
+import type { YearBand } from '@/lib/ai/worksheet-compose';
 import { SCAFFOLD_LOCK_BYPASS } from './nodes/ScaffoldHeadingLock';
 
 /** What a regenerate produced for one exercise, ready to splice. */
@@ -38,25 +36,35 @@ export interface ExerciseRegenPayload {
   anchor: string | null;
   /** True when generation failed — a visible, retryable placeholder is spliced. */
   failed: boolean;
+  /** The model's declared structured items, or null/absent for the markdown path. */
+  items?: WorksheetItem[] | null;
+  /** The exercise-level shared passage (rule 8), or null/absent. */
+  passage?: string | null;
 }
 
 /**
- * Build the tagged top-level nodes for one exercise: its resolved body (images
- * filled), or a single failed placeholder. Every node is stamped with `wsCompiled`
- * + the `exerciseId` so a later regenerate finds it again. `failedText` is the
- * content-language string for the placeholder.
+ * Build the tagged top-level nodes for one exercise: its composed/resolved body, or a
+ * single failed placeholder. Every node is stamped with `wsCompiled` + the `exerciseId`
+ * so a later regenerate finds it again. `failedText` is the content-language string for
+ * the placeholder; `band` is the lesson's year band (from `context.year`), needed only
+ * when the exercise declared `items[]`. Delegates the items-vs-markdown fork to
+ * `buildExerciseContent`, the SAME builder compile uses — so a regenerated exercise and
+ * a freshly-compiled one are laid out identically.
  */
 export function buildExerciseNodes(
   exerciseId: string,
   payload: ExerciseRegenPayload,
   failedText: string,
+  band: YearBand,
 ): JSONContent[] {
   const raw =
     payload.failed || !payload.bodyDoc
       ? failedExercisePlaceholder(failedText)
-      : sizeImagesByCount(
-          fillImageSlots(layoutExercisePictures(exerciseNodes(payload.bodyDoc)), payload.imageSlots),
-        );
+      : buildExerciseContent(payload.bodyDoc, payload.imageSlots, {
+          items: payload.items ?? null,
+          passage: payload.passage ?? null,
+          band,
+        });
   return raw.map((n) => tagCompiled(n, exerciseId)) as JSONContent[];
 }
 

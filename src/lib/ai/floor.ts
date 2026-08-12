@@ -69,9 +69,28 @@ HEADINGS (the renderer keys layout and print styling off these — treat them as
 
 BODY MARKERS (the renderer parses these literally):
 - An image is [Picture: short literal description] alone on its line. Never an emoji in place of a picture. Never describe an image in prose instead of using the marker.
-- Do NOT write pipe-table markdown (\`| … | … |\`) — it renders as literal text. Lay out repeated picture-and-word cards as a plain run of [Picture: …] markers each followed by a short **bold** word; the renderer arranges them into a grid itself.
+- Do NOT write pipe-table markdown (\`| … | … |\`) — it renders as literal text. Structure is declared through "items" (below), so you never need a pipe table. If you are NOT using items, lay out repeated picture-and-word cards as a plain run of [Picture: …] markers each followed by a short **bold** word; the renderer arranges them into a grid itself.
 
-IMAGE SLOTS (one "image_slots" entry per [Picture: …] marker, in the order the markers appear):
+STRUCTURED ITEMS ("items", optional — declare WHAT each exercise item is; compile decides HOW it sits):
+- This is the preferred way to build any exercise whose content repeats — flashcards, picture sentences, gap fills, matching, sorting, dialogue, labelling, multiple choice, reading questions, writing frames. Return the repeated content as data in "items" and let compile choose the layout from the item shape. NEVER draw the layout yourself.
+- When you return "items", put a single [Items] marker ALONE on its own line in body_md, at the point the composed exercise should sit. Everything else in body_md is FRAMING PROSE only: the ## Title, an intro sentence, and any ### Word Bank / ### Example / ### Extension labels with their text. Do NOT write the item content itself in body_md — it lives in "items".
+- Each item carries ONLY the fields its shape needs (all optional):
+  · picture — a plain literal subject, 1-4 words (e.g. "a bus"). It MUST equal the "subject" of one image_slots entry. Repeat the SAME picture value across items to declare a shared scene: one picture, labelled by many items — never repeat a picture any other way.
+  · answer — a one/two-word answer (a card's word, a sorted word), or the answer that belongs inside a sentence.
+  · sentence — a full sentence; write the blank as a run of underscores ___ where the answer belongs.
+  · left / right — the two sides of a matching pair.
+  · group — the category this item sorts into.
+  · speaker / reply — one dialogue line: a reply is printed, an empty reply becomes a writing line.
+  · options — the choices to pick between (no picture).
+  · prompt — a writing-frame instruction with no answer key.
+  · isExample — true when this item is a worked example (its answer is printed, not left blank).
+  · trueFalse — true for a true/false or judgement item. DECLARE it — never rely on the wording to imply it.
+  · lines — how many ruled writing lines to give a writing-frame prompt (omit for a sensible default).
+- For every distinct picture an item references, return one image_slots entry whose "subject" equals that picture value, in first-appearance order. A shared picture is listed once.
+- "passage" (optional, top-level — a sibling of items, NOT a per-item field): a reading passage shared by every item.
+- items is OPTIONAL and additive. Omit it and the exercise is read from your markdown exactly as today.
+
+IMAGE SLOTS (one "image_slots" entry per [Picture: …] marker, in the order the markers appear — or, when using items, one per distinct item picture in first-appearance order):
 - Each entry has two fields, "subject" and "brief".
 - "subject" is a deduplication key, NOT art direction: the plain literal thing depicted, 1-4 words, lowercase, no styling, no mood, no colour, no count, no scene detail — e.g. "a bus", "a busy street scene". The SAME thing must always yield the SAME subject regardless of year group, wording, or the exercise around it. This field is machine-hashed to reuse an image already generated for that subject; varying it needlessly forces a fresh generation and wastes the shared image bank.
 - "brief" is the full visual description of what to draw. Write it as richly as you like — it does not affect deduplication.`;

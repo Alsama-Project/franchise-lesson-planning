@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getWorksheetClient } from '@/lib/anthropic';
 import { composeContextStack, logAiCompose, ContextStackError, type ContextDocUsed } from './context-stack';
 import { anchorLines, promptHash, type CurriculumAnchors } from './worksheet-shared';
-import type { ExerciseSpec } from '@/types/worksheet-exercise';
+import type { ExerciseSpec, WorksheetItem } from '@/types/worksheet-exercise';
 
 /**
  * Per-exercise worksheet GENERATOR service.
@@ -67,6 +67,11 @@ export interface WorksheetExerciseResult {
   bodyMd: string;
   /** The model-authored briefs, in marker order (see {@link AuthoredImageSlot}). */
   imageSlots: AuthoredImageSlot[];
+  /** The model's declared structured items, or null when it declared none (the markdown
+   *  path). Compile reads these to pick a composition rule; see `worksheet-compose`. */
+  items: WorksheetItem[] | null;
+  /** The exercise-level shared passage (rule 8), or null. */
+  passage: string | null;
   docsUsed: ContextDocUsed[];
   model: string;
   promptHash: string;
@@ -94,6 +99,35 @@ const RESPONSE_SCHEMA = {
         required: ['subject', 'brief'],
       },
     },
+    // OPTIONAL structured items — the composition contract. When present, compile reads
+    // the item shape and applies the first matching rule; when absent, the markdown path
+    // is unchanged. Every field is optional: an item carries only what its shape needs.
+    // The FLOOR governs which fields mean what; the schema pins only the structure.
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          picture: { type: 'string' },
+          answer: { type: 'string' },
+          sentence: { type: 'string' },
+          left: { type: 'string' },
+          right: { type: 'string' },
+          group: { type: 'string' },
+          speaker: { type: 'string' },
+          reply: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          prompt: { type: 'string' },
+          isExample: { type: 'boolean' },
+          trueFalse: { type: 'boolean' },
+          lines: { type: 'integer' },
+        },
+      },
+    },
+    // OPTIONAL exercise-level reading passage shared by every item (rule 8) — a sibling
+    // of items[], never a per-item field.
+    passage: { type: 'string' },
   },
   required: ['body_md', 'image_slots'],
 } as const;
@@ -145,9 +179,11 @@ function buildUserPrompt(context: WorksheetExerciseContext): string {
     '',
     'Write only the exercise itself — a heading is optional; no teacher notes, no answer key, no commentary.',
     '',
-    'IMAGES — "image_slots": return one entry per [Picture: …] marker in body_md, in the SAME order the markers appear (an empty array if there are none). Each entry has two fields, "subject" and "brief" — follow the IMAGE SLOTS contract above.',
+    'IMAGES — "image_slots": one entry per picture (per [Picture: …] marker, or per distinct item picture when using items), in first-appearance order. Each entry has "subject" and "brief" — follow the IMAGE SLOTS contract above.',
     '',
-    'Return ONLY the JSON object with keys "body_md" and "image_slots". No prose, no markdown fence.',
+    'STRUCTURE — prefer "items": when this exercise\'s content repeats, declare it in the optional "items" array and place a single [Items] marker in body_md where the composed exercise sits, per the STRUCTURED ITEMS contract above. Omit "items" to write the exercise as markdown instead. "passage" is optional and top-level.',
+    '',
+    'Return ONLY the JSON object. Its required keys are "body_md" and "image_slots"; "items" and "passage" are optional. No prose, no markdown fence.',
   );
   return lines.join('\n');
 }
@@ -161,8 +197,42 @@ function extractText(message: Anthropic.Message): string {
     .trim();
 }
 
-/** Parse the model reply into the exercise body markdown + authored image slots. */
-function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSlot[] } {
+/** Coerce one raw item object into a `WorksheetItem`, keeping only the fields present
+ *  and well-typed. Unknown/empty fields are dropped so an item carries exactly what its
+ *  shape needs — the rule dispatch reads presence, so a stray empty string must not
+ *  count as "has this field". */
+function parseItem(raw: unknown): WorksheetItem {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
+  const item: WorksheetItem = {};
+  const picture = str(o.picture); if (picture) item.picture = picture;
+  const answer = str(o.answer); if (answer) item.answer = answer;
+  const sentence = str(o.sentence); if (sentence) item.sentence = sentence;
+  const left = str(o.left); if (left) item.left = left;
+  const right = str(o.right); if (right) item.right = right;
+  const group = str(o.group); if (group) item.group = group;
+  const speaker = str(o.speaker); if (speaker) item.speaker = speaker;
+  const reply = str(o.reply); if (reply !== undefined) item.reply = reply;
+  const prompt = str(o.prompt); if (prompt) item.prompt = prompt;
+  if (Array.isArray(o.options)) {
+    const opts = o.options.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((x) => x.trim());
+    if (opts.length) item.options = opts;
+  }
+  if (o.isExample === true) item.isExample = true;
+  if (o.trueFalse === true) item.trueFalse = true;
+  if (typeof o.lines === 'number' && Number.isFinite(o.lines) && o.lines > 0) item.lines = Math.floor(o.lines);
+  return item;
+}
+
+/** Parse the model reply into the exercise body markdown + authored image slots + the
+ *  optional structured items and shared passage. */
+function parseReply(text: string): {
+  bodyMd: string;
+  imageSlots: AuthoredImageSlot[];
+  items: WorksheetItem[] | null;
+  passage: string | null;
+} {
   let raw = text;
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fence) raw = fence[1].trim();
@@ -173,7 +243,12 @@ function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSl
   } catch {
     throw new WorksheetExerciseError('Model did not return valid JSON.', 502);
   }
-  const obj = (parsed ?? {}) as { body_md?: unknown; image_slots?: unknown };
+  const obj = (parsed ?? {}) as {
+    body_md?: unknown;
+    image_slots?: unknown;
+    items?: unknown;
+    passage?: unknown;
+  };
   if (typeof obj.body_md !== 'string' || obj.body_md.trim().length === 0) {
     throw new WorksheetExerciseError('Model JSON did not contain a non-empty "body_md".', 502);
   }
@@ -186,7 +261,12 @@ function parseReply(text: string): { bodyMd: string; imageSlots: AuthoredImageSl
         };
       })
     : [];
-  return { bodyMd: obj.body_md, imageSlots };
+  // items[] is optional and additive: an absent (or empty) array → the markdown path,
+  // null so the row carries nothing rather than an empty array.
+  const parsedItems = Array.isArray(obj.items) ? obj.items.map(parseItem).filter((it) => Object.keys(it).length > 0) : [];
+  const items = parsedItems.length > 0 ? parsedItems : null;
+  const passage = typeof obj.passage === 'string' && obj.passage.trim().length > 0 ? obj.passage.trim() : null;
+  return { bodyMd: obj.body_md, imageSlots, items, passage };
 }
 
 /**
@@ -245,6 +325,6 @@ export async function generateExercise(
     );
   }
 
-  const { bodyMd, imageSlots } = parseReply(extractText(message));
-  return { bodyMd, imageSlots, docsUsed, model: MODEL, promptHash: promptHash(userPrompt) };
+  const { bodyMd, imageSlots, items, passage } = parseReply(extractText(message));
+  return { bodyMd, imageSlots, items, passage, docsUsed, model: MODEL, promptHash: promptHash(userPrompt) };
 }

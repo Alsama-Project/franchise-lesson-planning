@@ -8,8 +8,9 @@
 // imported by tests directly. `compileWorksheet` (a server action) composes it.
 
 import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
-import type { ImageSlot } from '@/types/worksheet-exercise';
+import type { ImageSlot, WorksheetItem } from '@/types/worksheet-exercise';
 import { PICTURE_MARKER, PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
+import { composeExerciseItems, type YearBand } from '@/lib/ai/worksheet-compose';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -678,6 +679,82 @@ export function layoutExercisePictures(nodes: unknown[]): unknown[] {
     }
   }
   return out;
+}
+
+// ── The composed (items[]) path vs. the markdown path ─────────────────────────
+//
+// When the model declared `items[]`, compile READS the item shape and applies the
+// first matching composition rule (`composeExerciseItems`) rather than pattern-matching
+// its markdown to GUESS a layout. The markdown the model still returns (`body_doc`)
+// carries only the framing prose — the `## Title`, the intro, `### Word Bank`,
+// `### Extension` — plus a single `[Items]` marker paragraph declaring WHERE the
+// composed arrangement sits. Compile replaces that marker with the composed nodes (or
+// appends them when the model omitted the marker).
+//
+// No `items[]` → the exact same `layoutExercisePictures → fillImageSlots →
+// sizeImagesByCount` pipeline as before, byte-for-byte. That is what keeps every
+// existing document, and any generation the model returns without items, working
+// exactly as it does today — the whole point of landing this in one branch.
+
+/** A top-level paragraph whose entire text is the literal `[Items]` marker — the
+ *  model's declaration of where the composed arrangement belongs. */
+export const ITEMS_MARKER_LINE = /^\s*\[Items\]\s*$/i;
+
+function isItemsMarkerParagraph(node: unknown): boolean {
+  if ((node as { type?: unknown })?.type !== 'paragraph') return false;
+  const text = pureText(node);
+  return text !== null && ITEMS_MARKER_LINE.test(text.trim());
+}
+
+/** Replace the first `[Items]` marker paragraph in `framing` with the composed nodes,
+ *  or append them when there is no marker (a model that declared items but no marker). */
+function spliceComposedAtMarker(framing: unknown[], composed: unknown[]): unknown[] {
+  const idx = framing.findIndex(isItemsMarkerParagraph);
+  if (idx === -1) return [...framing, ...composed];
+  return [...framing.slice(0, idx), ...composed, ...framing.slice(idx + 1)];
+}
+
+/** The composition inputs a row carries when the model declared `items[]`. `band` is
+ *  the lesson's year band (from `classes.year`), which parameterises every rule. */
+export interface ExerciseComposition {
+  items: WorksheetItem[] | null | undefined;
+  passage: string | null | undefined;
+  band: YearBand;
+}
+
+/**
+ * Build one exercise's top-level nodes. With `items[]`, compose them by rule and splice
+ * the result into the framing prose at the `[Items]` marker; without, run the unchanged
+ * markdown path. Both writers — `compileWorksheet` and the per-exercise splice — call
+ * this, so the two paths can never drift on which pipeline an exercise gets.
+ *
+ * `sizeImagesByCount` runs on both outputs: it respects the year-band widths the
+ * composer already set (it never overrides an explicit `width`), and sizes any stray
+ * image on the markdown path exactly as before.
+ */
+export function buildExerciseContent(
+  bodyDoc: WorksheetDoc | null,
+  imageSlots: ImageSlot[],
+  composition: ExerciseComposition | null,
+): unknown[] {
+  const items = (composition?.items ?? []).filter(
+    (it): it is WorksheetItem => !!it && typeof it === 'object',
+  );
+  if (composition && items.length > 0) {
+    const composed = composeExerciseItems({
+      items,
+      passage: composition.passage,
+      band: composition.band,
+      slots: imageSlots,
+    });
+    // The composer resolved item pictures by subject already; the framing prose carries
+    // no picture markers in the items path (floor), so no `fillImageSlots` here.
+    return sizeImagesByCount(spliceComposedAtMarker(exerciseNodes(bodyDoc), composed));
+  }
+  // No items → today's markdown path, unchanged.
+  return sizeImagesByCount(
+    fillImageSlots(layoutExercisePictures(exerciseNodes(bodyDoc)), imageSlots),
+  );
 }
 
 /**

@@ -351,6 +351,8 @@ export function useWorksheetGeneration({
         imageSlots: merged.image_slots ?? [],
         anchor: merged.generation?.spec?.template_anchor?.trim() || specAnchor,
         failed: merged.status === 'failed' || !merged.body_doc,
+        items: merged.generation?.items ?? null,
+        passage: merged.generation?.passage ?? null,
       };
     },
     [lessonPlanId, subjectId, fillImagesFor],

@@ -729,6 +729,55 @@ html:lang(ar) body {
   margin: 0;
   padding-inline-start: 1.2em;
 }
+/* ── Compile-built COMPOSITION PARTS (WorksheetPartStyle / worksheet-compose) ──
+ * The parts the eleven composition rules need but the schema had no node for. Each is
+ * a class carried by a global attribute, so it survives getJSON and prints, without a
+ * new node/mark. Screen + print alike. */
+
+/* A ruled answer/writing line — the model used to fake these with underscore runs,
+ * which wrap and print at the font's pitch. A real bottom border, ink-dark 1.4pt
+ * (within the 1.2-1.5pt spec), at the year band's pitch (the inline `min-height` the
+ * composer sets: 10 mm at Year 0-1, 8 mm above). Empty, so nothing sits on the line. */
+.ws-doc p.ws-rule {
+  border-bottom: 1.4pt solid #2A2422;
+  margin: 0 0 10px;
+}
+/* A choice line with a leading tick box (rules 1, 9) — a bordered square drawn as a
+ * pseudo-element, so no inline node is needed. */
+.ws-doc p.ws-tick {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 4px 0;
+}
+.ws-doc p.ws-tick::before {
+  content: '';
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border: 1.4pt solid #2A2422;
+  border-radius: 2px;
+  transform: translateY(2px);
+}
+/* A small box to write a numeric answer (rule 1). */
+.ws-doc p.ws-num-box {
+  width: 34px;
+  height: 30px;
+  border: 1.4pt solid #2A2422;
+  border-radius: 2px;
+  margin: 4px 0 0;
+}
+/* A borderless composition cell (matching gap, dialogue name column, scene labels),
+ * where a data-table border would read wrong. */
+.ws-doc td.ws-plain-cell {
+  border: none;
+  height: auto;
+  padding: 7px 10px;
+  vertical-align: top;
+}
+.ws-doc td.ws-plain-cell > p.ws-rule:last-child {
+  margin-bottom: 0;
+}
 .ws-doc .selectedCell::after {
   content: '';
   position: absolute;
@@ -968,7 +1017,6 @@ html:lang(ar) body {
     display: none !important;
   }
   .ws-doc img,
-  .ws-doc table,
   .ws-doc figure,
   .ws-doc figcaption,
   .ws-doc blockquote,
@@ -977,7 +1025,20 @@ html:lang(ar) body {
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  /* A heading should not print as the last line of a page, orphaned from its body. */
+  /* The break unit inside a table is the ROW and the CELL, never the whole table: a
+   * long picture-rows / sorting / dialogue table breaks BETWEEN rows across two sheets
+   * (arrangement 1g is designed to), but a row or a cell is never split down the middle
+   * — a picture is never cut in half and a sentence never leaves its picture behind.
+   * (Previously `break-inside: avoid` sat on `table`, which forced an 8-row table whole
+   * onto one sheet or overflowed it.) */
+  .ws-doc tr,
+  .ws-doc td,
+  .ws-doc th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* A heading should not print as the last line of a page, orphaned from its body — it
+   * stays with its first row. */
   .ws-doc h2,
   .ws-doc h3 {
     break-after: avoid;

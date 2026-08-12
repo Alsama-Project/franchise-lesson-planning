@@ -89,6 +89,26 @@ function reconcileImageSlots(
   return { bodyMd: cleaned.replace(/\n{3,}/g, '\n\n'), slots };
 }
 
+/**
+ * Build the persisted image slots for the ITEMS path directly from the model-authored
+ * `image_slots`. Here the pictures live in `items[]` (keyed by `subject`), NOT as
+ * `[Picture: …]` markers in `body_md`, so there is nothing to reconcile against the
+ * markdown — the authored slots ARE the pictures. A slot needs both a `subject` (the
+ * composer's lookup key and the image route's dedupe hash) and a non-empty `brief`
+ * (the image prompt); either missing drops it, mirroring the empty-brief drop in
+ * `reconcileImageSlots`. The mechanical fields are added here.
+ */
+function slotsFromAuthored(authored: AuthoredImageSlot[]): ImageSlot[] {
+  const slots: ImageSlot[] = [];
+  for (const a of authored) {
+    const subject = a.subject?.trim() ?? '';
+    const brief = a.brief?.trim() ?? '';
+    if (!subject || !brief) continue;
+    slots.push({ slot_id: randomUUID(), subject, brief, status: 'pending', storage_path: null });
+  }
+  return slots;
+}
+
 export async function POST(request: NextRequest) {
   let body: ExerciseBody;
   try {
@@ -188,9 +208,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unexpected error generating exercise.' }, { status: 500 });
   }
 
-  // Reconcile first: dropping empty-brief markers may trim body_md, so body_doc
-  // must be built from the cleaned markdown and the cleaned markdown persisted.
-  const { bodyMd, slots: imageSlots } = reconcileImageSlots(result.bodyMd, result.imageSlots);
+  // Two paths for the picture slots, one for each response shape:
+  //  · ITEMS path — pictures live in items[] keyed by subject; body_md is framing prose
+  //    plus the [Items] marker and carries no picture markers, so build slots directly
+  //    from the authored image_slots and leave body_md untrimmed.
+  //  · MARKDOWN path (no items) — reconcile [Picture: …] markers in body_md with the
+  //    authored briefs exactly as before (empty-brief markers dropped, body_md trimmed).
+  const hasItems = Array.isArray(result.items) && result.items.length > 0;
+  const { bodyMd, imageSlots } = hasItems
+    ? { bodyMd: result.bodyMd, imageSlots: slotsFromAuthored(result.imageSlots) }
+    : (() => {
+        const rec = reconcileImageSlots(result.bodyMd, result.imageSlots);
+        return { bodyMd: rec.bodyMd, imageSlots: rec.slots };
+      })();
   const bodyDoc = markdownToDoc(bodyMd);
   const generation: WorksheetExerciseGeneration = {
     model: result.model,
@@ -199,6 +229,9 @@ export async function POST(request: NextRequest) {
       exercise.generation?.curriculum_lesson_id ?? plan?.curriculum_lesson_id ?? null,
     spec,
     prompt_hash: result.promptHash,
+    // The composition inputs compile reads. Nested under generation (no new column).
+    items: result.items ?? null,
+    passage: result.passage ?? null,
   };
 
   const { data: updated, error: updErr } = await supabase

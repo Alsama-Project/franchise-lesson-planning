@@ -46,13 +46,11 @@ import { createClient } from '@/lib/supabase/server';
 import { readWorksheetScaffoldMarkdown, scaffoldDocContent } from '@/lib/ai/worksheet-shared';
 import {
   assembleWorksheetDoc,
-  exerciseNodes,
-  fillImageSlots,
-  layoutExercisePictures,
-  sizeImagesByCount,
+  buildExerciseContent,
   failedExercisePlaceholder,
   type PreparedExercise,
 } from '@/lib/ai/worksheet-assemble';
+import { yearBandForYear } from '@/lib/ai/worksheet-compose';
 import {
   toContentLanguage,
   worksheetArtifactText,
@@ -84,10 +82,22 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   // read to plans the caller may see.
   const { data: planRow } = await supabase
     .from('lesson_plans')
-    .select('subject_id')
+    .select('subject_id, class_id')
     .eq('id', lessonPlanId)
     .maybeSingle();
-  const subjectId = (planRow as { subject_id?: string | null } | null)?.subject_id ?? null;
+  const plan = planRow as { subject_id?: string | null; class_id?: string | null } | null;
+  const subjectId = plan?.subject_id ?? null;
+
+  // The lesson's year band parameterises every composition rule (grid n, picture width,
+  // ruled pitch, rows a side, group columns). It comes from the class's `year` (0-6).
+  // A centre-scoped plan has no class (class_id null) → the MIDDLE band, via
+  // `yearBandForYear(null)`: a Year 5 sheet at Year 0 proportions looks patronising and
+  // the reverse is unusable, so the middle fails least badly in both directions.
+  const classId = plan?.class_id ?? null;
+  const { data: classRow } = classId
+    ? await supabase.from('classes').select('year').eq('id', classId).maybeSingle()
+    : { data: null };
+  const band = yearBandForYear((classRow as { year?: number | null } | null)?.year ?? null);
 
   // The scaffold: the subject-scoped worksheet_builder document, as markdown. Null
   // when the subject has no such document — compile then appends every exercise in
@@ -113,19 +123,15 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   const exercises: PreparedExercise[] = ((exRows ?? []) as ExerciseRow[])
     .map((row): PreparedExercise | null => {
       const anchor = row.generation?.spec?.template_anchor?.trim() || null;
-      // Lay this row's pictures out as tables FIRST — keyed on the marker structure,
-      // while the pictures are still `[Picture: …]` text: a flashcard grid, or an
-      // image-beside-sentence gap fill. Then pair markers ↔ slots per row (fresh
-      // index), against THIS row's own body_doc + image_slots, so `fillImageSlots`
-      // resolves each marker in place, including the ones now sitting inside cells.
-      // Finally size every image by how many this exercise holds — layout-independent, so
-      // scattered picture-prompts shrink like a grid would (see `sizeImagesByCount`).
-      const nodes = sizeImagesByCount(
-        fillImageSlots(
-          layoutExercisePictures(exerciseNodes(row.body_doc)),
-          row.image_slots ?? [],
-        ),
-      );
+      // Build this row's nodes: the composed arrangement when the model declared
+      // `items[]` (first-matching composition rule), else the unchanged markdown path
+      // (layout → fill → size). `buildExerciseContent` owns that fork, so compile and
+      // the per-exercise splice can never drift on which pipeline a row gets.
+      const nodes = buildExerciseContent(row.body_doc, row.image_slots ?? [], {
+        items: row.generation?.items ?? null,
+        passage: row.generation?.passage ?? null,
+        band,
+      });
       if (nodes.length > 0) return { id: row.id, anchor, nodes };
       // A failed row carries no body — emit a visible, retryable placeholder rather
       // than dropping it (an invisible gap the teacher can't act on). A skeleton /

@@ -114,6 +114,34 @@ to English·Shatila with the seed alone (no move-2 migration). It ends with a
 count-asserting verify `SELECT` that reads **PASS**/**FAIL** per persona. Never runs
 from a user request.
 
+## `widen_test_personas.sql`
+
+The **re-runnable "widen the personas to FULL coverage" fixture — SUPERSEDES the
+English-only reset above.** The reset pinned `teacher1` / `coordinator1` to
+English·Shatila only, so a room of testers could no longer exercise any other subject
+(every attempt hit "You are not a member of this class"). This re-widens both shared
+personas so any impersonator can run the full teacher → coordinator → teacher loop in
+**any** subject at the testing centres. End state (with `A` active subjects, `C`
+testing centres — Shatila 1 + Bourj 1 by default):
+
+- **teacher1** → `A×C` `subject_membership` rows (`role='teacher'`), `A×C×2`
+  `class_teachers` links (Y1 + Y2 so `createTeacherPlan` auto-binds), 0
+  `coordinator_subject`, 1 primary (English·Shatila).
+- **coordinator1** → `A×C` `subject_membership` rows (`role='coordinator'`, the
+  chrome), `A` `coordinator_subject` rows (the power, one per subject), 0
+  `class_teachers` (it reviews, it does not teach), 1 primary (English·Shatila).
+
+"Every subject" is resolved **dynamically** from `public.subjects` (active rows), so
+it re-adds coverage as subjects are added; the testing centres are an explicit,
+editable list at the top of the file. It is **additive** (widening only) and
+**idempotent** (upserts / `ON CONFLICT` / clear-then-set primary), touching **only
+these two profiles' rows** plus the classes/links they need — no other user, no
+deletes of anyone else's data. The active subject space (`subject_membership.
+is_primary`, resolved by `resolveActiveMembership`: is_primary → English-first →
+earliest) starts at English·Shatila; testers switch to the subject under test via the
+header space switcher. Ends with two verify `SELECT`s (per-persona coverage summary +
+a subject × centre matrix). Service-role, one transaction, never from a user request.
+
 ## `report_test_data.sql` → `reset_test_data.sql`
 
 A two-step, **read-then-reset** one-off that resets the whole (centre, class) layer

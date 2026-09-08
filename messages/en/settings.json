@@ -327,7 +327,9 @@
       "addTerm": "Add term",
       "newTermName": "New term",
       "close": "Close",
+      "save": "Save",
       "remove": "Remove",
+      "discard": "Discard",
       "resizeAria": "Resize term — drag to change the number of weeks",
       "saveError": "Couldn’t save. Please try again.",
       "addError": "Couldn’t add the term. Please try again.",
@@ -335,8 +337,7 @@
       "dates": {
         "startLabel": "Term start",
         "endLabel": "Term end",
-        "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}",
-        "save": "Save dates"
+        "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}"
       },
       "prevYear": "Previous academic year",
       "nextYear": "Next academic year",

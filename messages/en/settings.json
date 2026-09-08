@@ -337,7 +337,9 @@
       "dates": {
         "startLabel": "Term start",
         "endLabel": "Term end",
-        "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}"
+        "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}",
+        "academicYear": "Academic year",
+        "willAddTo": "This term will be added to {year}"
       },
       "prevYear": "Previous academic year",
       "nextYear": "Next academic year",

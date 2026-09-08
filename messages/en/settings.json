@@ -327,11 +327,18 @@
       "addTerm": "Add term",
       "newTermName": "New term",
       "close": "Close",
+      "save": "Save",
       "remove": "Remove",
+      "discard": "Discard",
       "resizeAria": "Resize term — drag to change the number of weeks",
       "saveError": "Couldn’t save. Please try again.",
       "addError": "Couldn’t add the term. Please try again.",
       "range": "w/c {start} → w/c {end}",
+      "dates": {
+        "startLabel": "Term start",
+        "endLabel": "Term end",
+        "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}"
+      },
       "prevYear": "Previous academic year",
       "nextYear": "Next academic year",
       "centres": {
@@ -357,6 +364,8 @@
         "valid": "{weeks} weeks · {schools} · {years}",
         "noCentres": "No centres — produces no teaching weeks",
         "noYears": "No years — produces no teaching weeks",
+        "ordering": "Term end must be on or after term start",
+        "tooLong": "A term can’t exceed {max} teaching weeks",
         "overlap": "Overlaps {term} on {scope}"
       },
       "empty": {

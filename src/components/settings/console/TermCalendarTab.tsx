@@ -3,15 +3,19 @@
 // The admin "Term calendar" — school + year scoping (Claude Design "Option B" port).
 // A single-screen Sept→Aug band timeline: each term carries a SET OF CENTRES and a
 // SET OF CURRICULUM YEARS. Drag a band to move it (snaps to Monday), drag its right
-// edge to resize 1–40 weeks, click it to open the scope popover (centres + years).
+// edge to resize 1–40 weeks, click it to open the popover (dates + centres + years).
 // A term with zero centres OR zero years produces no teaching weeks — surfaced with
 // the app's non-destructive amber (status-progress) caution, never delete-red.
 //
-// Direct manipulation is client-side + optimistic; persistence is autosave-on-settle
-// via the term server actions — drag/resize write once on pointer-up (never per
-// pointermove), scope toggles write immediately. Writes revert with a toast on
-// failure. The anchor academic year is DERIVED from the earliest term (never a
-// hardcoded calendar year). No dnd-kit — hand-rolled pointer events, as before.
+// DRAFT-UNTIL-SAVE. Selecting or adding a term opens ONE working draft; every edit —
+// the date fields, the centre/year toggles, the name, and band drag/resize — mutates
+// that draft in memory only. Nothing autosaves. A single Save commits the whole
+// draft (create or update); the server re-runs the overlap guard and rejects a bad
+// write. "Add term" writes no row until Save (a new term has no band yet), so X on a
+// new draft discards it and X on an existing draft reverts (the band renders the
+// draft; persisted `terms` is the snapshot). "Remove" is the distinct delete.
+// The anchor academic year is DERIVED from the earliest term (never a hardcoded
+// calendar year). No dnd-kit — hand-rolled pointer events, as before.
 
 import {
   useCallback,
@@ -22,7 +26,6 @@ import {
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
-  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -30,7 +33,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 import type { CentreRow, TermRow } from '@/lib/console';
-import { createTerm, deleteTerm, updateTerm, type ConsoleResult } from '@/lib/actions/console';
+import { createTerm, deleteTerm, updateTerm } from '@/lib/actions/console';
+import { findTermOverlap, type TermScope } from '@/lib/term-overlap';
 import {
   academicYearOf,
   addDays,
@@ -115,12 +119,20 @@ function termRange(term: TermRow): { start: string; end: string } {
   return { start, end: addDays(start, term.numWeeks * 7) };
 }
 
-/** True when two terms' Monday ranges overlap in date. */
-function datesOverlap(a: TermRow, b: TermRow): boolean {
-  const ra = termRange(a);
-  const rb = termRange(b);
-  return ra.start < rb.end && rb.start < ra.end; // ISO strings order lexically
+/** Teaching weeks between two boundary Mondays, inclusive of both (`≥1` when end ≥ start). */
+function weeksBetweenMondays(startMon: string, endMon: string): number {
+  return daysBetween(startMon, endMon) / 7 + 1;
 }
+
+/** Order-independent equality for a set of ids/years (draft-vs-saved dirty check). */
+function sameSet<T>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((x) => set.has(x));
+}
+
+/** A term being edited in the popover. `isNew` drafts have no DB row until Save. */
+type DraftTerm = TermRow & { isNew: boolean };
 
 /**
  * Lane-pack terms so overlapping bands stack instead of colliding. Greedy by start
@@ -148,9 +160,9 @@ function packLanes(terms: TermRow[]): { laneOf: Map<string, number>; laneCount: 
 interface DragState {
   mode: 'move' | 'resize';
   id: string;
+  term: TermRow; // the band grabbed, used to seed the draft on first move
   grab: number; // pointer-frac minus band-start-frac at grab time
   origStart: string;
-  origWeeks: number;
   moved: boolean;
 }
 
@@ -168,9 +180,11 @@ export function TermCalendarTab({
   const searchParams = useSearchParams();
 
   const [terms, setTerms] = useState<TermRow[]>(initialTerms);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The single in-memory draft being edited (selected or newly added); null = closed.
+  const [draft, setDraft] = useState<DraftTerm | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const draftIsNew = draft?.isNew ?? false;
 
   // Selected academic year, driven by `?ay=<startYear>` (mirrors the `?tab=`
   // convention). Absent/malformed → the AY containing today in Beirut (the app's
@@ -184,11 +198,9 @@ export function TermCalendarTab({
 
   const goToAY = useCallback(
     (ay: number) => {
-      // Drop any selection first: the scope popover must not orphan onto a band that
-      // the new AY won't render. (Bands map over `visibleTerms`, so a stale id from
-      // another AY can't render a popover either — a term id belongs to exactly one
-      // AY — but clearing here keeps the state honest across the navigation.)
-      setSelectedId(null);
+      // Drop the open draft first: the popover must not orphan onto a band the new AY
+      // won't render. Any unsaved edits are discarded — switching AY is a navigation.
+      setDraft(null);
       const params = new URLSearchParams(searchParams.toString());
       params.set('ay', String(ay));
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
@@ -198,10 +210,14 @@ export function TermCalendarTab({
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  // The selected term's band element — the anchor the portalled scope popover
-  // measures against. React points this at whichever band currently has `isSel`
-  // (and back to null on deselect), so it always tracks the open popover's chip.
-  const anchorRef = useRef<HTMLDivElement | null>(null);
+  // The popover anchors to the selected term's band (existing draft) or to the "Add
+  // term" button (a new draft has no band yet). `getAnchor` returns whichever is live.
+  const bandAnchorRef = useRef<HTMLDivElement | null>(null);
+  const addBtnRef = useRef<HTMLButtonElement | null>(null);
+  const getAnchor = useCallback(
+    (): HTMLElement | null => (draftIsNew ? addBtnRef.current : bandAnchorRef.current),
+    [draftIsNew],
+  );
 
   // Only non-archived centres are assignable scope; ordered by the console's order.
   const activeCentres = useMemo(() => centres.filter((c) => !c.archivedAt), [centres]);
@@ -218,7 +234,7 @@ export function TermCalendarTab({
   }, [toast]);
 
   // Terms in the selected academic year — the only ones the axis, the bands and the
-  // count pill show. `conflictFor` deliberately still scans the FULL `terms` set
+  // count pill show. `findConflict` deliberately still scans the FULL `terms` set
   // (terms in different AYs occupy disjoint Sep→Aug windows, so this is moot by
   // construction, but it keeps the overlap guard correct regardless).
   const visibleTerms = useMemo(
@@ -226,8 +242,16 @@ export function TermCalendarTab({
     [terms, selectedAY],
   );
 
-  // Lane-pack over the VISIBLE terms so a filtered-out term leaves no vertical gap.
-  const { laneOf, laneCount } = useMemo(() => packLanes(visibleTerms), [visibleTerms]);
+  // Bands render from the DRAFT for the term being edited (a live preview of unsaved
+  // date edits / drag), and from the persisted row otherwise. A NEW draft has no
+  // band — it isn't in `terms` and isn't substituted — so it never shows before Save.
+  const renderTerms = useMemo(
+    () => visibleTerms.map((term) => (draft && !draft.isNew && draft.id === term.id ? draft : term)),
+    [visibleTerms, draft],
+  );
+
+  // Lane-pack over the rendered terms so a filtered-out term leaves no vertical gap.
+  const { laneOf, laneCount } = useMemo(() => packLanes(renderTerms), [renderTerms]);
   const trackHeight = Math.max(BAND_H + BAND_TOP * 2, BAND_TOP * 2 + laneCount * ROW_STEP);
 
   const num = useCallback((n: number) => formatNumber(n, locale), [locale]);
@@ -262,41 +286,27 @@ export function TermCalendarTab({
     [num, t],
   );
 
-  // A term whose (school, year) scope overlaps this term on overlapping dates. The
-  // DB has no constraint against it (it silently corrupts week_no), so the UI warns.
-  const conflictFor = useCallback(
-    (term: TermRow): { name: string; scope: string } | null => {
-      if (term.schoolIds.length === 0 || term.years.length === 0) return null;
-      for (const other of terms) {
-        if (other.id === term.id) continue;
-        if (!datesOverlap(term, other)) continue;
-        const sharedSchools = other.schoolIds.filter((s) => term.schoolIds.includes(s));
-        const sharedYears = other.years.filter((y) => term.years.includes(y));
-        if (sharedSchools.length > 0 && sharedYears.length > 0) {
-          return { name: other.name, scope: `${schoolsLabel(sharedSchools)} · ${yearsLabel(sharedYears)}` };
-        }
-      }
-      return null;
+  // Does `candidate` (proposed dates + this term's scope) overlap another term on a
+  // shared (school, year)? That silently corrupts week_no and the DB has no guard, so
+  // the popover disables Save and names the clash. Candidate-based (not term-based) so
+  // the popover can test its unsaved draft dates against the live terms. Shares the
+  // exact rule with the server write path via findTermOverlap — they can't drift.
+  const findConflict = useCallback(
+    (candidate: TermScope): { name: string; scope: string } | null => {
+      const hit = findTermOverlap(candidate, terms);
+      if (!hit) return null;
+      const name = terms.find((x) => x.id === hit.term.id)?.name ?? '';
+      return { name, scope: `${schoolsLabel(hit.schools)} · ${yearsLabel(hit.years)}` };
     },
     [terms, schoolsLabel, yearsLabel],
   );
 
-  // ── persistence: optimistic, revert + toast on failure ───────────────────────
-  const persist = useCallback((action: () => Promise<ConsoleResult>, revert: () => void) => {
-    startTransition(async () => {
-      const res = await action();
-      if (!res.ok) {
-        revert();
-        setToast(res.error ?? t('termCalendar.saveError'));
-      }
-    });
-  }, [t]);
-
-  const patchLocal = useCallback((id: string, patch: Partial<TermRow>) => {
-    setTerms((prev) => prev.map((term) => (term.id === id ? { ...term, ...patch } : term)));
+  // ── draft editing (nothing persists until Save) ───────────────────────────────
+  const patchDraft = useCallback((patch: Partial<TermRow>) => {
+    setDraft((d) => (d ? { ...d, ...patch } : d));
   }, []);
 
-  // ── drag: move start / resize weeks ──────────────────────────────────────────
+  // ── drag: move start / resize weeks — edits the DRAFT, never the DB ───────────
   const pointerFrac = useCallback((clientX: number): number => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return 0;
@@ -310,9 +320,9 @@ export function TermCalendarTab({
     dragRef.current = {
       mode,
       id: term.id,
+      term,
       grab: pointerFrac(e.clientX) - startFrac,
-      origStart: term.startsOn,
-      origWeeks: term.numWeeks,
+      origStart: mondayOf(term.startsOn),
       moved: false,
     };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -322,18 +332,17 @@ export function TermCalendarTab({
     const d = dragRef.current;
     if (!d) return;
     const pf = pointerFrac(e.clientX);
-    if (!d.moved && Math.abs(pf - (d.grab + dateToFrac(mondayOf(d.origStart)))) < 0.004) return;
+    if (!d.moved && Math.abs(pf - (d.grab + dateToFrac(d.origStart))) < 0.004) return;
     d.moved = true;
-    if (d.mode === 'move') {
-      // Clamp in DATE space to the selected-AY window so a drag can't push the term
-      // out of the AY the axis is rendering (which would silently vanish it).
-      const nextStart = clampStartToAY(mondayOf(fracToDate(pf - d.grab, selectedAY)), selectedAY);
-      patchLocal(d.id, { startsOn: nextStart });
-    } else {
-      const startMon = mondayOf(d.origStart);
-      const weeks = clampWeeks(daysBetween(startMon, fracToDate(pf, selectedAY)) / 7);
-      patchLocal(d.id, { numWeeks: weeks });
-    }
+    const patch =
+      d.mode === 'move'
+        ? // Clamp in DATE space to the selected-AY window so a drag can't push the
+          // term out of the AY the axis is rendering (which would vanish it).
+          { startsOn: clampStartToAY(mondayOf(fracToDate(pf - d.grab, selectedAY)), selectedAY) }
+        : { numWeeks: clampWeeks(daysBetween(d.origStart, fracToDate(pf, selectedAY)) / 7) };
+    // Seed the draft from the grabbed band on the first move (drag opens the draft),
+    // then keep editing it. Switching bands mid-edit adopts the newly grabbed term.
+    setDraft((cur) => ({ ...(cur && cur.id === d.id ? cur : { ...d.term, isNew: false }), ...patch }));
   }
 
   function onBandPointerUp(e: ReactPointerEvent, term: TermRow) {
@@ -345,79 +354,20 @@ export function TermCalendarTab({
       /* capture may already be gone */
     }
     if (!d) return;
+    // A click (no drag) toggles the draft open/closed for this term. A drag left the
+    // draft holding the new dates — it waits for Save.
     if (!d.moved) {
-      setSelectedId((cur) => (cur === term.id ? null : term.id));
-      return;
-    }
-    if (d.mode === 'move') {
-      const committed = mondayOf(term.startsOn);
-      persist(
-        () => updateTerm({ id: d.id, startsOn: committed }),
-        () => patchLocal(d.id, { startsOn: d.origStart }),
-      );
-    } else {
-      const committed = term.numWeeks;
-      persist(
-        () => updateTerm({ id: d.id, numWeeks: committed }),
-        () => patchLocal(d.id, { numWeeks: d.origWeeks }),
-      );
+      setDraft((cur) => (cur && cur.id === term.id && !cur.isNew ? null : { ...term, isNew: false }));
     }
   }
 
-  // ── scope edits (persist immediately) ────────────────────────────────────────
-  function setSchools(term: TermRow, schoolIds: string[]) {
-    const prev = term.schoolIds;
-    patchLocal(term.id, { schoolIds });
-    persist(
-      () => updateTerm({ id: term.id, schoolIds }),
-      () => patchLocal(term.id, { schoolIds: prev }),
-    );
-  }
-  function toggleSchool(term: TermRow, schoolId: string) {
-    const next = term.schoolIds.includes(schoolId)
-      ? term.schoolIds.filter((s) => s !== schoolId)
-      : [...term.schoolIds, schoolId];
-    setSchools(term, next);
-  }
-  function setYears(term: TermRow, years: number[]) {
-    const prev = term.years;
-    const next = [...new Set(years)].sort((a, b) => a - b);
-    patchLocal(term.id, { years: next });
-    persist(
-      () => updateTerm({ id: term.id, years: next }),
-      () => patchLocal(term.id, { years: prev }),
-    );
-  }
-  function toggleYear(term: TermRow, year: number) {
-    const next = term.years.includes(year)
-      ? term.years.filter((y) => y !== year)
-      : [...term.years, year];
-    setYears(term, next);
-  }
-  function renameTerm(term: TermRow, value: string) {
-    patchLocal(term.id, { name: value });
-  }
-  function commitName(term: TermRow, prevName: string) {
-    const name = term.name.trim() || t('termCalendar.newTermName');
-    if (name === prevName) {
-      if (name !== term.name) patchLocal(term.id, { name });
-      return;
-    }
-    patchLocal(term.id, { name });
-    persist(
-      () => updateTerm({ id: term.id, name }),
-      () => patchLocal(term.id, { name: prevName }),
-    );
-  }
-
-  // ── add / remove ─────────────────────────────────────────────────────────────
+  // ── open / add / save / remove ────────────────────────────────────────────────
   function addTerm() {
     // Default start: the Monday after the latest term's end WITHIN the selected AY,
     // else the first Monday of September of the selected AY. Clamp into the AY window
-    // so the new term always lands in the AY on screen (the Monday-after-latest could
-    // otherwise spill into September of the next AY and vanish from view). New terms
-    // are born with EMPTY scope so the amber warning forces an explicit centre/year
-    // choice (no silent over-grant).
+    // so the new term lands in the AY on screen. Born with EMPTY scope so the amber
+    // warning forces an explicit centre/year choice (no silent over-grant). This is a
+    // draft only — no DB row and no band until Save.
     let startsOn: string;
     if (visibleTerms.length) {
       const latest = visibleTerms.reduce((a, b) => (a.startsOn >= b.startsOn ? a : b));
@@ -425,46 +375,63 @@ export function TermCalendarTab({
     } else {
       startsOn = firstMondayOfSeptember(selectedAY);
     }
-    const tempId = `temp-${crypto.randomUUID()}`;
-    const optimistic: TermRow = {
-      id: tempId,
+    setDraft({
+      id: `temp-${crypto.randomUUID()}`,
       name: t('termCalendar.newTermName'),
       startsOn,
       numWeeks: 12,
       schoolIds: [],
       years: [],
-    };
-    setTerms((prev) => [...prev, optimistic]);
-    setSelectedId(tempId);
-    startTransition(async () => {
-      const res = await createTerm({
-        name: t('termCalendar.newTermName'),
-        startsOn,
-        numWeeks: 12,
-        schoolIds: [],
-        years: [],
-      });
-      if (!res.ok || !res.term) {
-        setTerms((prev) => prev.filter((term) => term.id !== tempId));
-        setSelectedId((cur) => (cur === tempId ? null : cur));
-        setToast(res.error ?? t('termCalendar.addError'));
-        return;
-      }
-      const real = res.term;
-      setTerms((prev) => prev.map((term) => (term.id === tempId ? real : term)));
-      setSelectedId((cur) => (cur === tempId ? real.id : cur));
+      isNew: true,
     });
   }
 
-  function removeTerm(term: TermRow) {
+  // Commit the whole draft in one write — dates, centres and years together. The
+  // server re-runs the overlap guard and rejects a bad write (toast, draft stays
+  // open to fix). On success the persisted set updates and the popover closes.
+  function saveDraft() {
+    const d = draft;
+    if (!d) return;
+    const name = d.name.trim() || t('termCalendar.newTermName');
+    const startsOn = mondayOf(d.startsOn);
+    const payload = { name, startsOn, numWeeks: d.numWeeks, schoolIds: d.schoolIds, years: d.years };
+    startTransition(async () => {
+      if (d.isNew) {
+        const res = await createTerm(payload);
+        if (!res.ok || !res.term) {
+          setToast(res.error ?? t('termCalendar.addError'));
+          return;
+        }
+        const real = res.term;
+        setTerms((prev) => [...prev, real]);
+      } else {
+        const res = await updateTerm({ id: d.id, ...payload });
+        if (!res.ok) {
+          setToast(res.error ?? t('termCalendar.saveError'));
+          return;
+        }
+        setTerms((prev) => prev.map((x) => (x.id === d.id ? { ...x, ...payload } : x)));
+      }
+      setDraft((cur) => (cur && cur.id === d.id ? null : cur));
+    });
+  }
+
+  // Remove: delete an existing term (optimistic, revert on failure), or just discard
+  // a new draft (nothing was ever written). Distinct from Save/close.
+  function removeDraft() {
+    const d = draft;
+    if (!d) return;
+    setDraft(null);
+    if (d.isNew) return;
     const snapshot = terms;
-    setTerms((prev) => prev.filter((x) => x.id !== term.id));
-    setSelectedId((cur) => (cur === term.id ? null : cur));
-    if (term.id.startsWith('temp-')) return;
-    persist(
-      () => deleteTerm({ id: term.id }),
-      () => setTerms(snapshot),
-    );
+    setTerms((prev) => prev.filter((x) => x.id !== d.id));
+    startTransition(async () => {
+      const res = await deleteTerm({ id: d.id });
+      if (!res.ok) {
+        setTerms(snapshot);
+        setToast(res.error ?? t('termCalendar.saveError'));
+      }
+    });
   }
 
   // Reused for the navigator label AND (short form) the empty-state copy. The year
@@ -490,6 +457,7 @@ export function TermCalendarTab({
           {t('termCalendar.termsCount', { count: visibleTerms.length })}
         </span>
         <button
+          ref={addBtnRef}
           type="button"
           onClick={addTerm}
           className="ml-auto inline-flex items-center gap-[6px] rounded-[9px] bg-teal px-[15px] py-[9px] text-[13px] font-semibold text-white transition-colors hover:bg-[#1a6a5d]"
@@ -539,8 +507,10 @@ export function TermCalendarTab({
           ))}
         </div>
 
-        {/* Track */}
-        <div dir="ltr" ref={trackRef} className="relative" style={{ height: trackHeight }} onPointerDown={() => setSelectedId(null)}>
+        {/* Track — a pointerdown on the empty track closes the draft (discards a new
+            one, reverts an existing one). Bands stopPropagation, so this fires only
+            for genuine background clicks. */}
+        <div dir="ltr" ref={trackRef} className="relative" style={{ height: trackHeight }} onPointerDown={() => setDraft(null)}>
           {/* Gridlines */}
           <div className="pointer-events-none absolute inset-0 grid grid-cols-12">
             {MONTH_COLS.map((m, i) => (
@@ -555,16 +525,14 @@ export function TermCalendarTab({
               </p>
             </div>
           ) : (
-            visibleTerms.map((term) => {
+            renderTerms.map((term) => {
               const startMon = mondayOf(term.startsOn);
-              const lastMon = addDays(startMon, (term.numWeeks - 1) * 7);
               const end = addDays(startMon, term.numWeeks * 7);
               const leftFrac = Math.max(0, Math.min(1, dateToFrac(startMon)));
               const rightFrac = Math.max(0, Math.min(1, dateToFrac(end)));
               const left = leftFrac * 100;
               const width = Math.max(6, (rightFrac - leftFrac) * 100);
-              const isSel = term.id === selectedId;
-              const conflict = conflictFor(term);
+              const isSel = !!draft && !draft.isNew && draft.id === term.id;
               const noCentres = term.schoolIds.length === 0;
               const noYears = term.years.length === 0;
               // A term with zero centres OR zero years produces zero `term_week`
@@ -575,16 +543,11 @@ export function TermCalendarTab({
               const scopeLine = inert
                 ? t('termCalendar.scopeInert')
                 : `${schoolsLabel(term.schoolIds)} · ${yearsLabel(term.years)}`;
-              const range = t('termCalendar.range', {
-                start: formatShortWeekdayDate(startMon),
-                end: formatShortWeekdayDate(lastMon),
-              });
-              const valid = !noCentres && !noYears && !conflict;
 
               return (
                 <div
                   key={term.id}
-                  ref={isSel ? anchorRef : undefined}
+                  ref={isSel ? bandAnchorRef : undefined}
                   tabIndex={-1}
                   onPointerDown={(e) => onBandPointerDown(e, term, 'move')}
                   onPointerMove={onBandPointerMove}
@@ -621,46 +584,33 @@ export function TermCalendarTab({
                     <span className="h-[14px] w-[2px] rounded-[2px] bg-[#9ACABE]" />
                   </span>
                   <span className="flex-none text-[9.5px] font-bold text-[#4E9085]">W{num(term.numWeeks)}</span>
-
-                  {isSel ? (
-                    <ScopePopover
-                      term={term}
-                      anchorRef={anchorRef}
-                      range={range}
-                      centres={activeCentres}
-                      valid={valid}
-                      summary={
-                        valid
-                          ? t('termCalendar.validity.valid', {
-                              weeks: num(term.numWeeks),
-                              schools: schoolsLabel(term.schoolIds),
-                              years: yearsLabel(term.years),
-                            })
-                          : noCentres
-                            ? t('termCalendar.validity.noCentres')
-                            : noYears
-                              ? t('termCalendar.validity.noYears')
-                              : t('termCalendar.validity.overlap', {
-                                  term: conflict?.name ?? '',
-                                  scope: conflict?.scope ?? '',
-                                })
-                      }
-                      onClose={() => setSelectedId(null)}
-                      onRename={(v) => renameTerm(term, v)}
-                      onCommitName={(prevName) => commitName(term, prevName)}
-                      onSetSchools={(ids) => setSchools(term, ids)}
-                      onToggleSchool={(id) => toggleSchool(term, id)}
-                      onSetYears={(ys) => setYears(term, ys)}
-                      onToggleYear={(y) => toggleYear(term, y)}
-                      onRemove={() => removeTerm(term)}
-                    />
-                  ) : null}
                 </div>
               );
             })
           )}
         </div>
       </div>
+
+      {/* One popover for the open draft — keyed by id so it remeasures when switching
+          terms. Anchored to the selected band, or to "Add term" for a new draft. */}
+      {draft ? (
+        <ScopePopover
+          key={draft.id}
+          draft={draft}
+          persisted={draft.isNew ? null : (terms.find((x) => x.id === draft.id) ?? null)}
+          getAnchor={getAnchor}
+          centres={activeCentres}
+          busy={isPending}
+          num={num}
+          schoolsLabel={schoolsLabel}
+          yearsLabel={yearsLabel}
+          findConflict={findConflict}
+          onPatch={patchDraft}
+          onSave={saveDraft}
+          onClose={() => setDraft(null)}
+          onRemove={removeDraft}
+        />
+      ) : null}
 
       {/* Error toast */}
       {toast ? (
@@ -673,54 +623,126 @@ export function TermCalendarTab({
 }
 
 function ScopePopover({
-  term,
-  anchorRef,
-  range,
+  draft,
+  persisted,
+  getAnchor,
   centres,
-  valid,
-  summary,
+  busy,
+  num,
+  schoolsLabel,
+  yearsLabel,
+  findConflict,
+  onPatch,
+  onSave,
   onClose,
-  onRename,
-  onCommitName,
-  onSetSchools,
-  onToggleSchool,
-  onSetYears,
-  onToggleYear,
   onRemove,
 }: {
-  term: TermRow;
-  /** The band element the popover anchors to (measured from the viewport). */
-  anchorRef: RefObject<HTMLDivElement | null>;
-  range: string;
+  /** The in-memory working copy — every field edited here mutates only this. */
+  draft: DraftTerm;
+  /** The last-saved row, for the dirty check; null for a new draft. */
+  persisted: TermRow | null;
+  /** The live anchor element (selected band, or the "Add term" button for a new draft). */
+  getAnchor: () => HTMLElement | null;
   centres: CentreRow[];
-  valid: boolean;
-  summary: string;
+  /** A save/remove is in flight — disable Save to avoid a double submit. */
+  busy: boolean;
+  num: (n: number) => string;
+  schoolsLabel: (ids: string[]) => string;
+  yearsLabel: (years: number[]) => string;
+  /** Overlap test for a candidate (draft dates + scope) vs the live terms. */
+  findConflict: (candidate: TermScope) => { name: string; scope: string } | null;
+  onPatch: (patch: Partial<TermRow>) => void;
+  onSave: () => void;
   onClose: () => void;
-  onRename: (value: string) => void;
-  onCommitName: (prevName: string) => void;
-  onSetSchools: (ids: string[]) => void;
-  onToggleSchool: (id: string) => void;
-  onSetYears: (years: number[]) => void;
-  onToggleYear: (year: number) => void;
   onRemove: () => void;
 }) {
   const t = useTranslations('settings');
   const locale = useLocale();
-  const nameAtFocus = useRef(term.name);
   const popRef = useRef<HTMLDivElement>(null);
+
+  // Dates are two independent Monday anchors on the draft; the week count is derived
+  // (N = whole weeks between them, inclusive), so moving EITHER updates it live.
+  const startMon = mondayOf(draft.startsOn);
+  const endMon = addDays(startMon, (draft.numWeeks - 1) * 7);
+  const draftWeeks = draft.numWeeks; // can be <1 (end<start) or >MAX mid-edit
+  const orderingOk = draftWeeks >= MIN_WEEKS; // end ≥ start
+  const tooLong = draftWeeks > MAX_WEEKS;
+
+  // Overlap only makes sense for in-range, scoped dates; test the DRAFT against the
+  // live terms. Empty-scope terms never conflict (findTermOverlap returns null).
+  const dateConflict =
+    orderingOk && !tooLong
+      ? findConflict({
+          id: draft.id,
+          startsOn: startMon,
+          numWeeks: draftWeeks,
+          schoolIds: draft.schoolIds,
+          years: draft.years,
+        })
+      : null;
+
+  const noCentres = draft.schoolIds.length === 0;
+  const noYears = draft.years.length === 0;
+
+  // Every failing reason, surfaced together in the amber strip (there can be more
+  // than one — e.g. empty scope AND an overlap). Order: scope, then dates.
+  const reasons: string[] = [];
+  if (noCentres) reasons.push(t('termCalendar.validity.noCentres'));
+  if (noYears) reasons.push(t('termCalendar.validity.noYears'));
+  if (!orderingOk) reasons.push(t('termCalendar.validity.ordering'));
+  else if (tooLong) reasons.push(t('termCalendar.validity.tooLong', { max: num(MAX_WEEKS) }));
+  if (dateConflict)
+    reasons.push(t('termCalendar.validity.overlap', { term: dateConflict.name, scope: dateConflict.scope }));
+
+  const valid = reasons.length === 0;
+  // Ordering, the 40-week cap and overlap HARD-block Save. Empty scope only WARNS —
+  // a scopeless term is valid-but-inert, so it must still save (a new term is born
+  // scopeless). Only these date/overlap rules gate the write.
+  const hardBlocked = !orderingOk || tooLong || !!dateConflict;
+  const dirty =
+    draft.isNew ||
+    !persisted ||
+    draft.name.trim() !== persisted.name ||
+    startMon !== mondayOf(persisted.startsOn) ||
+    draftWeeks !== persisted.numWeeks ||
+    !sameSet(draft.schoolIds, persisted.schoolIds) ||
+    !sameSet(draft.years, persisted.years);
+  const canSave = !hardBlocked && dirty && !busy;
+
+  // ── draft edit handlers (mutate the draft only) ──────────────────────────────
+  // Start edit keeps the END fixed and recomputes weeks; end edit keeps the start.
+  const editStart = (v: string) => {
+    if (!v) return;
+    const s = mondayOf(v);
+    onPatch({ startsOn: s, numWeeks: weeksBetweenMondays(s, endMon) });
+  };
+  const editEnd = (v: string) => {
+    if (!v) return;
+    onPatch({ numWeeks: weeksBetweenMondays(startMon, mondayOf(v)) });
+  };
+  const toggleSchool = (id: string) =>
+    onPatch({
+      schoolIds: draft.schoolIds.includes(id)
+        ? draft.schoolIds.filter((s) => s !== id)
+        : [...draft.schoolIds, id],
+    });
+  const setYears = (years: number[]) => onPatch({ years: [...new Set(years)].sort((a, b) => a - b) });
+  const toggleYear = (year: number) =>
+    setYears(draft.years.includes(year) ? draft.years.filter((y) => y !== year) : [...draft.years, year]);
+
   // Fixed viewport coordinates; null until first measured (rendered hidden so it
   // never flashes at 0,0). The timeline card sits inside an `overflow-hidden`
   // console wrapper (SettingsConsole), which clips an in-flow absolute popover
-  // regardless of z-index — so we portal to <body> and position against the chip's
+  // regardless of z-index — so we portal to <body> and position against the anchor's
   // viewport rect, mirroring InlinePromptPopover / the worksheet Toolbar dropdown.
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Place below the chip; flip above when there isn't room; clamp into the viewport
-  // horizontally (chips near either timeline edge, LTR or RTL — the rect is physical).
+  // Place below the anchor; flip above when there isn't room; clamp into the viewport
+  // horizontally (anchors near either timeline edge, LTR or RTL — the rect is physical).
   useLayoutEffect(() => {
     const place = () => {
       const el = popRef.current;
-      const a = anchorRef.current?.getBoundingClientRect();
+      const a = getAnchor()?.getBoundingClientRect();
       if (!el || !a) return;
       const r = el.getBoundingClientRect();
       const margin = 8;
@@ -748,15 +770,15 @@ function ScopePopover({
       window.removeEventListener('resize', place);
       ro?.disconnect();
     };
-  }, [anchorRef]);
+  }, [getAnchor]);
 
-  // Close on outside pointerdown and on Escape. A pointerdown on the anchor chip is
-  // left alone so the chip's own toggle handles it (no close-then-reopen fight).
+  // Close on outside pointerdown and on Escape. A pointerdown on the anchor is left
+  // alone so the anchor's own handler runs (no close-then-reopen fight).
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       const target = e.target as Node;
       if (popRef.current?.contains(target)) return;
-      if (anchorRef.current?.contains(target)) return;
+      if (getAnchor()?.contains(target)) return;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -771,14 +793,14 @@ function ScopePopover({
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey);
     };
-  }, [anchorRef, onClose]);
+  }, [getAnchor, onClose]);
 
-  // Return focus to the chip when the popover closes (captured at open, so a term
-  // deleted from the popover — its band gone — is a harmless no-op).
+  // Return focus to the anchor when the popover closes (captured at open, so a term
+  // removed from the popover — its band gone — is a harmless no-op).
   useEffect(() => {
-    const anchor = anchorRef.current;
+    const anchor = getAnchor();
     return () => anchor?.focus();
-  }, [anchorRef]);
+  }, [getAnchor]);
 
   if (typeof document === 'undefined') return null;
 
@@ -794,7 +816,7 @@ function ScopePopover({
     <div
       ref={popRef}
       role="dialog"
-      aria-label={term.name || t('termCalendar.newTermName')}
+      aria-label={draft.name || t('termCalendar.newTermName')}
       onPointerDown={(e) => e.stopPropagation()}
       className="fixed z-[120] w-[316px] rounded-[14px] border border-[#E2D9CC] bg-white p-[16px] shadow-[0_16px_38px_-12px_rgba(60,40,30,0.4)]"
       style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? 'visible' : 'hidden', cursor: 'default' }}
@@ -804,17 +826,12 @@ function ScopePopover({
         <span className="h-[9px] w-[9px] flex-none rounded-[3px] bg-teal" />
         <div className="min-w-0 flex-1">
           <input
-            value={term.name}
-            onChange={(e) => onRename(e.target.value)}
-            onFocus={() => {
-              nameAtFocus.current = term.name;
-            }}
-            onBlur={() => onCommitName(nameAtFocus.current)}
+            value={draft.name}
+            onChange={(e) => onPatch({ name: e.target.value })}
             dir="auto"
             className="w-full truncate border-none bg-transparent p-0 text-[13.5px] font-semibold text-[#2A2520] outline-none"
             placeholder={t('termCalendar.newTermName')}
           />
-          <div className="text-[11px] text-[#9A9087]">{range}</div>
         </div>
         <button
           type="button"
@@ -826,16 +843,56 @@ function ScopePopover({
         </button>
       </div>
 
+      {/* Editable term dates — start and end both snap to their week's Monday; the
+          teaching-week count is derived live. Kept dir="ltr": the w/c dates use Latin
+          month/weekday abbreviations, as the band does. */}
+      <div dir="ltr" className="mb-[15px] rounded-[10px] border border-[#ECE4D7] bg-[#FCFAF6] p-[11px]">
+        <div className="grid grid-cols-2 gap-[10px]">
+          <label className="flex min-w-0 flex-col gap-[4px]">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+              {t('termCalendar.dates.startLabel')}
+            </span>
+            <input
+              type="date"
+              value={startMon}
+              max={endMon}
+              onChange={(e) => editStart(e.target.value)}
+              className="w-full rounded-[7px] border border-[#E2D9CC] bg-white px-[7px] py-[6px] text-[11.5px] text-[#2A2520] outline-none focus:border-teal"
+            />
+            <span className="text-[10.5px] font-medium text-[#7C7266]">{`w/c ${formatShortWeekdayDate(startMon)}`}</span>
+          </label>
+          <label className="flex min-w-0 flex-col gap-[4px]">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+              {t('termCalendar.dates.endLabel')}
+            </span>
+            <input
+              type="date"
+              value={endMon}
+              min={startMon}
+              max={addDays(startMon, (MAX_WEEKS - 1) * 7)}
+              onChange={(e) => editEnd(e.target.value)}
+              className="w-full rounded-[7px] border border-[#E2D9CC] bg-white px-[7px] py-[6px] text-[11.5px] text-[#2A2520] outline-none focus:border-teal"
+            />
+            <span className="text-[10.5px] font-medium text-[#7C7266]">{`w/c ${formatShortWeekdayDate(endMon)}`}</span>
+          </label>
+        </div>
+        <div className="mt-[9px]">
+          <span className={cn('text-[11.5px] font-semibold', !orderingOk || tooLong ? 'text-status-progress' : 'text-teal-deep')}>
+            {t('termCalendar.dates.weeks', { count: Math.max(0, draftWeeks) })}
+          </span>
+        </div>
+      </div>
+
       {/* Centres */}
       <div className="mb-[8px] flex items-center gap-[8px]">
         <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
           {t('termCalendar.centres.label')}
         </span>
         <div className="ml-auto flex gap-[5px]">
-          <button type="button" onClick={() => onSetSchools(centres.map((c) => c.id))} className={quick(false)}>
+          <button type="button" onClick={() => onPatch({ schoolIds: centres.map((c) => c.id) })} className={quick(false)}>
             {t('termCalendar.quick.all')}
           </button>
-          <button type="button" onClick={() => onSetSchools([])} className={quick(false)}>
+          <button type="button" onClick={() => onPatch({ schoolIds: [] })} className={quick(false)}>
             {t('termCalendar.quick.none')}
           </button>
         </div>
@@ -847,12 +904,12 @@ function ScopePopover({
           </div>
         ) : (
           centres.map((c) => {
-            const checked = term.schoolIds.includes(c.id);
+            const checked = draft.schoolIds.includes(c.id);
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => onToggleSchool(c.id)}
+                onClick={() => toggleSchool(c.id)}
                 className={cn(
                   'flex items-center gap-[10px] rounded-[8px] border px-[10px] py-[8px] text-start',
                   checked ? 'border-teal-tint-border bg-teal-tint' : 'border-[#E7DECF] bg-white',
@@ -881,25 +938,25 @@ function ScopePopover({
           {t('termCalendar.years.label')}
         </span>
         <div className="ml-auto flex gap-[5px]">
-          <button type="button" onClick={() => onSetYears(Y1_6)} className={quick(true)}>
+          <button type="button" onClick={() => setYears(Y1_6)} className={quick(true)}>
             {t('termCalendar.years.y16')}
           </button>
-          <button type="button" onClick={() => onSetYears(YEAR_CHIPS)} className={quick(false)}>
+          <button type="button" onClick={() => setYears(YEAR_CHIPS)} className={quick(false)}>
             {t('termCalendar.quick.all')}
           </button>
-          <button type="button" onClick={() => onSetYears([])} className={quick(false)}>
+          <button type="button" onClick={() => setYears([])} className={quick(false)}>
             {t('termCalendar.quick.none')}
           </button>
         </div>
       </div>
       <div className="mb-[14px] flex flex-wrap gap-[6px]">
         {YEAR_CHIPS.map((n) => {
-          const checked = term.years.includes(n);
+          const checked = draft.years.includes(n);
           return (
             <button
               key={n}
               type="button"
-              onClick={() => onToggleYear(n)}
+              onClick={() => toggleYear(n)}
               className={cn(
                 'rounded-[8px] border-[1.5px] px-[11px] py-[6px] text-[12px] font-semibold',
                 checked ? 'border-teal bg-teal text-white' : 'border-[#E0D6C7] bg-white text-[#6E6358]',
@@ -911,29 +968,57 @@ function ScopePopover({
         })}
       </div>
 
-      {/* Validity strip — teal when valid, amber (status-progress) otherwise. Never red. */}
+      {/* Validity strip — teal when valid, amber (status-progress) otherwise. Never
+          red. Reflects the DRAFT, and lists EVERY failing reason (empty scope,
+          ordering, the 40-week cap, an overlap) so nothing is hidden behind another. */}
       <div
         className={cn(
-          'flex items-center gap-[8px] rounded-[9px] border px-[11px] py-[9px]',
+          'flex items-start gap-[8px] rounded-[9px] border px-[11px] py-[9px]',
           valid
             ? 'border-teal-tint-border bg-teal-tint'
             : 'border-status-progress-border bg-status-progress-bg',
         )}
       >
         {valid ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-teal" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mt-[1px] flex-none text-teal" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
         ) : (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-status-progress" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="mt-[1px] flex-none text-status-progress" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
         )}
-        <span className={cn('flex-1 text-[11.5px] font-semibold', valid ? 'text-teal-deep' : 'text-status-progress')} dir="auto">
-          {summary}
-        </span>
+        <div className={cn('flex-1 space-y-[3px] text-[11.5px] font-semibold', valid ? 'text-teal-deep' : 'text-status-progress')} dir="auto">
+          {valid ? (
+            <span>
+              {t('termCalendar.validity.valid', {
+                weeks: num(draftWeeks),
+                schools: schoolsLabel(draft.schoolIds),
+                years: yearsLabel(draft.years),
+              })}
+            </span>
+          ) : (
+            reasons.map((reason) => <div key={reason}>{reason}</div>)
+          )}
+        </div>
+      </div>
+
+      {/* Footer — one Save commits the whole draft; Remove deletes an existing term
+          or discards a new one. */}
+      <div className="mt-[13px] flex items-center gap-[10px]">
         <button
           type="button"
           onClick={onRemove}
-          className="flex-none text-[11.5px] font-semibold text-danger hover:opacity-70"
+          className="text-[12px] font-semibold text-danger hover:opacity-70"
         >
-          {t('termCalendar.remove')}
+          {draft.isNew ? t('termCalendar.discard') : t('termCalendar.remove')}
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave}
+          className={cn(
+            'ml-auto rounded-[9px] px-[16px] py-[8px] text-[13px] font-semibold transition-colors',
+            canSave ? 'bg-teal text-white hover:bg-[#1a6a5d]' : 'cursor-not-allowed bg-[#F0E9DE] text-[#B7AEA3]',
+          )}
+        >
+          {t('termCalendar.save')}
         </button>
       </div>
     </div>,

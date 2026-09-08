@@ -49,8 +49,12 @@ const MAX_WEEKS = 40;
 const ROW_STEP = 54; // px between stacked lanes
 const BAND_TOP = 4; // px before the first lane
 const BAND_H = 46; // px band height
-// Month columns in academic (Sept-first) order, as short labels.
-const MONTH_COLS = ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+// Month columns in academic (August-first) order, as short labels. The year starts
+// after the August break, so the axis opens on August — a late-August term start
+// then renders at the LEFT edge of its year rather than clipped off a Sept axis.
+const MONTH_COLS = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
+// Column index where the calendar year rolls over (January = year `ay`+1).
+const YEAR_ROLLOVER_COL = 5;
 const YEAR_CHIPS = [0, 1, 2, 3, 4, 5, 6];
 const Y1_6 = [1, 2, 3, 4, 5, 6];
 
@@ -59,45 +63,49 @@ function clampWeeks(n: number): number {
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, Math.round(n)));
 }
 
-/** The first Monday on or after 1 September of academic year `ay`. */
-function firstMondayOfSeptember(ay: number): string {
-  const sep1 = `${ay}-09-01`;
-  const m = mondayOf(sep1);
-  return m < sep1 ? addDays(m, 7) : m;
+/** The first Monday on or after `iso` (a `YYYY-MM-DD`). */
+function firstMondayOnOrAfter(iso: string): string {
+  const m = mondayOf(iso);
+  return m < iso ? addDays(m, 7) : m;
+}
+
+/** The first Monday on or after 1 August of academic year `ay` — the axis's left edge. */
+function firstMondayOfAugust(ay: number): string {
+  return firstMondayOnOrAfter(`${ay}-08-01`);
 }
 
 /**
  * Clamp a term's start (a Monday) into the selected academic-year window so a drag
  * can never push `starts_on` out of the AY the axis is showing — otherwise the band
  * would silently vanish from view (and persist into another AY). The window is
- * 1 Sep (`ay`) → 31 Aug (`ay`+1); both bounds are Mondays inside the AY, so the
- * result always satisfies the DB's `isodow = 1` check and stays in `ay`. A term may
- * still END past August — the right-edge "continues beyond range" cue covers that.
+ * 1 Aug (`ay`) → 31 Jul (`ay`+1) — the August-anchored year — so both bounds bucket
+ * to `ay` (see `academicYearOf`) and satisfy the DB's `isodow = 1` check. A term may
+ * still END past July — the right-edge "continues beyond range" cue covers that.
  */
 function clampStartToAY(start: string, ay: number): string {
-  const min = firstMondayOfSeptember(ay); // first Monday of the AY (Sep)
-  const max = mondayOf(`${ay + 1}-08-31`); // Monday of the week containing 31 Aug
+  const min = firstMondayOfAugust(ay); // first Monday of the AY (Aug)
+  const max = mondayOf(`${ay + 1}-07-31`); // Monday of the week containing 31 Jul
   if (start < min) return min;
   if (start > max) return max;
   return start;
 }
 
-// ── Sept-anchored fractional geometry (0 = 1 Sep … 1 = 31 Aug) ─────────────────
+// ── August-anchored fractional geometry (0 = 1 Aug … 1 = 31 Jul) ───────────────
 // Month-proportional: each month is 1/12 of the track, matching the equal 12-column
-// month header/gridlines. `dateToFrac` is anchor-independent (any Sept→Aug maps to
-// 0→1); `fracToDate` needs the anchor year to place Jan–Aug in the following year.
+// month header/gridlines. `dateToFrac` is anchor-independent (any Aug→Jul maps to
+// 0→1); `fracToDate` needs the anchor year to place Jan–Jul in the following year.
 
 function daysInMonth(year: number, monthIndex: number): number {
   return new Date(year, monthIndex + 1, 0).getDate();
 }
 
-/** ISO `YYYY-MM-DD` → its position in the Sept-anchored academic year, 0..1. */
+/** ISO `YYYY-MM-DD` → its position in the August-anchored academic year, 0..1. */
 function dateToFrac(iso: string): number {
   const [y, m, d] = iso.split('-').map(Number);
   const monthIndex = m - 1;
-  const monthsFromSep = (monthIndex - 8 + 12) % 12;
+  const monthsFromAug = (monthIndex - 7 + 12) % 12;
   const dim = daysInMonth(y, monthIndex);
-  return (monthsFromSep + (d - 1) / dim) / 12;
+  return (monthsFromAug + (d - 1) / dim) / 12;
 }
 
 /** Fractional position 0..1 → ISO date in the anchor academic year. */
@@ -106,8 +114,8 @@ function fracToDate(frac: number, anchorYear: number): string {
   const f12 = f * 12;
   const mi = Math.floor(f12);
   const rem = f12 - mi;
-  const monthIndex = (8 + mi) % 12;
-  const year = anchorYear + (mi >= 4 ? 1 : 0); // Jan (monthsFromSep=4) onward is next year
+  const monthIndex = (7 + mi) % 12;
+  const year = anchorYear + (mi >= YEAR_ROLLOVER_COL ? 1 : 0); // Jan (monthsFromAug=5) onward is next year
   const dim = daysInMonth(year, monthIndex);
   const day = Math.min(dim, Math.floor(rem * dim) + 1);
   return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -133,6 +141,16 @@ function sameSet<T>(a: T[], b: T[]): boolean {
 
 /** A term being edited in the popover. `isNew` drafts have no DB row until Save. */
 type DraftTerm = TermRow & { isNew: boolean };
+
+/**
+ * The academic year a term files under — the SINGLE bucketing seam. Today it derives
+ * from the start date (August boundary, see `academicYearOf`); a stored, overridable
+ * `term.academic_year` would layer in here as `?? academicYearOf(startsOn)` without
+ * touching any call site. Accepts anything with a `startsOn` (a TermRow or a draft).
+ */
+function termAcademicYear(term: { startsOn: string }): number {
+  return academicYearOf(term.startsOn);
+}
 
 /**
  * Lane-pack terms so overlapping bands stack instead of colliding. Greedy by start
@@ -235,10 +253,10 @@ export function TermCalendarTab({
 
   // Terms in the selected academic year — the only ones the axis, the bands and the
   // count pill show. `findConflict` deliberately still scans the FULL `terms` set
-  // (terms in different AYs occupy disjoint Sep→Aug windows, so this is moot by
+  // (terms in different AYs occupy disjoint Aug→Jul windows, so this is moot by
   // construction, but it keeps the overlap guard correct regardless).
   const visibleTerms = useMemo(
-    () => terms.filter((term) => academicYearOf(term.startsOn) === selectedAY),
+    () => terms.filter((term) => termAcademicYear(term) === selectedAY),
     [terms, selectedAY],
   );
 
@@ -373,7 +391,9 @@ export function TermCalendarTab({
       const latest = visibleTerms.reduce((a, b) => (a.startsOn >= b.startsOn ? a : b));
       startsOn = clampStartToAY(mondayOf(addDays(latest.startsOn, latest.numWeeks * 7)), selectedAY);
     } else {
-      startsOn = firstMondayOfSeptember(selectedAY);
+      // The axis opens in August, but the year's opener starts late Aug / early Sep
+      // (nothing legitimately starts in early August), so default to September.
+      startsOn = firstMondayOnOrAfter(`${selectedAY}-09-01`);
     }
     setDraft({
       id: `temp-${crypto.randomUUID()}`,
@@ -490,19 +510,20 @@ export function TermCalendarTab({
 
       {/* Timeline card */}
       <div className="rounded-[14px] border border-[#ECE4D7] bg-[#FCFAF6] px-[20px] pb-[22px] pt-[18px]">
-        {/* Month header — equal 12-column Sept→Aug axis, kept LTR even in RTL */}
+        {/* Month header — equal 12-column Aug→Jul axis, kept LTR even in RTL. Aug
+            carries the start year's short suffix; Jan (the rollover) carries the next. */}
         <div dir="ltr" className="mb-[4px] grid grid-cols-12 border-b border-[#E7DECF] pb-[9px]">
           {MONTH_COLS.map((m, i) => (
             <div
               key={m}
               className={cn(
                 'text-[11px] font-semibold',
-                i === 0 || i === 4 ? 'text-[#2A2520]' : 'text-[#8A8178]',
+                i === 0 || i === YEAR_ROLLOVER_COL ? 'text-[#2A2520]' : 'text-[#8A8178]',
               )}
             >
               {m}
               {i === 0 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{String(selectedAY % 100).padStart(2, '0')}</span> : null}
-              {i === 4 ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{ayEndShort}</span> : null}
+              {i === YEAR_ROLLOVER_COL ? <span className="font-medium text-[#B7AEA3]"> &rsquo;{ayEndShort}</span> : null}
             </div>
           ))}
         </div>
@@ -514,7 +535,7 @@ export function TermCalendarTab({
           {/* Gridlines */}
           <div className="pointer-events-none absolute inset-0 grid grid-cols-12">
             {MONTH_COLS.map((m, i) => (
-              <div key={m} style={{ borderLeft: `1px solid ${i === 4 ? '#ECE0CE' : '#F0E9DE'}` }} />
+              <div key={m} style={{ borderLeft: `1px solid ${i === YEAR_ROLLOVER_COL ? '#ECE0CE' : '#F0E9DE'}` }} />
             ))}
           </div>
 
@@ -683,6 +704,14 @@ function ScopePopover({
 
   const noCentres = draft.schoolIds.length === 0;
   const noYears = draft.years.length === 0;
+
+  // The academic year this term files under — DERIVED from the start date (read-only;
+  // no override, so nothing to persist). Recomputes live as the start date changes.
+  // Same "2026 / 27" label the year navigator uses, and String() keeps the year Latin
+  // and ungrouped in both locales (a calendar year must not pick up a thousands
+  // separator). This is the seam a future stored override would read from.
+  const filingYear = termAcademicYear({ startsOn: startMon });
+  const filingYearLabel = `${filingYear} / ${String((filingYear + 1) % 100).padStart(2, '0')}`;
 
   // Every failing reason, surfaced together in the amber strip (there can be more
   // than one — e.g. empty scope AND an overlap). Order: scope, then dates.
@@ -880,6 +909,22 @@ function ScopePopover({
           <span className={cn('text-[11.5px] font-semibold', !orderingOk || tooLong ? 'text-status-progress' : 'text-teal-deep')}>
             {t('termCalendar.dates.weeks', { count: Math.max(0, draftWeeks) })}
           </span>
+        </div>
+        {/* Academic year — read-only, derived from the start date (August boundary).
+            Not an editable control: it can't persist an override, so it must not look
+            editable. The confirmation line spells out where the term files, live. */}
+        <div className="mt-[10px] border-t border-[#ECE4D7] pt-[9px]">
+          <div className="flex items-center gap-[8px]">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+              {t('termCalendar.dates.academicYear')}
+            </span>
+            <span className="ml-auto rounded-[6px] bg-[#F3ECE2] px-[8px] py-[3px] text-[11.5px] font-semibold text-[#6E6358]">
+              {filingYearLabel}
+            </span>
+          </div>
+          <div className="mt-[5px] text-[10.5px] font-medium text-[#7C7266]">
+            {t('termCalendar.dates.willAddTo', { year: filingYearLabel })}
+          </div>
         </div>
       </div>
 

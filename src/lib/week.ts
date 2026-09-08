@@ -182,15 +182,19 @@ export function formatShortWeekdayDate(iso: string): string {
 }
 
 /**
- * The academic year a date belongs to, as the anchoring September's calendar year.
- * Sep–Dec → that year; Jan–Aug → the previous year (e.g. 2027-02-01 → 2026, the
- * "2026 / 27" year anchored at September 2026). Falls back to the date's own year.
+ * The academic year a date belongs to, keyed by its start year. The year begins
+ * after the ~3-week August summer break (old year ends a Friday in early/mid
+ * August; new year starts a Monday in late Aug / early Sep), so the boundary is
+ * AUGUST, not 1 September:
+ *   Aug–Dec → that year; Jan–Jul → the previous year.
+ * e.g. 2026-08-31 → 2026 ("2026 / 27"); 2026-01-15 → 2025 ("2025 / 26"). Falls
+ * back to the date's own year. (getUTCMonth: 7 = August.)
  */
 export function academicYearOf(iso: string): number {
   const date = parseISO(iso);
   if (!date) return new Date().getUTCFullYear();
   const year = date.getUTCFullYear();
-  return date.getUTCMonth() >= 8 ? year : year - 1;
+  return date.getUTCMonth() >= 7 ? year : year - 1;
 }
 
 /** Which weekday a `YYYY-MM-DD` date falls on, or null for weekends. */

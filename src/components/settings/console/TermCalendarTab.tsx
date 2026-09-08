@@ -31,6 +31,7 @@ import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 import type { CentreRow, TermRow } from '@/lib/console';
 import { createTerm, deleteTerm, updateTerm, type ConsoleResult } from '@/lib/actions/console';
+import { findTermOverlap, type TermScope } from '@/lib/term-overlap';
 import {
   academicYearOf,
   addDays,
@@ -115,11 +116,9 @@ function termRange(term: TermRow): { start: string; end: string } {
   return { start, end: addDays(start, term.numWeeks * 7) };
 }
 
-/** True when two terms' Monday ranges overlap in date. */
-function datesOverlap(a: TermRow, b: TermRow): boolean {
-  const ra = termRange(a);
-  const rb = termRange(b);
-  return ra.start < rb.end && rb.start < ra.end; // ISO strings order lexically
+/** Teaching weeks between two boundary Mondays, inclusive of both (`≥1` when end ≥ start). */
+function weeksBetweenMondays(startMon: string, endMon: string): number {
+  return daysBetween(startMon, endMon) / 7 + 1;
 }
 
 /**
@@ -218,7 +217,7 @@ export function TermCalendarTab({
   }, [toast]);
 
   // Terms in the selected academic year — the only ones the axis, the bands and the
-  // count pill show. `conflictFor` deliberately still scans the FULL `terms` set
+  // count pill show. `findConflict` deliberately still scans the FULL `terms` set
   // (terms in different AYs occupy disjoint Sep→Aug windows, so this is moot by
   // construction, but it keeps the overlap guard correct regardless).
   const visibleTerms = useMemo(
@@ -262,21 +261,17 @@ export function TermCalendarTab({
     [num, t],
   );
 
-  // A term whose (school, year) scope overlaps this term on overlapping dates. The
-  // DB has no constraint against it (it silently corrupts week_no), so the UI warns.
-  const conflictFor = useCallback(
-    (term: TermRow): { name: string; scope: string } | null => {
-      if (term.schoolIds.length === 0 || term.years.length === 0) return null;
-      for (const other of terms) {
-        if (other.id === term.id) continue;
-        if (!datesOverlap(term, other)) continue;
-        const sharedSchools = other.schoolIds.filter((s) => term.schoolIds.includes(s));
-        const sharedYears = other.years.filter((y) => term.years.includes(y));
-        if (sharedSchools.length > 0 && sharedYears.length > 0) {
-          return { name: other.name, scope: `${schoolsLabel(sharedSchools)} · ${yearsLabel(sharedYears)}` };
-        }
-      }
-      return null;
+  // Does `candidate` (proposed dates + this term's scope) overlap another term on a
+  // shared (school, year)? That silently corrupts week_no and the DB has no guard, so
+  // the popover disables Save and names the clash. Candidate-based (not term-based) so
+  // the popover can test its unsaved draft dates against the live terms. Shares the
+  // exact rule with the server write path via findTermOverlap — they can't drift.
+  const findConflict = useCallback(
+    (candidate: TermScope): { name: string; scope: string } | null => {
+      const hit = findTermOverlap(candidate, terms);
+      if (!hit) return null;
+      const name = terms.find((x) => x.id === hit.term.id)?.name ?? '';
+      return { name, scope: `${schoolsLabel(hit.schools)} · ${yearsLabel(hit.years)}` };
     },
     [terms, schoolsLabel, yearsLabel],
   );
@@ -393,6 +388,17 @@ export function TermCalendarTab({
       ? term.years.filter((y) => y !== year)
       : [...term.years, year];
     setYears(term, next);
+  }
+  // Commit an edited start/end from the popover's date fields. Optimistic like the
+  // drag path; the server re-runs the overlap guard and rejects a bad write, which
+  // reverts here. The band re-renders from the patched startsOn/numWeeks.
+  function commitDates(term: TermRow, startsOn: string, numWeeks: number) {
+    const prev = { startsOn: term.startsOn, numWeeks: term.numWeeks };
+    patchLocal(term.id, { startsOn, numWeeks });
+    persist(
+      () => updateTerm({ id: term.id, startsOn, numWeeks }),
+      () => patchLocal(term.id, prev),
+    );
   }
   function renameTerm(term: TermRow, value: string) {
     patchLocal(term.id, { name: value });
@@ -557,14 +563,12 @@ export function TermCalendarTab({
           ) : (
             visibleTerms.map((term) => {
               const startMon = mondayOf(term.startsOn);
-              const lastMon = addDays(startMon, (term.numWeeks - 1) * 7);
               const end = addDays(startMon, term.numWeeks * 7);
               const leftFrac = Math.max(0, Math.min(1, dateToFrac(startMon)));
               const rightFrac = Math.max(0, Math.min(1, dateToFrac(end)));
               const left = leftFrac * 100;
               const width = Math.max(6, (rightFrac - leftFrac) * 100);
               const isSel = term.id === selectedId;
-              const conflict = conflictFor(term);
               const noCentres = term.schoolIds.length === 0;
               const noYears = term.years.length === 0;
               // A term with zero centres OR zero years produces zero `term_week`
@@ -575,11 +579,6 @@ export function TermCalendarTab({
               const scopeLine = inert
                 ? t('termCalendar.scopeInert')
                 : `${schoolsLabel(term.schoolIds)} · ${yearsLabel(term.years)}`;
-              const range = t('termCalendar.range', {
-                start: formatShortWeekdayDate(startMon),
-                end: formatShortWeekdayDate(lastMon),
-              });
-              const valid = !noCentres && !noYears && !conflict;
 
               return (
                 <div
@@ -626,28 +625,15 @@ export function TermCalendarTab({
                     <ScopePopover
                       term={term}
                       anchorRef={anchorRef}
-                      range={range}
                       centres={activeCentres}
-                      valid={valid}
-                      summary={
-                        valid
-                          ? t('termCalendar.validity.valid', {
-                              weeks: num(term.numWeeks),
-                              schools: schoolsLabel(term.schoolIds),
-                              years: yearsLabel(term.years),
-                            })
-                          : noCentres
-                            ? t('termCalendar.validity.noCentres')
-                            : noYears
-                              ? t('termCalendar.validity.noYears')
-                              : t('termCalendar.validity.overlap', {
-                                  term: conflict?.name ?? '',
-                                  scope: conflict?.scope ?? '',
-                                })
-                      }
+                      num={num}
+                      schoolsLabel={schoolsLabel}
+                      yearsLabel={yearsLabel}
+                      findConflict={findConflict}
                       onClose={() => setSelectedId(null)}
                       onRename={(v) => renameTerm(term, v)}
                       onCommitName={(prevName) => commitName(term, prevName)}
+                      onCommitDates={(startsOn, numWeeks) => commitDates(term, startsOn, numWeeks)}
                       onSetSchools={(ids) => setSchools(term, ids)}
                       onToggleSchool={(id) => toggleSchool(term, id)}
                       onSetYears={(ys) => setYears(term, ys)}
@@ -675,13 +661,15 @@ export function TermCalendarTab({
 function ScopePopover({
   term,
   anchorRef,
-  range,
   centres,
-  valid,
-  summary,
+  num,
+  schoolsLabel,
+  yearsLabel,
+  findConflict,
   onClose,
   onRename,
   onCommitName,
+  onCommitDates,
   onSetSchools,
   onToggleSchool,
   onSetYears,
@@ -691,13 +679,17 @@ function ScopePopover({
   term: TermRow;
   /** The band element the popover anchors to (measured from the viewport). */
   anchorRef: RefObject<HTMLDivElement | null>;
-  range: string;
   centres: CentreRow[];
-  valid: boolean;
-  summary: string;
+  num: (n: number) => string;
+  schoolsLabel: (ids: string[]) => string;
+  yearsLabel: (years: number[]) => string;
+  /** Overlap test for a candidate (draft dates + this term's scope) vs the live terms. */
+  findConflict: (candidate: TermScope) => { name: string; scope: string } | null;
   onClose: () => void;
   onRename: (value: string) => void;
   onCommitName: (prevName: string) => void;
+  /** Persist edited term dates (start Monday + week count). */
+  onCommitDates: (startsOn: string, numWeeks: number) => void;
   onSetSchools: (ids: string[]) => void;
   onToggleSchool: (id: string) => void;
   onSetYears: (years: number[]) => void;
@@ -708,6 +700,67 @@ function ScopePopover({
   const locale = useLocale();
   const nameAtFocus = useRef(term.name);
   const popRef = useRef<HTMLDivElement>(null);
+
+  // ── Editable dates (draft; committed on Save) ────────────────────────────────
+  // Start and end are two independent Monday anchors; the week count is derived
+  // (N = whole weeks between them, inclusive), so moving EITHER updates the live
+  // count. Draft lives here and is applied only on Save, so a transient invalid
+  // state (end briefly before start) never autosaves — unlike the immediate scope
+  // toggles below. The band and DB stay on the persisted value until Save.
+  const persistedStart = mondayOf(term.startsOn);
+  const persistedEnd = addDays(persistedStart, (term.numWeeks - 1) * 7);
+  const [draftStart, setDraftStart] = useState(persistedStart);
+  const [draftEnd, setDraftEnd] = useState(persistedEnd);
+  // Re-sync the draft when the PERSISTED dates change under the same popover
+  // instance — a Save committed (persisted now equals the draft, so a no-op) or the
+  // band was dragged/resized while the popover is open (adopt the new value). React's
+  // "adjust state during render" pattern, not an effect: it re-renders immediately
+  // without a committed cascade, and never clobbers an in-progress edit because
+  // persisted only moves on a real write.
+  const [syncedDates, setSyncedDates] = useState({ start: persistedStart, end: persistedEnd });
+  if (syncedDates.start !== persistedStart || syncedDates.end !== persistedEnd) {
+    setSyncedDates({ start: persistedStart, end: persistedEnd });
+    setDraftStart(persistedStart);
+    setDraftEnd(persistedEnd);
+  }
+
+  const draftWeeks = weeksBetweenMondays(draftStart, draftEnd); // may be <1 (end<start) or >MAX
+  const orderingOk = draftWeeks >= MIN_WEEKS; // end ≥ start
+  const tooLong = draftWeeks > MAX_WEEKS;
+  const datesDirty = draftStart !== persistedStart || draftEnd !== persistedEnd;
+
+  // Overlap only makes sense for in-range, scoped dates; test the DRAFT against the
+  // live terms. Empty-scope terms never conflict (findTermOverlap returns null).
+  const dateConflict =
+    orderingOk && !tooLong
+      ? findConflict({
+          id: term.id,
+          startsOn: draftStart,
+          numWeeks: draftWeeks,
+          schoolIds: term.schoolIds,
+          years: term.years,
+        })
+      : null;
+
+  const noCentres = term.schoolIds.length === 0;
+  const noYears = term.years.length === 0;
+
+  // Every failing reason, surfaced together in the amber strip (there can be more
+  // than one — e.g. empty scope AND an overlap). Order: scope, then dates.
+  const reasons: string[] = [];
+  if (noCentres) reasons.push(t('termCalendar.validity.noCentres'));
+  if (noYears) reasons.push(t('termCalendar.validity.noYears'));
+  if (!orderingOk) reasons.push(t('termCalendar.validity.ordering'));
+  else if (tooLong) reasons.push(t('termCalendar.validity.tooLong', { max: num(MAX_WEEKS) }));
+  if (dateConflict)
+    reasons.push(t('termCalendar.validity.overlap', { term: dateConflict.name, scope: dateConflict.scope }));
+
+  const valid = reasons.length === 0;
+  // Ordering and overlap (and the 40-week cap) are HARD blocks on saving dates.
+  // Empty scope is a warning, not a date block: a term is born with empty scope and
+  // its dates must stay editable so the admin can set them before assigning scope.
+  const dateBlocked = !orderingOk || tooLong || !!dateConflict;
+  const canSaveDates = datesDirty && !dateBlocked;
   // Fixed viewport coordinates; null until first measured (rendered hidden so it
   // never flashes at 0,0). The timeline card sits inside an `overflow-hidden`
   // console wrapper (SettingsConsole), which clips an in-flow absolute popover
@@ -814,7 +867,6 @@ function ScopePopover({
             className="w-full truncate border-none bg-transparent p-0 text-[13.5px] font-semibold text-[#2A2520] outline-none"
             placeholder={t('termCalendar.newTermName')}
           />
-          <div className="text-[11px] text-[#9A9087]">{range}</div>
         </div>
         <button
           type="button"
@@ -824,6 +876,66 @@ function ScopePopover({
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8178" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6L6 18M6 6l12 12" /></svg>
         </button>
+      </div>
+
+      {/* Editable term dates — start and end both snap to their week's Monday; the
+          teaching-week count is derived live. Save is gated by the validity below
+          (ordering, the 40-week cap and the overlap guard). Kept dir="ltr": the
+          w/c dates use Latin month/weekday abbreviations, as the band does. */}
+      <div dir="ltr" className="mb-[15px] rounded-[10px] border border-[#ECE4D7] bg-[#FCFAF6] p-[11px]">
+        <div className="grid grid-cols-2 gap-[10px]">
+          <label className="flex min-w-0 flex-col gap-[4px]">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+              {t('termCalendar.dates.startLabel')}
+            </span>
+            <input
+              type="date"
+              value={draftStart}
+              max={draftEnd}
+              onChange={(e) => {
+                if (e.target.value) setDraftStart(mondayOf(e.target.value));
+              }}
+              className="w-full rounded-[7px] border border-[#E2D9CC] bg-white px-[7px] py-[6px] text-[11.5px] text-[#2A2520] outline-none focus:border-teal"
+            />
+            <span className="text-[10.5px] font-medium text-[#7C7266]">{`w/c ${formatShortWeekdayDate(draftStart)}`}</span>
+          </label>
+          <label className="flex min-w-0 flex-col gap-[4px]">
+            <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#A79E94]">
+              {t('termCalendar.dates.endLabel')}
+            </span>
+            <input
+              type="date"
+              value={draftEnd}
+              min={draftStart}
+              max={addDays(draftStart, (MAX_WEEKS - 1) * 7)}
+              onChange={(e) => {
+                if (e.target.value) setDraftEnd(mondayOf(e.target.value));
+              }}
+              className="w-full rounded-[7px] border border-[#E2D9CC] bg-white px-[7px] py-[6px] text-[11.5px] text-[#2A2520] outline-none focus:border-teal"
+            />
+            <span className="text-[10.5px] font-medium text-[#7C7266]">{`w/c ${formatShortWeekdayDate(draftEnd)}`}</span>
+          </label>
+        </div>
+        <div className="mt-[9px] flex items-center gap-[8px]">
+          <span className={cn('text-[11.5px] font-semibold', dateBlocked ? 'text-status-progress' : 'text-teal-deep')}>
+            {t('termCalendar.dates.weeks', { count: Math.max(0, draftWeeks) })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (canSaveDates) onCommitDates(draftStart, draftWeeks);
+            }}
+            disabled={!canSaveDates}
+            className={cn(
+              'ml-auto rounded-[8px] px-[13px] py-[6px] text-[12px] font-semibold transition-colors',
+              canSaveDates
+                ? 'bg-teal text-white hover:bg-[#1a6a5d]'
+                : 'cursor-not-allowed bg-[#F0E9DE] text-[#B7AEA3]',
+            )}
+          >
+            {t('termCalendar.dates.save')}
+          </button>
+        </div>
       </div>
 
       {/* Centres */}
@@ -911,27 +1023,39 @@ function ScopePopover({
         })}
       </div>
 
-      {/* Validity strip — teal when valid, amber (status-progress) otherwise. Never red. */}
+      {/* Validity strip — teal when valid, amber (status-progress) otherwise. Never
+          red. Reflects the DRAFT dates, and lists EVERY failing reason (empty scope,
+          ordering, the 40-week cap, an overlap) so nothing is hidden behind another. */}
       <div
         className={cn(
-          'flex items-center gap-[8px] rounded-[9px] border px-[11px] py-[9px]',
+          'flex items-start gap-[8px] rounded-[9px] border px-[11px] py-[9px]',
           valid
             ? 'border-teal-tint-border bg-teal-tint'
             : 'border-status-progress-border bg-status-progress-bg',
         )}
       >
         {valid ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-teal" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mt-[1px] flex-none text-teal" aria-hidden><path d="M20 6L9 17l-5-5" /></svg>
         ) : (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-status-progress" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="mt-[1px] flex-none text-status-progress" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
         )}
-        <span className={cn('flex-1 text-[11.5px] font-semibold', valid ? 'text-teal-deep' : 'text-status-progress')} dir="auto">
-          {summary}
-        </span>
+        <div className={cn('flex-1 space-y-[3px] text-[11.5px] font-semibold', valid ? 'text-teal-deep' : 'text-status-progress')} dir="auto">
+          {valid ? (
+            <span>
+              {t('termCalendar.validity.valid', {
+                weeks: num(draftWeeks),
+                schools: schoolsLabel(term.schoolIds),
+                years: yearsLabel(term.years),
+              })}
+            </span>
+          ) : (
+            reasons.map((reason) => <div key={reason}>{reason}</div>)
+          )}
+        </div>
         <button
           type="button"
           onClick={onRemove}
-          className="flex-none text-[11.5px] font-semibold text-danger hover:opacity-70"
+          className="mt-[1px] flex-none text-[11.5px] font-semibold text-danger hover:opacity-70"
         >
           {t('termCalendar.remove')}
         </button>

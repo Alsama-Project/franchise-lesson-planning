@@ -13,6 +13,7 @@ import { getCurrentProfile } from '@/lib/auth';
 import type { MembershipRole } from '@/lib/auth';
 import { MIN_YEAR, MAX_YEAR } from '@/lib/matrix';
 import { isValidISODate, mondayOf } from '@/lib/week';
+import { findTermOverlap, type TermScope } from '@/lib/term-overlap';
 import type { TermRow } from '@/lib/console';
 
 export interface ConsoleResult {
@@ -518,6 +519,57 @@ function cleanSchoolIds(ids: string[]): string[] {
   return [...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0))];
 }
 
+// ── Overlap guard on the write path ────────────────────────────────────────────
+// The UI disables Save on overlap, but a disabled button is a leaky guard: there is
+// no DB trigger, and band drag/resize also write dates. So EVERY term write re-runs
+// the same overlap rule (src/lib/term-overlap) against the live table and rejects a
+// write that would make two terms sharing a (school, year) overlap in date — which
+// silently corrupts `term_week.week_no`. This is the last line of defence, not the UI.
+
+type NamedScope = TermScope & { name: string };
+
+/** Load every term's overlap-relevant shape (dates + scope + name) from the DB. */
+async function loadTermScopes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<NamedScope[]> {
+  const [{ data: termData }, { data: schoolData }, { data: yearData }] = await Promise.all([
+    supabase.from('term').select('id, name, starts_on, num_weeks'),
+    supabase.from('term_school').select('term_id, school_id'),
+    supabase.from('term_year').select('term_id, year'),
+  ]);
+
+  const schoolsByTerm = new Map<string, string[]>();
+  for (const r of (schoolData ?? []) as Array<{ term_id: string; school_id: string }>) {
+    (schoolsByTerm.get(r.term_id) ?? schoolsByTerm.set(r.term_id, []).get(r.term_id)!).push(r.school_id);
+  }
+  const yearsByTerm = new Map<string, number[]>();
+  for (const r of (yearData ?? []) as Array<{ term_id: string; year: number }>) {
+    (yearsByTerm.get(r.term_id) ?? yearsByTerm.set(r.term_id, []).get(r.term_id)!).push(r.year);
+  }
+
+  return ((termData ?? []) as Array<{ id: string; name: string; starts_on: string; num_weeks: number }>).map(
+    (r) => ({
+      id: r.id,
+      name: r.name,
+      startsOn: r.starts_on,
+      numWeeks: r.num_weeks,
+      schoolIds: schoolsByTerm.get(r.id) ?? [],
+      years: yearsByTerm.get(r.id) ?? [],
+    }),
+  );
+}
+
+/**
+ * Reject `candidate` if it overlaps another term on a shared (school, year). Returns
+ * an error message naming the conflicting term, or null when the write is safe.
+ */
+function checkTermOverlap(candidate: TermScope, scopes: NamedScope[]): string | null {
+  const hit = findTermOverlap(candidate, scopes);
+  if (!hit) return null;
+  const name = (scopes.find((s) => s.id === hit.term.id)?.name ?? '').trim() || 'another term';
+  return `These dates overlap “${name}”, which shares a centre and a year — that would corrupt the week numbering. Change the dates or the scope so they don’t overlap.`;
+}
+
 /**
  * Replace a term's centre scope (`term_school`) with exactly `schoolIds` —
  * delete-then-insert inside the caller's admin-gated, RLS-scoped transaction-lite
@@ -574,6 +626,15 @@ export async function createTerm(input: {
   const years = cleanYears(input.years ?? []);
 
   const supabase = await createClient();
+
+  // Overlap guard (write-path backstop). Only a scoped term can corrupt week_no, so
+  // an empty-scope term skips the check inside findTermOverlap and inserts freely.
+  const overlapError = checkTermOverlap(
+    { id: 'new', startsOn: starts_on, numWeeks: num_weeks, schoolIds, years },
+    await loadTermScopes(supabase),
+  );
+  if (overlapError) return fail(overlapError);
+
   const { data, error } = await supabase
     .from('term')
     .insert({ name, starts_on, num_weeks })
@@ -632,6 +693,29 @@ export async function updateTerm(input: {
   }
 
   const supabase = await createClient();
+
+  // Overlap guard (write-path backstop). Run BEFORE any write so a rejected update
+  // never partially applies. Only date/scope changes can create an overlap, so skip
+  // the DB read for a name-only edit. The candidate merges this edit over the term's
+  // current DB state; findTermOverlap skips the term's own id, so it never self-conflicts.
+  const affectsOverlap =
+    input.startsOn !== undefined ||
+    input.numWeeks !== undefined ||
+    input.schoolIds !== undefined ||
+    input.years !== undefined;
+  if (affectsOverlap) {
+    const scopes = await loadTermScopes(supabase);
+    const self = scopes.find((s) => s.id === input.id);
+    const candidate: TermScope = {
+      id: input.id,
+      startsOn: patch.starts_on ?? self?.startsOn ?? '',
+      numWeeks: patch.num_weeks ?? self?.numWeeks ?? 0,
+      schoolIds: input.schoolIds !== undefined ? cleanSchoolIds(input.schoolIds) : (self?.schoolIds ?? []),
+      years: input.years !== undefined ? cleanYears(input.years) : (self?.years ?? []),
+    };
+    const overlapError = checkTermOverlap(candidate, scopes);
+    if (overlapError) return fail(overlapError);
+  }
 
   if (Object.keys(patch).length > 0) {
     const { error } = await supabase.from('term').update(patch).eq('id', input.id);

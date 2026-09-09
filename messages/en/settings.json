@@ -338,6 +338,7 @@
         "startLabel": "Term start",
         "endLabel": "Term end",
         "weeks": "= {count, plural, one {# teaching week} other {# teaching weeks}}",
+        "weeksNet": "= {net, plural, one {# teaching week} other {# teaching weeks}} · {excluded, plural, one {# evaluation week excluded} other {# evaluation weeks excluded}}",
         "academicYear": "Academic year",
         "willAddTo": "This term will be added to {year}"
       },
@@ -373,6 +374,22 @@
       "empty": {
         "hint": "No terms yet. Add a term to define the academic year — without terms the Weekly Overview has no dates and no jump-to-today.",
         "hintForYear": "No terms configured for {year}. Add a term to define this academic year."
+      },
+      "evaluations": {
+        "title": "Evaluations",
+        "hint": "Org-wide evaluation weeks for this academic year. An evaluation week is not a teaching week — it shows as a non-teaching band above and is subtracted from a term’s teaching-week count.",
+        "types": {
+          "baseline": "Baseline",
+          "midline": "Midline",
+          "endline": "Endline"
+        },
+        "notSet": "Not set",
+        "clear": "Clear",
+        "reset": "Reset",
+        "save": "Save evaluations",
+        "saveError": "Couldn’t save the evaluation. Please try again.",
+        "dateAria": "{type} evaluation week",
+        "outsideYear": "Outside {year}"
       }
     },
     "aiGuide": {

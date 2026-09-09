@@ -18,6 +18,7 @@ import {
   getSubjects,
   getSubjectSpaceAxes,
   getTerms,
+  getEvaluations,
   getUsersAdmin,
   type AdminUser,
   type CentreRow,
@@ -28,7 +29,9 @@ import {
   type SubjectRow,
   type SubjectSpaceAxes,
   type TermRow,
+  type EvaluationRow,
 } from '@/lib/console';
+import { academicYearOf, todayInBeirut } from '@/lib/week';
 
 // Per-request: reflects the live session, memberships and org structure.
 export const dynamic = 'force-dynamic';
@@ -41,7 +44,17 @@ export const dynamic = 'force-dynamic';
  * standalone `/admin` route. Reached from the shell nav (admins/coordinators) and
  * the avatar menu (everyone).
  */
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  // Only `ay` is read here (to load that year's evaluation weeks); the tab itself is
+  // resolved client-side by SettingsConsole. Mirrors the Term calendar tab's default:
+  // a missing/malformed `ay` falls back to the academic year of today (Beirut).
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay } = await searchParams;
+  const selectedAY = ay && /^\d{4}$/.test(ay) ? Number(ay) : academicYearOf(todayInBeirut());
+
   const { name, subtitle } = await getHeaderProfile();
   const t = await getTranslations('settings');
   const [access, data, memberships, myClasses] = await Promise.all([
@@ -79,6 +92,9 @@ export default async function SettingsPage() {
   let subjectMembers: SubjectMember[] | null | undefined;
   let curriculum: CurriculumSubjectStatus[] | undefined;
   let terms: TermRow[] | undefined;
+  // The set evaluation weeks for the viewed academic year (`?ay=`); org-wide,
+  // year-scoped. Filtered again client-side by year to stay correct across year nav.
+  let evaluations: EvaluationRow[] | undefined;
   // `null` distinguishes a load failure (renders the tab's error state) from
   // "not loaded because not admin" (`undefined`).
   let users: AdminUser[] | null | undefined;
@@ -91,13 +107,14 @@ export default async function SettingsPage() {
   let aiContextBoard: AiContextBoard | null | undefined;
 
   if (access.isAdmin) {
-    [centres, subjects, classesData, curriculum, terms, users, userAxes, pendingCoordinatorRequests, aiContextBoard] =
+    [centres, subjects, classesData, curriculum, terms, evaluations, users, userAxes, pendingCoordinatorRequests, aiContextBoard] =
       await Promise.all([
         getCentres(),
         getSubjects(),
         getConsoleClasses(),
         getCurriculumStatus(),
         getTerms(),
+        getEvaluations(selectedAY),
         getUsersAdmin().catch(() => null),
         getSubjectSpaceAxes(),
         getPendingCoordinatorRequests(),
@@ -133,6 +150,8 @@ export default async function SettingsPage() {
           subjectMembers={subjectMembers}
           curriculum={curriculum}
           terms={terms}
+          evaluations={evaluations}
+          academicYear={selectedAY}
           users={users}
           userAxes={userAxes}
           pendingCoordinatorRequests={pendingCoordinatorRequests}

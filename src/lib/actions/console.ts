@@ -14,7 +14,8 @@ import type { MembershipRole } from '@/lib/auth';
 import { MIN_YEAR, MAX_YEAR } from '@/lib/matrix';
 import { isValidISODate, mondayOf } from '@/lib/week';
 import { findTermOverlap, type TermScope } from '@/lib/term-overlap';
-import type { TermRow } from '@/lib/console';
+import type { TermRow, EvaluationRow, EvaluationType } from '@/lib/console';
+import { EVALUATION_TYPES } from '@/lib/console';
 
 export interface ConsoleResult {
   ok: boolean;
@@ -742,6 +743,93 @@ export async function deleteTerm(input: { id: string }): Promise<ConsoleResult> 
   const supabase = await createClient();
   const { error } = await supabase.from('term').delete().eq('id', input.id);
   if (error) return fail(error.message);
+  revalidateConsole();
+  return ok();
+}
+
+// ── Evaluation weeks (admin) ──────────────────────────────────────────────────
+// Org-wide, year-level evaluation dates. Set upserts the (year, type) row; clear
+// deletes it. Admin-only, mirroring the term write path. NOTHING here touches
+// `term_week`/`week_no` — the Term calendar tab derives display from these rows.
+
+export interface EvaluationMutationResult extends ConsoleResult {
+  evaluation?: EvaluationRow;
+}
+
+function isEvaluationType(x: string): x is EvaluationType {
+  return (EVALUATION_TYPES as string[]).includes(x);
+}
+
+/**
+ * Set (create or replace) one evaluation for an academic year. Snaps the date to its
+ * week's Monday and upserts on the (academic_year, type) unique key, so re-setting the
+ * same slot moves the date rather than duplicating it. Returns the persisted row.
+ */
+export async function upsertEvaluation(input: {
+  academicYear: number;
+  type: EvaluationType;
+  startsOn: string;
+  numWeeks?: number;
+}): Promise<EvaluationMutationResult> {
+  const guard = await requireAdmin();
+  if (isFail(guard)) return guard;
+
+  if (!Number.isInteger(input.academicYear)) return fail('Pick a valid academic year.');
+  if (!isEvaluationType(input.type)) return fail('Pick a valid evaluation type.');
+  if (!isValidISODate(input.startsOn)) return fail('Pick a valid date.');
+  const starts_on = mondayOf(input.startsOn);
+  const num_weeks = clampWeeks(input.numWeeks ?? 1);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('evaluation')
+    .upsert(
+      { academic_year: input.academicYear, type: input.type, starts_on, num_weeks },
+      { onConflict: 'academic_year,type' },
+    )
+    .select('id, academic_year, type, starts_on, num_weeks')
+    .single();
+  if (error) return fail(error.message);
+
+  const row = data as {
+    id: string;
+    academic_year: number;
+    type: EvaluationType;
+    starts_on: string;
+    num_weeks: number;
+  };
+
+  revalidateConsole();
+  return {
+    ok: true,
+    evaluation: {
+      id: row.id,
+      academicYear: row.academic_year,
+      type: row.type,
+      startsOn: row.starts_on,
+      numWeeks: row.num_weeks,
+    },
+  };
+}
+
+/** Clear the evaluation of a given type for an academic year (no-op if unset). */
+export async function clearEvaluation(input: {
+  academicYear: number;
+  type: EvaluationType;
+}): Promise<ConsoleResult> {
+  const guard = await requireAdmin();
+  if (isFail(guard)) return guard;
+
+  if (!isEvaluationType(input.type)) return fail('Pick a valid evaluation type.');
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('evaluation')
+    .delete()
+    .eq('academic_year', input.academicYear)
+    .eq('type', input.type);
+  if (error) return fail(error.message);
+
   revalidateConsole();
   return ok();
 }

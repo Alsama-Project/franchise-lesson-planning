@@ -16,6 +16,7 @@ import type {
   SubjectRow,
   SubjectSpaceAxes,
   TermRow,
+  EvaluationRow,
 } from '@/lib/console';
 import { CentresTab } from './console/CentresTab';
 import { SubjectsTab } from './console/SubjectsTab';
@@ -39,6 +40,10 @@ export interface SettingsConsoleProps {
   subjectMembers?: SubjectMember[] | null;
   curriculum?: CurriculumSubjectStatus[];
   terms?: TermRow[];
+  /** The set evaluation weeks for the viewed academic year (admin only, org-wide). */
+  evaluations?: EvaluationRow[];
+  /** The academic year the server loaded evaluations for (the resolved `?ay=`). */
+  academicYear?: number;
   /** `null` = load failed (error state); `undefined` = not loaded (non-admin). */
   users?: AdminUser[] | null;
   /** Subject-space grid axes for the Users-tab Edit-access matrix (admin only). */
@@ -118,7 +123,12 @@ export function SettingsConsole(props: SettingsConsoleProps) {
         {tab === 'subjects' && props.subjects ? <SubjectsTab subjects={props.subjects} /> : null}
         {tab === 'classes' && props.classesData ? <ClassesTab data={props.classesData} /> : null}
         {tab === 'calendar' && access.isAdmin ? (
-          <TermCalendarTab terms={props.terms ?? []} centres={props.centres ?? []} />
+          <TermCalendarTab
+            terms={props.terms ?? []}
+            centres={props.centres ?? []}
+            evaluations={props.evaluations ?? []}
+            academicYear={props.academicYear}
+          />
         ) : null}
         {tab === 'members' && access.isCoordinator ? (
           <CoordinatorMembersTab

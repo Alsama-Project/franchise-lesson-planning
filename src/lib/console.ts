@@ -711,3 +711,55 @@ export async function getTerms(): Promise<TermRow[]> {
     years: (yearsByTerm.get(r.id) ?? []).sort((a, b) => a - b),
   }));
 }
+
+// ── Evaluation weeks (admin) ──────────────────────────────────────────────────
+
+/** The three fixed, org-wide evaluations run each academic year. */
+export type EvaluationType = 'baseline' | 'midline' | 'endline';
+
+/** The evaluation types in their calendar order (Sep → Feb → Jul). */
+export const EVALUATION_TYPES: EvaluationType[] = ['baseline', 'midline', 'endline'];
+
+export interface EvaluationRow {
+  id: string;
+  /** Academic year keyed by its start year (August boundary): 2026 == "2026 / 27". */
+  academicYear: number;
+  type: EvaluationType;
+  /** The Monday (`YYYY-MM-DD`) of the evaluation week. */
+  startsOn: string;
+  /** Whole weeks the evaluation spans (default 1). */
+  numWeeks: number;
+}
+
+/**
+ * The org-wide evaluation weeks filed under one academic year, in start-date order.
+ * Read via the auth'd client — `evaluation_read` lets every authenticated user see
+ * the shared dates, while only admins may write them. Evaluations are standalone at
+ * the year level (no centre/year scope) and have ZERO involvement with `term_week`:
+ * the Term calendar tab uses them purely to render non-teaching bands and to subtract
+ * evaluation weeks from a term's *displayed* teaching-week count.
+ */
+export async function getEvaluations(academicYear: number): Promise<EvaluationRow[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('evaluation')
+    .select('id, academic_year, type, starts_on, num_weeks')
+    .eq('academic_year', academicYear)
+    .order('starts_on', { ascending: true });
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    academic_year: number;
+    type: EvaluationType;
+    starts_on: string;
+    num_weeks: number;
+  }>;
+
+  return rows.map((r) => ({
+    id: r.id,
+    academicYear: r.academic_year,
+    type: r.type,
+    startsOn: r.starts_on,
+    numWeeks: r.num_weeks,
+  }));
+}

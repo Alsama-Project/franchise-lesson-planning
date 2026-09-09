@@ -32,8 +32,15 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
-import type { CentreRow, TermRow } from '@/lib/console';
-import { createTerm, deleteTerm, updateTerm } from '@/lib/actions/console';
+import type { CentreRow, TermRow, EvaluationRow, EvaluationType } from '@/lib/console';
+import { EVALUATION_TYPES } from '@/lib/console';
+import {
+  createTerm,
+  deleteTerm,
+  updateTerm,
+  upsertEvaluation,
+  clearEvaluation,
+} from '@/lib/actions/console';
 import { findTermOverlap, type TermScope } from '@/lib/term-overlap';
 import {
   academicYearOf,
@@ -88,6 +95,27 @@ function clampStartToAY(start: string, ay: number): string {
   if (start < min) return min;
   if (start > max) return max;
   return start;
+}
+
+/** The [firstMonday, lastMonday] inclusive Monday window of academic year `ay` (Aug→Jul). */
+function ayMondayWindow(ay: number): { min: string; max: string } {
+  return { min: firstMondayOfAugust(ay), max: mondayOf(`${ay + 1}-07-31`) };
+}
+
+/** True when Monday `m` sits inside academic year `ay`'s Aug→Jul window. */
+function mondayWithinAY(m: string, ay: number): boolean {
+  const { min, max } = ayMondayWindow(ay);
+  return m >= min && m <= max;
+}
+
+/** The evaluations draft: each type mapped to its Monday, or null when unset. */
+type EvalDraft = Record<EvaluationType, string | null>;
+
+/** Build the evaluations draft from the persisted rows for a given academic year. */
+function evalDraftFor(evaluations: EvaluationRow[], ay: number): EvalDraft {
+  const pick = (type: EvaluationType) =>
+    evaluations.find((e) => e.academicYear === ay && e.type === type)?.startsOn ?? null;
+  return { baseline: pick('baseline'), midline: pick('midline'), endline: pick('endline') };
 }
 
 // ── August-anchored fractional geometry (0 = 1 Aug … 1 = 31 Jul) ───────────────
@@ -187,9 +215,19 @@ interface DragState {
 export function TermCalendarTab({
   terms: initialTerms,
   centres,
+  evaluations: initialEvaluations,
 }: {
   terms: TermRow[];
   centres: CentreRow[];
+  /** The set evaluation weeks for the viewed academic year (org-wide, year-level). */
+  evaluations: EvaluationRow[];
+  /**
+   * The academic year the server loaded evaluations for (the resolved `?ay=`). Not
+   * read here — the tab derives its own `selectedAY` from the URL and filters each
+   * evaluation row by its `academicYear`, which stays correct even mid-navigation —
+   * but declared so the page can pass it and to document what the prop reflects.
+   */
+  academicYear?: number;
 }) {
   const t = useTranslations('settings');
   const locale = useLocale();
@@ -271,6 +309,112 @@ export function TermCalendarTab({
   // Lane-pack over the rendered terms so a filtered-out term leaves no vertical gap.
   const { laneOf, laneCount } = useMemo(() => packLanes(renderTerms), [renderTerms]);
   const trackHeight = Math.max(BAND_H + BAND_TOP * 2, BAND_TOP * 2 + laneCount * ROW_STEP);
+
+  // ── Evaluation weeks (org-wide, year-level) ────────────────────────────────
+  // Draft-until-Save, mirroring terms: the section edits an in-memory draft (type →
+  // Monday | null); a single Save commits every changed row (upsert a set date, clear
+  // an unset one); Reset reverts to the persisted rows. Nothing autosaves.
+  const [evalSaving, startEvalTransition] = useTransition();
+
+  // Optimistic persisted set; the server prop is the source of truth. Sync it when the
+  // prop identity changes (year nav, or our own save's revalidate) with React's "adjust
+  // state during render" pattern rather than an effect — no cascading re-render.
+  const [evaluations, setEvaluations] = useState<EvaluationRow[]>(initialEvaluations);
+  const [syncedEvalProp, setSyncedEvalProp] = useState(initialEvaluations);
+  if (syncedEvalProp !== initialEvaluations) {
+    setSyncedEvalProp(initialEvaluations);
+    setEvaluations(initialEvaluations);
+  }
+
+  // The persisted evaluations for the viewed year, as a type → Monday|null map (the
+  // dirty-check baseline). Filtering by `academicYear` keeps it correct even while a
+  // year navigation's new data is still arriving from the server.
+  const persistedEvalByType = useMemo<EvalDraft>(
+    () => evalDraftFor(evaluations, selectedAY),
+    [evaluations, selectedAY],
+  );
+
+  // The in-memory draft. Re-seed it whenever the persisted baseline changes — on year
+  // change (discards unsaved edits: switching year is a navigation) and when a save's
+  // fresh rows land (draft then equals persisted → not dirty). Pure editing changes
+  // neither `evaluations` nor `selectedAY`, so `persistedEvalByType` is memo-stable and
+  // an in-progress edit is preserved. Render-phase reset, not an effect.
+  const [evalDraft, setEvalDraft] = useState<EvalDraft>(persistedEvalByType);
+  const [seededBaseline, setSeededBaseline] = useState(persistedEvalByType);
+  if (seededBaseline !== persistedEvalByType) {
+    setSeededBaseline(persistedEvalByType);
+    setEvalDraft(persistedEvalByType);
+  }
+
+  const evalDirty = useMemo(
+    () => EVALUATION_TYPES.some((tp) => (evalDraft[tp] ?? null) !== (persistedEvalByType[tp] ?? null)),
+    [evalDraft, persistedEvalByType],
+  );
+
+  // The set evaluation weeks as Monday bands (live draft): drives the timeline bands
+  // AND the popover's teaching-week subtraction, so both track unsaved edits live.
+  const evalBands = useMemo(
+    () =>
+      EVALUATION_TYPES.flatMap((type) => {
+        const startsOn = evalDraft[type];
+        return startsOn ? [{ type, startMon: mondayOf(startsOn) }] : [];
+      }),
+    [evalDraft],
+  );
+  const evalMondays = useMemo(() => evalBands.map((b) => b.startMon), [evalBands]);
+
+  const setEvalDate = useCallback((type: EvaluationType, value: string) => {
+    if (!value) return;
+    setEvalDraft((d) => ({ ...d, [type]: mondayOf(value) }));
+  }, []);
+  const clearEvalDate = useCallback((type: EvaluationType) => {
+    setEvalDraft((d) => ({ ...d, [type]: null }));
+  }, []);
+  const resetEvaluations = useCallback(() => {
+    setEvalDraft(persistedEvalByType);
+  }, [persistedEvalByType]);
+
+  // Commit every changed row in one Save: upsert a set date, clear an unset one. On
+  // any failure, toast and stop (already-applied rows stay; the draft keeps the rest).
+  const saveEvaluations = useCallback(() => {
+    startEvalTransition(async () => {
+      for (const type of EVALUATION_TYPES) {
+        const draftVal = evalDraft[type] ?? null;
+        const persistedVal = persistedEvalByType[type] ?? null;
+        if (draftVal === persistedVal) continue;
+        if (draftVal === null) {
+          const res = await clearEvaluation({ academicYear: selectedAY, type });
+          if (!res.ok) {
+            setToast(res.error ?? t('termCalendar.evaluations.saveError'));
+            return;
+          }
+          setEvaluations((prev) => prev.filter((e) => !(e.academicYear === selectedAY && e.type === type)));
+        } else {
+          const res = await upsertEvaluation({ academicYear: selectedAY, type, startsOn: draftVal });
+          if (!res.ok || !res.evaluation) {
+            setToast(res.error ?? t('termCalendar.evaluations.saveError'));
+            return;
+          }
+          const real = res.evaluation;
+          setEvaluations((prev) => [
+            ...prev.filter((e) => !(e.academicYear === selectedAY && e.type === type)),
+            real,
+          ]);
+        }
+      }
+    });
+  }, [evalDraft, persistedEvalByType, selectedAY, t]);
+
+  // Static-keyed label lookup (keeps the i18n keys statically analysable).
+  const evalLabel = useCallback(
+    (type: EvaluationType): string =>
+      type === 'baseline'
+        ? t('termCalendar.evaluations.types.baseline')
+        : type === 'midline'
+          ? t('termCalendar.evaluations.types.midline')
+          : t('termCalendar.evaluations.types.endline'),
+    [t],
+  );
 
   const num = useCallback((n: number) => formatNumber(n, locale), [locale]);
 
@@ -609,6 +753,137 @@ export function TermCalendarTab({
               );
             })
           )}
+
+          {/* Evaluation weeks — org-wide non-teaching bands, drawn OVER the term bands
+              at full track height so a week falling INSIDE a term carves through it in
+              place (teaching · [eval] · teaching); the term band still spans its full
+              raw dates. Display-only: pointer-events-none never blocks a band beneath. */}
+          {evalBands.map(({ type, startMon }) => {
+            const end = addDays(startMon, 7);
+            const leftFrac = Math.max(0, Math.min(1, dateToFrac(startMon)));
+            const rightFrac = Math.max(0, Math.min(1, dateToFrac(end)));
+            const left = leftFrac * 100;
+            const width = Math.max(1.4, (rightFrac - leftFrac) * 100);
+            const label = evalLabel(type);
+            return (
+              <div
+                key={type}
+                className="pointer-events-none absolute z-50"
+                style={{ left: `${left.toFixed(2)}%`, width: `${width.toFixed(2)}%`, top: 0, height: trackHeight }}
+                title={`${label} — w/c ${formatShortWeekdayDate(startMon)}`}
+                aria-label={`${label} evaluation week, w/c ${formatShortWeekdayDate(startMon)} (non-teaching)`}
+              >
+                <div
+                  className="absolute inset-0 rounded-[5px] border border-[#B0A79B]"
+                  style={{
+                    backgroundColor: 'rgba(122,114,102,0.14)',
+                    backgroundImage:
+                      'repeating-linear-gradient(45deg, rgba(90,82,72,0.22) 0, rgba(90,82,72,0.22) 4px, transparent 4px, transparent 9px)',
+                  }}
+                />
+                <div className="absolute left-1/2 top-[2px] -translate-x-1/2 whitespace-nowrap rounded-[5px] bg-[#5E564C] px-[6px] py-[2px] text-[9px] font-bold uppercase tracking-[0.04em] text-white shadow-[0_2px_6px_-2px_rgba(0,0,0,0.4)]">
+                  {label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Evaluations — org-wide, year-level; three typed rows for the viewed AY.
+          Draft-until-Save, like terms: date edits and clears mutate an in-memory draft
+          only; one Save commits, Reset reverts. An evaluation week is NOT a teaching
+          week — it renders as a non-teaching band above and is subtracted from a term's
+          displayed teaching-week count. */}
+      <div className="rounded-[14px] border border-[#ECE4D7] bg-[#FCFAF6] px-[20px] py-[18px]">
+        <div className="mb-[4px] flex flex-wrap items-center gap-[10px]">
+          <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-[#2A2422]">
+            {t('termCalendar.evaluations.title')}
+          </h3>
+          <span className="rounded-full bg-[#F3ECE2] px-[9px] py-[2px] text-[11px] font-semibold text-[#A79E94]">
+            {ayShort}
+          </span>
+          {evalDirty ? (
+            <div className="ml-auto flex items-center gap-[8px]">
+              <button
+                type="button"
+                onClick={resetEvaluations}
+                disabled={evalSaving}
+                className="text-[12px] font-semibold text-[#8A8178] hover:opacity-70 disabled:opacity-50"
+              >
+                {t('termCalendar.evaluations.reset')}
+              </button>
+              <button
+                type="button"
+                onClick={saveEvaluations}
+                disabled={evalSaving}
+                className={cn(
+                  'rounded-[9px] px-[15px] py-[8px] text-[13px] font-semibold transition-colors',
+                  evalSaving
+                    ? 'cursor-not-allowed bg-[#F0E9DE] text-[#B7AEA3]'
+                    : 'bg-teal text-white hover:bg-[#1a6a5d]',
+                )}
+              >
+                {t('termCalendar.evaluations.save')}
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <p className="mb-[14px] text-[11.5px] leading-[1.5] text-[#9A9087]">
+          {t('termCalendar.evaluations.hint')}
+        </p>
+
+        <div className="flex flex-col gap-[8px]">
+          {EVALUATION_TYPES.map((type) => {
+            const startsOn = evalDraft[type];
+            const startMon = startsOn ? mondayOf(startsOn) : null;
+            const outsideYear = startMon != null && !mondayWithinAY(startMon, selectedAY);
+            return (
+              <div
+                key={type}
+                dir="ltr"
+                className="flex flex-wrap items-center gap-[12px] rounded-[10px] border border-[#ECE4D7] bg-white px-[13px] py-[10px]"
+              >
+                <div className="flex min-w-[92px] items-center gap-[8px]">
+                  <span
+                    className="h-[11px] w-[11px] flex-none rounded-[3px] border border-[#B0A79B]"
+                    style={{
+                      backgroundImage:
+                        'repeating-linear-gradient(45deg, rgba(90,82,72,0.5) 0, rgba(90,82,72,0.5) 2px, transparent 2px, transparent 4px)',
+                    }}
+                  />
+                  <span className="text-[13px] font-semibold text-[#2A2520]">{evalLabel(type)}</span>
+                </div>
+                <input
+                  type="date"
+                  value={startMon ?? ''}
+                  onChange={(e) => setEvalDate(type, e.target.value)}
+                  className="rounded-[7px] border border-[#E2D9CC] bg-white px-[8px] py-[6px] text-[12px] text-[#2A2520] outline-none focus:border-teal"
+                  aria-label={t('termCalendar.evaluations.dateAria', { type: evalLabel(type) })}
+                />
+                {startMon ? (
+                  <span className="text-[11.5px] font-medium text-[#7C7266]">{`w/c ${formatShortWeekdayDate(startMon)}`}</span>
+                ) : (
+                  <span className="text-[11.5px] font-medium text-[#B7AEA3]">{t('termCalendar.evaluations.notSet')}</span>
+                )}
+                {outsideYear ? (
+                  <span className="inline-flex items-center gap-[5px] text-[11px] font-semibold text-status-progress">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                    {t('termCalendar.evaluations.outsideYear', { year: ayShort })}
+                  </span>
+                ) : null}
+                {startMon ? (
+                  <button
+                    type="button"
+                    onClick={() => clearEvalDate(type)}
+                    className="ml-auto text-[12px] font-semibold text-danger hover:opacity-70"
+                  >
+                    {t('termCalendar.evaluations.clear')}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -619,6 +894,7 @@ export function TermCalendarTab({
           key={draft.id}
           draft={draft}
           persisted={draft.isNew ? null : (terms.find((x) => x.id === draft.id) ?? null)}
+          evalMondays={evalMondays}
           getAnchor={getAnchor}
           centres={activeCentres}
           busy={isPending}
@@ -646,6 +922,7 @@ export function TermCalendarTab({
 function ScopePopover({
   draft,
   persisted,
+  evalMondays,
   getAnchor,
   centres,
   busy,
@@ -662,6 +939,9 @@ function ScopePopover({
   draft: DraftTerm;
   /** The last-saved row, for the dirty check; null for a new draft. */
   persisted: TermRow | null;
+  /** Set evaluation-week Mondays (live draft) for the viewed year — an eval week whose
+   *  Monday falls within this term's [start, end] is excluded from the teaching count. */
+  evalMondays: string[];
   /** The live anchor element (selected band, or the "Add term" button for a new draft). */
   getAnchor: () => HTMLElement | null;
   centres: CentreRow[];
@@ -688,6 +968,14 @@ function ScopePopover({
   const draftWeeks = draft.numWeeks; // can be <1 (end<start) or >MAX mid-edit
   const orderingOk = draftWeeks >= MIN_WEEKS; // end ≥ start
   const tooLong = draftWeeks > MAX_WEEKS;
+
+  // Evaluation weeks whose w/c Monday falls within this term's [start, end] are NOT
+  // teaching weeks — subtract them from the DISPLAYED count only (a pure derivation;
+  // `term_week`/`week_no` is untouched). Only meaningful for an in-order term.
+  const excludedEvalWeeks = orderingOk
+    ? evalMondays.filter((m) => m >= startMon && m <= endMon).length
+    : 0;
+  const netTeachingWeeks = Math.max(0, draftWeeks - excludedEvalWeeks);
 
   // Overlap only makes sense for in-range, scoped dates; test the DRAFT against the
   // live terms. Empty-scope terms never conflict (findTermOverlap returns null).
@@ -907,7 +1195,9 @@ function ScopePopover({
         </div>
         <div className="mt-[9px]">
           <span className={cn('text-[11.5px] font-semibold', !orderingOk || tooLong ? 'text-status-progress' : 'text-teal-deep')}>
-            {t('termCalendar.dates.weeks', { count: Math.max(0, draftWeeks) })}
+            {excludedEvalWeeks > 0
+              ? t('termCalendar.dates.weeksNet', { net: netTeachingWeeks, excluded: excludedEvalWeeks })
+              : t('termCalendar.dates.weeks', { count: Math.max(0, draftWeeks) })}
           </span>
         </div>
         {/* Academic year — read-only, derived from the start date (August boundary).

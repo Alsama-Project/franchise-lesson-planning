@@ -18,10 +18,10 @@ function href(coord: { month: string; week: number }, view: View): string {
  * scheme of work by (month, week) — NOT by calendar date — and the centre label
  * opens a month → week picker that jumps straight to any coordinate. Both routes
  * set the SAME `?month=&week=` params, so the picker and the arrows share one
- * numbering (each option carries its flat `weekNo`, derived from the same ordered
- * scheme of work).
+ * numbering (each option carries its academic `weekNo` — the term spine's
+ * year-continuous `term_week.week_no`, equal to the curriculum's own week).
  *
- * The label shows the 1-based teaching "Week {n}" (e.g. "Week 36"). The shown
+ * The label shows the academic teaching "Week {n}" (e.g. "Week 2"). The shown
  * week's real Monday (`mondayLabel`, from `term_week`) is folded in as muted
  * secondary text — "Week 36 · Dec 15" — and "· current" is appended only when today
  * falls in the shown week. The curriculum coordinate ("March · Week 2") rides along

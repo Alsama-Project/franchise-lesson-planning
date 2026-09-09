@@ -18,6 +18,7 @@ import { createClient } from '@/lib/supabase/server';
 import { resolveActiveMembership, type MembershipFull } from '@/lib/active-space';
 import { resolveCurrentTermWeekNo, resolveNearestTermWeekNo, resolveTermWeek } from '@/lib/term-week';
 import { getCurriculumNav } from '@/lib/curriculumUtils';
+import { orderBoardCoordinates } from '@/lib/board-nav';
 import { resolveWeekSlotKeys, selectWeekPlanRows } from '@/lib/weekly-overview-selection';
 import { initialsOf } from '@/components/weekly-overview/avatar';
 import type { PlanScope, PlanStatus } from '@/types/lesson';
@@ -31,18 +32,6 @@ import type {
   BoardYear,
   PlanOwner,
 } from '@/types/weekly-overview';
-
-// Calendar-month order so the prev/next arrows step through the scheme of work in
-// the right sequence regardless of how rows come back from the DB.
-const MONTH_ORDER = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function monthIndex(month: string): number {
-  const i = MONTH_ORDER.indexOf(month);
-  return i === -1 ? MONTH_ORDER.length : i;
-}
 
 // Hand-narrowed row shapes — database.types.ts is a placeholder until gen:types
 // runs against a live DB, so the client can't infer the nested selects.
@@ -331,20 +320,12 @@ export async function getBoardData(input: {
         : null,
   });
 
-  // Curriculum coordinates across the subject's years, in scheme-of-work order.
-  // Reuse the per-year navs already probed above — no second round of reads.
+  // Curriculum coordinates across the subject's years, in scheme-of-work order
+  // (ordered by the academic `week`, so September=Week 1 leads and June=Week 38
+  // trails — see `orderBoardCoordinates`). Reuse the per-year navs already probed
+  // above — no second round of reads.
   const navs = years.map((y) => navByYear.get(y) ?? []);
-  const weeksByMonth = new Map<string, Set<number>>();
-  for (const nav of navs) {
-    for (const { month, weeks } of nav) {
-      if (!weeksByMonth.has(month)) weeksByMonth.set(month, new Set());
-      const set = weeksByMonth.get(month)!;
-      for (const w of weeks) set.add(w);
-    }
-  }
-  const coords: BoardCoordinate[] = [...weeksByMonth.entries()]
-    .sort((a, b) => monthIndex(a[0]) - monthIndex(b[0]))
-    .flatMap(([month, weeks]) => [...weeks].sort((a, b) => a - b).map((week) => ({ month, week })));
+  const coords: BoardCoordinate[] = orderBoardCoordinates(navs);
 
   // No coordinates for this teacher's bands → the empty-curriculum panel. Name WHY:
   // `subject_not_synced` when the subject has no curriculum at all, else
@@ -365,11 +346,13 @@ export async function getBoardData(input: {
     };
   }
 
-  // The month → week picker's options, each tagged with its flat teaching-week number.
-  const weeks: BoardWeekOption[] = coords.map((c, i) => ({
+  // The month → week picker's options, each labelled by its ACADEMIC teaching-week
+  // number (`week` — the curriculum's absolute Sep=1..38 week, equal to the term
+  // spine's `term_week.week_no` by design). No flat position counter.
+  const weeks: BoardWeekOption[] = coords.map((c) => ({
     month: c.month,
     week: c.week,
-    weekNo: i + 1,
+    weekNo: c.week,
   }));
 
   // Term-calendar resolution is scoped to the viewer's ACTIVE CENTRE (single) and
@@ -380,27 +363,29 @@ export async function getBoardData(input: {
 
   // Resolve the selected coordinate from the params (snap to a real one), else land
   // on the week containing today (Asia/Beirut) via `term_week`, else the first week.
+  // `resolveCurrentTermWeekNo` returns the spine's academic `week_no`; match it to the
+  // coordinate whose `.week` equals it (NOT a positional index — `coords` is ordered
+  // by academic week, and the invariant is `coordinate.week == term_week.week_no`).
   let index = coords.findIndex((c) => c.month === input.month && c.week === input.week);
   if (index === -1) {
     const currentWeekNo = await resolveCurrentTermWeekNo(supabase, activeSchoolId, years);
-    index =
-      currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
-        ? currentWeekNo - 1
-        : 0;
+    const byWeek = currentWeekNo != null ? coords.findIndex((c) => c.week === currentWeekNo) : -1;
+    index = byWeek !== -1 ? byWeek : 0;
   }
   const coordinate = coords[index];
   const prev = index > 0 ? coords[index - 1] : null;
   const next = index < coords.length - 1 ? coords[index + 1] : null;
 
-  const weekNo = index + 1;
+  // The shown week's academic number is the coordinate's own `week` — the single
+  // source for the label AND the key the spine resolves the Monday/`current` from.
+  const weekNo = coordinate.week;
   const { mondayDate, isCurrent } = await resolveTermWeek(supabase, activeSchoolId, years, weekNo);
 
-  // The "This week" button's jump target.
+  // The "This week" button's jump target: the spine's academic `week_no` for today
+  // (or the nearest seeded week), matched to its coordinate by `.week`.
   const currentWeekNo = await resolveNearestTermWeekNo(supabase, activeSchoolId, years);
   const currentWeek =
-    currentWeekNo != null && currentWeekNo >= 1 && currentWeekNo <= coords.length
-      ? coords[currentWeekNo - 1]
-      : null;
+    currentWeekNo != null ? coords.find((c) => c.week === currentWeekNo) ?? null : null;
 
   // The curriculum lessons (P1..P5) for the selected coordinate across the subject's
   // years — the "+ Add lesson" pool and the join target for the plans.

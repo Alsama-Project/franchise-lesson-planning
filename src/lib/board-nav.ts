@@ -28,6 +28,47 @@ export function toBoardView(view: string | undefined): BoardView {
   return view === 'status' ? 'status' : 'calendar';
 }
 
+// Calendar-month order — only a deterministic TIE-BREAK when the same academic week
+// number maps to two months across divergent years (Y0 Feb-anchored vs Y1–6 Sep).
+const MONTH_ORDER = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+function monthIndex(month: string): number {
+  const i = MONTH_ORDER.indexOf(month);
+  return i === -1 ? MONTH_ORDER.length : i;
+}
+
+/** A per-year curriculum nav: each month with the academic week numbers it holds. */
+export interface MonthWeeks {
+  month: string;
+  weeks: readonly number[];
+}
+
+/**
+ * Flatten a set of per-year curriculum navs into ONE scheme-of-work sequence of
+ * (month, week) coordinates, ordered by the ACADEMIC week number (Y1–6 Sep=1..38,
+ * Y0 Mar=1..20) — NOT by calendar month. This is the fix for the legacy flat
+ * counter: because the academic year opens in September, ordering by `week` puts
+ * September (Week 1) first and June (Week 38) last, and the label is the week itself
+ * (equal to `term_week.week_no` by design), never a January-first position. `month`
+ * tie-breaks the rare cross-year divergence where one week number sits in two months.
+ */
+export function orderBoardCoordinates(
+  navs: readonly (readonly MonthWeeks[])[],
+): BoardCoordinateInput[] {
+  const weeksByMonth = new Map<string, Set<number>>();
+  for (const nav of navs) {
+    for (const { month, weeks } of nav) {
+      const set = weeksByMonth.get(month) ?? weeksByMonth.set(month, new Set()).get(month)!;
+      for (const w of weeks) set.add(w);
+    }
+  }
+  return [...weeksByMonth.entries()]
+    .flatMap(([month, weeks]) => [...weeks].map((week) => ({ month, week })))
+    .sort((a, b) => a.week - b.week || monthIndex(a.month) - monthIndex(b.month));
+}
+
 /**
  * The board's URL query string (`month=…&week=…&view=…`) for a coordinate + view, or
  * `''` when there is no real coordinate (the empty board). Consumers append it to a

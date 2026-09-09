@@ -166,10 +166,10 @@ export interface BoardCoordinate {
 }
 
 /**
- * One entry in the month → week picker: a curriculum coordinate plus its flat
- * teaching-week number. `weekNo` is the SAME 1-based number the board shows
- * (`weekNo = index + 1` in the ordered scheme of work), so the picker and the
- * prev/next arrows share one numbering — no remapping.
+ * One entry in the month → week picker: a curriculum coordinate plus its academic
+ * teaching-week number. `weekNo` equals the coordinate's own academic `week` (the
+ * curriculum's absolute Sep=1..38 week, equal to `term_week.week_no` by design), so
+ * the picker, the header and the prev/next arrows all share the spine's numbering.
  */
 export interface BoardWeekOption {
   month: string;
@@ -217,9 +217,10 @@ export interface BoardData {
   /** Human label for the coordinate, e.g. "March · Week 2". Kept as the week label's tooltip. */
   coordinateLabel: string;
   /**
-   * The curriculum teaching-week number (1-based: Month 1 Week 1 = 1, …≈36),
-   * derived by counting curriculum coordinates in order. Drives the "Week {n}"
-   * label and is the `term_week` lookup key. `0` when no curriculum is synced.
+   * The shown week's academic teaching-week number — the coordinate's own `week`
+   * (the curriculum's absolute Sep=1..38 week, equal to `term_week.week_no` by
+   * design). Drives the "Week {n}" label and is the `term_week` lookup key. `0`
+   * when no curriculum is synced.
    */
   weekNo: number;
   /**
@@ -242,10 +243,10 @@ export interface BoardData {
    */
   currentWeek: BoardCoordinate | null;
   /**
-   * Every curriculum coordinate in scheme-of-work order, each carrying its flat
-   * `weekNo` — the month → week picker's option list. Empty when no curriculum is
-   * synced. Built from the same ordered list that derives `weekNo`, so picker and
-   * arrows agree on the numbering.
+   * Every curriculum coordinate in scheme-of-work order (by academic `week`), each
+   * carrying its academic `weekNo` — the month → week picker's option list. Empty
+   * when no curriculum is synced. Built from the same ordered list that derives the
+   * header `weekNo`, so picker, header and arrows agree on the numbering.
    */
   weeks: BoardWeekOption[];
   /** One band per year the teacher teaches, in ascending year order. */

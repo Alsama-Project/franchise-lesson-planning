@@ -389,7 +389,7 @@
         "save": "Save evaluations",
         "saveError": "Couldn’t save the evaluation. Please try again.",
         "dateAria": "{type} evaluation week",
-        "outsideYear": "Outside {year}"
+        "notInTerm": "This evaluation isn’t inside any term"
       }
     },
     "aiGuide": {

@@ -97,15 +97,10 @@ function clampStartToAY(start: string, ay: number): string {
   return start;
 }
 
-/** The [firstMonday, lastMonday] inclusive Monday window of academic year `ay` (Aug→Jul). */
-function ayMondayWindow(ay: number): { min: string; max: string } {
-  return { min: firstMondayOfAugust(ay), max: mondayOf(`${ay + 1}-07-31`) };
-}
-
-/** True when Monday `m` sits inside academic year `ay`'s Aug→Jul window. */
-function mondayWithinAY(m: string, ay: number): boolean {
-  const { min, max } = ayMondayWindow(ay);
-  return m >= min && m <= max;
+/** A term's inclusive Monday span [firstMonday, lastMonday] — the weeks it covers. */
+function termMondaySpan(term: TermRow): { start: string; end: string } {
+  const start = mondayOf(term.startsOn);
+  return { start, end: addDays(start, (term.numWeeks - 1) * 7) };
 }
 
 /** The evaluations draft: each type mapped to its Monday, or null when unset. */
@@ -362,6 +357,17 @@ export function TermCalendarTab({
     [evalDraft],
   );
   const evalMondays = useMemo(() => evalBands.map((b) => b.startMon), [evalBands]);
+
+  // An evaluation week must sit INSIDE a term (it IS term time — the only freedom is
+  // which week of the term). So an eval whose Monday lands in no term of the viewed
+  // year is invalid: warn clearly (never a silent no-op), but don't hard-block Save.
+  // Checked against the committed terms' inclusive Monday spans (the same [start, end]
+  // the popover subtracts within), so "inside a term" and "subtracted" stay aligned.
+  const termSpans = useMemo(() => visibleTerms.map(termMondaySpan), [visibleTerms]);
+  const isInsideAnyTerm = useCallback(
+    (m: string) => termSpans.some((r) => m >= r.start && m <= r.end),
+    [termSpans],
+  );
 
   const setEvalDate = useCallback((type: EvaluationType, value: string) => {
     if (!value) return;
@@ -837,7 +843,7 @@ export function TermCalendarTab({
           {EVALUATION_TYPES.map((type) => {
             const startsOn = evalDraft[type];
             const startMon = startsOn ? mondayOf(startsOn) : null;
-            const outsideYear = startMon != null && !mondayWithinAY(startMon, selectedAY);
+            const notInTerm = startMon != null && !isInsideAnyTerm(startMon);
             return (
               <div
                 key={type}
@@ -866,10 +872,10 @@ export function TermCalendarTab({
                 ) : (
                   <span className="text-[11.5px] font-medium text-[#B7AEA3]">{t('termCalendar.evaluations.notSet')}</span>
                 )}
-                {outsideYear ? (
+                {notInTerm ? (
                   <span className="inline-flex items-center gap-[5px] text-[11px] font-semibold text-status-progress">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
-                    {t('termCalendar.evaluations.outsideYear', { year: ayShort })}
+                    {t('termCalendar.evaluations.notInTerm')}
                   </span>
                 ) : null}
                 {startMon ? (

@@ -1,0 +1,69 @@
+name: CI
+
+# Runs on every pull request into staging or main. It only reads the code and
+# uses throwaway services — it never talks to the live Vercel or Supabase projects.
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # main already has lint errors, so only files changed in this PR must be clean.
+      # New code meets the bar; old code gets fixed as it's touched.
+      - name: Lint changed files
+        if: github.event_name == 'pull_request'
+        run: |
+          files=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- '*.ts' '*.tsx' '*.js' '*.mjs')
+          if [ -n "$files" ]; then npx eslint $files; else echo "No lintable files changed."; fi
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+
+  migrations:
+    name: Database migrations apply cleanly
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_AUTH_EXTERNAL_AZURE_CLIENT_ID: ci-placeholder
+      SUPABASE_AUTH_EXTERNAL_AZURE_SECRET: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Starts a throwaway local Postgres, applies every migration, then seed.sql.
+      - run: supabase db start

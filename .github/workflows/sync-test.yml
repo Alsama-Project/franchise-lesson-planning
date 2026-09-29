@@ -1,0 +1,47 @@
+name: Keep test in sync with main
+
+# Whenever main changes (a release or a hotfix), make sure test isn't missing
+# anything that's live. test is protected, so this opens a PR rather than pushing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: sync-test
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open a sync PR if main has changes test doesn't
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main test
+          # After a normal release, main only adds a merge commit, so merging main into test
+          # changes nothing. test is protected, so we never push to it; a PR is only needed
+          # when main has code test lacks.
+          merged=$(git merge-tree --write-tree origin/test origin/main) || merged=conflict
+          if [ "$merged" = "$(git rev-parse 'origin/test^{tree}')" ]; then
+            echo "test already has everything on main."
+            exit 0
+          fi
+          # main has something test doesn't (usually a hotfix): a person merges it.
+          existing=$(gh pr list --base test --head main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Sync PR #$existing already open."
+          else
+            gh pr create --base test --head main \
+              --title "Sync main → test" \
+              --body "main has changes that test doesn't (usually a hotfix). Merge this with a **merge commit** to bring test up to date. CI doesn't run on PRs opened by this workflow, so an admin merges it."
+          fi

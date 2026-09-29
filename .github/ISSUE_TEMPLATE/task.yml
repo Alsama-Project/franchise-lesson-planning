@@ -1,0 +1,28 @@
+name: Task
+description: A roadmap work item (DB, AP, FN, PD, AI, FR and others).
+title: "[ID] "
+labels: ["task"]
+body:
+  - type: input
+    id: roadmap-id
+    attributes:
+      label: Roadmap ID
+      placeholder: "e.g. DB-06"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      placeholder: "- #12 (DB-06)"
+  - type: textarea
+    id: stories
+    attributes:
+      label: Related stories
+      placeholder: "- #40 (US-5.1)"

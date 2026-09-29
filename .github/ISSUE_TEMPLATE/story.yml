@@ -1,0 +1,47 @@
+name: User story
+description: Something a user needs, with acceptance criteria.
+title: "[US-x.y] "
+labels: ["story"]
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: Story
+      description: "As a …, I want …, so that …"
+    validations:
+      required: true
+  - type: dropdown
+    id: build-state
+    attributes:
+      label: Build state
+      options:
+        - Built
+        - Part built
+        - Not built
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: >-
+        One checklist line per criterion, tagged [Exists] (works today, needs a regression test),
+        [Change] (works differently today) or [New] (not built yet). Each one gets an automated test.
+      value: |
+        - [ ] [New] Given …, when …, then …
+    validations:
+      required: true
+  - type: input
+    id: roadmap-ids
+    attributes:
+      label: Roadmap IDs
+      placeholder: "e.g. DB-06, AP-01, FR-22"
+  - type: dropdown
+    id: release
+    attributes:
+      label: Release
+      options:
+        - Release 1
+        - Release 2
+        - Release 3
+        - Later

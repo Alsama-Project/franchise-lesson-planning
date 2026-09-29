@@ -1,14 +1,14 @@
 name: Keep test in sync with main
 
-# Whenever main changes (a release or a hotfix), bring test up to date so the
-# test environment never falls behind what's live.
+# Whenever main changes (a release or a hotfix), make sure test isn't missing
+# anything that's live. test is protected, so this opens a PR rather than pushing.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 concurrency:
@@ -23,26 +23,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fast-forward test to main, or open a sync PR
+      - name: Open a sync PR if main has changes test doesn't
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main test
-          if git merge-base --is-ancestor origin/main origin/test; then
-            echo "test already contains everything on main."
-          elif git merge-base --is-ancestor origin/test origin/main; then
-            # test has nothing main lacks, so this is a pure fast-forward: no merge, no conflicts.
-            git push origin origin/main:refs/heads/test
-            echo "Fast-forwarded test to main."
+          # After a normal release, main only adds a merge commit, so merging main into test
+          # changes nothing. test is protected, so we never push to it; a PR is only needed
+          # when main has code test lacks.
+          merged=$(git merge-tree --write-tree origin/test origin/main) || merged=conflict
+          if [ "$merged" = "$(git rev-parse 'origin/test^{tree}')" ]; then
+            echo "test already has everything on main."
+            exit 0
+          fi
+          # main has something test doesn't (usually a hotfix): a person merges it.
+          existing=$(gh pr list --base test --head main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Sync PR #$existing already open."
           else
-            # test has unreleased work AND main has something new (e.g. a hotfix):
-            # a person should merge these, so open (or reuse) a PR.
-            existing=$(gh pr list --base test --head main --state open --json number --jq '.[0].number')
-            if [ -n "$existing" ]; then
-              echo "Sync PR #$existing already open."
-            else
-              gh pr create --base test --head main \
-                --title "Sync main → test" \
-                --body "main has changes that test doesn't (usually a hotfix). Merge this with a **merge commit** to bring test up to date."
-            fi
+            gh pr create --base test --head main \
+              --title "Sync main → test" \
+              --body "main has changes that test doesn't (usually a hotfix). Merge this with a **merge commit** to bring test up to date. CI doesn't run on PRs opened by this workflow, so an admin merges it."
           fi

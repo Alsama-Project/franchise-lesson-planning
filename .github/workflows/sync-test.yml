@@ -1,0 +1,48 @@
+name: Keep test in sync with main
+
+# Whenever main changes (a release or a hotfix), bring test up to date so the
+# test environment never falls behind what's live.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-test
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward test to main, or open a sync PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main test
+          if git merge-base --is-ancestor origin/main origin/test; then
+            echo "test already contains everything on main."
+          elif git merge-base --is-ancestor origin/test origin/main; then
+            # test has nothing main lacks, so this is a pure fast-forward: no merge, no conflicts.
+            git push origin origin/main:refs/heads/test
+            echo "Fast-forwarded test to main."
+          else
+            # test has unreleased work AND main has something new (e.g. a hotfix):
+            # a person should merge these, so open (or reuse) a PR.
+            existing=$(gh pr list --base test --head main --state open --json number --jq '.[0].number')
+            if [ -n "$existing" ]; then
+              echo "Sync PR #$existing already open."
+            else
+              gh pr create --base test --head main \
+                --title "Sync main → test" \
+                --body "main has changes that test doesn't (usually a hotfix). Merge this with a **merge commit** to bring test up to date."
+            fi
+          fi

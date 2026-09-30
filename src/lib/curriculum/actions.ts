@@ -1,8 +1,9 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentProfile, getMyMemberships } from '@/lib/auth';
+import { getCurrentProfile } from '@/lib/auth';
 import { importCurriculumWorkbook } from '@/lib/curriculum/import';
+import { mayRunImport, resolveImportStanding } from '@/lib/curriculum/import-access';
 import { removeSourceDocument, uploadSourceDocument } from '@/lib/download/source-documents';
 import type { UnresolvedCurriculumRow } from '@/lib/curriculum/types';
 
@@ -67,17 +68,13 @@ export async function importCurriculumAction(
   if (!profile) return { ok: false, message: 'You must be signed in.' };
 
   const supabase = await createClient();
-  if (profile.role !== 'admin') {
-    const { data } = await supabase
-      .from('subjects')
-      .select('id')
-      .eq('code', subjectCode)
-      .maybeSingle();
-    const subjectId = (data as { id: string } | null)?.id;
-    const memberships = await getMyMemberships();
-    if (!subjectId || !memberships.some((m) => m.subjectId === subjectId)) {
-      return { ok: false, message: `You can't refresh curriculum for "${subjectCode}".` };
-    }
+  const { data } = await supabase.from('subjects').select('id').eq('code', subjectCode).maybeSingle();
+  const subjectId = (data as { id: string } | null)?.id;
+  // A real import changes the subject's curriculum for every centre: admins and the
+  // subject's coordinators only (see import-access.ts).
+  const standing = subjectId ? await resolveImportStanding(supabase, subjectId) : 'none';
+  if (!mayRunImport(standing, false)) {
+    return { ok: false, message: `You can't refresh curriculum for "${subjectCode}".` };
   }
 
   // Retain the original workbook for ADMIN interactive uploads only. The
@@ -86,7 +83,7 @@ export async function importCurriculumAction(
   // unchanged. This server action is the interactive path; the n8n secret path is
   // the route (/api/curriculum/import) and never reaches this code.
   let originalStoragePath: string | null = null;
-  if (profile.role === 'admin') {
+  if (standing === 'admin') {
     const uploaded = await uploadSourceDocument(supabase, profile.id, file);
     if (!uploaded.ok) {
       return { ok: false, message: 'Could not store the uploaded file. Please try again.' };
@@ -101,6 +98,7 @@ export async function importCurriculumAction(
     source: 'upload',
     fileName: file.name,
     originalStoragePath,
+    runBy: profile.id,
   });
   if (result.status === 'error') {
     // Roll back the orphaned original so a failed import never leaks storage.
@@ -170,6 +168,7 @@ export async function publishCurriculumVersionAction(
     fileName: file.name,
     originalStoragePath: uploaded.path,
     newVersion: true,
+    runBy: profile.id,
   });
   if (result.status === 'error') {
     // Roll back the orphaned original so a failed publish never leaks storage.

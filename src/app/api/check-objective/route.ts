@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { guardAiRequest } from '@/lib/ai/usage-guard';
 import {
   openObjectiveCheckStream,
   finalizeStreamedCheck,
@@ -116,6 +118,10 @@ export async function POST(request: NextRequest) {
   // Pre-flight (missing key / empty input) throws before any stream opens, so it
   // still maps to the same HTTP status as before. Once streaming starts we've
   // committed to a 200 SSE response; late failures arrive as an `error` frame.
+  // H8: input cap + per-user daily allowance, before any model call.
+  const refused = await guardAiRequest(await createClient(), 'objective_check', [body.objective, body.context]);
+  if (refused) return refused;
+
   let stream: Awaited<ReturnType<typeof openObjectiveCheckStream>>;
   try {
     stream = await openObjectiveCheckStream(body.objective, parseContext(body.context), subject);

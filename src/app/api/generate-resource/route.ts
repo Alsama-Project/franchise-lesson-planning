@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { guardAiRequest } from '@/lib/ai/usage-guard';
 import {
   generateResource,
   GenerateResourceError,
@@ -215,6 +217,14 @@ export async function POST(request: NextRequest) {
     subjectId: subject.subjectId,
     subjectResolution: subject.resolution,
   };
+
+  // H8: input cap on the teacher's own text + per-user daily allowance.
+  const refused = await guardAiRequest(await createClient(), 'resource', [
+    body.teacher_prompt,
+    body.refinement,
+    body.current_content,
+  ]);
+  if (refused) return refused;
 
   try {
     const result = await generateResource(context);

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { guardAiRequest } from '@/lib/ai/usage-guard';
 import { createClient } from '@/lib/supabase/server';
 import {
   planWorksheet,
@@ -140,6 +141,10 @@ export async function POST(request: NextRequest) {
     templateHeadings: scaffoldHeadings(scaffoldMarkdown),
     exerciseTypes,
   };
+
+  // H8: per-user daily allowance (the prompt is built from the stored plan, not typed text).
+  const refused = await guardAiRequest(supabase, 'worksheet_plan', []);
+  if (refused) return refused;
 
   let result;
   try {

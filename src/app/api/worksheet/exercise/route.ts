@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { guardAiRequest } from '@/lib/ai/usage-guard';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -192,6 +193,14 @@ export async function POST(request: NextRequest) {
     currentBodyMd: instruction ? exercise.body_md : null,
     instruction: instruction || null,
   };
+
+  // H8: input cap on the teacher's instruction + per-user daily allowance. A refused
+  // request must not leave the row stuck on 'generating'.
+  const refused = await guardAiRequest(supabase, 'worksheet_exercise', [instruction]);
+  if (refused) {
+    await supabase.from('worksheet_exercise').update({ status: 'failed' }).eq('id', exerciseId);
+    return refused;
+  }
 
   let result;
   try {

@@ -8,6 +8,7 @@ import type { Annotation } from '@/types/annotation';
 import type { EditorPlanData } from '@/lib/editor/load-plan';
 import { inSessionMinutes } from '@/lib/blocks';
 import { composeObjective, stripStem } from '@/lib/editor/objective';
+import { createAutosave, type Autosave } from '@/lib/editor/autosave';
 import {
   deriveMaterials,
   ensureGroupPractice,
@@ -204,8 +205,9 @@ export function LessonPlanEditor({
   // Debounce edits to objective / blocks / materials / check result. The student
   // worksheet is NOT in this payload — it has its own always-on autosave below —
   // so a locked plan can keep saving its worksheet without this path ever writing.
+  // `createAutosave` saves the latest edit after a pause, on leave (unmount flush
+  // below), and retries a failed save on its own until it succeeds.
   const firstRender = useRef(true);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The latest `locked` for the debounced writer to read. Kept in a ref (not a
   // dep) so flipping the lock never re-runs the autosave effect — only genuine
   // edits do — which avoids a save flicker on submit/unlock.
@@ -214,40 +216,42 @@ export function LessonPlanEditor({
     lockedRef.current = locked;
   }, [locked]);
 
+  // Created in an effect (not during render) and kept in a ref; the same effect's
+  // cleanup saves a still-pending edit when the editor UNMOUNTS (in-app navigation
+  // away) instead of cancelling it.
+  const planAutosave = useRef<Autosave<Parameters<typeof saveLessonPlan>[0]> | null>(null);
+  useEffect(() => {
+    const autosave = createAutosave<Parameters<typeof saveLessonPlan>[0]>({
+      delayMs: AUTOSAVE_DELAY_MS,
+      save: async (payload) => {
+        // Locked plans never persist their plan fields — the plan pane is read-only
+        // in `submitted` / `approved`, so a stray state change (e.g. a non-form
+        // control slipping past the disabled fieldsets) must not write back.
+        if (lockedRef.current) return true;
+        const res = await saveLessonPlan(payload);
+        return res.ok;
+      },
+      onState: (st) => setSaveState(st === 'retrying' ? 'error' : st),
+    });
+    planAutosave.current = autosave;
+    return () => {
+      void autosave.flush();
+    };
+  }, []);
+
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
       return;
     }
-    setSaveState('saving');
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      // Locked plans never persist their plan fields — the plan pane is read-only
-      // in `submitted` / `approved`, so a stray state change (e.g. a non-form
-      // control slipping past the disabled fieldsets) must not write back.
-      if (lockedRef.current) {
-        setSaveState('idle');
-        return;
-      }
-      try {
-        const res = await saveLessonPlan({
-          id: plan.id,
-          smartt_objective: composeObjective(remainder),
-          blocks,
-          required_materials: materials,
-          smartt_check: checkResult ?? undefined,
-        });
-        setSaveState(res.ok ? 'saved' : 'error');
-      } catch {
-        // A thrown action (size limit, network) must surface as a failed save, not an
-        // unhandled rejection that leaves the indicator stuck on "saving".
-        setSaveState('error');
-      }
-    }, AUTOSAVE_DELAY_MS);
-
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    if (lockedRef.current) return;
+    planAutosave.current?.schedule({
+      id: plan.id,
+      smartt_objective: composeObjective(remainder),
+      blocks,
+      required_materials: materials,
+      smartt_check: checkResult ?? undefined,
+    });
   }, [remainder, blocks, materials, checkResult, plan.id]);
 
   // ── Worksheet autosave (always on, every status) ───────────────────────────
@@ -256,32 +260,22 @@ export function LessonPlanEditor({
   // touches — and never clobbers — the locked plan fields, and it is NOT gated by
   // `locked`. This is the one behaviour that differs from the plan-field lock.
   const wsFirstRender = useRef(true);
-  const wsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The latest worksheet still awaiting persistence. Set when a change is debounced,
-  // read-and-cleared when a save actually starts — so an unmount / navigation can
-  // flush a write the debounce hasn't fired yet, and `beforeunload` knows one is due.
-  const wsPending = useRef<{ planId: string; worksheet: unknown } | null>(null);
-
-  const flushWorksheetSave = useCallback(async () => {
-    const pending = wsPending.current;
-    if (!pending) return;
-    wsPending.current = null;
-    if (wsTimer.current) {
-      clearTimeout(wsTimer.current);
-      wsTimer.current = null;
-    }
-    setSaveState('saving');
-    try {
-      const res = await saveWorksheet(pending.planId, pending.worksheet);
-      setSaveState(res.ok ? 'saved' : 'error');
-    } catch {
-      // A THROWN action — the request body exceeding the Server Action size limit, a
-      // network drop — must never vanish silently. Without this catch the rejection
-      // is unhandled and `saveState` stays stuck on "saving" forever: the teacher is
-      // told nothing while her worksheet is not, in fact, saved. Surface it as a
-      // failed save like any other.
-      setSaveState('error');
-    }
+  // Same autosave as the plan fields: debounced, flushed on unmount (a Regenerate-all's
+  // images rendering live but gone on the next load was exactly a dropped last write),
+  // and retried on failure. A thrown action — the body exceeding the Server Action size
+  // limit, a network drop — counts as a failure, never a silent loss.
+  const worksheetAutosave = useRef<Autosave<{ planId: string; worksheet: unknown }> | null>(null);
+  useEffect(() => {
+    const autosave = createAutosave<{ planId: string; worksheet: unknown }>({
+      delayMs: AUTOSAVE_DELAY_MS,
+      save: async ({ planId, worksheet: ws }) => (await saveWorksheet(planId, ws)).ok,
+      onState: (st) => setSaveState(st === 'retrying' ? 'error' : st),
+    });
+    worksheetAutosave.current = autosave;
+    // Persist a still-pending worksheet edit when this editor UNMOUNTS.
+    return () => {
+      void autosave.flush();
+    };
   }, []);
 
   useEffect(() => {
@@ -289,36 +283,16 @@ export function LessonPlanEditor({
       wsFirstRender.current = false;
       return;
     }
-    wsPending.current = { planId: plan.id, worksheet };
-    setSaveState('saving');
-    if (wsTimer.current) clearTimeout(wsTimer.current);
-    wsTimer.current = setTimeout(() => {
-      void flushWorksheetSave();
-    }, AUTOSAVE_DELAY_MS);
-
-    return () => {
-      if (wsTimer.current) clearTimeout(wsTimer.current);
-    };
-  }, [worksheet, plan.id, flushWorksheetSave]);
-
-  // Persist a still-pending worksheet edit when this editor UNMOUNTS (in-app
-  // navigation away) instead of dropping it. The 1.5s debounce window would otherwise
-  // silently lose the last write — the exact failure behind a Regenerate-all's images
-  // rendering live but being gone on the next load. The request is fired synchronously
-  // on cleanup; the browser completes it after unmount.
-  useEffect(() => {
-    return () => {
-      void flushWorksheetSave();
-    };
-  }, [flushWorksheetSave]);
+    worksheetAutosave.current?.schedule({ planId: plan.id, worksheet });
+  }, [worksheet, plan.id]);
 
   // A full-page navigation / reload / tab close can't await an in-flight autosave, so
-  // warn before leaving while a worksheet write is still queued (standard "unsaved
+  // warn before leaving while a plan or worksheet write is still queued (standard "unsaved
   // changes" guard). Active only while a write is actually pending, so it never nags
   // once everything is saved.
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (wsPending.current) {
+      if (worksheetAutosave.current?.hasPending() || planAutosave.current?.hasPending()) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -512,7 +486,7 @@ export function LessonPlanEditor({
     if (!canSubmit) return;
     setSubmitting(true);
     setSubmitError(null);
-    if (timer.current) clearTimeout(timer.current);
+    planAutosave.current?.cancel();
     // The worksheet is persisted by its own autosave, so it is not part of the
     // submit payload — submit only commits the plan fields + the status move.
     const res = await submitLessonPlan({
@@ -555,7 +529,7 @@ export function LessonPlanEditor({
   async function handleSave() {
     setSubmitting(true);
     setSubmitError(null);
-    if (timer.current) clearTimeout(timer.current);
+    planAutosave.current?.cancel();
     const res = await saveLessonPlan({
       id: plan.id,
       smartt_objective: composeObjective(remainder),

@@ -22,7 +22,7 @@
     },
     "save": {
       "saving": "Saving…",
-      "failed": "Save failed — retrying on next edit",
+      "failed": "Couldn't save — trying again…",
       "saved": "Saved"
     },
     "subheader": {

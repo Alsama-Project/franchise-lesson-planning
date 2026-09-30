@@ -186,7 +186,9 @@ export async function getBoardData(input: {
 
   const teacherName =
     (profile as { full_name?: string | null } | null)?.full_name ?? user.email ?? 'there';
-  const isAdmin = (profile as { role?: string } | null)?.role === 'admin';
+  // Confirm a stored admin role against is_admin(), which is false once deactivated (L5).
+  const storedAdmin = (profile as { role?: string } | null)?.role === 'admin';
+  const isAdmin = storedAdmin && (await supabase.rpc('is_admin')).data === true;
 
   // All the user's (non-archived) classes across every subject they teach.
   const taughtAll = ((ctRows ?? []) as unknown as Array<{ classes: TaughtClassRow | null }>)

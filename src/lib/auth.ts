@@ -11,9 +11,9 @@
 
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { effectiveRole, type AppRole } from '@/lib/role';
 
-/** Global role on `profiles.role`. Coordinator-ness now lives in subject_membership. */
-export type AppRole = 'teacher' | 'coordinator' | 'admin';
+export type { AppRole };
 
 /** Per-space role on a `subject_membership` row. */
 export type MembershipRole = 'teacher' | 'coordinator';
@@ -36,7 +36,8 @@ export interface Membership {
 
 /**
  * The signed-in user's profile (id, display name, global role), or null when not
- * authenticated. RLS lets a user read their own profile row.
+ * authenticated. RLS lets a user read their own profile row. A deactivated admin's
+ * role reads as 'teacher' (see effectiveRole).
  */
 export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const supabase = await createClient();
@@ -55,15 +56,24 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const row = data as { id: string; full_name: string | null; role: AppRole } | null;
   if (!row) return null;
 
+  // An admin role is confirmed against the database's is_admin(), which is false for a
+  // deactivated account; every admin gate below (and every caller reading
+  // profile.role) then sees 'teacher' straight away.
+  let role: AppRole = row.role ?? 'teacher';
+  if (role === 'admin') {
+    const { data: dbIsAdmin } = await supabase.rpc('is_admin');
+    role = effectiveRole(role, dbIsAdmin === true);
+  }
+
   return {
     id: row.id,
     fullName: row.full_name,
-    role: row.role ?? 'teacher',
+    role,
     email: user.email ?? null,
   };
 }
 
-/** True when the signed-in user is a global admin. */
+/** True when the signed-in user is a global admin (and not deactivated). */
 export async function isAdmin(): Promise<boolean> {
   const profile = await getCurrentProfile();
   return profile?.role === 'admin';

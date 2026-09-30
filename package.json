@@ -14,7 +14,8 @@
     "audit:curriculum": "node --import ./scripts/loader-register.mjs scripts/audit-curriculum.ts",
     "worksheet:dryrun": "node --import ./scripts/loader-register.mjs scripts/worksheet-migrate-dryrun.ts",
     "export:worksheet-templates": "node --import ./scripts/loader-register.mjs scripts/export-worksheet-templates.ts",
-    "gen:types": "supabase gen types typescript --local > src/types/database.types.ts"
+    "gen:types": "supabase gen types typescript --local > src/types/database.types.ts",
+    "test:db": "node --import ./scripts/loader-register.mjs --test --test-concurrency=1 \"tests/db/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
@@ -60,11 +61,13 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/turndown": "^5.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "pg": "^8.23.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

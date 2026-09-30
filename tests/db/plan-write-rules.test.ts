@@ -29,8 +29,8 @@ async function world(db: Db) {
   await db.query('insert into public.coordinator_subject (profile_id, subject_id) values ($1, $2)', [coordinator, subject]);
 
   const plan = await q(
-    `insert into public.lesson_plans (created_by, scope, school_id, subject_id, curriculum_lesson_id)
-     values ($1, 'centre', $2, $3, 'test-lesson') returning id`, [author, centreA, subject]);
+    `insert into public.lesson_plans (created_by, scope, school_id, subject_id, year, curriculum_lesson_id)
+     values ($1, 'centre', $2, $3, 1, 'test-lesson') returning id`, [author, centreA, subject]);
   const exercise = await q(
     `insert into public.worksheet_exercise (lesson_plan_id, position, title, exercise_type)
      values ($1, 1, 'Ex 1', 'free') returning id`, [plan]);
@@ -125,7 +125,7 @@ test('M1: a teacher cannot file a plan under a subject they don\'t belong to', a
   await withTx(async (db) => {
     const w = await world(db);
     const res = await asUser(db, w.outsider, () =>
-      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, curriculum_lesson_id) values ($1, 'centre', $2, $3, 'x')`,
+      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, year, curriculum_lesson_id) values ($1, 'centre', $2, $3, 1, 'x')`,
         [w.outsider, w.centreA, w.subject]));
     assert.ok(res.error, 'outsider filed a plan in a subject they are not in');
   });
@@ -135,7 +135,7 @@ test('M1: a teacher cannot file a plan at a centre where they don\'t teach that 
   await withTx(async (db) => {
     const w = await world(db);
     const res = await asUser(db, w.colleague, () =>
-      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, curriculum_lesson_id) values ($1, 'centre', $2, $3, 'x')`,
+      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, year, curriculum_lesson_id) values ($1, 'centre', $2, $3, 1, 'x')`,
         [w.colleague, w.centreA, w.subject]));
     assert.ok(res.error, 'teacher filed a plan at another centre');
   });
@@ -158,7 +158,7 @@ test('M1: a teacher can still create and edit a plan in their own space', async 
   await withTx(async (db) => {
     const w = await world(db);
     const ins = await asUser(db, w.author, () =>
-      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, curriculum_lesson_id) values ($1, 'centre', $2, $3, 'y')`,
+      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, year, curriculum_lesson_id) values ($1, 'centre', $2, $3, 1, 'y')`,
         [w.author, w.centreA, w.subject]));
     assert.equal(ins.error, null);
     const upd = await asUser(db, w.author, () =>
@@ -171,7 +171,7 @@ test('M1: a coordinator can still create an organisation-wide plan in their subj
   await withTx(async (db) => {
     const w = await world(db);
     const res = await asUser(db, w.coordinator, () =>
-      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, curriculum_lesson_id) values ($1, 'org', null, $2, 'z')`,
+      tryQuery(db, `insert into public.lesson_plans (created_by, scope, school_id, subject_id, year, curriculum_lesson_id) values ($1, 'org', null, $2, 1, 'z')`,
         [w.coordinator, w.subject]));
     assert.equal(res.error, null);
   });

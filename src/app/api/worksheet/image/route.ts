@@ -23,12 +23,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { getImagesClient } from '@/lib/openai';
 import { isWorksheetImagesEnabled } from '@/lib/ai/worksheet-images-flag';
 import { composeContextStack, ContextStackError } from '@/lib/ai/context-stack';
 import { assembleImagePrompt } from '@/lib/ai/image-prompt';
 import { STYLE_VERSION } from '@/lib/ai/image-floor';
-import { imageCacheKey } from '@/lib/ai/image-cache-key';
+import { imageCacheKey, imageRequestText } from '@/lib/ai/image-cache-key';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -189,7 +190,7 @@ export async function POST(request: NextRequest) {
   // varies every generation and would defeat the cache. Legacy rows (no subject)
   // fall back to the brief so they still key on something stable, though they will
   // not hit images stored under the old brief-based hashes (accepted; no migration).
-  const slotSubject = slots[slotIndex].subject?.trim() || brief;
+  const slotSubject = imageRequestText(slots[slotIndex].subject, brief);
 
   // (b) Per-slot cap — a slot whose position in the whole-worksheet order is at or
   // beyond the cap is refused (it keeps its [Picture: …] marker). Only THIS slot is
@@ -294,7 +295,8 @@ export async function POST(request: NextRequest) {
   // brief came last. An optional teacher adjustment (a regeneration steer) sits right
   // under the brief — what to draw, then how the teacher wants it changed.
   const promptSent = assembleImagePrompt({
-    brief,
+    // Draw exactly what the cache key names (see imageRequestText), never the wire brief.
+    brief: slotSubject,
     composedSystem: composed.system,
     subjectName,
     instruction,
@@ -345,11 +347,14 @@ export async function POST(request: NextRequest) {
   }
 
   // Record the image (append-only), then bind it to the slot (append-only).
-  const { data: imageRow, error: imageError } = await supabase
+  // Cache rows are shared by every teacher, so only the server writes them: the
+  // service-role client, and only for this insert (no signed-in user holds an insert
+  // grant on worksheet_image; see 20261001120000_worksheet_image_server_writes.sql).
+  const { data: imageRow, error: imageError } = await createAdminClient()
     .from('worksheet_image')
     .insert({
       prompt_hash: hash,
-      brief,
+      brief: slotSubject,
       style_version: STYLE_VERSION,
       storage_path: storagePath,
       model: IMAGE_MODEL,

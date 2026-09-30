@@ -17,6 +17,9 @@
 -- 3. A plan's class, centre, subject and scope are fixed once it exists (the app never
 --    changes them). Scripts and migrations (no signed-in user) are exempt.
 --
+-- 4. Removes four hand-applied legacy plan policies that exist only on the live database
+--    (section 6).
+--
 -- Reading is unchanged: whoever could see a plan, its worksheet and its comments still can.
 --
 -- Rollback: see the bottom of this file.
@@ -134,6 +137,17 @@ create trigger lesson_plans_fixed_space
   before update on public.lesson_plans
   for each row execute function public.lesson_plans_fixed_space();
 
+-- ── 6. hand-applied legacy plan policies (live only, in no migration file) ────
+-- The live database also has four older policies on lesson_plans (found in a schema
+-- dump on 2026-09-30). Permissive policies are OR-ed, so they widen what lp_* allow;
+-- the insert one compares a column with itself (m.subject_id = m.subject_id), so any
+-- user with any membership may file a plan anywhere. lp_select / lp_insert / lp_update
+-- (0057 and above) and lp_no_direct_delete already cover what they were for.
+drop policy if exists lesson_plans_insert on public.lesson_plans;
+drop policy if exists lesson_plans_update on public.lesson_plans;
+drop policy if exists lesson_plans_select on public.lesson_plans;
+drop policy if exists lesson_plans_delete on public.lesson_plans;
+
 insert into applied_migration (filename, note)
 values ('20261001100000_plan_write_helper.sql', null)
 on conflict (filename) do nothing;
@@ -141,6 +155,7 @@ on conflict (filename) do nothing;
 -- ── Rollback (run by hand if needed) ────────────────────────────────────────
 -- drop trigger if exists lesson_plans_fixed_space on public.lesson_plans;
 -- drop function if exists public.lesson_plans_fixed_space();
+-- the four legacy policies can be re-created from the 2026-09-30 schema dump if ever needed;
 -- then re-run the original policy blocks from 0057 (lp_insert), 0067 (worksheet_exercise_*),
 -- 0072 (worksheet_image_use_insert_visible_plan) and 0045 (pa_member_update), after:
 -- drop policy if exists worksheet_image_use_insert_writer on public.worksheet_image_use;

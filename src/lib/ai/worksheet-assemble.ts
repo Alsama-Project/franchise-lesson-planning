@@ -11,6 +11,8 @@ import type { WorksheetV3, WorksheetDoc } from '@/types/lesson';
 import type { ImageSlot, WorksheetItem } from '@/types/worksheet-exercise';
 import { PICTURE_MARKER, PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 import { composeExerciseItems, type YearBand } from '@/lib/ai/worksheet-compose';
+import { toBlockSlot, type BlockSlot } from '@/lib/ai/worksheet-blocks';
+import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -93,109 +95,123 @@ export function headingText(node: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
-/** The heading level (1–3) of an UNTAGGED (scaffold) heading node, or null for any
- *  non-heading node and for a tagged (`wsCompiled`) node. A tagged node is exercise
- *  content — even a heading the model emitted inside an exercise body — so it is
- *  never treated as a scaffold heading here: it neither bounds a scaffold heading's
- *  span nor is a drop candidate; it simply counts as content. Levels default to 1
- *  (matching `markdownToDoc`, which always stamps `attrs.level`). */
-function scaffoldHeadingLevel(node: unknown): number | null {
-  if (isCompiled(node)) return null;
-  const n = node as { type?: unknown; attrs?: { level?: unknown } };
-  if (n?.type !== 'heading') return null;
-  const lvl = Number(n.attrs?.level);
-  return Number.isFinite(lvl) && lvl >= 1 ? lvl : 1;
-}
-
-/**
- * Drop scaffold headings that a student would be handed with nothing under them.
- *
- * A scaffold heading is KEPT iff its span — from just after it up to the next
- * scaffold heading of level ≤ its own (or end of document) — contains at least one
- * node that is NOT a scaffold heading. That single node may be a spliced exercise
- * (tagged), coordinator-written prose the template carries (untagged, non-heading),
- * or the content of a nested child heading — any of the three keeps the heading.
- *
- * This one invariant handles nesting: a `##` parent whose span holds only `###`
- * children is kept only if some child's span holds content; if every child is empty
- * the parent's span is all-headings too, so parent and children drop together in
- * this single pass. Tagged exercise nodes are never dropped and never bound a span,
- * so a heading the model emitted inside an exercise body is left untouched.
- */
-export function dropEmptyScaffoldHeadings(content: unknown[]): unknown[] {
-  const drop = new Array(content.length).fill(false);
-  for (let i = 0; i < content.length; i++) {
-    const level = scaffoldHeadingLevel(content[i]);
-    if (level === null) continue; // not a scaffold heading — never a drop candidate
-    let hasContent = false;
-    for (let j = i + 1; j < content.length; j++) {
-      const jl = scaffoldHeadingLevel(content[j]);
-      if (jl !== null && jl <= level) break; // span ends at the next same-or-shallower heading
-      if (jl === null) {
-        hasContent = true; // a non-scaffold-heading node lives under this heading
-        break;
-      }
-      // jl > level: a deeper scaffold heading — not itself content; keep scanning its span.
-    }
-    if (!hasContent) drop[i] = true;
-  }
-  return content.filter((_, i) => !drop[i]);
-}
-
 /** One exercise ready to place: its row `id` (stamped onto every node so a later
- *  per-exercise regenerate can find them), its `template_anchor` (or null), and its
- *  flowing top-level nodes (image slots already resolved by the caller). */
+ *  per-exercise regenerate can find them), its `template_anchor` (or null), its plan-step
+ *  `slot` (the `{{block:…}}` token it belongs to, or null/absent for legacy rows), and
+ *  its flowing top-level nodes (image slots already resolved by the caller). */
 export interface PreparedExercise {
   id: string;
   anchor: string | null;
+  slot?: BlockSlot | null;
   nodes: unknown[];
 }
 
+/** Optional inputs that switch on token-driven filling. */
+export interface AssembleOptions {
+  /** Teacher-written plan content per slot, from `buildBlockContent`. */
+  blockContent?: Partial<Record<BlockSlot, unknown[]>>;
+  /** Values for `{{subject}}` / `{{theme}}` / … tokens in the template body. */
+  placeholders?: FramePlaceholders;
+}
+
+const TOKEN_TEXT = /^\s*\{\{\s*block:\s*([a-z_]+)\s*\}\}\s*$/i;
+
+/** The slot a node is a `{{block:<slot>}}` token for, or null. Matches a top-level
+ *  paragraph whose whole text is the token (what `markdownToDoc` emits). */
+function tokenSlot(node: unknown): BlockSlot | null {
+  const n = node as { type?: string; content?: unknown[]; attrs?: unknown };
+  if (!n || n.type !== 'paragraph' || isCompiled(n) || !Array.isArray(n.content)) return null;
+  const text = n.content
+    .map((c) => (c && typeof c === 'object' ? ((c as { text?: string }).text ?? '') : ''))
+    .join('');
+  const m = TOKEN_TEXT.exec(text);
+  return m ? toBlockSlot(m[1].toLowerCase()) : null;
+}
+
+/** True for an empty paragraph/heading carrying a HintPlaceholder `placeholder` attr. */
+function isHintNode(node: unknown): boolean {
+  const n = node as { type?: string; content?: unknown[]; attrs?: Record<string, unknown> };
+  if (!n || (n.type !== 'paragraph' && n.type !== 'heading') || isCompiled(n)) return false;
+  const ph = n.attrs?.placeholder;
+  return typeof ph === 'string' && ph.trim().length > 0 && (!n.content || n.content.length === 0);
+}
+
+const FIELD_TOKEN = /\{\{\s*(subject|year|theme|centre|objective|lesson_key)\s*\}\}/gi;
+
+/** Substitute `{{subject}}`-style field tokens in every text node of the template body
+ *  (deep). Known tokens with no value render empty; other `{{…}}` text is left alone so
+ *  an editor's typo stays visible. Mutates the (already cloned) tree. */
+function fillFieldTokens(node: unknown, values: FramePlaceholders): void {
+  if (!node || typeof node !== 'object') return;
+  const n = node as { type?: string; text?: string; content?: unknown[] };
+  if (n.type === 'text' && typeof n.text === 'string') {
+    n.text = n.text.replace(FIELD_TOKEN, (_m, name: string) => {
+      const v = values[name.toLowerCase() as keyof FramePlaceholders];
+      return v == null ? '' : String(v);
+    });
+  }
+  if (Array.isArray(n.content)) for (const c of n.content) fillFieldTokens(c, values);
+}
+
 /**
- * Assemble the compiled worksheet: insert each exercise whose `anchor` matches a
- * scaffold heading (by exact trimmed text) right after the FIRST such heading, and
- * append the rest (no anchor, or an anchor with no matching heading) in order after
- * the last node. `baseContent` is the scaffold's nodes (empty when the subject has
- * no scaffold → exercises alone, in order).
+ * Assemble the compiled worksheet: fill the subject's template scaffold with the plan.
  *
- * Finally, any scaffold heading left with nothing under it — no spliced exercise and
- * no coordinator-written prose — is dropped (`dropEmptyScaffoldHeadings`), so a
- * four-section template with three exercises never prints a bare heading over blank
- * space. An empty parent heading falls together with its empty children.
+ * TOKEN MODE (the template contains `{{block:<slot>}}` paragraphs). Each token is
+ * replaced by that plan step's content: the teacher's own text (`blockContent`,
+ * verbatim), then every AI exercise planned for the slot as ONE contiguous group. Any
+ * hint/stub lines directly above the token are dropped when the slot has content; an
+ * empty slot keeps them. Exercises with no slot (legacy rows) or whose token is absent
+ * fall back to heading-anchor placement, else append — so nothing is ever lost.
  *
- * IDEMPOTENCY: the base is `stripCompiled`ed first (recovering the bare scaffold
- * even if a previously-compiled doc is passed in) and every inserted node is
- * `tagCompiled`. So this is a pure function of (scaffold, exercises): re-running it
- * — even feeding a prior run's output back as the base — yields byte-identical
- * output. The empty-heading drop preserves this: a dropped heading had no exercise
- * anchored to it, so on a re-compile that heading's exercise (if any) appends
- * exactly as before, and the drop reproduces identically. Inputs are deep-cloned,
- * so callers' arrays are never mutated.
+ * ANCHOR MODE (no tokens — an unedited template). Exactly the original behaviour: each
+ * exercise lands right after the FIRST heading whose exact trimmed text equals its
+ * `anchor`; the rest append in order. Plan text is NOT placed (no slots to place it).
+ *
+ * In both modes every scaffold heading is kept — an empty section keeps its heading
+ * (no pruning) — headings are never moved or split, and `{{subject}}`/`{{theme}}`-style
+ * field tokens in the template body are filled from `options.placeholders`.
+ *
+ * IDEMPOTENCY: the base is `stripCompiled`ed first and every inserted node is
+ * `tagCompiled` (exercise nodes with their exercise id, plan-text nodes without). It is
+ * a pure function of (scaffold, exercises, options): re-running it — even feeding a
+ * prior run's output back as the base — yields byte-identical output. Inputs are
+ * deep-cloned, so callers' arrays are never mutated.
  */
 export function assembleWorksheetDoc(
   baseContent: unknown[],
   exercises: PreparedExercise[],
+  options: AssembleOptions = {},
 ): WorksheetV3 {
   // Recover the bare scaffold and isolate from caller state. Every scaffold heading is
-  // stamped `wsScaffold` so the editor can lock it (see ScaffoldHeadingLock). Marking
-  // the CLONE, never the caller's array. Idempotent: a re-compile marks the same set.
+  // stamped `wsScaffold` so the editor can lock it (see ScaffoldHeadingLock).
   const base = stripCompiled(structuredClone(baseContent)).map(markScaffoldHeading);
+  if (options.placeholders) for (const node of base) fillFieldTokens(node, options.placeholders);
 
-  // Which anchors correspond to a real heading in the scaffold.
+  const tokenSlots = new Set<BlockSlot>();
+  for (const node of base) {
+    const slot = tokenSlot(node);
+    if (slot) tokenSlots.add(slot);
+  }
+
   const headingTexts = new Set<string>();
   for (const node of base) {
     const t = headingText(node);
     if (t) headingTexts.add(t);
   }
 
-  // Group exercises: those that fill a scaffold heading, and those that append.
+  // Group exercises: by slot token first, else by heading anchor, else append.
+  const bySlot = new Map<BlockSlot, unknown[][]>();
   const byAnchor = new Map<string, unknown[][]>();
   const appended: unknown[][] = [];
   for (const ex of exercises) {
-    // Tag every inserted node so a later run can strip it back out (idempotency) and
-    // stamp its exercise identity so a per-exercise regenerate can find them again.
+    // Every node of an exercise is stamped with the exercise id and placed as ONE
+    // group, so an exercise can never be split by (or leak across) a heading.
     const nodes = structuredClone(ex.nodes).map((n) => tagCompiled(n, ex.id));
-    if (ex.anchor && headingTexts.has(ex.anchor)) {
+    if (ex.slot && tokenSlots.has(ex.slot)) {
+      const list = bySlot.get(ex.slot) ?? [];
+      list.push(nodes);
+      bySlot.set(ex.slot, list);
+    } else if (ex.anchor && headingTexts.has(ex.anchor)) {
       const list = byAnchor.get(ex.anchor) ?? [];
       list.push(nodes);
       byAnchor.set(ex.anchor, list);
@@ -204,31 +220,38 @@ export function assembleWorksheetDoc(
     }
   }
 
-  // Walk the scaffold, inserting each anchor's exercises right after the FIRST
-  // heading whose text matches (a repeated heading is filled once).
   const out: unknown[] = [];
-  const consumed = new Set<string>();
+  const consumedHeadings = new Set<string>();
+  const consumedSlots = new Set<BlockSlot>();
   for (const node of base) {
+    const slot = tokenSlot(node);
+    if (slot) {
+      // First token for a slot takes the content; a repeated token is just removed.
+      if (!consumedSlots.has(slot)) {
+        consumedSlots.add(slot);
+        const text = (options.blockContent?.[slot] ?? []).map((n) => tagCompiled(structuredClone(n)));
+        const groups = bySlot.get(slot) ?? [];
+        if (text.length > 0 || groups.length > 0) {
+          // The content replaces the hint/stub lines directly above the token.
+          while (out.length > 0 && isHintNode(out[out.length - 1])) out.pop();
+          out.push(...text);
+          for (const group of groups) out.push(...group);
+        }
+      }
+      continue; // the token paragraph itself never prints
+    }
     out.push(node);
     const t = headingText(node);
-    if (t && byAnchor.has(t) && !consumed.has(t)) {
-      consumed.add(t);
+    if (t && byAnchor.has(t) && !consumedHeadings.has(t)) {
+      consumedHeadings.add(t);
       for (const group of byAnchor.get(t)!) out.push(...group);
     }
   }
 
-  // A scaffold heading that nothing landed under — no spliced exercise and no
-  // coordinator prose — would print as a bare heading over blank space on a
-  // student's sheet. Drop those (empty parents fall with their empty children).
-  // This runs BEFORE the append below: the anchorless / unmatched exercises belong
-  // to no section, so they must not be "adopted" by (and thus rescue) a trailing
-  // empty scaffold heading.
-  const pruned = dropEmptyScaffoldHeadings(out);
+  // Unmatched / anchorless exercises append in position order after the last node.
+  for (const group of appended) out.push(...group);
 
-  // Append the unmatched / anchorless exercises in position order after the last node.
-  for (const group of appended) pruned.push(...group);
-
-  return { version: 3, doc: { type: 'doc', content: pruned } };
+  return { version: 3, doc: { type: 'doc', content: out } };
 }
 
 // ── Image slots → inline image nodes ─────────────────────────────────────────

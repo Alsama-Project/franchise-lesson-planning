@@ -149,7 +149,7 @@ export async function readWorksheetScaffoldMarkdown(
  *  through `markdownToDoc`, so the two agree on exactly which headings exist. */
 export function scaffoldDocContent(markdown: string | null): unknown[] {
   if (!markdown) return [];
-  const doc = markdownToDoc(markdown);
+  const doc = markdownToDoc(markdown, { templateMarkers: true });
   return Array.isArray(doc.content) ? doc.content : [];
 }
 
@@ -157,7 +157,7 @@ export function scaffoldDocContent(markdown: string | null): unknown[] {
  *  exact set compile can match `template_anchor` against. Empty when null. */
 export function scaffoldHeadings(markdown: string | null): string[] {
   if (!markdown) return [];
-  return templateHeadings({ version: 3, doc: markdownToDoc(markdown) });
+  return templateHeadings({ version: 3, doc: markdownToDoc(markdown, { templateMarkers: true }) });
 }
 
 /** The v3 tiptap doc inside a worksheet/template body, or null for v2/empty/absent. */

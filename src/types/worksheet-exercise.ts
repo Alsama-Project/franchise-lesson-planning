@@ -45,6 +45,12 @@ export interface ExerciseSpec {
    * heading by exact (trimmed) text — never a fuzzy/normalised rule.
    */
   template_anchor: string | null;
+  /**
+   * The template slot (`{{block:<slot>}}` token) of the plan step this exercise
+   * belongs to — see `BLOCK_SLOTS` in `@/lib/ai/worksheet-blocks`. Absent/null on
+   * rows planned before slots existed (compile then falls back to `template_anchor`).
+   */
+  block_type?: string | null;
 }
 
 /**

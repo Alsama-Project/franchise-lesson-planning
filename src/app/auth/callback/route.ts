@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAllowedEmail } from "@/lib/sign-in-policy";
 
 /**
  * OAuth callback. Microsoft redirects here with a `code`; we exchange it for a
@@ -33,6 +34,13 @@ export async function GET(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Second line behind the Microsoft tenant pinning (Supabase dashboard): when
+  // ALLOWED_EMAIL_DOMAINS is set, refuse any other account and say why.
+  if (user && !isAllowedEmail(user.email, process.env.ALLOWED_EMAIL_DOMAINS)) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(`${origin}/login?error=not_allowed`);
+  }
 
   if (user) {
     const identityName =

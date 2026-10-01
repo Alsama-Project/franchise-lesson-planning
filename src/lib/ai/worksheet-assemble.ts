@@ -13,6 +13,18 @@ import { PICTURE_MARKER, PICTURE_MARKER_LINE } from '@/lib/editor/markdown';
 import { composeExerciseItems, type YearBand } from '@/lib/ai/worksheet-compose';
 import { toBlockSlot, type BlockSlot } from '@/lib/ai/worksheet-blocks';
 import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
+import {
+  MASTHEAD_DEPARTMENT,
+  MASTHEAD_LESSON_TITLE,
+  isBodyLabelLine,
+  isEmptyFormatLine,
+  isFormatLine,
+  isInsertBox,
+  isItalicOnlyParagraph,
+  isStubLine,
+  matchHeadingSlots,
+  nodeText,
+} from '@/lib/ai/worksheet-headings';
 
 /** The marker attr stamped on every node compile inserts, so a later run can strip
  *  it. A plain JSON attribute — no schema/migration change. The `WsCompiledMarker`
@@ -136,6 +148,77 @@ function isHintNode(node: unknown): boolean {
   return typeof ph === 'string' && ph.trim().length > 0 && (!n.content || n.content.length === 0);
 }
 
+/** Masthead placeholders in heading mode: `[Department Name]` is replaced as a SUBSTRING of
+ *  any text node, `Lesson Title` only when the text node is EXACTLY that. An empty value
+ *  leaves the literal alone. Mutates the (already cloned) tree. */
+function fillMasthead(node: unknown, subject: string, theme: string): void {
+  if (!node || typeof node !== 'object') return;
+  const n = node as { type?: string; text?: string; content?: unknown[] };
+  if (n.type === 'text' && typeof n.text === 'string') {
+    if (subject && n.text.includes(MASTHEAD_DEPARTMENT)) n.text = n.text.split(MASTHEAD_DEPARTMENT).join(subject);
+    if (theme && n.text.trim() === MASTHEAD_LESSON_TITLE) n.text = theme;
+  }
+  if (Array.isArray(n.content)) for (const c of n.content) fillMasthead(c, subject, theme);
+}
+
+/**
+ * Fill ONE heading-matched section (`sec` = the nodes between its heading and the next).
+ * Reuses the #453 content (`text` = `buildBlockContent` nodes, `groups` = the slot's
+ * exercises) — only PLACEMENT is new:
+ *  - the section's lone italic hint line becomes an empty HintPlaceholder node (never
+ *    prints) — whether or not the section has content;
+ *  - with content: an empty `Format:` line takes the plan's Format line (never a second
+ *    one), stub lines / `[Insert …]` boxes / old empty hint nodes are dropped, and the text
+ *    then the exercises go after the `Task instructions:` / `Questions / checks:` label,
+ *    else after the hint.
+ */
+function fillSection(sec: unknown[], text: unknown[], groups: unknown[][]): unknown[] {
+  // The hint: the italic-only paragraph first under the heading, or under its Format line.
+  const hintIdx = isItalicOnlyParagraph(sec[0])
+    ? 0
+    : isFormatLine(sec[0]) && isItalicOnlyParagraph(sec[1])
+      ? 1
+      : -1;
+  const formatIdx = isFormatLine(sec[0]) ? 0 : hintIdx === 0 && isFormatLine(sec[1]) ? 1 : -1;
+  const blank = (node: unknown): unknown => ({
+    type: 'paragraph',
+    attrs: { placeholder: nodeText(node).trim() },
+  });
+
+  const hasContent = text.length > 0 || groups.length > 0;
+  if (!hasContent) return sec.map((node, i) => (i === hintIdx ? blank(node) : node));
+
+  // An empty template Format line absorbs the plan's own Format line (same label, now with
+  // the activity title); a filled one wins. Either way no second Format line is added.
+  const planText = [...text];
+  let formatLine: unknown = formatIdx >= 0 ? sec[formatIdx] : null;
+  if (formatIdx >= 0 && isFormatLine(planText[0])) {
+    const planFormat = planText.shift();
+    if (isEmptyFormatLine(sec[formatIdx])) formatLine = planFormat;
+  }
+
+  const kept: unknown[] = [];
+  let hintPos = -1;
+  let labelPos = -1;
+  sec.forEach((node, i) => {
+    if (i === hintIdx) {
+      kept.push(blank(node));
+      hintPos = Math.max(hintPos, kept.length - 1);
+      return;
+    }
+    if (i === formatIdx) {
+      kept.push(formatLine);
+      hintPos = Math.max(hintPos, kept.length - 1);
+      return;
+    }
+    if (isStubLine(node) || isInsertBox(node) || isHintNode(node)) return; // dropped: it has content now
+    kept.push(node);
+    if (labelPos < 0 && isBodyLabelLine(node)) labelPos = kept.length - 1;
+  });
+  const at = (labelPos >= 0 ? labelPos : hintPos) + 1;
+  return [...kept.slice(0, at), ...planText, ...groups.flat(), ...kept.slice(at)];
+}
+
 const FIELD_TOKEN = /\{\{\s*(subject|year|theme|centre|objective|lesson_key)\s*\}\}/gi;
 
 /** Substitute `{{subject}}`-style field tokens in every text node of the template body
@@ -163,7 +246,13 @@ function fillFieldTokens(node: unknown, values: FramePlaceholders): void {
  * empty slot keeps them. Exercises with no slot (legacy rows) or whose token is absent
  * fall back to heading-anchor placement, else append — so nothing is ever lost.
  *
- * ANCHOR MODE (no tokens — an unedited template). Exactly the original behaviour: each
+ * HEADING MODE (no tokens). The standard section headings are recognised through the
+ * synonyms table in `worksheet-headings.ts` ("4. Independent Practice" →
+ * `independent_practice`) and filled exactly like a token slot (see `fillSection`). A
+ * heading that matches nothing, or is ambiguous, is left exactly as in anchor mode below.
+ * The masthead's `[Department Name]` / `Lesson Title` literals are filled too.
+ *
+ * ANCHOR MODE (no tokens and no recognised headings). Exactly the original behaviour: each
  * exercise lands right after the FIRST heading whose exact trimmed text equals its
  * `anchor`; the rest append in order. Plan text is NOT placed (no slots to place it).
  *
@@ -193,6 +282,14 @@ export function assembleWorksheetDoc(
     if (slot) tokenSlots.add(slot);
   }
 
+  // HEADING MODE: only when the template has no tokens (token mode always wins).
+  const headingSlots = tokenSlots.size === 0 ? matchHeadingSlots(base) : new Map<number, BlockSlot>();
+  if (headingSlots.size > 0 && options.placeholders) {
+    const { subject, theme } = options.placeholders;
+    for (const node of base) fillMasthead(node, String(subject ?? ''), String(theme ?? ''));
+  }
+  const matchedSlots = tokenSlots.size > 0 ? tokenSlots : new Set<BlockSlot>(headingSlots.values());
+
   const headingTexts = new Set<string>();
   for (const node of base) {
     const t = headingText(node);
@@ -207,7 +304,7 @@ export function assembleWorksheetDoc(
     // Every node of an exercise is stamped with the exercise id and placed as ONE
     // group, so an exercise can never be split by (or leak across) a heading.
     const nodes = structuredClone(ex.nodes).map((n) => tagCompiled(n, ex.id));
-    if (ex.slot && tokenSlots.has(ex.slot)) {
+    if (ex.slot && matchedSlots.has(ex.slot)) {
       const list = bySlot.get(ex.slot) ?? [];
       list.push(nodes);
       bySlot.set(ex.slot, list);
@@ -223,7 +320,8 @@ export function assembleWorksheetDoc(
   const out: unknown[] = [];
   const consumedHeadings = new Set<string>();
   const consumedSlots = new Set<BlockSlot>();
-  for (const node of base) {
+  for (let i = 0; i < base.length; i++) {
+    const node = base[i];
     const slot = tokenSlot(node);
     if (slot) {
       // First token for a slot takes the content; a repeated token is just removed.
@@ -245,6 +343,15 @@ export function assembleWorksheetDoc(
     if (t && byAnchor.has(t) && !consumedHeadings.has(t)) {
       consumedHeadings.add(t);
       for (const group of byAnchor.get(t)!) out.push(...group);
+    }
+    const headingSlot = headingSlots.get(i);
+    if (headingSlot) {
+      // The section runs to the next heading; fill it and skip past its scaffold nodes.
+      let end = i + 1;
+      while (end < base.length && (base[end] as { type?: string })?.type !== 'heading') end++;
+      const text = (options.blockContent?.[headingSlot] ?? []).map((n) => tagCompiled(structuredClone(n)));
+      out.push(...fillSection(base.slice(i + 1, end), text, bySlot.get(headingSlot) ?? []));
+      i = end - 1;
     }
   }
 

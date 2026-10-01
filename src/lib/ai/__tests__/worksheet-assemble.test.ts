@@ -112,94 +112,119 @@ function bareHeadingsScaffold() {
 const headingTexts = (content) =>
   content.filter((n) => n.type === 'heading').map((n) => n.content?.[0]?.text);
 
-test('more sections than exercises → sections with nothing under them are dropped', () => {
+test('every scaffold heading is kept, even with nothing under it (no pruning)', () => {
   const base = bareHeadingsScaffold();
-  // Three exercises anchor to three of the four headings; "Three" gets nothing.
   const out = assembleWorksheetDoc(base, [
     exercise('One', 'First task'),
     exercise('Two', 'Second task'),
     exercise('Four', 'Fourth task'),
   ]).doc.content;
 
-  assert.deepEqual(headingTexts(out), ['One', 'Two', 'Four'], 'the empty "Three" heading must be dropped');
-  // Each surviving heading still carries its exercise, in order.
+  assert.deepEqual(headingTexts(out), ['One', 'Two', 'Three', 'Four'], 'empty "Three" must survive');
   assert.deepEqual(
     out.map((n) => n.content?.[0]?.text),
-    ['One', 'First task', 'Two', 'Second task', 'Four', 'Fourth task'],
+    ['One', 'First task', 'Two', 'Second task', 'Three', 'Four', 'Fourth task'],
   );
 });
 
-test('a heading with coordinator prose but no exercise survives', () => {
-  // "Notes" carries fixed wording a coordinator wrote; no exercise anchors to it.
-  const base = markdownToDoc('# Warm up\n\n# Notes\n\nRead the passage aloud before you start.').content;
-  const out = assembleWorksheetDoc(base, [exercise('Warm up', 'Say hello')]).doc.content;
-
-  assert.deepEqual(headingTexts(out), ['Warm up', 'Notes'], 'coordinator-written prose must keep its heading');
-  const notesIdx = out.findIndex((n) => n.type === 'heading' && n.content?.[0]?.text === 'Notes');
-  assert.equal(
-    out[notesIdx + 1]?.content?.[0]?.text,
-    'Read the passage aloud before you start.',
-    'the coordinator prose must remain under its heading',
-  );
-});
-
-test('nothing anchors → every scaffold heading is dropped, exercises stand alone', () => {
-  const base = bareHeadingsScaffold();
-  const out = assembleWorksheetDoc(base, [
+test('nothing anchors → every heading stays, orphans append in order', () => {
+  const out = assembleWorksheetDoc(bareHeadingsScaffold(), [
     exercise('No Such Heading', 'Orphan one'),
     exercise(null, 'Orphan two'),
   ]).doc.content;
-
-  assert.deepEqual(headingTexts(out), [], 'no heading kept any content, so none survive');
-  assert.deepEqual(out.map((n) => n.content?.[0]?.text), ['Orphan one', 'Orphan two']);
+  assert.deepEqual(headingTexts(out), ['One', 'Two', 'Three', 'Four']);
+  assert.deepEqual(out.slice(-2).map((n) => n.content?.[0]?.text), ['Orphan one', 'Orphan two']);
 });
 
-test('a parent heading whose only child heading is empty is dropped with it', () => {
-  // "Section" (##) holds only "Subsection" (###); nothing anchors to either.
-  const base = markdownToDoc('# Keep\n\n## Section\n\n### Subsection').content;
-  const out = assembleWorksheetDoc(base, [exercise('Keep', 'Held')]).doc.content;
-
-  assert.deepEqual(headingTexts(out), ['Keep'], 'empty parent + empty child both drop, non-empty heading stays');
-});
-
-test('a parent heading survives when a nested child heading holds an exercise', () => {
-  const base = markdownToDoc('# Unit\n\n## Section\n\n### Task').content;
-  const out = assembleWorksheetDoc(base, [exercise('Task', 'The deep one')]).doc.content;
-
-  // The exercise sits under the ### child; both ancestors must survive above it.
-  assert.deepEqual(headingTexts(out), ['Unit', 'Section', 'Task']);
-  const taskIdx = out.findIndex((n) => n.type === 'heading' && n.content?.[0]?.text === 'Task');
-  assert.equal(out[taskIdx + 1]?.content?.[0]?.text, 'The deep one');
-});
-
-test('a heading inside an exercise body is never dropped as a scaffold heading', () => {
-  const base = bareHeadingsScaffold();
-  // The exercise body itself opens with a heading node (as a model might emit).
-  const exerciseWithHeading = {
-    anchor: 'One',
-    nodes: [
-      { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Part A' }] },
-      { type: 'paragraph', content: [{ type: 'text', text: 'Body' }] },
-    ],
-  };
-  const out = assembleWorksheetDoc(base, [exerciseWithHeading]).doc.content;
-
-  // "One" survives (its exercise landed) and the exercise's own "Part A" heading is
-  // preserved; the other bare scaffold headings drop.
-  assert.deepEqual(headingTexts(out), ['One', 'Part A']);
-  assert.ok(isCompiled(out.find((n) => n.content?.[0]?.text === 'Part A')), 'exercise heading stays tagged');
-});
-
-test('empty-heading drop still converges across two consecutive compiles', () => {
-  const base = bareHeadingsScaffold();
+test('anchor mode still converges when output is fed back as the base', () => {
   const exercises = [exercise('One', 'First'), exercise('Three', 'Third')];
-
-  const first = assembleWorksheetDoc(base, exercises);
-  // Worst case: feed the compiled output (with empties already dropped) back in.
+  const first = assembleWorksheetDoc(bareHeadingsScaffold(), exercises);
   const second = assembleWorksheetDoc(first.doc.content, exercises);
+  assert.deepEqual(second, first);
+});
 
-  assert.deepEqual(second, first, 'dropping empty headings must not break re-compile convergence');
-  assert.deepEqual(headingTexts(first.doc.content), ['One', 'Three'], 'Two and Four dropped, One and Three kept');
+// ── Token mode ({{block:<slot>}}) ────────────────────────────────────────────
+
+const TEMPLATE = [
+  '## Warm-up and Recap',
+  'hint: A short activity that recaps prior knowledge.',
+  '{{block:recap}}',
+  '## Independent Practice',
+  'hint: Write the task instructions here.',
+  '{{block:independent_practice}}',
+  '## Group Practice',
+  'hint: Write the task here.',
+  '{{block:group_practice}}',
+  '## Subject: {{subject}} — {{theme}}',
+].join('\n\n');
+
+const tpl = () => markdownToDoc(TEMPLATE, { templateMarkers: true }).content;
+const txt = (n) => n.content?.map((c) => c.text ?? '').join('') ?? '';
+const p = (text) => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+
+test('markdownToDoc: hint lines become empty attr-only paragraphs; tokens stay as text', () => {
+  const content = tpl();
+  assert.equal(content[1].type, 'paragraph');
+  assert.equal(content[1].attrs.placeholder, 'A short activity that recaps prior knowledge.');
+  assert.equal(content[1].content, undefined, 'a hint carries no text content');
+  assert.equal(txt(content[2]), '{{block:recap}}');
+  // Off by default: AI exercise bodies never get hint/token treatment.
+  assert.equal(markdownToDoc('hint: nope').content[0].attrs, undefined);
+});
+
+test('token mode: plan text then exercises land at the token, hint/stub removed, headings intact', () => {
+  const out = assembleWorksheetDoc(
+    tpl(),
+    [
+      { id: 'e1', anchor: null, slot: 'independent_practice', nodes: [p('Ex A1'), p('Ex A2')] },
+      { id: 'e2', anchor: null, slot: 'independent_practice', nodes: [p('Ex B')] },
+    ],
+    {
+      blockContent: { recap: [p('Recap text')], independent_practice: [p('Teacher text')] },
+      placeholders: { subject: '', theme: '' },
+    },
+  ).doc.content;
+
+  assert.deepEqual(out.map(txt), [
+    'Warm-up and Recap',
+    'Recap text',
+    'Independent Practice',
+    'Teacher text',
+    'Ex A1',
+    'Ex A2',
+    'Ex B',
+    'Group Practice',
+    // empty slot keeps its hint (an empty node); the token itself never prints
+    '',
+    'Subject:  — ',
+  ]);
+  assert.equal(out[8].attrs.placeholder, 'Write the task here.', 'empty section keeps its hint');
+  assert.equal(out.some((n) => txt(n).includes('{{block')), false);
+  // The exercise is one contiguous, fully-tagged group inside its section.
+  const ids = out.map((n) => n.attrs?.[EXERCISE_ID_ATTR] ?? null);
+  assert.deepEqual(ids.slice(4, 7), ['e1', 'e1', 'e2']);
+});
+
+test('token mode: field tokens resolve in the template body', () => {
+  const out = assembleWorksheetDoc(tpl(), [], { placeholders: { subject: 'Professionalism', theme: 'Teamwork' } })
+    .doc.content;
+  assert.equal(txt(out[out.length - 1]), 'Subject: Professionalism — Teamwork');
+});
+
+test('token mode: a legacy exercise (no slot) falls back to its heading anchor, else appends', () => {
+  const out = assembleWorksheetDoc(tpl(), [
+    exercise('Group Practice', 'Anchored'),
+    exercise(null, 'Loose'),
+  ]).doc.content;
+  const idx = out.findIndex((n) => txt(n) === 'Group Practice');
+  assert.equal(txt(out[idx + 1]), 'Anchored');
+  assert.equal(txt(out[out.length - 1]), 'Loose');
+});
+
+test('token mode converges across two assembles over the same scaffold', () => {
+  const opts = { blockContent: { recap: [p('R')] }, placeholders: { subject: 'S' } };
+  const ex = [{ id: 'e1', anchor: null, slot: 'recap', nodes: [p('x')] }];
+  assert.deepEqual(assembleWorksheetDoc(tpl(), ex, opts), assembleWorksheetDoc(tpl(), ex, opts));
 });
 
 // ── Exercise identity (Option A) ─────────────────────────────────────────────

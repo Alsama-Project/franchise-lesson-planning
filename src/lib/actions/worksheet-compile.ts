@@ -43,7 +43,14 @@
 // to read-only/print/PDF output.
 
 import { createClient } from '@/lib/supabase/server';
-import { readWorksheetScaffoldMarkdown, scaffoldDocContent } from '@/lib/ai/worksheet-shared';
+import {
+  readCurriculumAnchors,
+  readWorksheetScaffoldMarkdown,
+  scaffoldDocContent,
+} from '@/lib/ai/worksheet-shared';
+import { buildBlockContent, toBlockSlot } from '@/lib/ai/worksheet-blocks';
+import { stripStem } from '@/lib/editor/objective';
+import type { FramePlaceholders } from '@/lib/worksheet-frame/frame';
 import {
   assembleWorksheetDoc,
   buildExerciseContent,
@@ -55,7 +62,7 @@ import {
   toContentLanguage,
   worksheetArtifactText,
 } from '@/lib/editor/worksheet-content-locale';
-import type { WorksheetDoc, WorksheetV3 } from '@/types/lesson';
+import type { Block, WorksheetDoc, WorksheetV3 } from '@/types/lesson';
 import type { ImageSlot, WorksheetExerciseGeneration, WorksheetExerciseStatus } from '@/types/worksheet-exercise';
 
 // The `[Picture: …]` marker → image-node resolution now lives in the pure assembly
@@ -82,10 +89,18 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   // read to plans the caller may see.
   const { data: planRow } = await supabase
     .from('lesson_plans')
-    .select('subject_id, class_id')
+    .select('subject_id, class_id, school_id, blocks, smartt_objective, curriculum_lesson_id, curriculum_version_id')
     .eq('id', lessonPlanId)
     .maybeSingle();
-  const plan = planRow as { subject_id?: string | null; class_id?: string | null } | null;
+  const plan = planRow as {
+    subject_id?: string | null;
+    class_id?: string | null;
+    school_id?: string | null;
+    blocks?: Block[] | null;
+    smartt_objective?: string | null;
+    curriculum_lesson_id?: string | null;
+    curriculum_version_id?: string | null;
+  } | null;
   const subjectId = plan?.subject_id ?? null;
 
   // The lesson's year band parameterises every composition rule (grid n, picture width,
@@ -95,9 +110,11 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   // the reverse is unusable, so the middle fails least badly in both directions.
   const classId = plan?.class_id ?? null;
   const { data: classRow } = classId
-    ? await supabase.from('classes').select('year').eq('id', classId).maybeSingle()
+    ? await supabase.from('classes').select('year, school_id').eq('id', classId).maybeSingle()
     : { data: null };
-  const band = yearBandForYear((classRow as { year?: number | null } | null)?.year ?? null);
+  const classInfo = classRow as { year?: number | null; school_id?: string | null } | null;
+  const classYear = classInfo?.year ?? null;
+  const band = yearBandForYear(classYear);
 
   // The scaffold: the subject-scoped worksheet_builder document, as markdown. Null
   // when the subject has no such document — compile then appends every exercise in
@@ -108,11 +125,10 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   // worksheet artifact follows the subject's language, not the UI locale). Defaults
   // to English for a null subject / unknown value — mirrors the DB default.
   const { data: subjectRow } = subjectId
-    ? await supabase.from('subjects').select('content_language').eq('id', subjectId).maybeSingle()
+    ? await supabase.from('subjects').select('content_language, name').eq('id', subjectId).maybeSingle()
     : { data: null };
-  const contentLanguage = toContentLanguage(
-    (subjectRow as { content_language?: string | null } | null)?.content_language,
-  );
+  const subjectInfo = subjectRow as { content_language?: string | null; name?: string | null } | null;
+  const contentLanguage = toContentLanguage(subjectInfo?.content_language);
   const failedText = worksheetArtifactText(contentLanguage, 'exerciseFailed');
 
   const { data: exRows } = await supabase
@@ -123,6 +139,7 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
   const exercises: PreparedExercise[] = ((exRows ?? []) as ExerciseRow[])
     .map((row): PreparedExercise | null => {
       const anchor = row.generation?.spec?.template_anchor?.trim() || null;
+      const slot = toBlockSlot(row.generation?.spec?.block_type);
       // Build this row's nodes: the composed arrangement when the model declared
       // `items[]` (first-matching composition rule), else the unchanged markdown path
       // (layout → fill → size). `buildExerciseContent` owns that fork, so compile and
@@ -132,17 +149,45 @@ export async function compileWorksheet(lessonPlanId: string): Promise<WorksheetV
         passage: row.generation?.passage ?? null,
         band,
       });
-      if (nodes.length > 0) return { id: row.id, anchor, nodes };
+      if (nodes.length > 0) return { id: row.id, anchor, slot, nodes };
       // A failed row carries no body — emit a visible, retryable placeholder rather
       // than dropping it (an invisible gap the teacher can't act on). A skeleton /
       // still-generating row (also null body) is skipped as before.
-      if (row.status === 'failed') return { id: row.id, anchor, nodes: failedExercisePlaceholder(failedText) };
+      if (row.status === 'failed') return { id: row.id, anchor, slot, nodes: failedExercisePlaceholder(failedText) };
       return null;
     })
     .filter((e): e is PreparedExercise => e !== null);
 
+  // Template-body field tokens ({{subject}}, {{theme}}, …) — the same set a page frame
+  // supports — resolved from the plan so a scaffold never prints a literal placeholder.
+  const [anchors, schoolRow] = await Promise.all([
+    readCurriculumAnchors(supabase, plan?.curriculum_lesson_id, plan?.curriculum_version_id),
+    (plan?.school_id ?? classInfo?.school_id)
+      ? supabase.from('schools').select('name').eq('id', (plan?.school_id ?? classInfo?.school_id) as string).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const placeholders: FramePlaceholders = {
+    subject: subjectInfo?.name ?? '',
+    year: classYear ?? '',
+    theme: anchors?.theme ?? '',
+    centre: (schoolRow.data as { name?: string | null } | null)?.name ?? '',
+    objective: stripStem(plan?.smartt_objective),
+    lesson_key: plan?.curriculum_lesson_id ?? '',
+  };
+
+  // The teacher's own words for each plan step, verbatim and labelled in the subject's
+  // content language — placed at the template's {{block:…}} tokens.
+  const blockContent = buildBlockContent(plan?.blocks, {
+    format: worksheetArtifactText(contentLanguage, 'formatLabel'),
+    teacher: worksheetArtifactText(contentLanguage, 'teacherLabel'),
+    you: worksheetArtifactText(contentLanguage, 'youLabel'),
+  });
+
   // Base content: the scaffold's nodes, built fresh from its markdown, or empty when
-  // the subject has no scaffold document. Assembly (strip → anchor-match → fill →
+  // the subject has no scaffold document. Assembly (strip → fill tokens → anchor-match →
   // append, with the `wsCompiled` tagging) lives in the pure, tested module.
-  return assembleWorksheetDoc(scaffoldDocContent(scaffoldMarkdown), exercises);
+  return assembleWorksheetDoc(scaffoldDocContent(scaffoldMarkdown), exercises, {
+    blockContent,
+    placeholders,
+  });
 }

@@ -4,6 +4,7 @@ import { getWorksheetClient } from '@/lib/anthropic';
 import { composeContextStack, logAiCompose, ContextStackError, type ContextDocUsed } from './context-stack';
 import { anchorLines, promptHash, type CurriculumAnchors } from './worksheet-shared';
 import type { Block } from '@/types/lesson';
+import { slotOfBlock, toBlockSlot } from './worksheet-blocks';
 import type { ExerciseSpec } from '@/types/worksheet-exercise';
 
 /**
@@ -89,6 +90,7 @@ function buildResponseSchema(exerciseTypes: string[]) {
             resource_id: { type: ['string', 'null'] },
             image_count: { type: 'integer' },
             template_anchor: { type: ['string', 'null'] },
+            block_type: { type: ['string', 'null'] },
           },
           required: [
             'position',
@@ -100,6 +102,7 @@ function buildResponseSchema(exerciseTypes: string[]) {
             'resource_id',
             'image_count',
             'template_anchor',
+            'block_type',
           ],
         },
       },
@@ -128,7 +131,9 @@ function blockLines(blocks: Block[]): string[] {
     ) {
       continue;
     }
+    const slot = slotOfBlock(b.type);
     const parts: string[] = [`- ${b.title}`];
+    if (slot) parts.push(`[block_type: ${slot}]`);
     if (hasText(b.phase)) parts.push(`(${phaseLabel[b.phase] ?? b.phase})`);
     out.push(parts.join(' '));
     if (hasText(b.activity_title)) out.push(`  · Activity: ${b.activity_title.trim()}`);
@@ -178,6 +183,7 @@ function buildUserPrompt(context: WorksheetPlanContext): string {
     '- One student-facing block, one exercise, in block order. A block is one activity the teacher wrote about. Two Independent practice blocks — a gap fill and a crossword — are two exercises. Never merge two blocks into one exercise; never split one block into several.',
     '- A block that needs nothing printed yields no exercise: an oral drill or a Think–Pair–Share produces nothing on paper, whether it is written under "Students do" or "Teacher does". Do not pad to make counts match, and never drop or combine blocks to shrink them.',
     '- Curriculum context — theme, vocabulary, grammar, outcomes — shapes how an exercise is written. It never adds one.',
+    `- block_type is the [block_type: …] key of the lesson block the exercise was written from, copied verbatim; null if that block shows none.`,
     `- template_anchor is the heading text in the template that the exercise fills, or null when there is no template or no matching heading.`,
     `- image_count is how many images the exercise needs. The TOTAL image_count across all specs MUST NOT exceed ${MAX_TOTAL_IMAGES}.`,
     '- position is the 1-based order of the exercise on the worksheet.',
@@ -251,6 +257,7 @@ function parseSpecs(text: string, exerciseTypes: Set<string>): ExerciseSpec[] {
         typeof o.template_anchor === 'string' && o.template_anchor.trim()
           ? o.template_anchor
           : null,
+      block_type: toBlockSlot(o.block_type),
     };
   });
 }

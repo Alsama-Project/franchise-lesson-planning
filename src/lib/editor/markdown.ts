@@ -459,6 +459,26 @@ function decodeEntities(line: string): string {
   });
 }
 
+/** Options for {@link markdownToDoc}. */
+export interface MarkdownToDocOptions {
+  /**
+   * Template-authoring syntax, enabled ONLY for a subject's worksheet scaffold (never
+   * for AI-written exercise bodies):
+   *  - a line beginning `hint: ` becomes an EMPTY paragraph carrying the
+   *    HintPlaceholder `placeholder` attribute — an editor-only decoration that is
+   *    never saved as text and never printed;
+   *  - a line that is exactly `{{block:<slot>}}` becomes its own paragraph (compile
+   *    finds it by text and swaps in that plan step's content).
+   */
+  templateMarkers?: boolean;
+}
+
+/** A `hint: …` template line (case-insensitive prefix, text required). */
+const HINT_LINE = /^\s*hint:[ \t]+(\S.*)$/i;
+
+/** A line that is exactly one `{{block:<slot>}}` token. Slot is `[a-z_]+`. */
+export const BLOCK_TOKEN_LINE = /^\s*\{\{\s*block:\s*([a-z_]+)\s*\}\}\s*$/i;
+
 /**
  * Convert a simple-markdown string into a tiptap/ProseMirror `doc` — the
  * server-safe counterpart of {@link markdownToHtml}. Supports `#`/`##`/`###`
@@ -473,7 +493,7 @@ function decodeEntities(line: string): string {
  * print as literal text (see {@link decodeEntities}). Everything else — including
  * inline `[Picture: …]` markers and `______` blanks — passes through as literal text.
  */
-export function markdownToDoc(markdown: string): JSONContent {
+export function markdownToDoc(markdown: string, options: MarkdownToDocOptions = {}): JSONContent {
   // Right-trim, unescape, then decode HTML entities on every line up front, so block
   // classification (and the table run scan below) sees the same, normalised text.
   // Unescape runs BEFORE decode so a decoded backslash is never re-consumed as an escape.
@@ -521,6 +541,23 @@ export function markdownToDoc(markdown: string): JSONContent {
       flushPara();
       flushList();
       continue;
+    }
+
+    // Template-only markers (see MarkdownToDocOptions.templateMarkers).
+    if (options.templateMarkers) {
+      const hint = HINT_LINE.exec(line);
+      if (hint) {
+        flushPara();
+        flushList();
+        content.push({ type: 'paragraph', attrs: { placeholder: hint[1].trim() } });
+        continue;
+      }
+      if (BLOCK_TOKEN_LINE.test(line)) {
+        flushPara();
+        flushList();
+        content.push({ type: 'paragraph', content: [{ type: 'text', text: line.trim() }] });
+        continue;
+      }
     }
 
     // A `[Picture: …]` marker alone on its line becomes its OWN paragraph and does

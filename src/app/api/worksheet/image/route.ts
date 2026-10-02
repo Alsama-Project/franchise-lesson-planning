@@ -21,6 +21,7 @@
 // kill-switch returns a clean 503.
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { guardAiRequest } from '@/lib/ai/usage-guard';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -237,6 +238,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ slot_id: slotId, storage_path: hit.storage_path });
     }
   }
+
+  // H8: a fresh generation (cache miss, regenerate or instruction) takes one use of the
+  // daily image allowance; cache hits above are free.
+  const refused = await guardAiRequest(supabase, 'worksheet_image', [instruction]);
+  if (refused) return refused;
 
   // (e) Miss (or regenerate) → generate fresh.
   let client: ReturnType<typeof getImagesClient>;

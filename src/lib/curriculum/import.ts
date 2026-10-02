@@ -24,6 +24,8 @@ interface ImportArgs {
   originalStoragePath?: string | null;
   /** Publish as a new curriculum version instead of reconciling the active one. */
   newVersion?: boolean;
+  /** Who ran the import (the signed-in user); null for the n8n secret path. */
+  runBy?: string | null;
 }
 
 export async function importCurriculumWorkbook(

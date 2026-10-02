@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getCurrentProfile, getMyMemberships } from '@/lib/auth';
+import { getCurrentProfile } from '@/lib/auth';
 import { importCurriculumWorkbook } from '@/lib/curriculum/import';
+import { mayRunImport, resolveImportStanding, type ImportStanding } from '@/lib/curriculum/import-access';
 import { parseCurriculumWorkbook } from '@/lib/curriculum/parse';
 import { removeSourceDocument, uploadSourceDocument } from '@/lib/download/source-documents';
 import type { CurriculumSyncSource } from '@/lib/curriculum/types';
@@ -20,7 +21,8 @@ import type { CurriculumSyncSource } from '@/lib/curriculum/types';
  *
  * Auth — either path is accepted, anything else is rejected:
  *   (a) header `x-curriculum-secret: $CURRICULUM_IMPORT_SECRET`            → n8n
- *   (b) a signed-in session that is a member of `subject_code` OR an admin  → UI
+ *   (b) a signed-in session: any member of `subject_code` may dry-run; a real
+ *       import needs an admin or a coordinator of that subject            → UI
  */
 export async function POST(request: NextRequest) {
   // ── Read subject_code + workbook bytes (multipart or raw binary) ──
@@ -69,7 +71,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Authorise: secret header (n8n) OR session membership/admin (UI) ──
-  const source = await authorise(request, subjectCode);
+  const { source, standing, userId } = await authorise(request, subjectCode, dryRun);
   if (source === 'unauthenticated') {
     return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
   }
@@ -99,8 +101,7 @@ export async function POST(request: NextRequest) {
   // admins (the n8n secret path is already trusted). A subject member may reconcile the
   // current version via upload, but not mint a new one.
   if (newVersion && source === 'upload') {
-    const profile = await getCurrentProfile();
-    if (profile?.role !== 'admin') {
+    if (standing !== 'admin') {
       return NextResponse.json(
         { error: 'Only an admin can publish a new curriculum version.' },
         { status: 403 },
@@ -118,10 +119,9 @@ export async function POST(request: NextRequest) {
   // route; this branch retains for a session that uploads via the API directly.
   let originalStoragePath: string | null = null;
   if (source === 'upload' && originalFile) {
-    const profile = await getCurrentProfile();
-    if (profile?.role === 'admin') {
+    if (standing === 'admin' && userId) {
       const supabase = await createClient();
-      const uploaded = await uploadSourceDocument(supabase, profile.id, originalFile);
+      const uploaded = await uploadSourceDocument(supabase, userId, originalFile);
       if (!uploaded.ok) {
         return NextResponse.json(
           { error: 'Could not store the uploaded file.' },
@@ -140,6 +140,7 @@ export async function POST(request: NextRequest) {
     fileName: fileName || undefined,
     originalStoragePath,
     newVersion,
+    runBy: userId,
   });
   if (result.status === 'error') {
     // Roll back the orphaned original so a failed import never leaks storage.
@@ -152,28 +153,34 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(result);
 }
 
-type AuthOutcome = CurriculumSyncSource | 'unauthenticated' | 'forbidden';
+type AuthOutcome = {
+  source: CurriculumSyncSource | 'unauthenticated' | 'forbidden';
+  standing: ImportStanding;
+  userId: string | null;
+};
 
 /**
- * Resolve which (authorised) path this request used, or why it's rejected.
- * The secret path short-circuits to 'n8n'. The session path checks subject
- * membership or admin and resolves to 'upload'.
+ * Resolve which (authorised) path this request used, or why it's rejected. The secret
+ * path short-circuits to 'n8n'. The session path resolves the caller's standing for the
+ * subject and applies the shared import rule (see import-access.ts).
  */
-async function authorise(request: NextRequest, subjectCode: string): Promise<AuthOutcome> {
+async function authorise(request: NextRequest, subjectCode: string, dryRun: boolean): Promise<AuthOutcome> {
   const secret = process.env.CURRICULUM_IMPORT_SECRET;
   const provided = request.headers.get('x-curriculum-secret');
-  if (secret && provided && provided === secret) return 'n8n';
+  if (secret && provided && provided === secret) return { source: 'n8n', standing: 'none', userId: null };
 
   const profile = await getCurrentProfile();
-  if (!profile) return 'unauthenticated';
-  if (profile.role === 'admin') return 'upload';
+  if (!profile) return { source: 'unauthenticated', standing: 'none', userId: null };
 
-  // Member of this subject (in any school) may refresh it.
   const supabase = await createClient();
   const { data } = await supabase.from('subjects').select('id').eq('code', subjectCode).maybeSingle();
   const subjectId = (data as { id: string } | null)?.id;
-  if (!subjectId) return 'forbidden';
+  if (!subjectId) return { source: 'forbidden', standing: 'none', userId: profile.id };
 
-  const memberships = await getMyMemberships();
-  return memberships.some((m) => m.subjectId === subjectId) ? 'upload' : 'forbidden';
+  const standing = await resolveImportStanding(supabase, subjectId);
+  return {
+    source: mayRunImport(standing, dryRun) ? 'upload' : 'forbidden',
+    standing,
+    userId: profile.id,
+  };
 }

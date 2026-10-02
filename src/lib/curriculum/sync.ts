@@ -44,6 +44,8 @@ export interface SyncArgs {
   buffer: Buffer | ArrayBuffer;
   subjectCode: string;
   source: CurriculumSyncSource;
+  /** Who ran the import (the signed-in user); null for the n8n secret path. */
+  runBy?: string | null;
   /** Optional explicit sheet name (mirrors the parser/script `--sheet`). */
   sheet?: string;
   /**
@@ -85,7 +87,7 @@ export async function syncCurriculumWorkbook(
   supabase: SupabaseClient,
   args: SyncArgs,
 ): Promise<CurriculumSyncResult> {
-  const { buffer, subjectCode, source, sheet, fileName, originalStoragePath, newVersion = false } = args;
+  const { buffer, subjectCode, source, sheet, fileName, originalStoragePath, newVersion = false, runBy = null } = args;
   const runTimestamp = new Date().toISOString();
 
   // Open a sync run first so even a parse failure is recorded.
@@ -96,6 +98,7 @@ export async function syncCurriculumWorkbook(
       source,
       source_filename: fileName ?? null,
       original_storage_path: originalStoragePath ?? null,
+      run_by: runBy,
       started_at: runTimestamp,
       status: 'running',
     })

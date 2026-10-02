@@ -1,0 +1,8 @@
+{
+  "login": {
+    "error": {
+      "notAllowed": "Only Alsama Microsoft accounts can sign in. Sign in with your Alsama work account, or ask your centre coordinator for help.",
+      "failed": "Sign-in didn't work. Please try again."
+    }
+  }
+}

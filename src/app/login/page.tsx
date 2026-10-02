@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
+import { signInErrorKey } from "@/lib/sign-in-policy";
 import { MicrosoftSignInButton } from "@/components/auth/MicrosoftSignInButton";
 import { Logo } from "@/components/ui/Logo";
 
@@ -12,7 +14,15 @@ export const metadata: Metadata = {
  * collapsing to a single column on mobile. The only interactive piece is the
  * OAuth button.
  */
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const errorKey = signInErrorKey(error);
+  const t = await getTranslations("login");
+
   return (
     <main className="flex min-h-screen items-center justify-center p-5 sm:p-10">
       <div className="w-full max-w-[1100px]">
@@ -41,6 +51,11 @@ export default function LoginPage() {
             <p className="mt-2 mb-[30px] text-[15px] leading-[1.55] text-text-muted">
               Sign in to plan and track your lessons for the week.
             </p>
+            {errorKey ? (
+              <p role="alert" dir="auto" className="mb-[18px] rounded-[10px] border border-status-review-border bg-status-review-bg px-[14px] py-[10px] text-[13.5px] leading-[1.5] text-pink">
+                {t(`error.${errorKey}`)}
+              </p>
+            ) : null}
             <MicrosoftSignInButton />
             <p className="mt-[18px] text-[12.5px] text-text-faint">
               Trouble signing in? Ask your centre coordinator.

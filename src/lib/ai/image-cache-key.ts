@@ -43,3 +43,13 @@ export function imageCacheKey(subject: string, instruction?: string | null): str
   const material = steer ? `${subject} :: ${steer}` : subject;
   return createHash('sha256').update(`${normaliseSubject(material)}:${STYLE_VERSION}`).digest('hex');
 }
+
+/**
+ * The ONE text an image is drawn from and cached under: the slot's stored subject,
+ * falling back to the brief only for legacy slots that have no subject. The route
+ * hashes this and sends this to the model, so a cached image always depicts what its
+ * key says — text supplied on the request can never be drawn under another key.
+ */
+export function imageRequestText(slotSubject: string | null | undefined, brief: string): string {
+  return slotSubject?.trim() || brief;
+}

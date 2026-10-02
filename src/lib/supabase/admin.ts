@@ -11,6 +11,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
  *      and records `curriculum_sync_run`. The brief specifies writes go through the
  *      service role (there is no write RLS policy on these tables).
  *
+ *   3. Worksheet-image cache WRITES — `worksheet_image` rows are shared by every
+ *      teacher, so no signed-in user may insert them; the image route inserts the row
+ *      for an image the server itself just generated (src/app/api/worksheet/image).
+ *
  *   2. Cached curriculum READS — `curriculum_lesson` is global reference data that
  *      is identical for every authenticated user. The read path is wrapped in
  *      `unstable_cache`, whose cache scope cannot access the cookie-bound auth'd
